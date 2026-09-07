@@ -1,0 +1,60 @@
+{
+  "realm": "ai-product-engineer",
+  "enabled": true,
+  "accessTokenLifespan": 3600,
+  "ssoSessionIdleTimeout": 28800,
+  "ssoSessionMaxLifespan": 86400,
+  "displayName": "AI Product Engineer",
+  "displayNameHtml": "<b>AI Product Engineer</b>",
+  "loginWithEmailAllowed": true,
+  "registrationAllowed": false,
+  "resetPasswordAllowed": true,
+  "sslRequired": "external",
+  "roles": {
+    "realm": [
+      { "name": "student", "description": "Студент курса" },
+      { "name": "lecturer", "description": "Лектор — оценки, проверка домашек, cost_report" },
+      { "name": "admin", "description": "Администратор платформы — управление курсом и пользователями" }
+    ]
+  },
+  "defaultRoles": ["student"],
+  "clients": [
+    {
+      "clientId": "portal",
+      "name": "Course Portal / OpenCode",
+      "description": "Публичный клиент (PKCE): портал engineer-ai.pro и OpenCode CLI",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": [
+        "https://engineer-ai.pro/*",
+        "https://www.engineer-ai.pro/*",
+        "http://localhost/*",
+        "http://localhost:*",
+        "http://127.0.0.1:*"
+      ],
+      "webOrigins": ["+"],
+      "attributes": { "pkce.code.challenge.method": "S256" },
+      "protocolMappers": [
+        {
+          "name": "aud-course-mcp",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "course-mcp",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "course-mcp",
+      "name": "Course MCP (resource server / audience)",
+      "description": "Аудитория токенов. MCP валидирует JWT по JWKS, aud=course-mcp",
+      "enabled": true,
+      "bearerOnly": true
+    }
+  ]
+}

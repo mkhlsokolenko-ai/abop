@@ -1,0 +1,41 @@
+# TLS-фронт (Let's Encrypt автоматически). A-записи -> 201.51.5.24.
+
+# Портал курса (статический SPA, DS red-team). Вход — Keycloak PKCE.
+# /api/* -> Portal API (FastAPI поверх cost_journal), остальное — статика.
+engineer-ai.pro, www.engineer-ai.pro {
+    handle /api/* {
+        reverse_proxy portal-api:8090
+    }
+    handle {
+        root * /srv/portal
+        file_server
+        try_files {path} /index.html
+    }
+}
+
+auth.engineer-ai.pro {
+    reverse_proxy keycloak:8080
+}
+
+# MCP-шлюз (FastMCP, streamable-http). Клиент OpenCode: /mcp + Bearer JWT.
+mcp.engineer-ai.pro {
+    reverse_proxy mcp:8787
+}
+
+# MinIO S3 API (presigned-загрузка документов проектов, до 5 ГБ на запрос)
+s3.engineer-ai.pro {
+    reverse_proxy minio:9000
+    request_body {
+        max_size 600MB
+    }
+}
+
+# MinIO веб-консоль (админ)
+minio.engineer-ai.pro {
+    reverse_proxy minio:9001
+}
+
+# Включается вместе с профилем mcp (docker compose --profile mcp up -d):
+# mcp.engineer-ai.pro {
+#     reverse_proxy mcp:8787
+# }

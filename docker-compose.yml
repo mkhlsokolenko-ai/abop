@@ -1,0 +1,103 @@
+# Курсовой edge-контур на server-1 (201.51.5.24).
+# Слой auth+edge (Postgres + Keycloak + Caddy) поднимается первым.
+# MCP-сервис — под профилем "mcp" (включается позже; ему нужен доступ к сервисам
+# sLAVA на 127.0.0.1 хоста, это решается на шаге подключения MCP).
+#
+#   docker compose up -d postgres keycloak caddy        # auth-слой (сейчас)
+#   docker compose --profile mcp up -d                  # + MCP (позже)
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ape
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-changeme}
+      POSTGRES_DB: ape
+    volumes:
+      - ape_pg:/var/lib/postgresql/data
+      - ./db/init-keycloak.sql:/docker-entrypoint-initdb.d/10-keycloak.sql:ro
+    ports:
+      - "127.0.0.1:5433:5432"     # 5433 наружу-локально, чтобы не пересечься с pg sLAVA
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    restart: unless-stopped
+    command: ["start", "--import-realm"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: ape
+      KC_DB_PASSWORD: ${PG_PASSWORD:-changeme}
+      KC_HOSTNAME: https://auth.engineer-ai.pro
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HEALTH_ENABLED: "true"
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:-changeme}
+    volumes:
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm.json:ro
+    depends_on:
+      - postgres
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-ape}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-changeme}
+      MINIO_SERVER_URL: https://s3.engineer-ai.pro
+      MINIO_BROWSER_REDIRECT_URL: https://minio.engineer-ai.pro
+      MINIO_API_CORS_ALLOW_ORIGIN: "https://engineer-ai.pro,https://www.engineer-ai.pro"
+    volumes:
+      - minio_data:/data
+
+  portal-api:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    command: ["uvicorn", "portal_api.main:app", "--host", "0.0.0.0", "--port", "8090"]
+    depends_on:
+      - postgres
+      - minio
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./portal:/srv/portal:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - keycloak
+      - portal-api
+
+  mcp:
+    build: .
+    restart: unless-stopped
+    profiles: ["mcp"]
+    env_file: .env
+    depends_on:
+      - postgres
+    command: ["ape-mcp"]
+    # Подключён к сети sLAVA -> достаёт Qdrant по имени slava-qdrant-1:6333.
+    # RouteAI — внешний (routerai.ru). Postgres/Caddy — в нашей сети default.
+    networks:
+      - default
+      - slava
+
+networks:
+  default:
+  slava:
+    external: true
+    name: slava_default
+
+volumes:
+  ape_pg:
+  caddy_data:
+  caddy_config:
+  minio_data:

@@ -1,0 +1,18 @@
+[project]
+name = "engineer-ai-cli"
+version = "1.17.0"
+description = "ape — CLI курса AI Product Engineer (доступ к моделям через MCP-шлюз engineer-ai.pro)"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = []           # только стандартная библиотека
+authors = [{ name = "Соколенко М.В." }]
+
+[project.scripts]
+ape = "ape:main"
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["ape"]

@@ -1,0 +1,31 @@
+# Secrets — never commit
+.env
+*.env
+!.env.example
+bench/.orkey
+bench/report_*.json
+bench/verify_*.json
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+desktop.ini
+Thumbs.db
+
+# Data / logs
+*.log
+data/
+outputs/
