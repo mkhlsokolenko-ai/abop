@@ -27,7 +27,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import contract_store, ingress  # noqa: E402
+from . import agent_store, assembly, contract_store, ingress  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
 
@@ -161,8 +161,9 @@ def plan(body: dict, u: dict = Depends(user)) -> dict:
 
 @app.on_event("startup")
 async def _startup() -> None:
-    """Создать таблицу contract_sets, если есть Postgres (иначе фолбэк в память)."""
+    """Создать таблицы contract_sets/agent_versions, если есть Postgres (иначе память)."""
     await contract_store.init()
+    await agent_store.init()
 
 
 @app.post("/api/contracts/ingest")
@@ -199,6 +200,54 @@ async def contracts_get(audit_id: str, u: dict = Depends(user)) -> dict:
     if not cs:
         raise HTTPException(404, "нет такого ContractSet")
     return cs
+
+
+# ═══════════════ AGENTS: сборка агента на канве → AgentVersion (ADR-013/014, SDD §4.4) ═══════════════
+
+@app.post("/api/agents")
+async def agent_save(body: dict, u: dict = Depends(user)) -> JSONResponse:
+    """Сохранить собранный на канве граф как AgentVersion (draft), привязав к ContractSet.
+
+    Тело: {name, contract_audit_id, graph:{nodes[],edges[]}}. До сохранения — governance:
+    автономия узла ≤ потолок (ADR-013), внешнее действие под HITL (ADR-014), покрытие (SDD §4.4).
+    Жёсткие нарушения → 422; сохранение только чистого графа.
+    """
+    name = str((body or {}).get("name", "")).strip()
+    audit_id = str((body or {}).get("contract_audit_id", "")).strip()
+    graph = (body or {}).get("graph") or {}
+    if not name or not audit_id:
+        raise HTTPException(422, "нужны name и contract_audit_id")
+    cs = await contract_store.get(audit_id)
+    if not cs:
+        raise HTTPException(404, "нет ContractSet для привязки")
+
+    check = assembly.check_graph(graph, cs.get("intake") or {}, ape.skill_safety)
+    if check["errors"]:
+        return JSONResponse({"saved": False, "errors": check["errors"],
+                             "warnings": check["warnings"]}, status_code=422)
+
+    version = await agent_store.next_version(audit_id)
+    saved = await agent_store.save(name=name, audit_id=audit_id, version=version, graph=graph,
+                                   autonomy_max=check["autonomy_max"],
+                                   created_by=u.get("name") or u.get("sub") or "dev")
+    return JSONResponse({"saved": True, "id": saved["id"], "version": version, "status": "draft",
+                         "autonomy_max": check["autonomy_max"], "hitl_count": check["hitl_count"],
+                         "warnings": check["warnings"]}, status_code=201)
+
+
+@app.get("/api/agents")
+async def agents_list(contract: str = "", u: dict = Depends(user)) -> dict:
+    """Список AgentVersion (опц. фильтр по contract=audit_id). §7 паспорт/версии."""
+    return {"agents": await agent_store.list_for(contract or None)}
+
+
+@app.get("/api/agents/{agent_id}")
+async def agent_get(agent_id: str, u: dict = Depends(user)) -> dict:
+    """Полный AgentVersion (граф + метаданные) — для паспорта/повторного открытия в канве."""
+    a = await agent_store.get(agent_id)
+    if not a:
+        raise HTTPException(404, "нет такого AgentVersion")
+    return a
 
 
 # ═══════════════ RUN / STREAM / HITL: контракт (исполнение — следующий инкремент) ═══════════════

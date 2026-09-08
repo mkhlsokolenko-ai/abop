@@ -20,6 +20,10 @@ var Canvas = function ({ auditId }) {
   var [nodes, setNodes] = React.useState([]);     // посеянные узлы
   var [sel, setSel] = React.useState(null);       // выбранный узел id
   var [err, setErr] = React.useState(null);
+  var [name, setName] = React.useState("");       // имя собираемого агента
+  var [saving, setSaving] = React.useState(false);
+  var [saveRes, setSaveRes] = React.useState(null); // {saved, id, version, warnings} | {saved:false, errors}
+  var [agents, setAgents] = React.useState([]);   // сохранённые AgentVersion
 
   React.useEffect(function () {
     Promise.all([
@@ -30,8 +34,16 @@ var Canvas = function ({ auditId }) {
       (res[1].skills || []).forEach(function (s) { cat[s.id] = s; });
       setCs(contractSet); setCatalog(cat);
       setNodes(seed(contractSet, cat));
+      var ci = contractSet.intake || {};
+      setName("Агент · " + (ci.family || "процесс"));
+      loadAgents();
     }).catch(function (e) { setErr(String(e.message || e)); });
   }, [auditId]);
+
+  function loadAgents() {
+    fetch("/api/agents?contract=" + encodeURIComponent(auditId)).then(function (r) { return r.json(); })
+      .then(function (d) { setAgents(d.agents || []); }).catch(function () {});
+  }
 
   // Посев: источник → узлы-навыки (покрытые/пробелы) → выход. Потолок = autonomy_ceiling.
   function seed(contractSet, cat) {
@@ -99,6 +111,29 @@ var Canvas = function ({ auditId }) {
           </span>
         </Glass>
 
+        {/* Панель сборки: имя агента + сохранение AgentVersion (draft) */}
+        <Glass style={{ display: "flex", alignItems: "center", gap: "var(--s-3)", flexWrap: "wrap" }}>
+          <Rub>сборка агента</Rub>
+          <input value={name} onChange={function (e) { setName(e.target.value); }} placeholder="имя агента"
+            style={{ flex: "1 1 220px", minWidth: 160, height: "var(--control-h)", padding: "0 12px",
+              borderRadius: "var(--r-md)", background: "var(--surface-sunken)", border: "1px solid var(--surface-line-2)",
+              color: "#fff", fontFamily: "var(--font-sans)", fontSize: "var(--fs-13)", outline: "none" }} />
+          <Button variant="primary" loading={saving} disabled={!name.trim()} onClick={save}>Сохранить черновик</Button>
+          {saveRes ? (saveRes.saved
+            ? <Chip tone="ok">✓ {saveRes.id} · draft · автономия {saveRes.autonomy_max} · HITL {saveRes.hitl_count}</Chip>
+            : <Chip tone="crit">✕ не сохранён: {(saveRes.errors || []).length} наруш.</Chip>) : null}
+        </Glass>
+        {saveRes && !saveRes.saved ? (
+          <div style={{ background: "var(--crit-bg)", border: "1px solid var(--crit-line)", borderRadius: "var(--r-md)", padding: "var(--s-3)" }}>
+            {(saveRes.errors || []).map(function (e, i) { return <div key={i} style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-12)", color: "var(--crit)" }}>· {e}</div>; })}
+          </div>
+        ) : null}
+        {saveRes && saveRes.saved && (saveRes.warnings || []).length ? (
+          <div style={{ background: "var(--warn-bg)", border: "1px solid var(--warn-line)", borderRadius: "var(--r-md)", padding: "var(--s-3)" }}>
+            {saveRes.warnings.map(function (w, i) { return <div key={i} style={{ fontSize: "var(--fs-12)", color: "var(--warn)" }}>⚠ {w}</div>; })}
+          </div>
+        ) : null}
+
         <div style={{ flex: 1, overflow: "auto", padding: "var(--s-4)", borderRadius: "var(--r-lg)",
           border: "1px solid var(--surface-line)", background: "var(--surface-sunken)" }}>
           <div style={{ display: "flex", alignItems: "flex-start", gap: 0, minWidth: "min-content" }}>
@@ -115,11 +150,21 @@ var Canvas = function ({ auditId }) {
             })}
           </div>
         </div>
+
+        {/* Сохранённые версии агента (ADR-024) */}
+        {agents.length ? (
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--s-2)", flexWrap: "wrap" }}>
+            <Rub>версии агента</Rub>
+            {agents.map(function (a) {
+              return <Chip key={a.id} tone="neutral" title={a.created_at}>{a.name} · v{a.version} · {a.status} · {a.autonomy_max}</Chip>;
+            })}
+          </div>
+        ) : null}
       </section>
 
-      {/* Инспектор — узел + автономия ≤ потолок */}
+      {/* Инспектор — узел + автономия ≤ потолок + HITL */}
       <aside style={{ width: 260, flex: "none", overflow: "auto" }}>
-        {selNode ? <Inspector n={selNode} ceiling={ceiling} onAutonomy={setAutonomy} contract={cs} />
+        {selNode ? <Inspector n={selNode} ceiling={ceiling} onAutonomy={setAutonomy} onHitl={setHitl} onRemove={removeNode} contract={cs} />
           : <Glass><Rub>инспектор</Rub><div style={{ fontSize: "var(--fs-12)", color: "var(--text-3)", marginTop: 8 }}>Выберите узел на канве.</div></Glass>}
       </aside>
     </div>
@@ -138,6 +183,33 @@ var Canvas = function ({ auditId }) {
   }
   function setAutonomy(nodeId, a) {
     setNodes(function (prev) { return prev.map(function (n) { return n.id === nodeId ? Object.assign({}, n, { autonomy: a }) : n; }); });
+  }
+  function setHitl(nodeId, on) {
+    setNodes(function (prev) { return prev.map(function (n) { return n.id === nodeId ? Object.assign({}, n, { hitl: on }) : n; }); });
+  }
+  function removeNode(nodeId) {
+    setNodes(function (prev) { return prev.filter(function (n) { return n.id !== nodeId; }); });
+    setSel(null);
+  }
+  // Граф для сохранения: узлы-навыки/пробелы + линейные рёбра по порядку колонок (data-contract).
+  function buildGraph() {
+    var flow = nodes.slice().sort(function (a, b) { return a.col - b.col; });
+    var edges = [];
+    for (var i = 0; i < flow.length - 1; i++) edges.push({ from: flow[i].id, to: flow[i + 1].id, kind: "flow" });
+    var gnodes = nodes.map(function (n) {
+      return { id: n.id, kind: n.kind, skill: n.kind === "skill" || n.kind === "gap" ? n.title : null,
+        autonomy: n.autonomy || null, hitl: !!n.hitl };
+    });
+    return { nodes: gnodes, edges: edges };
+  }
+  function save() {
+    setSaving(true); setSaveRes(null);
+    fetch("/api/agents", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name, contract_audit_id: auditId, graph: buildGraph() }) })
+      .then(function (r) { return r.json(); })
+      .then(function (j) { setSaveRes(j); if (j.saved) loadAgents(); })
+      .catch(function (e) { setSaveRes({ saved: false, errors: ["Сеть/сервер: " + String(e.message || e)] }); })
+      .finally(function () { setSaving(false); });
   }
 };
 
@@ -188,9 +260,10 @@ var Connector = function () {
   );
 };
 
-var Inspector = function ({ n, ceiling, onAutonomy, contract }) {
+var Inspector = function ({ n, ceiling, onAutonomy, onHitl, onRemove, contract }) {
   var ceilIdx = A_IDX(ceiling);
   var isNode = n.kind === "skill" || n.kind === "gap";
+  var extAction = n.safety && n.safety.mode === "action" && n.safety.egress === "external";
   return (
     <Glass style={{ display: "flex", flexDirection: "column", gap: "var(--s-3)" }}>
       <Rub>инспектор узла</Rub>
@@ -240,6 +313,25 @@ var Inspector = function ({ n, ceiling, onAutonomy, contract }) {
       ) : (
         <div style={{ fontSize: "var(--fs-12)", color: "var(--text-3)" }}>Служебный узел процесса ({n.kind}).</div>
       )}
+
+      {isNode && n.kind !== "gap" ? (
+        <div>
+          <Rub style={{ display: "block", marginBottom: 6 }}>человек в контуре (HITL)</Rub>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: "var(--fs-13)" }}>
+            <input type="checkbox" checked={!!n.hitl} onChange={function (e) { onHitl(n.id, e.target.checked); }} />
+            <span>подтверждение оператора перед шагом</span>
+          </label>
+          {extAction ? (
+            <div style={{ fontSize: "var(--fs-11)", color: "var(--warn)", marginTop: 6 }}>
+              ⚠ Внешнее действие (action/external) — HITL обязателен (ADR-014), без него агент не сохранится.
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {isNode ? (
+        <Button size="sm" variant="danger" onClick={function () { onRemove(n.id); }}>Убрать узел с канвы</Button>
+      ) : null}
     </Glass>
   );
 };
