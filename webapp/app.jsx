@@ -26,29 +26,6 @@ var EnvelopeFrame = function ({ contract }) {
   );
 };
 
-var CanvasStub = function ({ contract }) {
-  return (
-    <div style={{ maxWidth: 960, margin: "0 auto" }}>
-      <Glass style={{ display: "flex", flexDirection: "column", gap: "var(--s-3)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--s-3)" }}>
-          <Ape state="idle" size={40} />
-          <div>
-            <Rub>канва · строю</Rub>
-            <div style={{ fontSize: "var(--fs-18)", fontWeight: "var(--fw-semibold)" }}>Процесс из контракта {contract ? contract.autonomy : ""}</div>
-          </div>
-        </div>
-        <div style={{ fontSize: "var(--fs-13)", color: "var(--text-2)" }}>
-          Контракт <span style={{ fontFamily: "var(--font-mono)" }}>{contract && contract.audit_id}</span> принят.
-          Посев канвы навыками из <span style={{ fontFamily: "var(--font-mono)" }}>CapabilityRequest</span> и потолком автономии — следующий шаг сборки.
-        </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-          {(contract && contract.skills || []).map(function (s) { return <Chip key={s} tone="brand">{s}</Chip>; })}
-        </div>
-      </Glass>
-    </div>
-  );
-};
-
 var App = function () {
   var [view, setView] = React.useState("ingress");
   var [contract, setContract] = React.useState(null);  // {audit_id, autonomy, hitl, skills}
@@ -97,7 +74,7 @@ var App = function () {
         {/* Центр */}
         <main style={{ flex: 1, minWidth: 0, overflow: "auto", padding: "var(--s-6) var(--s-5)" }}>
           {view === "ingress" ? <Ingress onLoaded={openContract} />
-            : view === "canvas" ? <CanvasStub contract={contract} />
+            : view === "canvas" ? <Canvas auditId={contract.audit_id} />
             : <div style={{ maxWidth: 960, margin: "0 auto", color: "var(--text-3)" }}>
                 <Glass>Экран «{(NAV.find(function (n) { return n.id === view; }) || {}).label}» — перенос из дизайна v3 (следующий шаг).</Glass>
               </div>}
