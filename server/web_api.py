@@ -29,7 +29,7 @@ import ape  # noqa: E402
 
 from . import contract_store, ingress  # noqa: E402
 
-BIZ_FAMILIES = {"analytics", "finance", "architecture", "management"}
+BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
 
 
 # ── Auth: Keycloak JWT (тот же realm, что MCP). Dev-режим без JWKS. ──

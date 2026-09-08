@@ -459,6 +459,20 @@ SKILLS = {
                        "Месячный/квартальный отчёт: P&L, KPI, прогноз; каждая цифра со ссылкой на источник, без экстраполяции без данных."),
     "budget-forecast": ("Budget & Forecast", "бюджет и прогноз",
                         "Бюджет и прогноз по сценариям (база/пессимизм/оптимизм); драйверы явны, допущения проверяемы."),
+    # Бухучёт / закрытие периода (покрытие вертикали LUDA finance_analyst)
+    "ledger_reconciliation": ("Ledger Reconciliation", "сверка регистров/проводок",
+                              "Сверяй регистры и проводки (ГК ↔ субрегистры/банк/контрагенты); каждое расхождение — с суммой, документом и причиной, ничего не «подгоняй»."),
+    "period_close_orchestration": ("Period Close", "оркестрация закрытия периода",
+                                   "Веди закрытие периода по чек-листу: последовательность шагов, зависимости, блокеры, статус готовности; корректирующие проводки — только под HITL."),
+    "variance_explanation": ("Variance Explanation", "объяснение отклонений",
+                             "Объясняй отклонения план-факт/период-к-периоду: декомпозиция, драйвер каждого дельта со ссылкой на проводку/документ, без домыслов."),
+    # Кредитование (покрытие вертикали LUDA credit_decision_analyst)
+    "application_intake_validation": ("Application Intake", "приём и валидация заявки",
+                                      "Проверяй кредитную заявку на полноту/консистентность/соответствие политике приёма; каждый отказ-флаг — с правилом и полем-источником."),
+    "limit_policy_enforcement": ("Limit Policy", "применение лимитной политики",
+                                 "Применяй лимитно-скоринговую политику детерминированно: вход → правила → вердикт с лимитом; каждое решение трассируемо к пункту политики."),
+    "disbursement_orchestration": ("Disbursement", "оркестрация выдачи средств",
+                                   "Готовь выдачу средств в core-banking: сверка условий → dry_run → HITL-подтверждение → проведение с обратной ссылкой; движение денег без approve запрещено."),
     # Архитектура / системный дизайн
     "c4-diagram": ("C4 & Diagrams", "движки схем C4/sequence/ERD",
                    "Строй схемы через движок (Mermaid/PlantUML/Kroki): контекст→контейнеры→компоненты, sequence, ERD."),
@@ -527,6 +541,14 @@ SKILL_SAFETY = {
     "unit-economics-checker": {"mode": "read", "egress": "internal", "cite": True},
     "cost-estimator": {"mode": "read", "egress": "internal", "cite": True},
     "dashboard-builder": {"mode": "write", "egress": "internal", "cite": True},
+    # бухучёт/закрытие — чтение ERP, числа только из проводок (cite); закрытие пишет статус локально
+    "ledger_reconciliation": {"mode": "read", "egress": "internal", "cite": True},
+    "period_close_orchestration": {"mode": "write", "egress": "internal", "cite": True},
+    "variance_explanation": {"mode": "read", "egress": "internal", "cite": True},
+    # кредит — валидация/скоринг читают в периметре; выдача средств = внешнее действие → HITL
+    "application_intake_validation": {"mode": "read", "egress": "internal", "cite": True},
+    "limit_policy_enforcement": {"mode": "read", "egress": "internal", "cite": True},
+    "disbursement_orchestration": {"mode": "action", "egress": "external", "cite": False},
     # рыночный ресёрч тянет внешний контент → guard от инъекций
     "market-research": {"mode": "read", "egress": "external", "cite": True},
     "researcher": {"mode": "read", "egress": "external", "cite": True},
@@ -600,6 +622,17 @@ AGENT_FAMILIES = {
             "fp-and-a": ("FP&A / планирование", ["budget-forecast", "three-statement-model", "finance-report"]),
             "valuation": ("Оценка и инвестиции", ["dcf-valuation", "market-research", "unit-economics-checker"]),
             "controller": ("Контроллер / отчётность", ["finance-report", "dashboard-builder", "cost-estimator"]),
+            # бухучёт/закрытие периода — покрытие вертикали LUDA finance_analyst (1С-закрытие)
+            "accounting": ("Бухгалтерия / закрытие", ["ledger_reconciliation", "period_close_orchestration", "variance_explanation"]),
+        },
+    },
+    "credit": {
+        "title": "Кредитование", "profile": "research",
+        "mission": "Решай по кредиту детерминированно: приём и валидация заявки, лимитная политика, выдача — каждое решение трассируемо, деньги двигаются только под HITL.",
+        "members": {
+            # покрытие вертикали LUDA credit_decision_analyst (потребкредит)
+            "underwriting": ("Андеррайтинг заявок", ["application_intake_validation", "limit_policy_enforcement"]),
+            "disbursement": ("Выдача средств", ["disbursement_orchestration"]),
         },
     },
     "architecture": {
@@ -652,7 +685,8 @@ AGENT_FAMILIES = {
 
 # ключевые слова для эвристического фолбэка маршрутизации (если планировщик не назначил семью)
 _FAMILY_KW = {
-    "finance": ["dcf", "оценк", "выручк", "p&l", "прибыл", "бюджет", "прогноз фин", "казнач", "отчётност", "фин-модел", "три отчёт", "unit"],
+    "finance": ["dcf", "оценк", "выручк", "p&l", "прибыл", "бюджет", "прогноз фин", "казнач", "отчётност", "фин-модел", "три отчёт", "unit", "закрыт", "проводк", "сверк", "бухучёт", "бухгалт", "регистр", "отклонен"],
+    "credit": ["кредит", "заявк", "лимит", "скоринг", "андеррайт", "выдач", "заём", "займ", "ссуд", "core-banking", "потребкредит"],
     "analytics": ["аналит", "метрик", "дашборд", "воронк", "процесс", "требован", "данны", "cohort", "когорт"],
     "management": ["задач", "тикет", "статус", "письм", "email", "встреч", "митинг", "трекер", "jira", "отчёт по проект", "напоминан"],
     "architecture": ["архитектур", "схем", "c4", "диаграмм", "api-дизайн", "api design", "контракт", "sdd", "vllm", "erd"],
