@@ -241,6 +241,23 @@ async def agents_list(contract: str = "", u: dict = Depends(user)) -> dict:
     return {"agents": await agent_store.list_for(contract or None)}
 
 
+@app.post("/api/agents/check")
+async def agent_check(body: dict, u: dict = Depends(user)) -> dict:
+    """Dry-run governance-проверка графа против контракта БЕЗ сохранения (ADR-013/014, SDD §4.4).
+
+    Тело: {contract_audit_id, graph}. Возвращает {ok, errors[], warnings[], autonomy_max, hitl_count}.
+    Питает кнопку «Проверить» в канве настоящим вердиктом конверта.
+    """
+    audit_id = str((body or {}).get("contract_audit_id", "")).strip()
+    graph = (body or {}).get("graph") or {}
+    cs = await contract_store.get(audit_id)
+    if not cs:
+        raise HTTPException(404, "нет ContractSet для проверки")
+    check = assembly.check_graph(graph, cs.get("intake") or {}, ape.skill_safety)
+    return {"ok": not check["errors"], "errors": check["errors"], "warnings": check["warnings"],
+            "autonomy_max": check["autonomy_max"], "hitl_count": check["hitl_count"]}
+
+
 @app.get("/api/agents/{agent_id}")
 async def agent_get(agent_id: str, u: dict = Depends(user)) -> dict:
     """Полный AgentVersion (граф + метаданные) — для паспорта/повторного открытия в канве."""
