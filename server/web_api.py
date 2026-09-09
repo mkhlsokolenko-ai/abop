@@ -27,7 +27,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import agent_store, assembly, contract_store, ingress  # noqa: E402
+from . import agent_store, assembly, contract_store, ingress, run_store, runner  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
 
@@ -161,9 +161,10 @@ def plan(body: dict, u: dict = Depends(user)) -> dict:
 
 @app.on_event("startup")
 async def _startup() -> None:
-    """Создать таблицы contract_sets/agent_versions, если есть Postgres (иначе память)."""
+    """Создать таблицы contract_sets/agent_versions/runs, если есть Postgres (иначе память)."""
     await contract_store.init()
     await agent_store.init()
+    await run_store.init()
 
 
 @app.post("/api/contracts/ingest")
@@ -273,13 +274,47 @@ _NOT_IMPL = ("Прогон через API требует выноса cmd_agents
              "Форма ответа зафиксирована в docs/ABOP_API.md; сейчас — 501.")
 
 
-@app.post("/api/runs", status_code=501)
-def run_start(body: dict, u: dict = Depends(user)) -> JSONResponse:
-    """Запуск прогона. Контракт: {goal} → 202 {run_id, plan}. Сейчас 501 (см. note)."""
-    return JSONResponse({"detail": _NOT_IMPL,
-                         "contract": {"request": {"goal": "str"},
-                                      "response": {"run_id": "str", "plan": "waves[]"}}},
-                        status_code=501)
+@app.post("/api/runs")
+async def run_start(body: dict, u: dict = Depends(user)) -> JSONResponse:
+    """Запуск прогона агента (детерминированно, без LLM в раскладке).
+
+    Тело: {agent_id} ИЛИ {contract_audit_id} (берётся последний AgentVersion контракта).
+    Возвращает 201 {run_id, waves, board, verdict, run_metrics}.
+    """
+    agent_id = str((body or {}).get("agent_id", "")).strip()
+    audit_id = str((body or {}).get("contract_audit_id", "")).strip()
+    if not agent_id and audit_id:
+        lst = await agent_store.list_for(audit_id)
+        if not lst:
+            raise HTTPException(404, "нет сохранённого агента для контракта")
+        agent_id = lst[0]["id"]
+    agent = await agent_store.get(agent_id) if agent_id else None
+    if not agent:
+        raise HTTPException(404, "нет такого AgentVersion")
+    contract = await contract_store.get(agent.get("contract_audit_id") or audit_id)
+    if not contract:
+        raise HTTPException(404, "нет ContractSet прогона")
+    result = runner.run_agent(agent, contract, ape.skill_safety)
+    saved = await run_store.save(result)
+    return JSONResponse({"run_id": saved["id"], **result}, status_code=201)
+
+
+@app.get("/api/runs/{run_id}")
+async def run_get(run_id: str, u: dict = Depends(user)) -> dict:
+    """Полная запись прогона (волны, доска, вердикт, run_metrics)."""
+    r = await run_store.get(run_id)
+    if not r:
+        raise HTTPException(404, "нет такого прогона")
+    return r
+
+
+@app.get("/api/runs/{run_id}/metrics")
+async def run_metrics(run_id: str, u: dict = Depends(user)) -> dict:
+    """RunMetrics прогона (abop.run_metrics/1.0) — обратная петля к LUDA (SDD §4-bis)."""
+    r = await run_store.get(run_id)
+    if not r:
+        raise HTTPException(404, "нет такого прогона")
+    return r.get("run_metrics") or {}
 
 
 @app.get("/api/runs/{run_id}/stream", status_code=501)
