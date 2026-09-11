@@ -48,25 +48,65 @@ def _client():
     return _jwk_client
 
 
-def user(request: Request) -> dict:
-    """Текущий пользователь из Bearer-JWT. Без JWKS (dev) — dev-user."""
-    if not _jwks_url():
-        return {"sub": "dev", "name": "dev", "roles": ["developer"], "dev": True}
-    auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer "):
-        raise HTTPException(401, "нужен Bearer-JWT")
-    import jwt
-    try:
-        key = _client().get_signing_key_from_jwt(auth[7:]).key
-        claims = jwt.decode(auth[7:], key, algorithms=["RS256"],
-                            audience=os.getenv("KEYCLOAK_AUDIENCE") or None,
-                            issuer=os.getenv("KEYCLOAK_ISSUER") or None,
-                            options={"verify_aud": bool(os.getenv("KEYCLOAK_AUDIENCE"))})
-    except Exception:  # noqa: BLE001
-        raise HTTPException(401, "невалидный токен")
+_LEVELS = ["analyst", "manager", "support", "admin"]  # по возрастанию прав (support/admin — сквозной доступ)
+
+
+def _role_level(roles: list) -> str:
+    """Уровень доступа (RBAC) из realm-ролей. admin>support>manager>analyst."""
+    for lv in ("admin", "support", "manager", "analyst"):
+        if lv in roles:
+            return lv
+    return "analyst"
+
+
+def _identity(claims: dict, dev: bool = False) -> dict:
     roles = (claims.get("realm_access") or {}).get("roles") or []
-    return {"sub": claims.get("sub"), "name": claims.get("preferred_username") or claims.get("name"),
-            "roles": roles, "dev": False}
+    level = _role_level(roles)
+    dept = claims.get("department")
+    if isinstance(dept, list):
+        dept = dept[0] if dept else None
+    # admin/support видят всё (ABAC-область = *), даже если department не задан
+    if level in ("admin", "support"):
+        dept = "*"
+    return {"sub": claims.get("sub", "dev"), "name": claims.get("preferred_username") or claims.get("name") or "dev",
+            "roles": roles, "level": level, "department": dept or "*", "dev": dev}
+
+
+def user(request: Request) -> dict:
+    """Текущий пользователь из Bearer-JWT (roles + department → level + ABAC-область).
+    Bearer есть → декодируем (JWKS-верификация если настроена, иначе decode для демо-переключателя).
+    Bearer нет: без JWKS — dev-admin; с JWKS — 401."""
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        token = auth[7:]
+        import jwt
+        try:
+            if _jwks_url():  # строгая верификация подписи по JWKS
+                key = _client().get_signing_key_from_jwt(token).key
+                claims = jwt.decode(token, key, algorithms=["RS256"],
+                                    audience=os.getenv("KEYCLOAK_AUDIENCE") or None,
+                                    issuer=os.getenv("KEYCLOAK_ISSUER") or None,
+                                    options={"verify_aud": bool(os.getenv("KEYCLOAK_AUDIENCE"))})
+            else:  # демо/переключатель: decode без проверки подписи (токен от нашего Keycloak)
+                claims = jwt.decode(token, options={"verify_signature": False})
+        except Exception:  # noqa: BLE001
+            raise HTTPException(401, "невалидный токен")
+        return _identity(claims, dev=False)
+    if _jwks_url():
+        raise HTTPException(401, "нужен Bearer-JWT")
+    return _identity({"sub": "dev", "preferred_username": "dev (admin)",
+                      "realm_access": {"roles": ["admin"]}, "department": "*"}, dev=True)
+
+
+def can_see_family(u: dict, family: str) -> bool:
+    """ABAC: admin/support (область *) видят все семьи; иначе только свою (department == family)."""
+    return u.get("department") in ("*", None) or u.get("department") == family
+
+
+def require_level(u: dict, minimum: str) -> None:
+    """RBAC-гейт мутаций: уровень пользователя ≥ minimum (иначе 403)."""
+    if _LEVELS.index(u.get("level", "analyst")) < _LEVELS.index(minimum):
+        raise HTTPException(403, f"нужен уровень доступа ≥ {minimum} (у вас {u.get('level')})")
 
 
 app = FastAPI(title="ABOP Web API", version="0.1.0",
@@ -85,6 +125,31 @@ def health() -> dict:
 @app.get("/api/me")
 def me(u: dict = Depends(user)) -> dict:
     return {"user": u}
+
+
+@app.post("/api/auth/login")
+async def auth_login(body: dict) -> dict:
+    """Прокси-логин к Keycloak (realm abop) — Keycloak не публичный, поэтому вход идёт через ABOP.
+    Тело: {username, password}. Возвращает {access_token, user}. Фронт хранит токен и шлёт Bearer."""
+    import httpx
+    import jwt
+    un = str((body or {}).get("username", "")).strip()
+    pw = str((body or {}).get("password", ""))
+    if not un or not pw:
+        raise HTTPException(422, "нужны username и password")
+    iss = os.getenv("KEYCLOAK_ISSUER") or "http://localhost:8811/realms/abop"
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.post(iss + "/protocol/openid-connect/token",
+                             data={"client_id": "abop-web", "username": un, "password": pw,
+                                   "grant_type": "password"})
+    except Exception as ex:  # noqa: BLE001
+        raise HTTPException(502, f"Keycloak недоступен: {ex}")
+    if r.status_code != 200:
+        raise HTTPException(401, "неверный логин или пароль")
+    tokens = r.json()
+    claims = jwt.decode(tokens["access_token"], options={"verify_signature": False})
+    return {"access_token": tokens["access_token"], "user": _identity(claims)}
 
 
 @app.get("/api/families")
@@ -342,13 +407,16 @@ async def agent_save(body: dict, u: dict = Depends(user)) -> JSONResponse:
 
 @app.get("/api/agents")
 async def agents_list(contract: str = "", archived: bool = False, u: dict = Depends(user)) -> dict:
-    """Список AgentVersion (опц. фильтр по contract=audit_id). archived=1 → Лимб (retired). §7/§8а."""
-    return {"agents": await agent_store.list_for(contract or None, archived=archived)}
+    """Список AgentVersion. ABAC: пользователь видит только агентов своего отдела (family==department);
+    admin/support (область *) — всех. archived=1 → Лимб (retired). §7/§8а."""
+    items = await agent_store.list_for(contract or None, archived=archived)
+    return {"agents": [a for a in items if can_see_family(u, a.get("family"))]}
 
 
 @app.post("/api/agents/{agent_id}/retire")
 async def agent_retire(agent_id: str, u: dict = Depends(user)) -> dict:
     """Вывести агента из эксплуатации → Лимб (архив, status=retired; ADR-024). Обратимо через restore."""
+    require_level(u, "manager")  # analyst — только чтение
     a = await agent_store.set_status(agent_id, "retired")
     if not a:
         raise HTTPException(404, "нет такого агента")
@@ -358,6 +426,7 @@ async def agent_retire(agent_id: str, u: dict = Depends(user)) -> dict:
 @app.post("/api/agents/{agent_id}/restore")
 async def agent_restore(agent_id: str, u: dict = Depends(user)) -> dict:
     """Вернуть агента из Лимба обратно в draft (ADR-024)."""
+    require_level(u, "manager")
     a = await agent_store.set_status(agent_id, "draft")
     if not a:
         raise HTTPException(404, "нет такого агента")
@@ -367,6 +436,7 @@ async def agent_restore(agent_id: str, u: dict = Depends(user)) -> dict:
 @app.delete("/api/agents/{agent_id}")
 async def agent_delete(agent_id: str, u: dict = Depends(user)) -> dict:
     """Полное удаление агента (жёсткое, минуя Лимб). Для черновиков/ошибочных сборок."""
+    require_level(u, "manager")
     ok = await agent_store.delete(agent_id)
     if not ok:
         raise HTTPException(404, "нет такого агента")
@@ -395,8 +465,11 @@ async def agent_author(body: dict, u: dict = Depends(user)) -> JSONResponse:
     """Сохранить агента, собранного авторингом БЕЗ контракта (ADR-024 draft, ADR-032):
     роль семьи + навыки → AgentVersion. Конверт/автономия — из навыков (консервативно);
     прод-развёртывание всё равно потребует контракт LUDA (ADR-029). Тело: {family, member, skills?, name?}."""
+    require_level(u, "manager")  # сборка агента — не для analyst (read-only)
     family = str((body or {}).get("family", "")).strip()
     member = str((body or {}).get("member", "")).strip()
+    if family and not can_see_family(u, family):  # ABAC: только свой отдел (кроме admin/support)
+        raise HTTPException(403, f"нельзя собирать агента вне своего отдела ({u.get('department')})")
     skills = (body or {}).get("skills")
     if not family:
         raise HTTPException(422, "нужна family")
