@@ -152,6 +152,88 @@ async def auth_login(body: dict) -> dict:
     return {"access_token": tokens["access_token"], "user": _identity(claims)}
 
 
+# ═══════════════ АДМИН-ПАНЕЛЬ: реальные пользователи (Keycloak) и штат (Redmine) ═══════════════
+
+def _kc_base() -> str:
+    """Базовый URL Keycloak (без /realms/...), из KEYCLOAK_ADMIN_BASE или ISSUER."""
+    base = os.getenv("KEYCLOAK_ADMIN_BASE")
+    if base:
+        return base.rstrip("/")
+    iss = os.getenv("KEYCLOAK_ISSUER") or "http://127.0.0.1:8811/realms/abop"
+    return iss.split("/realms/")[0].rstrip("/")
+
+
+async def _kc_admin_token(client) -> str:
+    """Токен админа Keycloak (realm master, client admin-cli) по KC_ADMIN_USER/KC_ADMIN_PASS."""
+    usr = os.getenv("KC_ADMIN_USER", "admin")
+    pw = os.getenv("KC_ADMIN_PASS", "")
+    if not pw:
+        raise HTTPException(501, "KC_ADMIN_PASS не задан на сервере (нужен для админ-панели)")
+    r = await client.post(_kc_base() + "/realms/master/protocol/openid-connect/token",
+                          data={"client_id": "admin-cli", "grant_type": "password",
+                                "username": usr, "password": pw})
+    if r.status_code != 200:
+        raise HTTPException(502, "Keycloak admin: не удалось получить токен")
+    return r.json()["access_token"]
+
+
+@app.get("/api/admin/users")
+async def admin_users(u: dict = Depends(user)) -> dict:
+    """Реальные пользователи Keycloak realm abop: роли (уровень) + отдел (ABAC). Только admin/support."""
+    require_level(u, "support")
+    import httpx
+    realm = (os.getenv("KEYCLOAK_ISSUER") or "/realms/abop").split("/realms/")[-1].strip("/") or "abop"
+    async with httpx.AsyncClient(timeout=20) as c:
+        at = await _kc_admin_token(c)
+        h = {"Authorization": "Bearer " + at}
+        ru = await c.get(_kc_base() + f"/admin/realms/{realm}/users?max=200", headers=h)
+        if ru.status_code != 200:
+            raise HTTPException(502, "Keycloak: не удалось получить пользователей")
+        out = []
+        for usr in ru.json():
+            uid = usr.get("id")
+            roles = []
+            try:
+                rr = await c.get(_kc_base() + f"/admin/realms/{realm}/users/{uid}/role-mappings/realm", headers=h)
+                roles = [x.get("name") for x in (rr.json() if rr.status_code == 200 else []) if x.get("name")]
+            except Exception:  # noqa: BLE001
+                pass
+            attrs = usr.get("attributes") or {}
+            dept = (attrs.get("department") or [None])[0]
+            level = _role_level(roles)
+            if level in ("admin", "support"):
+                dept = "*"
+            name = (usr.get("firstName", "") + " " + usr.get("lastName", "")).strip() or usr.get("username")
+            out.append({"id": uid, "username": usr.get("username"), "email": usr.get("email"),
+                        "name": name, "enabled": usr.get("enabled", True),
+                        "roles": roles, "level": level, "department": dept or "—"})
+    out.sort(key=lambda x: (_LEVELS.index(x["level"]) * -1, x["username"] or ""))
+    return {"users": out, "realm": realm}
+
+
+@app.get("/api/admin/staff")
+async def admin_staff(u: dict = Depends(user)) -> dict:
+    """Штатное расписание из Redmine (users API) — источник для ABAC-областей. Только admin/support."""
+    require_level(u, "support")
+    import httpx
+    base = (os.getenv("REDMINE_BASE") or "http://127.0.0.1:3000").rstrip("/")
+    key = os.getenv("REDMINE_API_KEY", "")
+    if not key:
+        return {"staff": [], "note": "REDMINE_API_KEY не задан на сервере"}
+    async with httpx.AsyncClient(timeout=20) as c:
+        r = await c.get(base + "/users.json?limit=100&status=1",
+                        headers={"X-Redmine-API-Key": key})
+        if r.status_code != 200:
+            raise HTTPException(502, f"Redmine: HTTP {r.status_code}")
+        staff = []
+        for x in (r.json().get("users") or []):
+            staff.append({"id": x.get("id"), "login": x.get("login"),
+                          "name": (x.get("firstname", "") + " " + x.get("lastname", "")).strip(),
+                          "mail": x.get("mail"), "created_on": x.get("created_on"),
+                          "last_login_on": x.get("last_login_on")})
+    return {"staff": staff, "source": "redmine"}
+
+
 @app.get("/api/families")
 def families(u: dict = Depends(user)) -> dict:
     """Ростер Семья→Роль→Навык (для палитры канвы и каталога). §4/§6 ABOP_SCREENS."""
