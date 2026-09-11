@@ -36,6 +36,9 @@ async def init() -> None:
 
 
 async def _next_id(agent_id: str) -> str:
+    if _has_pg():  # in-memory счётчик сбрасывается при рестарте → коллизия с PG; случайный суффикс безопасен
+        import secrets
+        return f"run-{agent_id}-{secrets.token_hex(3)}"
     _SEQ["n"] += 1
     return f"run-{agent_id}-{_SEQ['n']:03d}"
 
@@ -57,7 +60,40 @@ async def save(run: dict) -> dict:
             "VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (rid, run["agent_id"], run.get("contract_audit_id"), bool(v.get("ok")),
              v.get("autonomy_used"), int(g.get("hitl_count") or 0), json.dumps(run)))
-    return await get(rid) or row
+    out = await get(rid)
+    if out is not None:
+        out["id"] = rid  # payload хранит run без id — восстанавливаем
+        return out
+    return row
+
+
+async def list_runs(agent_id: str | None = None, limit: int = 100) -> list[dict]:
+    """Сводки прогонов (для журнала): без тяжёлого payload, свежие сверху."""
+    if not _has_pg():
+        rows = [r for r in _MEM.values() if not agent_id or r.get("agent_id") == agent_id]
+        rows.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+        out = []
+        for r in rows[:limit]:
+            v = r.get("verdict") or {}
+            g = (r.get("run_metrics") or {}).get("governance") or {}
+            out.append({"id": r["id"], "agent_id": r.get("agent_id"),
+                        "contract_audit_id": r.get("contract_audit_id"),
+                        "verdict_ok": bool(v.get("ok")), "autonomy_used": v.get("autonomy_used"),
+                        "hitl_count": int(g.get("hitl_count") or 0), "created_at": r.get("created_at")})
+        return out
+    from .db import _conn
+    cols = "id,agent_id,contract_audit_id,verdict_ok,autonomy_used,hitl_count,created_at"
+    async with _conn() as conn:
+        if agent_id:
+            cur = await conn.execute(
+                f"SELECT {cols} FROM runs WHERE agent_id=%s ORDER BY created_at DESC LIMIT %s", (agent_id, limit))
+        else:
+            cur = await conn.execute(
+                f"SELECT {cols} FROM runs ORDER BY created_at DESC LIMIT %s", (limit,))
+        rows = await cur.fetchall()
+    return [{"id": r[0], "agent_id": r[1], "contract_audit_id": r[2], "verdict_ok": r[3],
+             "autonomy_used": r[4], "hitl_count": r[5],
+             "created_at": r[6].isoformat() if r[6] else None} for r in rows]
 
 
 async def get(run_id: str) -> dict | None:
