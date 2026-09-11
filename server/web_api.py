@@ -27,7 +27,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import agent_store, assembly, contract_store, ingress, run_store, runner  # noqa: E402
+from . import agent_store, assembly, clients, contract_store, ingress, run_store, runner  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
 
@@ -100,6 +100,16 @@ def families(u: dict = Depends(user)) -> dict:
     return {"families": out}
 
 
+@app.get("/api/agents/spec")
+def agent_spec(family: str, member: str = "", u: dict = Depends(user)) -> dict:
+    """Спека агента (ADR-032): роль семьи + навыки + become-переходы + конверт + data-scope
+    (резолв рецептов по entity). §6 авторинг узла-агента на канве."""
+    try:
+        return ape.build_agent_spec(family, member)
+    except ValueError as ex:
+        raise HTTPException(404, str(ex))
+
+
 @app.get("/api/skills")
 def skills(u: dict = Depends(user)) -> dict:
     """Каталог навыков с безопасностью (permission-scoping видимо). §4 ABOP_SCREENS."""
@@ -110,9 +120,14 @@ def skills(u: dict = Depends(user)) -> dict:
                 in_fam.setdefault(s, []).append(fid)
     out = []
     for sid, (title, short, _instr) in ape.SKILLS.items():
+        parsed = ape.parse_skill_md(sid)   # секции/шаги — чтобы drawer не был пустым
         out.append({"id": sid, "title": title, "short": short,
                     "safety": ape.skill_safety(sid), "scope": ape.skill_scope(sid),
-                    "families": sorted(set(in_fam.get(sid, [])))})
+                    "families": sorted(set(in_fam.get(sid, []))),
+                    "sections": parsed["sections"], "flow": parsed["flow"],
+                    "when": parsed["when"], "method": parsed["method"],
+                    "dod": parsed["dod"], "anti": parsed["anti"],
+                    "datasources": ape.skill_datasources_resolved(sid)})
     return {"skills": out, "count": len(out)}
 
 
@@ -122,20 +137,109 @@ def skill(sid: str, u: dict = Depends(user)) -> dict:
     if sid not in ape.SKILLS:
         raise HTTPException(404, "нет навыка")
     title, short, _ = ape.SKILLS[sid]
+    parsed = ape.parse_skill_md(sid)
     return {"id": sid, "title": title, "short": short, "safety": ape.skill_safety(sid),
-            "scope": ape.skill_scope(sid), "body": ape.load_skill_body(sid)}
+            "scope": ape.skill_scope(sid), "body": ape.load_skill_body(sid),
+            "sections": parsed["sections"], "flow": parsed["flow"], "intro": parsed["intro"],
+            "when": parsed["when"], "method": parsed["method"],
+            "dod": parsed["dod"], "anti": parsed["anti"],
+            "datasources": ape.skill_datasources_resolved(sid)}
+
+
+@app.post("/api/skills/{sid}/datasources")
+def skill_datasources_set(sid: str, body: dict, u: dict = Depends(user)) -> dict:
+    """Оператор правит data-need навыка (ADR-032): какие сущности/поля берёт навык. §4 drawer.
+    Тело: {datasources:[{entity, fields[], kind?, note?}]}. Возвращает резолвнутые (с рецептом по entity)."""
+    if sid not in ape.SKILLS:
+        raise HTTPException(404, "нет навыка")
+    ape.set_skill_datasources(sid, (body or {}).get("datasources") or [])
+    return {"id": sid, "datasources": ape.skill_datasources_resolved(sid)}
+
+
+@app.get("/api/data/lineage")
+def data_lineage(u: dict = Depends(user)) -> dict:
+    """Карта Data Plane: сущность → рецепты(наполняют) → навыки(потребляют) → роли/агенты. §5 «Карта»."""
+    return ape.data_lineage()
 
 
 @app.get("/api/data/adapters")
 def adapters(u: dict = Depends(user)) -> dict:
-    """Подключённые источники (реестр адаптеров). §5 Коннекторы."""
-    return {"adapters": sorted(ape.SOURCE_ADAPTERS)}
+    """Каталог адаптеров с дескрипторами (label/category/src_fields/egress/badge/available)
+    + сущности canonical. §5 селекты редактора строятся из этого (расширяем, не переделываем)."""
+    return {"adapters": sorted(ape.SOURCE_ADAPTERS), "catalog": ape.adapter_catalog(),
+            "entities": sorted(ape.CANONICAL_SCHEMAS)}
 
 
 @app.get("/api/data/schema/{entity}")
 def data_schema(entity: str, u: dict = Depends(user)) -> dict:
     """Data Contract сущности (обязательные поля). §5 редактор рецепта."""
     return ape.data_schema(entity)
+
+
+# ── Коннекторы-инстансы (подключённые источники) — §5 таб «Коннекторы» ──
+@app.get("/api/data/connectors")
+def connectors_list(u: dict = Depends(user)) -> dict:
+    return {"connectors": ape.data_connectors()}
+
+
+@app.post("/api/data/connectors")
+def connector_save(body: dict, u: dict = Depends(user)) -> dict:
+    """Подключить коннектор (сохранить инстанс источника). §5 [＋ подключить]."""
+    if not str((body or {}).get("title", "")).strip():
+        raise HTTPException(422, "нужен title коннектора")
+    return ape.data_save_connector(body)
+
+
+@app.post("/api/data/connectors/test")
+def connector_test(body: dict, u: dict = Depends(user)) -> dict:
+    """Тест-прогон коннектора: читает несколько строк источника (без записи). §5 [Тест-прогон]."""
+    return ape.data_test_connector(body)
+
+
+# ── Рецепты (источник → canonical) — §5 таб «Рецепты» ──
+@app.get("/api/data/recipes")
+def recipes_list(u: dict = Depends(user)) -> dict:
+    return {"recipes": ape.data_recipes_cards()}
+
+
+@app.get("/api/data/recipes/{name}")
+def recipe_get(name: str, u: dict = Depends(user)) -> dict:
+    try:
+        return ape.data_load_recipe(name)
+    except (OSError, ValueError):
+        raise HTTPException(404, "нет рецепта")
+
+
+@app.post("/api/data/recipes")
+def recipe_save(body: dict, u: dict = Depends(user)) -> dict:
+    """Сохранить рецепт (нормализует UI-форму в canonical). §5 [Сохранить]."""
+    name = str((body or {}).get("recipe") or (body or {}).get("title", "")).strip()
+    if not name:
+        raise HTTPException(422, "нужно имя рецепта")
+    try:
+        return ape.data_save_recipe(name, body)
+    except Exception as ex:  # noqa: BLE001 — любой сбой нормализации → 400, не 500
+        raise HTTPException(400, f"не удалось сохранить рецепт: {ex}")
+
+
+@app.post("/api/data/recipe/preview")
+def recipe_preview(body: dict, u: dict = Depends(user)) -> dict:
+    """Dry-run рецепта на выборке БЕЗ записи. §5 [Проверить] → предпросмотр canonical + счётчики."""
+    try:
+        limit = int((body or {}).get("limit", 20) or 20)
+        return ape.data_preview(body, limit=limit)
+    except Exception as ex:  # noqa: BLE001 — сбой адаптера/нормализации/ввода → 400 с текстом, НИКОГДА не 500
+        raise HTTPException(400, str(ex))
+
+
+@app.post("/api/data/recipes/{name}/run")
+def recipe_run(name: str, u: dict = Depends(user)) -> dict:
+    """Применить сохранённый рецепт и записать в canonical store. §5 публикация."""
+    try:
+        entity, written, dropped, invalid = ape.data_run(name)
+    except Exception as ex:  # noqa: BLE001 — сбой источника/рецепта → 400
+        raise HTTPException(400, str(ex))
+    return {"entity": entity, "written": written, "dropped": dropped, "invalid": invalid}
 
 
 @app.get("/api/data/query/{entity}")
@@ -237,9 +341,36 @@ async def agent_save(body: dict, u: dict = Depends(user)) -> JSONResponse:
 
 
 @app.get("/api/agents")
-async def agents_list(contract: str = "", u: dict = Depends(user)) -> dict:
-    """Список AgentVersion (опц. фильтр по contract=audit_id). §7 паспорт/версии."""
-    return {"agents": await agent_store.list_for(contract or None)}
+async def agents_list(contract: str = "", archived: bool = False, u: dict = Depends(user)) -> dict:
+    """Список AgentVersion (опц. фильтр по contract=audit_id). archived=1 → Лимб (retired). §7/§8а."""
+    return {"agents": await agent_store.list_for(contract or None, archived=archived)}
+
+
+@app.post("/api/agents/{agent_id}/retire")
+async def agent_retire(agent_id: str, u: dict = Depends(user)) -> dict:
+    """Вывести агента из эксплуатации → Лимб (архив, status=retired; ADR-024). Обратимо через restore."""
+    a = await agent_store.set_status(agent_id, "retired")
+    if not a:
+        raise HTTPException(404, "нет такого агента")
+    return {"id": agent_id, "status": "retired", "archived": True}
+
+
+@app.post("/api/agents/{agent_id}/restore")
+async def agent_restore(agent_id: str, u: dict = Depends(user)) -> dict:
+    """Вернуть агента из Лимба обратно в draft (ADR-024)."""
+    a = await agent_store.set_status(agent_id, "draft")
+    if not a:
+        raise HTTPException(404, "нет такого агента")
+    return {"id": agent_id, "status": "draft", "archived": False}
+
+
+@app.delete("/api/agents/{agent_id}")
+async def agent_delete(agent_id: str, u: dict = Depends(user)) -> dict:
+    """Полное удаление агента (жёсткое, минуя Лимб). Для черновиков/ошибочных сборок."""
+    ok = await agent_store.delete(agent_id)
+    if not ok:
+        raise HTTPException(404, "нет такого агента")
+    return {"id": agent_id, "deleted": True}
 
 
 @app.post("/api/agents/check")
@@ -257,6 +388,37 @@ async def agent_check(body: dict, u: dict = Depends(user)) -> dict:
     check = assembly.check_graph(graph, cs.get("intake") or {}, ape.skill_safety)
     return {"ok": not check["errors"], "errors": check["errors"], "warnings": check["warnings"],
             "autonomy_max": check["autonomy_max"], "hitl_count": check["hitl_count"]}
+
+
+@app.post("/api/agents/author")
+async def agent_author(body: dict, u: dict = Depends(user)) -> JSONResponse:
+    """Сохранить агента, собранного авторингом БЕЗ контракта (ADR-024 draft, ADR-032):
+    роль семьи + навыки → AgentVersion. Конверт/автономия — из навыков (консервативно);
+    прод-развёртывание всё равно потребует контракт LUDA (ADR-029). Тело: {family, member, skills?, name?}."""
+    family = str((body or {}).get("family", "")).strip()
+    member = str((body or {}).get("member", "")).strip()
+    skills = (body or {}).get("skills")
+    if not family:
+        raise HTTPException(422, "нужна family")
+    try:
+        spec = ape.build_agent_spec(family, member, skills)
+    except ValueError as ex:
+        raise HTTPException(404, str(ex))
+    env = spec["envelope"]
+    nodes = [{"id": s["id"], "kind": "skill", "skill": s["id"], "autonomy": env["autonomy_max"],
+              "hitl": s["safety"]["mode"] == "action"} for s in spec["skills"]]
+    graph = {"nodes": nodes, "edges": []}
+    name = str((body or {}).get("name", "")).strip() or f"{spec['family_title']} · {spec['role_title']}"
+    audit_id = "authored"
+    version = await agent_store.next_version(audit_id)
+    saved = await agent_store.save(name=name, audit_id=audit_id, version=version, graph=graph,
+                                   autonomy_max=env["autonomy_max"], created_by=u.get("name") or "dev",
+                                   family=family, role=spec["role"], transitions=spec["transitions"],
+                                   source="authored")
+    return JSONResponse({"saved": True, "id": saved["id"], "version": version, "status": "draft",
+                         "family": family, "role": spec["role"], "autonomy_max": env["autonomy_max"],
+                         "skills": [s["id"] for s in spec["skills"]], "data_scope": spec["data_scope"]},
+                        status_code=201)
 
 
 @app.get("/api/agents/{agent_id}")
@@ -293,8 +455,14 @@ async def run_start(body: dict, u: dict = Depends(user)) -> JSONResponse:
         raise HTTPException(404, "нет такого AgentVersion")
     contract = await contract_store.get(agent.get("contract_audit_id") or audit_id)
     if not contract:
-        raise HTTPException(404, "нет ContractSet прогона")
-    result = runner.run_agent(agent, contract, ape.skill_safety)
+        # авторинг-агент (source=authored) без контракта LUDA → песочница-конверт (ADR-029: только A0/тест)
+        contract = {"intake": {"autonomy_ceiling": agent.get("autonomy_max") or "A2"}, "bundle": {}}
+    # НАСТОЯЩИЙ LLM-прогон: навыки читают canonical store и анализируют через RouteAI (агентский движок)
+    result = await runner.run_live(agent, contract, ape.skill_safety,
+                                   data_query=ape.data_query,
+                                   skill_sources=ape.skill_datasources_resolved,
+                                   load_body=ape.load_skill_body,
+                                   chat_fn=clients.chat)
     saved = await run_store.save(result)
     return JSONResponse({"run_id": saved["id"], **result}, status_code=201)
 

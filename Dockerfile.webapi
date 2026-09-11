@@ -1,0 +1,19 @@
+# ABOP Web API (REST/SSE поверх ядра ape) — для деплоя на сервер с persist в Postgres.
+FROM python:3.11-slim
+WORKDIR /app
+ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
+
+# зависимости (списком — pyproject ссылается на отсутствующий portal_api)
+RUN pip install --upgrade pip && pip install \
+    "httpx>=0.27" "psycopg[binary,pool]>=3.2" "python-dotenv>=1.0" \
+    "pydantic>=2.7" "fastapi>=0.115" "uvicorn[standard]>=0.30" "pyjwt[crypto]>=2.9" \
+    "minio>=7.2" "python-multipart>=0.0.9" \
+    openpyxl pypdf jsonschema psycopg2-binary
+
+COPY server ./server
+COPY cli ./cli
+COPY skills ./skills
+COPY webapp ./webapp
+
+EXPOSE 8091
+CMD ["uvicorn", "server.web_api:app", "--host", "0.0.0.0", "--port", "8091"]

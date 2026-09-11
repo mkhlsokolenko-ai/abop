@@ -9,7 +9,20 @@
 """
 from __future__ import annotations
 
+import os
+
 A_LEVELS = ["A0", "A1", "A2", "A3", "A4"]
+
+# ── Настройки LLM-прогона (батчинг + rate-limit + обрезка промптов) ──
+# ABOP_RUN_LLM_CONCURRENCY — сколько навыков анализируем ОДНОВРЕМЕННО (rate-limiter к RouteAI).
+#   На единой RouteAI-карте держим низким (2). Когда поднимем свою карту с paged-attention/vLLM
+#   и batch-sizing — можно повышать.
+# ABOP_RUN_LLM_TRUNCATE=1 (dev) режет промпт/данные/вывод для скорости отладки.
+#   НА ПРОДЕ ВЫСТАВИТЬ ABOP_RUN_LLM_TRUNCATE=0 — полные промпты (обрезка здесь временная, для теста).
+_LLM_CONCURRENCY = max(1, int(os.getenv("ABOP_RUN_LLM_CONCURRENCY", "2")))
+_LLM_TRUNCATE = os.getenv("ABOP_RUN_LLM_TRUNCATE", "1") != "0"
+_LIM = {"rows": 40, "body": 2500, "data": 5000, "max_tokens": 1600} if _LLM_TRUNCATE \
+    else {"rows": 1000, "body": 100000, "data": 200000, "max_tokens": 4096}
 
 
 def _aidx(a: str | None) -> int:
@@ -102,3 +115,56 @@ def run_agent(agent: dict, contract: dict, safety_of) -> dict:
                     "autonomy_used": A_LEVELS[autonomy_used]},
         "run_metrics": run_metrics,
     }
+
+
+async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_sources,
+                   load_body, chat_fn) -> dict:
+    """НАСТОЯЩИЙ прогон: governance-каркас (run_agent) + для каждого навыка с data-scope
+    собирает РЕАЛЬНЫЕ данные из canonical store (data_query) и прогоняет их через LLM
+    (тело навыка = методика) → находки на доску. Числа — только из данных (анти-галлюцинация)."""
+    import json as _json
+    import asyncio
+    base = run_agent(agent, contract, safety_of)
+    graph = agent.get("graph") or {}
+    skills = [n.get("skill") or n["id"] for n in (graph.get("nodes") or []) if n.get("kind") == "skill"]
+    sem = asyncio.Semaphore(_LLM_CONCURRENCY)  # rate-limiter: не больше N одновременных вызовов к RouteAI
+
+    async def _analyze(sid):
+        entities = []
+        for ds in (skill_sources(sid) or []):
+            e = ds.get("entity")
+            if e and e not in entities:
+                entities.append(e)
+        data = {}
+        for e in entities:
+            try:
+                data[e] = data_query(e, limit=_LIM["rows"])
+            except Exception:  # noqa: BLE001
+                data[e] = []
+        if not any(data.values()):
+            return None  # навык без данных в store — LLM-анализ не запускаем
+        body = (load_body(sid) or "")[:_LIM["body"]]
+        prompt = ("Ты — навык агента ABOP. Ниже методика навыка и РЕАЛЬНЫЕ данные из Data Plane (canonical, с provenance).\n\n"
+                  "=== МЕТОДИКА ===\n" + body + "\n\n"
+                  "=== ДАННЫЕ (JSON по сущностям) ===\n" + _json.dumps(data, ensure_ascii=False)[:_LIM["data"]] + "\n\n"
+                  "ЗАДАЧА: примени методику к данным. Верни КОНКРЕТНЫЕ находки/расхождения списком — "
+                  "каждая со ссылкой на id записи и суммой. Только из данных, ничего не выдумывай. "
+                  "Если расхождений нет — так и скажи.")
+        async with sem:  # батчинг: семафор пускает по _LLM_CONCURRENCY вызовов за раз
+            try:
+                resp = await chat_fn(messages=[{"role": "user", "content": prompt}], profile="standard",
+                                     max_tokens=_LIM["max_tokens"])
+                txt = (resp.get("text") or "").strip() or "(пустой ответ модели)"
+                model = resp.get("model", "")
+            except Exception as ex:  # noqa: BLE001 — LLM недоступен → честно помечаем, прогон не падает
+                txt, model = f"(LLM недоступен: {type(ex).__name__}: {ex})", ""
+        return {"skill": sid, "entities": entities, "model": model, "text": txt}
+
+    # навыки — параллельно, но с rate-limit (семафор): батч по _LLM_CONCURRENCY к RouteAI
+    results = await asyncio.gather(*[_analyze(s) for s in skills])
+    findings = [r for r in results if r]
+    for f in findings:
+        base["board"].append({"kind": "finding", "agent": f["skill"], "text": f["text"][:1800]})
+    base["findings"] = findings
+    base["live"] = True
+    return base

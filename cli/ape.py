@@ -595,6 +595,269 @@ def load_skill_body(sid: str) -> str:
 _SKILLS_DIR = os.environ.get("APE_SKILLS_DIR", os.path.join(os.path.dirname(__file__), "..", "skills"))
 
 
+# ─── Разбор тела навыка на секции (для §4 drawer: «по шагам / DoD / результат») ──
+def _strip_frontmatter(md: str) -> str:
+    """Убирает YAML-фронтматтер (--- ... ---) в начале SKILL.md."""
+    if md.startswith("---"):
+        end = md.find("\n---", 3)
+        if end != -1:
+            nl = md.find("\n", end + 1)
+            return md[nl + 1:] if nl != -1 else ""
+    return md
+
+
+def _steps_from(text: str) -> list[str]:
+    """Извлекает пронумерованные/маркированные шаги из секции «Метод»/«Шаги».
+    Снимает нумерацию и **жирный** маркер, оставляя суть шага одной строкой."""
+    steps = []
+    for ln in text.splitlines():
+        m = re.match(r"\s*(?:\d+[.)]\s+|[-*]\s+)(.+)$", ln)
+        if not m:
+            continue
+        s = m.group(1).strip()
+        s = re.sub(r"\*\*(.+?)\*\*", r"\1", s)   # снять bold
+        steps.append(s)
+    return steps
+
+
+def parse_skill_md(sid: str) -> dict:
+    """Тело SKILL.md → упорядоченные секции [{head,text}] + flow (шаги метода).
+    Пустые навыки в §4 были из-за того, что фронт не забирал тело — теперь секции готовы к рендеру."""
+    md = _strip_frontmatter(load_skill_body(sid))
+    lines = md.splitlines()
+    title = ""
+    intro = []
+    sections: list[dict] = []
+    cur = None  # {head, buf:[]}
+    fence = False   # внутри ```-блока заголовки не считаем секциями
+    for ln in lines:
+        if ln.lstrip().startswith("```"):
+            fence = not fence
+            if cur is not None:
+                cur["buf"].append(ln)
+            continue
+        if not fence and ln.startswith("# ") and not title:
+            title = ln[2:].strip()
+            continue
+        if not fence and ln.startswith("## "):
+            if cur:
+                sections.append({"head": cur["head"], "text": "\n".join(cur["buf"]).strip()})
+            cur = {"head": ln[3:].strip(), "buf": []}
+        elif cur is not None:
+            cur["buf"].append(ln)
+        elif ln.strip():
+            intro.append(ln.rstrip())
+    if cur:
+        sections.append({"head": cur["head"], "text": "\n".join(cur["buf"]).strip()})
+    # шаги метода — сперва по заголовку «Метод/Шаги/Рубрика/Как…/Что…», иначе фолбэк на
+    # самую «шаговую» секцию (макс. пронумерованных/маркированных строк). Каждый навык обязан
+    # показывать шаги — контент реальный, из тела, а не заглушка.
+    _METHOD_KW = ("метод", "шаги", "рубрика", "секции", "уровни", "критери",
+                  "как ", "что ", "углы", "порядк", "прожим", "разбор", "чек")
+    _SKIP = ("definition of done", "анти-паттерн", "безопас", "интеграц",
+             "формат", "правила", "статус", "красные флаг")
+    flow: list[str] = []
+    method_head = ""
+    for sec in sections:
+        h = sec["head"].lower()
+        if any(h.startswith(k) or k in h for k in _METHOD_KW):
+            f = _steps_from(sec["text"])
+            if f:
+                flow, method_head = f, sec["head"]
+                break
+    if not flow:  # фолбэк: секция с наибольшим числом шаговых строк (кроме служебных)
+        best = None
+        for sec in sections:
+            if any(k in sec["head"].lower() for k in _SKIP):
+                continue
+            f = _steps_from(sec["text"])
+            if len(f) > (len(best[0]) if best else 0):
+                best = (f, sec["head"])
+        if best:
+            flow, method_head = best
+
+    def _find(keys) -> str:
+        for sec in sections:
+            h = sec["head"].lower()
+            if any(k in h for k in keys):
+                return sec["text"]
+        return ""
+    # резолвим 4 поля drawer'а на бэке — фронту не надо угадывать заголовки
+    when = _find(("когда", "использов"))
+    method = next((sec["text"] for sec in sections if sec["head"] == method_head), "") or _find(("метод", "шаги"))
+    dod = _find(("definition of done", "дod", "критери приём"))
+    anti = _find(("анти-паттерн", "красные флаг"))
+    return {"title": title or SKILLS.get(sid, (sid,))[0], "intro": " ".join(intro).strip(),
+            "sections": sections, "flow": flow, "method_head": method_head,
+            "when": when, "method": method, "dod": dod, "anti": anti}
+
+
+# ─── Связка навыка с источниками данных Data Plane / сервисами server-1/2 ─────
+# entity — каноническая сущность (CANONICAL_SCHEMAS); kind — вид коннектора (см. SOURCE_ADAPTERS
+# + сервисные: qdrant/knowledge_search/routerai/postgres); note — что берём. Пустой список ⇒
+# навык работает без внешних источников (проектирование/критика) — так и показываем.
+SKILL_DATASOURCES = {
+    # финансы/аналитика — фактические данные Data Plane (проводки/периоды)
+    "finance-report": [{"entity": "transaction", "kind": "postgres", "note": "факт периода, план/бюджет, сегменты"}],
+    "budget-forecast": [{"entity": "transaction", "kind": "postgres", "note": "исторический факт как драйверы прогноза"}],
+    "three-statement-model": [{"entity": "transaction", "kind": "postgres", "note": "проводки для P&L/баланса/ДДС"}],
+    "dcf-valuation": [{"entity": "transaction", "kind": "postgres", "note": "исторический FCF"}],
+    "unit-economics-checker": [{"entity": "transaction", "kind": "postgres", "note": "выручка/затраты на юнит"},
+                                {"entity": "customer", "kind": "postgres", "note": "когорты/сегменты"}],
+    "dashboard-builder": [{"entity": "transaction", "kind": "postgres", "note": "метрики"},
+                           {"entity": "issue", "kind": "http", "note": "операционные показатели трекера"}],
+    "variance_explanation": [{"entity": "transaction", "kind": "postgres", "note": "план-факт по проводкам"}],
+    # бухучёт/закрытие — регистры ERP (read-only)
+    "ledger_reconciliation": [{"entity": "transaction", "kind": "postgres", "note": "ГК ↔ субрегистры/банк"},
+                               {"entity": "document", "kind": "sqlite", "note": "первичные документы-основания"}],
+    "period_close_orchestration": [{"entity": "transaction", "kind": "postgres", "note": "статусы проводок периода"},
+                                    {"entity": "document", "kind": "sqlite", "note": "чек-лист/документы закрытия"}],
+    # кредит — заявки/лимиты/выдача
+    "application_intake_validation": [{"entity": "document", "kind": "http", "note": "пакет заявки"},
+                                       {"entity": "customer", "kind": "postgres", "note": "профиль заявителя"}],
+    "limit_policy_enforcement": [{"entity": "customer", "kind": "postgres", "note": "скоринг/история"},
+                                  {"entity": "transaction", "kind": "postgres", "note": "поведенческие данные"}],
+    "disbursement_orchestration": [{"entity": "transaction", "kind": "http", "note": "core-banking (dry_run→HITL)"}],
+    # ресёрч/рынок — внешний контент через egress-прокси sLAVA (анти-SSRF)
+    "market-research": [{"entity": "document", "kind": "http", "note": "внешние источники рынка (external, anti-injection)"}],
+    "researcher": [{"entity": "document", "kind": "http", "note": "desk-источники (external, cite)"}],
+    "rag-architect": [{"entity": "document", "kind": "vector", "note": "корпус Qdrant (server-1, префикс ape_)"}],
+    "memory-architect": [{"entity": "document", "kind": "vector", "note": "долговременная память агента"}],
+    # менеджмент/рутина — трекер/встречи/почта
+    "to-tickets": [{"entity": "issue", "kind": "http", "note": "эпики/спринт трекера (dry_run→HITL)"}],
+    "status-report": [{"entity": "issue", "kind": "http", "note": "статусы/блокеры из трекера"}],
+    "weekly-update": [{"entity": "issue", "kind": "http", "note": "метрики/аномалии недели"}],
+    "meeting-action-items": [{"entity": "meeting", "kind": "json", "note": "заметки встречи"}],
+    "email-draft": [{"entity": "email", "kind": "http", "note": "контекст переписки (отправка под HITL)"}],
+    "process-map": [{"entity": "document", "kind": "json", "note": "описание процесса AS-IS"}],
+    # cost-estimator НЕ имеет Data Plane-источника: тарифы RouteAI — Tool Plane (pricing), не сущность (ADR-032).
+    "eval-generator": [{"entity": "document", "kind": "vector", "note": "кейсы из корпуса для eval"}],
+}
+
+
+def _skill_ds_override_path() -> str:
+    return os.path.join(CFG_DIR, "skill_datasources.json")
+
+
+def _load_skill_ds_override() -> dict:
+    """Пользовательские data-need навыков (оператор правит в UI), поверх зашитого SKILL_DATASOURCES."""
+    try:
+        with open(_skill_ds_override_path(), encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def skill_datasources(sid: str) -> list:
+    """Источники данных навыка (data-need, связка §4 конверт↔данные): override оператора ИЛИ дефолт из кода.
+    Нет записи ⇒ навык без внешних источников."""
+    ov = _load_skill_ds_override()
+    if sid in ov:
+        return ov[sid]
+    return SKILL_DATASOURCES.get(sid, [])
+
+
+def set_skill_datasources(sid: str, datasources: list) -> list:
+    """Сохранить data-need навыка (оператор в UI): список {entity, fields[], kind?, note?}.
+    Пустой список — валиден (навык без источников). Возвращает нормализованный список."""
+    norm = []
+    for ds in (datasources or []):
+        if not isinstance(ds, dict):
+            continue
+        ent = str(ds.get("entity", "")).strip()
+        if not ent:
+            continue
+        flds = ds.get("fields") or []
+        if isinstance(flds, str):
+            flds = [x.strip() for x in flds.replace(",", " ").split() if x.strip()]
+        norm.append({"entity": ent, "fields": [str(f).strip() for f in flds if str(f).strip()],
+                     "kind": ds.get("kind") or _entity_default_kind(ent), "note": ds.get("note", "")})
+    ov = _load_skill_ds_override()
+    ov[sid] = norm
+    os.makedirs(CFG_DIR, exist_ok=True)
+    with open(_skill_ds_override_path(), "w", encoding="utf-8") as f:
+        json.dump(ov, f, ensure_ascii=False, indent=2)
+    return norm
+
+
+def _entity_default_kind(entity: str) -> str:
+    """Разумный вид коннектора по сущности (для новой строки data-need из UI)."""
+    return {"transaction": "postgres", "customer": "postgres", "document": "http",
+            "issue": "http", "email": "http", "meeting": "json"}.get(entity, "http")
+
+
+def _entity_fields(entity: str) -> list:
+    """Поля сущности из canonical-схемы (required + разбор hint) — база для data-need навыка."""
+    sc = CANONICAL_SCHEMAS.get(entity, {})
+    fields = list(sc.get("required", []))
+    hint = sc.get("hint", "")
+    if ":" in hint:  # «письмо: from/subject/received_at/body» → поля после двоеточия
+        for f in hint.split(":", 1)[1].replace(",", "/").split("/"):
+            f = f.strip()
+            if f and f not in fields:
+                fields.append(f)
+    return fields or ["id"]
+
+
+def skill_datasources_resolved(sid: str) -> list:
+    """data-need навыка (ADR-032): к каждому источнику навыка добавляет ПОЛЯ сущности и
+    резолвит РЕЦЕПТ по ключу entity (skill.datasources[].entity == recipe.entity)."""
+    by_entity: dict[str, list] = {}
+    try:
+        for c in data_recipes_cards():
+            by_entity.setdefault(c.get("entity"), []).append(c)
+    except OSError:
+        pass
+    out = []
+    for ds in skill_datasources(sid):
+        ent = ds.get("entity")
+        recs = by_entity.get(ent, [])
+        out.append({**ds,
+                    "fields": ds.get("fields") or _entity_fields(ent),
+                    "schema_hint": CANONICAL_SCHEMAS.get(ent, {}).get("hint", ""),
+                    "recipe": (recs[0]["id"] if recs else None),
+                    "recipe_status": (recs[0]["status"] if recs else "нет рецепта — создать"),
+                    "recipes": [r["id"] for r in recs]})
+    return out
+
+
+def data_lineage() -> dict:
+    """Карта Data Plane (ADR-032): по каждой СУЩНОСТИ — какие рецепты её наполняют, какие навыки
+    потребляют (data-need) и какие роли/семьи (потенциальные агенты) эти навыки несут. + коннекторы.
+    «Понимание и настройка»: видно всю цепочку Коннектор→Рецепт→Сущность→Навык→Агент."""
+    # обратный индекс навык → роли семей (кто несёт навык = потенциальные агенты)
+    skill_to_roles: dict[str, list] = {}
+    for fid, fam in AGENT_FAMILIES.items():
+        for mkey, (mt, sk) in fam["members"].items():
+            for s in sk:
+                skill_to_roles.setdefault(s, []).append(
+                    {"family": fid, "family_title": fam["title"], "role": mkey, "role_title": mt})
+    try:
+        recipe_cards = data_recipes_cards()
+    except OSError:
+        recipe_cards = []
+    rec_by_ent: dict[str, list] = {}
+    for r in recipe_cards:
+        rec_by_ent.setdefault(r.get("entity"), []).append(r)
+    cons_by_ent: dict[str, list] = {}
+    for sid in SKILLS:
+        for ds in skill_datasources(sid):
+            e = ds.get("entity")
+            if not e:
+                continue
+            cons_by_ent.setdefault(e, []).append({
+                "skill": sid, "title": SKILLS[sid][0],
+                "fields": ds.get("fields") or _entity_fields(e),
+                "roles": skill_to_roles.get(sid, [])})
+    entities = sorted(set(list(CANONICAL_SCHEMAS) + list(rec_by_ent) + list(cons_by_ent)))
+    out = []
+    for e in entities:
+        out.append({"entity": e, "schema_hint": CANONICAL_SCHEMAS.get(e, {}).get("hint", ""),
+                    "fields": _entity_fields(e),
+                    "recipes": rec_by_ent.get(e, []), "consumers": cons_by_ent.get(e, [])})
+    return {"entities": out, "connectors": data_connectors()}
+
+
 # ─── Role Family агенты (онтология ABOP: Семья → Член-роль → Навык) ──────────
 # Трёхуровневая структура. Семья = направление; члены = конкретные роли; каждый
 # член ПЕРЕИСПОЛЬЗУЕТ навыки из SKILLS (не дублирует). Механизм переключения:
@@ -789,6 +1052,61 @@ def route_member(fam_id: str, task: str) -> str:
         if hits > best_hits:
             best, best_hits = mkey, hits
     return best or next(iter(members))
+
+
+# ─── Сущность «Агент» (ADR-032): роль семьи + навыки + переходы + конверт + data-scope ──
+def _envelope_of(skill_ids: list) -> dict:
+    """Агрегированный конверт агента из навыков: строжайший mode (action>write>read),
+    egress=external если хоть один навык внешний, cite=True если хоть один требует источник."""
+    order = {"read": 0, "write": 1, "action": 2}
+    mode, egress, cite = "read", "internal", False
+    for s in skill_ids:
+        sf = skill_safety(s)
+        if order.get(sf["mode"], 0) > order[mode]:
+            mode = sf["mode"]
+        if sf["egress"] == "external":
+            egress = "external"
+        if sf["cite"]:
+            cite = True
+    return {"mode": mode, "egress": egress, "cite": cite}
+
+
+def _autonomy_for(env: dict) -> str:
+    """Дефолтный потолок автономии при авторинге без контракта LUDA (консервативно, ADR-013/029):
+    внешнее действие/egress → A1 (HITL обязателен); иначе → A2. Контракт может понизить, не повысить."""
+    return "A1" if (env["mode"] == "action" or env["egress"] == "external") else "A2"
+
+
+def build_agent_spec(family: str, member: str = "", skills=None) -> dict:
+    """Собирает спеку агента (ADR-032): роль семьи + навыки + become-переходы + конверт + data-scope.
+    skills=None → навыки роли по умолчанию; иначе кастомный набор. data-scope = ∪ data-need навыков."""
+    fam = AGENT_FAMILIES.get(family)
+    if not fam:
+        raise ValueError(f"нет семьи «{family}»")
+    members = fam["members"]
+    mkey = member if member in members else next(iter(members))
+    mtitle, default_skills = members[mkey]
+    skill_ids = [s for s in (skills if skills is not None else default_skills) if s in SKILLS]
+    env = _envelope_of(skill_ids)
+    transitions = [{"member": m, "title": members[m][0], "skills": members[m][1]}
+                   for m in members if m != mkey]                       # become — роли той же семьи
+    scope: dict = {}                                                     # data-scope = ∪ data-need навыков (дедуп по entity)
+    for s in skill_ids:
+        for ds in skill_datasources_resolved(s):
+            e = ds.get("entity")
+            if e not in scope:
+                scope[e] = {"entity": e, "fields": set(), "recipe": ds.get("recipe"),
+                            "recipe_status": ds.get("recipe_status"), "by_skills": []}
+            scope[e]["fields"].update(ds.get("fields", []))
+            scope[e]["by_skills"].append(s)
+    data_scope = [{**v, "fields": sorted(v["fields"])} for v in scope.values()]
+    return {"family": family, "family_title": fam["title"], "role": mkey, "role_title": mtitle,
+            "mission": fam["mission"],
+            "skills": [{"id": s, "title": SKILLS[s][0], "short": SKILLS[s][1], "safety": skill_safety(s)}
+                       for s in skill_ids],
+            "transitions": transitions,
+            "envelope": {**env, "autonomy_max": _autonomy_for(env)},
+            "data_scope": data_scope}
 
 
 def cmd_families(verbose: bool = False) -> None:
@@ -1953,27 +2271,93 @@ def bb_new_run() -> int:
 # map → rules → emit. Движок применяет, валидирует против canonical-схемы, кладёт в append-only store
 # с provenance/freshness. Агент читает ТОЛЬКО через data_query/data_get (протухшее не отдаётся).
 
-# ── Реестр адаптеров источников — РАСШИРЯЕМЫЙ (подключаемые тулзы регистрируют новые виды, см. #9) ──
+# ── Реестр адаптеров источников — РАСШИРЯЕМЫЙ CORE (ADR-003/004) ──────────────
+# Единая модель: добавление нового вида данных = ОДНА регистрация с дескриптором,
+# UI и валидатор подхватывают его декларативно (расширяем, не переделываем).
+# Дескриптор (spec): category (табл/текст/БД/api/вектор/вычислимое), src_fields (какие
+# поля source показать в редакторе), egress, read_only, badge, requires (py-библиотеки).
 SOURCE_ADAPTERS = {}   # kind -> fn(src_spec: dict) -> list[dict] (сырые строки источника)
+ADAPTER_SPECS = {}     # kind -> дескриптор для UI/валидатора
 
 
-def register_adapter(kind: str, fn) -> None:
-    """Подключить источник к Data Plane. fn(src)->rows. Так добавляются коннекторы (mail/db/api/web)."""
+def register_adapter(kind: str, fn, spec: dict = None) -> None:
+    """Подключить источник к Data Plane. fn(src)->rows; spec — дескриптор для UI. Так растёт Data Plane."""
     SOURCE_ADAPTERS[kind] = fn
+    if spec is not None:
+        ADAPTER_SPECS[kind] = {"kind": kind, **spec}
 
 
+def _lib_ok(mod: str) -> bool:
+    import importlib.util
+    return mod == "" or importlib.util.find_spec(mod) is not None
+
+
+def adapter_catalog() -> list:
+    """Каталог адаптеров с дескрипторами и флагом доступности библиотек (для §5 селекта)."""
+    out = []
+    for kind, sp in ADAPTER_SPECS.items():
+        req = sp.get("requires", [])
+        out.append({**sp, "available": all(_lib_ok(m) for m in req)})
+    return sorted(out, key=lambda x: (x.get("category", ""), x["kind"]))
+
+
+# ── Табличные источники ──
 def _adapter_csv(src: dict) -> list:
     import csv
     with open(os.path.expanduser(src["path"]), encoding="utf-8-sig", newline="") as f:
         return list(csv.DictReader(f))
 
 
+def _adapter_xlsx(src: dict) -> list:
+    """Excel/xlsx (первый лист или src['sheet']); первая строка — заголовки."""
+    import openpyxl
+    wb = openpyxl.load_workbook(os.path.expanduser(src["path"]), read_only=True, data_only=True)
+    ws = wb[src["sheet"]] if src.get("sheet") else wb.active
+    rows = ws.iter_rows(values_only=True)
+    try:
+        headers = [str(h) if h is not None else f"col{i}" for i, h in enumerate(next(rows))]
+    except StopIteration:
+        return []
+    out = [dict(zip(headers, r)) for r in rows]
+    wb.close()
+    return out
+
+
+# ── Файл-JSON ──
 def _adapter_json(src: dict) -> list:
     with open(os.path.expanduser(src["path"]), encoding="utf-8") as f:
         data = json.load(f)
     return data if isinstance(data, list) else data.get(src.get("root", "items"), [])
 
 
+# ── Текст/документы → сущность document ──
+def _adapter_text(src: dict) -> list:
+    """txt/md → одна запись document {id,title,text,kind}. Абзацы можно бить по src['split']='\\n\\n'."""
+    p = os.path.expanduser(src["path"])
+    with open(p, encoding="utf-8", errors="replace") as f:
+        content = f.read()
+    base = os.path.basename(p)
+    sep = src.get("split")
+    chunks = [c for c in content.split(sep) if c.strip()] if sep else [content]
+    return [{"id": f"{base}#{i}" if len(chunks) > 1 else base, "title": base,
+             "text": c.strip(), "kind": os.path.splitext(base)[1].lstrip(".") or "text"}
+            for i, c in enumerate(chunks)]
+
+
+def _adapter_pdf(src: dict) -> list:
+    """PDF → записи document по страницам {id,title,text,kind,page}."""
+    from pypdf import PdfReader
+    p = os.path.expanduser(src["path"]); base = os.path.basename(p)
+    reader = PdfReader(p)
+    out = []
+    for i, page in enumerate(reader.pages):
+        txt = (page.extract_text() or "").strip()
+        if txt:
+            out.append({"id": f"{base}#p{i+1}", "title": base, "text": txt, "kind": "pdf", "page": i + 1})
+    return out
+
+
+# ── REST API (HTTP/S) ──
 def _guard_url(url: str) -> str:
     """Анти-SSRF: только http/https, запрет link-local/облачных metadata-адресов (как egress-прокси sLAVA)."""
     from urllib.parse import urlparse
@@ -1987,14 +2371,42 @@ def _guard_url(url: str) -> str:
 
 
 def _adapter_http(src: dict) -> list:
-    """pull-адаптер HTTP(S)→JSON. egress=external: URL валидируется (анти-SSRF); ответ — данные, не команды."""
+    """pull-адаптер REST API→JSON. egress=external: URL валидируется (анти-SSRF); ответ — данные, не команды.
+    Поддержка: headers (авторизация), root (ключ массива в ответе)."""
     url = _guard_url(src["url"])
     req = urllib.request.Request(url, headers=src.get("headers", {}) or {})
     with urllib.request.urlopen(req, timeout=30) as r:
         data = json.loads(r.read().decode("utf-8", "replace"))
-    return data if isinstance(data, list) else data.get(src.get("root", "items"), [])
+    return _extract_rows(data, src.get("root", ""))
 
 
+def _extract_rows(data, root: str) -> list:
+    """Достаёт массив записей из ответа API. Если root задан — по нему (dotted-path).
+    Если root пуст/не дал список — АВТОПОИСК массива (частые ключи, затем любой список,
+    затем список списков) — чтобы «0 строк» не возникало из-за незаданного root."""
+    if isinstance(data, list):
+        return data
+    if root:
+        arr = _dig(data, root)
+        if isinstance(arr, list):
+            return arr
+    if isinstance(data, dict):
+        for k in ("data", "results", "items", "messages", "records", "rows", "list", "content", "value"):
+            v = data.get(k)
+            if isinstance(v, list):
+                return v
+        for v in data.values():                          # любой первый список верхнего уровня
+            if isinstance(v, list):
+                return v
+        for v in data.values():                          # вложенный: {data:{opportunities:[...]}}
+            if isinstance(v, dict):
+                for vv in v.values():
+                    if isinstance(vv, list):
+                        return vv
+    return []
+
+
+# ── Базы данных ──
 def _adapter_sqlite(src: dict) -> list:
     """pull-адаптер SQLite (READ-ONLY). Запрос задаёт автор рецепта; движок открывает БД только на чтение."""
     import sqlite3
@@ -2007,6 +2419,44 @@ def _adapter_sqlite(src: dict) -> list:
         con.close()
 
 
+def _adapter_postgres(src: dict) -> list:
+    """pull-адаптер PostgreSQL (READ-ONLY: сессия default_transaction_read_only).
+    src: dsn (или POSTGRES_DSN env) + query. Server-1/2 продуктивные БД."""
+    import psycopg2, psycopg2.extras
+    dsn = src.get("dsn") or os.getenv("POSTGRES_DSN", "")
+    if not dsn:
+        raise ValueError("postgres: нужен dsn (или POSTGRES_DSN)")
+    con = psycopg2.connect(dsn)
+    try:
+        con.set_session(readonly=True, autocommit=True)
+        cur = con.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(src["query"], src.get("params") or None)
+        return [dict(r) for r in cur.fetchall()]
+    finally:
+        con.close()
+
+
+# ── Векторная БД / граф знаний (Qdrant через REST knowledge_search на server-1) ──
+def _adapter_vector(src: dict) -> list:
+    """Векторный поиск/граф знаний: REST-эндпоинт knowledge_search (sLAVA/Qdrant на server-1).
+    src: url (эндпоинт), query (текст), top_k. Возвращает hits как document-подобные записи."""
+    url = _guard_url(src["url"])
+    payload = json.dumps({"query": src.get("query", ""), "top_k": int(src.get("top_k", 10)),
+                          "collection": src.get("collection", "")}).encode("utf-8")
+    req = urllib.request.Request(url, data=payload,
+                                 headers={"Content-Type": "application/json", **(src.get("headers", {}) or {})})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        data = json.loads(r.read().decode("utf-8", "replace"))
+    hits = data.get("results", data.get("hits", data if isinstance(data, list) else []))
+    out = []
+    for i, h in enumerate(hits):
+        out.append({"id": h.get("id", f"hit{i}"), "title": h.get("title", h.get("source", "")),
+                    "text": h.get("text", h.get("document", "")), "kind": "knowledge",
+                    "score": h.get("score")})
+    return out
+
+
+# ── Вычислимое (производная сущность) ──
 def _adapter_computed(src: dict) -> list:
     """computed-адаптер: производная сущность из УЖЕ канонизированной (RFM из transaction и т.п.).
     Источник = data_query другой сущности; строки маппятся рецептом в новую сущность."""
@@ -2014,11 +2464,55 @@ def _adapter_computed(src: dict) -> list:
     return data_query(src["from_entity"], flt, limit=int(src.get("limit", 1000)))
 
 
-register_adapter("csv", _adapter_csv)
-register_adapter("json", _adapter_json)
-register_adapter("http", _adapter_http)        # egress=external — анти-SSRF
-register_adapter("sqlite", _adapter_sqlite)    # read-only
-register_adapter("computed", _adapter_computed)  # производная сущность из canonical
+# Регистрация core-адаптеров с дескрипторами (category: table/document/db/api/vector/computed)
+register_adapter("csv", _adapter_csv, {
+    "label": "CSV", "category": "table", "egress": "internal", "read_only": True,
+    "badge": "internal · файл", "requires": [],
+    "src_fields": [{"key": "path", "label": "путь к файлу", "placeholder": "/mnt/data/sales.csv"}]})
+register_adapter("xlsx", _adapter_xlsx, {
+    "label": "Excel (xlsx)", "category": "table", "egress": "internal", "read_only": True,
+    "badge": "internal · файл", "requires": ["openpyxl"],
+    "src_fields": [{"key": "path", "label": "путь к .xlsx", "placeholder": "/mnt/data/report.xlsx"},
+                   {"key": "sheet", "label": "лист (опц.)", "placeholder": "Sheet1"}]})
+register_adapter("json", _adapter_json, {
+    "label": "JSON-файл", "category": "table", "egress": "internal", "read_only": True,
+    "badge": "internal · файл", "requires": [],
+    "src_fields": [{"key": "path", "label": "путь к .json", "placeholder": "/mnt/data/items.json"},
+                   {"key": "root", "label": "ключ массива (опц.)", "placeholder": "items"}]})
+register_adapter("text", _adapter_text, {
+    "label": "Текст (txt/md)", "category": "document", "egress": "internal", "read_only": True,
+    "badge": "internal · документ", "requires": [],
+    "src_fields": [{"key": "path", "label": "путь к файлу", "placeholder": "/mnt/data/policy.md"},
+                   {"key": "split", "label": "разбивка (опц.)", "placeholder": "\\n\\n"}]})
+register_adapter("pdf", _adapter_pdf, {
+    "label": "PDF-документ", "category": "document", "egress": "internal", "read_only": True,
+    "badge": "internal · документ", "requires": ["pypdf"],
+    "src_fields": [{"key": "path", "label": "путь к .pdf", "placeholder": "/mnt/data/contract.pdf"}]})
+register_adapter("http", _adapter_http, {
+    "label": "REST API", "category": "api", "egress": "external", "read_only": True,
+    "badge": "egress → анти-SSRF", "requires": [],
+    "src_fields": [{"key": "url", "label": "URL источника", "placeholder": "https://erp.internal/api/v2/tx"},
+                   {"key": "root", "label": "ключ массива (опц.)", "placeholder": "items"}]})
+register_adapter("sqlite", _adapter_sqlite, {
+    "label": "SQLite", "category": "db", "egress": "internal", "read_only": True,
+    "badge": "read-only", "requires": [],
+    "src_fields": [{"key": "path", "label": "файл БД", "placeholder": "ops.db"},
+                   {"key": "query", "label": "SQL-запрос", "placeholder": "SELECT * FROM tx WHERE year=2026"}]})
+register_adapter("postgres", _adapter_postgres, {
+    "label": "PostgreSQL", "category": "db", "egress": "internal", "read_only": True,
+    "badge": "read-only", "requires": ["psycopg2"],
+    "src_fields": [{"key": "dsn", "label": "DSN (или POSTGRES_DSN)", "placeholder": "postgresql://ro@host/db"},
+                   {"key": "query", "label": "SQL-запрос", "placeholder": "SELECT id, amount FROM tx"}]})
+register_adapter("vector", _adapter_vector, {
+    "label": "Векторная БД (Qdrant/knowledge)", "category": "vector", "egress": "external", "read_only": True,
+    "badge": "граф знаний · server-1", "requires": [],
+    "src_fields": [{"key": "url", "label": "URL knowledge_search", "placeholder": "http://127.0.0.1:8000/rerank"},
+                   {"key": "query", "label": "запрос", "placeholder": "политика ФСБУ по резервам"},
+                   {"key": "collection", "label": "коллекция (опц.)", "placeholder": "ape_docs"}]})
+register_adapter("computed", _adapter_computed, {
+    "label": "Вычислимое (derive)", "category": "computed", "egress": "internal", "read_only": True,
+    "badge": "декларатив", "requires": [],
+    "src_fields": [{"key": "from_entity", "label": "из сущности", "placeholder": "transaction"}]})
 
 # ── Реестр canonical-схем (Canonical Schema): обязательные поля сущности. Расширяется вертикалями. ──
 CANONICAL_SCHEMAS = {
@@ -2066,6 +2560,22 @@ def data_load_recipe(name: str) -> dict:
         return json.load(f)
 
 
+def data_recipes_cards() -> list:
+    """Карточки рецептов для §5 (id/title/adapter/target/entity/status/ok)."""
+    out = []
+    for name in data_recipes():
+        try:
+            r = data_load_recipe(name)
+        except (OSError, ValueError):
+            continue
+        src = r.get("source", {})
+        target = src.get("path") or src.get("url") or src.get("query") or src.get("from_entity") or src.get("target") or ""
+        out.append({"id": name, "title": r.get("recipe", name), "adapter": src.get("kind", "?"),
+                    "entity": r.get("entity", "?"), "target": target,
+                    "status": r.get("status", "черновик"), "ok": bool(r.get("ok", r.get("status") == "опубликован"))})
+    return out
+
+
 def _cast(v, t):
     s = v.strip() if isinstance(v, str) else v
     if t == "money":
@@ -2079,21 +2589,53 @@ def _cast(v, t):
             return int(float(str(s)))
         except Exception:
             return None
+    if t in ("money", "decimal", "float"):
+        n = re.sub(r"[^\d.,-]", "", str(s)).replace(" ", "").replace(",", ".")
+        try:
+            return float(n)
+        except Exception:
+            return None
+    if t in ("int", "integer", "number"):
+        try:
+            return int(float(str(s)))
+        except Exception:
+            return None
     if t == "lower":
         return str(s).lower()
+    if t == "upper":
+        return str(s).upper()
     return s  # str/date — passthrough (MVP)
+
+
+def _dig(row, path):
+    """Достаёт значение по dotted-path (a.b.c) + индексам списка (to.0.Address).
+    Вложенный JSON REST API (Mailpit From.Address, Redmine status.name) — плоским col не взять."""
+    cur = row
+    for part in str(path).split("."):
+        if cur is None:
+            return ""
+        if isinstance(cur, list):
+            try:
+                cur = cur[int(part)]
+            except (ValueError, IndexError):
+                return ""
+        elif isinstance(cur, dict):
+            cur = cur.get(part)
+        else:
+            return ""
+    return "" if cur is None else cur
 
 
 def _map_field(spec, row):
     if isinstance(spec, str):
-        return row.get(spec, "")
+        return _dig(row, spec)
     if "const" in spec:
         return spec["const"]
     if "lookup" in spec:                                   # связь сущностей (refs): найти в другой сущности
-        key = row.get(spec.get("by_col", spec.get("col", "")), "")
+        key = _dig(row, spec.get("by_col", spec.get("col", "")))
         hits = data_query(spec["lookup"], {spec.get("match", "id"): key}, limit=1)
         return (hits[0].get(spec.get("take", "id")) if hits else "")
-    val = row.get(spec.get("col", ""), "")
+    val = _dig(row, spec.get("col", ""))
     return _cast(val, spec["cast"]) if spec.get("cast") else val
 
 
@@ -2123,17 +2665,112 @@ def _mask(v):
     return s[:2] + "***" if len(s) > 2 else "***"
 
 
-def data_run(name: str) -> tuple:
-    """Применяет рецепт: адаптер источника → map/lookup → rules → валидация схемы → canonical store.
-    Возвращает (entity, записано, отброшено, невалидно)."""
-    r = data_load_recipe(name)
+# ─── Нормализация UI-формы рецепта → canonical (§5 no-code редактор) ─────────
+def _norm_map_spec(spec):
+    """UI-строка «col:X · cast:Y» / «lookup:ent.field» / «const:V» → canonical dict."""
+    if isinstance(spec, dict):
+        return spec
+    if not isinstance(spec, str):
+        return {"col": str(spec)}
+    out = {}
+    for tok in re.split(r"[·|]", spec):
+        tok = tok.strip()
+        if not tok:
+            continue
+        if ":" not in tok:
+            out.setdefault("col", tok); continue
+        k, _, v = tok.partition(":"); k = k.strip().lower(); v = v.strip()
+        if k == "lookup":
+            ent, _, take = v.partition(".")
+            out["lookup"] = ent; out["take"] = take or "id"
+        elif k in ("col", "cast", "const", "by_col", "match", "take"):
+            out[k] = v
+    return out or {"col": spec}
+
+
+def _norm_rule(rule):
+    """UI-строка правила → canonical: «assert X» → {assert:X}; «pii_mask(f.e)» → {pii_mask:[f]}."""
+    if isinstance(rule, dict):
+        return rule
+    s = str(rule).strip()
+    m = re.match(r"(?:assert\s+)?(.+[<>=!].+)$", s) if s.lower().startswith("assert") else None
+    if m:
+        return {"assert": m.group(1).strip()}
+    m = re.match(r"pii_mask\s*\(([^)]*)\)", s, re.I)
+    if m:
+        flds = [f.strip().split(".")[0] for f in m.group(1).split(",") if f.strip()]
+        return {"pii_mask": flds}
+    if any(op in s for op in ("<", ">", "==", "!=")):
+        return {"assert": s}
+    return {}
+
+
+def _norm_source(src: dict) -> dict:
+    """Разворачивает UI-source (kind+target) в canonical source адаптера."""
+    src = dict(src or {})
+    kind = src.get("kind", "csv")
+    tgt = (src.get("target") or "").strip()
+    if tgt:
+        if kind in ("csv", "json"):
+            src.setdefault("path", tgt)
+        elif kind == "http":
+            src.setdefault("url", tgt)
+        elif kind == "sqlite":
+            if "·" in tgt or " SELECT" in tgt.upper():  # «ops.db · SELECT * FROM t»
+                p, _, q = tgt.partition("·")
+                src.setdefault("path", p.strip()); src.setdefault("query", q.strip() or "SELECT 1")
+            else:
+                src.setdefault("path", tgt); src.setdefault("query", src.get("query", "SELECT 1"))
+        elif kind == "computed":
+            src.setdefault("from_entity", tgt.split(":")[-1].strip().split()[0] if tgt else "transaction")
+    return src
+
+
+def _normalize_recipe(spec: dict) -> dict:
+    """UI-рецепт (map_rows/rules-строки/source.target) → canonical рецепт (DATA_RECIPES.md).
+    Устойчив к кривым типам из UI (map_rows не список / map не словарь / rules не список)."""
+    r = dict(spec or {})
+    r["source"] = _norm_source(r.get("source", {"kind": r.get("adapter", "csv"), "target": r.get("target", "")}))
+    if "map" not in r and isinstance(r.get("map_rows"), list):
+        r["map"] = {row["field"]: _norm_map_spec(row.get("spec", row))
+                    for row in r["map_rows"] if isinstance(row, dict) and row.get("field")}
+    src_map = r.get("map") if isinstance(r.get("map"), dict) else {}
+    r["map"] = {k: _norm_map_spec(v) for k, v in src_map.items()}
+    rules_in = r.get("rules") if isinstance(r.get("rules"), list) else []
+    r["rules"] = [x for x in (_norm_rule(rr) for rr in rules_in) if x]
+    r.setdefault("entity", "transaction")
+    r.setdefault("emit", {"schema": r["entity"], "schema_version": "1.0", "ttl_sec": 86400})
+    return r
+
+
+def _apply_recipe(r: dict, name: str = "preview", limit: int = 0) -> tuple:
+    """Общий трансформ: адаптер → map/lookup → rules → валидация схемы. Возвращает
+    (entity, [записи], отброшено, невалидно). НЕ пишет в store (это делает data_run)."""
     src = r.get("source", {}); entity = r["entity"]; emit = r.get("emit", {})
     kind = src.get("kind")
     adapter = SOURCE_ADAPTERS.get(kind)
     if adapter is None:
         raise ValueError(f"источник «{kind}» не подключён (есть: {', '.join(sorted(SOURCE_ADAPTERS)) or '—'})")
-    rows = adapter(src)
+    try:
+        rows = adapter(src)                                # сетевые/файловые/БД-ошибки → понятный ValueError (не 500)
+    except ValueError:
+        raise
+    except urllib.error.HTTPError as ex:
+        raise ValueError(f"источник «{kind}»: HTTP {ex.code} — проверь URL/токен (это сбой адаптера, не «нет данных»)")
+    except Exception as ex:  # noqa: BLE001
+        raise ValueError(f"источник «{kind}»: {type(ex).__name__} — {ex}")
+    if limit:
+        rows = rows[: max(limit * 5, limit)]  # с запасом — часть строк отсеют rules/схема
     mp = r.get("map", {}); rules = r.get("rules", [])
+    # JSON Schema контракт входа (опц.): emit.json_schema — строгая валидация каждой записи
+    validator = None
+    js = emit.get("json_schema") or r.get("json_schema")
+    if js:
+        try:
+            import jsonschema
+            validator = jsonschema.Draft202012Validator(js)
+        except Exception:  # noqa: BLE001 — нет либы/битая схема → пропускаем JSON-Schema гейт
+            validator = None
     out = []; dropped = 0; invalid = 0
     for i, row in enumerate(rows):
         rec = {k: _map_field(spec, row) for k, spec in mp.items()}
@@ -2147,19 +2784,133 @@ def data_run(name: str) -> tuple:
                         rec[fld] = _mask(rec[fld])
         if not ok:
             dropped += 1; continue
-        missing = _validate_canonical(entity, rec)         # гейт canonical-схемы: обязательные поля
-        if missing:
+        if _validate_canonical(entity, rec):              # гейт canonical-схемы
             invalid += 1; continue
+        if validator is not None and next(validator.iter_errors(rec), None) is not None:
+            invalid += 1; continue                         # гейт JSON Schema-контракта
         rec.update({"schema": emit.get("schema", entity),
                     "schema_version": emit.get("schema_version", "1.0"),
-                    "provenance": {"recipe": name, "source": f"{kind}:{src.get('path', src.get('ref', ''))}",
+                    "provenance": {"recipe": name, "source": f"{kind}:{src.get('path', src.get('url', src.get('ref', '')))}",
                                    "row": i, "fetched_at": time.time()},
                     "ttl_sec": emit.get("ttl_sec", 86400)})
         out.append(rec)
+        if limit and len(out) >= limit:
+            break
+    return entity, out, dropped, invalid
+
+
+def data_preview(spec: dict, limit: int = 20) -> dict:
+    """Dry-run рецепта на выборке БЕЗ записи в store (§5 предпросмотр). Принимает UI- или canonical-рецепт."""
+    r = _normalize_recipe(spec)
+    entity, out, dropped, invalid = _apply_recipe(r, name=r.get("recipe", "preview"), limit=limit)
+    return {"entity": entity, "records": out, "written": len(out),
+            "dropped": dropped, "invalid": invalid, "recipe": r}
+
+
+def data_save_recipe(name: str, spec: dict) -> dict:
+    """Сохранить рецепт (нормализованный canonical) в ~/.ape/recipes/<name>.json. Возвращает рецепт."""
+    safe = re.sub(r"[^A-Za-z0-9_-]", "_", name.strip()) or "recipe"
+    r = _normalize_recipe(spec); r["recipe"] = safe; r.setdefault("version", 1)
+    with open(os.path.join(_recipes_dir(), safe + ".json"), "w", encoding="utf-8") as f:
+        json.dump(r, f, ensure_ascii=False, indent=2)
+    return r
+
+
+def data_run(name: str) -> tuple:
+    """Применяет сохранённый рецепт и ПИШЕТ в canonical store. Возвращает (entity, записано, отброшено, невалидно)."""
+    r = data_load_recipe(name)
+    entity, out, dropped, invalid = _apply_recipe(r, name=name)
     with open(_data_path(entity), "a", encoding="utf-8") as f:  # append-only canonical store
         for rec in out:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
     return entity, len(out), dropped, invalid
+
+
+# ─── Реестр коннекторов-инстансов (подключённые источники, отдельно от видов-адаптеров) ──
+def _connectors_dir() -> str:
+    d = os.path.join(CFG_DIR, "connectors"); os.makedirs(d, exist_ok=True); return d
+
+
+def _connector_badge(kind: str) -> str:
+    """Бейдж коннектора — из дескриптора адаптера (единый источник правды)."""
+    return ADAPTER_SPECS.get(kind, {}).get("badge", "internal")
+
+
+def data_connectors() -> list:
+    """Список подключённых коннекторов (инстансы источников): id/title/adapter/target/headers/root/badge/ok.
+    ok=None означает «не проверялся» (честно) — реальную доступность даёт ТЕСТ (data_test_connector),
+    т.к. авторизованный источник без валидного токена вернёт 401 (нельзя судить по наличию адаптера)."""
+    out = []
+    d = _connectors_dir()
+    for fn in sorted(f for f in os.listdir(d) if f.endswith(".json")):
+        try:
+            with open(os.path.join(d, fn), encoding="utf-8") as f:
+                c = json.load(f)
+            c["id"] = fn[:-5]
+            c.setdefault("badge", _connector_badge(c.get("adapter", "")))
+            c.setdefault("ok", None)                 # НЕ фейковый ok — доступность проверяется тестом
+            c["has_auth"] = bool(c.get("headers"))    # признак: источник с токеном
+            out.append(c)
+        except OSError:
+            continue
+    return out
+
+
+def data_save_connector(spec: dict) -> dict:
+    """Подключить коннектор КАК источник рецепта: adapter/target + headers(токен) + root + query.
+    Рецепты ссылаются на него; тест использует те же headers (иначе авторизованный источник → 401)."""
+    title = str((spec or {}).get("title", "")).strip() or "connector"
+    cid = re.sub(r"[^A-Za-z0-9_-]", "_", title) or "connector"
+    kind = (spec or {}).get("adapter") or (spec or {}).get("kind") or "csv"
+    c = {"title": title, "adapter": kind, "target": (spec or {}).get("target", ""),
+         "headers": (spec or {}).get("headers") or {}, "root": (spec or {}).get("root", ""),
+         "badge": _connector_badge(kind), "ok": None, "has_auth": bool((spec or {}).get("headers"))}
+    with open(os.path.join(_connectors_dir(), cid + ".json"), "w", encoding="utf-8") as f:
+        json.dump(c, f, ensure_ascii=False, indent=2)
+    c["id"] = cid
+    return c
+
+
+def data_test_connector(spec: dict, limit: int = 3) -> dict:
+    """Тест-прогон/DISCOVERY источника: читает несколько строк и возвращает КОЛОНКИ (поля),
+    чтобы оператор маппил рецепт под реальные поля источника. Пробрасывает headers/root."""
+    src = _norm_source({"kind": (spec or {}).get("adapter", "csv"), "target": (spec or {}).get("target", "")})
+    if (spec or {}).get("headers"):
+        src["headers"] = spec["headers"]                 # discovery авторизованных источников (BookStack/Redmine/Twenty)
+    if (spec or {}).get("root"):
+        src["root"] = spec["root"]                        # вложенный ответ (Twenty data.opportunities)
+    adapter = SOURCE_ADAPTERS.get(src.get("kind"))
+    if adapter is None:
+        return {"ok": False, "error": f"вид «{src.get('kind')}» не поддержан"}
+    try:
+        rows = adapter(src)
+    except urllib.error.HTTPError as ex:
+        hint = ""
+        if ex.code in (401, 403):
+            hint = (" · формат токена: BookStack «Token id:secret», Twenty «Bearer <JWT>», "
+                    "Redmine «X-Redmine-API-Key: ключ» (см. гайд раздел 7)")
+        return {"ok": False, "error": f"HTTP {ex.code} — проверь URL/токен{hint}"}
+    except Exception as ex:  # noqa: BLE001
+        return {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+    # колонки — объединение ключей первых строк (устойчиво к разреженным полям)
+    cols = []
+    for row in rows[: max(limit, 5)]:
+        if isinstance(row, dict):
+            for k in row.keys():
+                if k not in cols:
+                    cols.append(k)
+    if not rows:  # источник ответил, но массив пуст/не найден — подсказать про root
+        return {"ok": True, "rows_seen": 0, "sample": [], "columns": [],
+                "hint": "0 строк: источник пуст ИЛИ массив под другим ключом — укажи root (напр. data / items / data.opportunities)"}
+    return {"ok": True, "rows_seen": len(rows), "sample": rows[:limit], "columns": cols}
+
+
+def data_new_recipe(name: str, entity: str = "transaction", kind: str = "csv") -> dict:
+    """Шаблон нового рецепта (§5 «＋ рецепт») — заготовка под редактор."""
+    return {"recipe": re.sub(r"[^A-Za-z0-9_-]", "_", name.strip()) or "recipe", "version": 1,
+            "source": {"kind": kind, "target": ""}, "entity": entity,
+            "map": {"id": {"col": "id"}}, "rules": [], "status": "черновик", "ok": False,
+            "emit": {"schema": entity, "schema_version": "1.0", "ttl_sec": 86400}}
 
 
 def _fresh(rec: dict, now: float) -> bool:
