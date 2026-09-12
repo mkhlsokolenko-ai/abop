@@ -478,11 +478,22 @@ async def agent_save(body: dict, u: dict = Depends(user)) -> JSONResponse:
         return JSONResponse({"saved": False, "errors": check["errors"],
                              "warnings": check["warnings"]}, status_code=422)
 
+    # семья/роль — из контракта LUDA (intake), чтобы агент корректно отражался в «Агентах»,
+    # проходил ABAC (can_see_family) и обогащал журнал/Флот (ADR-032).
+    intake = cs.get("intake") or {}
+    fam = intake.get("family") or ""
+    role = ""
+    if fam in ape.AGENT_FAMILIES:
+        _members = list(ape.AGENT_FAMILIES[fam]["members"].keys())
+        if len(_members) == 1:
+            role = _members[0]
     version = await agent_store.next_version(audit_id)
     saved = await agent_store.save(name=name, audit_id=audit_id, version=version, graph=graph,
                                    autonomy_max=check["autonomy_max"],
-                                   created_by=u.get("name") or u.get("sub") or "dev")
+                                   created_by=u.get("name") or u.get("sub") or "dev",
+                                   family=fam, role=role)
     return JSONResponse({"saved": True, "id": saved["id"], "version": version, "status": "draft",
+                         "family": fam, "role": role,
                          "autonomy_max": check["autonomy_max"], "hitl_count": check["hitl_count"],
                          "warnings": check["warnings"]}, status_code=201)
 
