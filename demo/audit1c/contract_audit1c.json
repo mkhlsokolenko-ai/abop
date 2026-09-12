@@ -1,0 +1,50 @@
+{
+  "capability_request": {
+    "schema": "luda.capability_request/1.0",
+    "audit_id": "audit1c-holding-2026",
+    "segment": "Аудит учётных данных в 1С (крупный холдинг)",
+    "family": "audit",
+    "skills": [
+      { "id": "audit1c-extract" },
+      { "id": "audit1c-graph-build" },
+      { "id": "audit1c-match-weak" },
+      { "id": "audit1c-checks" },
+      { "id": "audit1c-root-cause" },
+      { "id": "audit1c-rank" },
+      { "id": "audit1c-explain" }
+    ],
+    "modules": [
+      { "id": "Снимок 1С · doc1c/ref1c", "access": "read" },
+      { "id": "Нормы НК/ФСБУ · sLAVA", "access": "read" }
+    ],
+    "evidence": ["ev:a1b2c3d4e5"]
+  },
+  "deployment_contract": {
+    "schema": "luda.deployment_contract/1.0",
+    "audit_id": "audit1c-holding-2026",
+    "segment": "Аудит учётных данных в 1С (крупный холдинг)",
+    "autonomy_level": "A1",
+    "limiting_axis": "нормативный риск (НК РФ гл.21 / ФСБУ 5/2019) + существенность сумм",
+    "criticality": "T2",
+    "hitl_points": [
+      { "id": "главбух-подтверждает-отчёт" }
+    ],
+    "data_residency": { "zone": "on-prem", "egress": "sLAVA-proxy (анти-SSRF)" },
+    "acceptance": {
+      "first_time_right": 0.90,
+      "escalation_rate": 0.15
+    }
+  },
+  "baseline_measurement": {
+    "schema": "luda.baseline_measurement/1.0",
+    "audit_id": "audit1c-holding-2026",
+    "methodology_version": "1.0",
+    "metrics": {
+      "first_time_right": { "value": 0.62, "evidence": ["ev:a1b2c3d4e5"] },
+      "escalation_rate": { "value": 0.40, "evidence": ["ev:a1b2c3d4e5"] }
+    }
+  },
+  "evidence_pack": [
+    "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2"
+  ]
+}

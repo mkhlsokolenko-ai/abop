@@ -1,0 +1,23 @@
+{
+  "name": "Аудитор 1С",
+  "contract_audit_id": "audit1c-holding-2026",
+  "graph": {
+    "nodes": [
+      { "id": "audit1c-extract", "kind": "skill", "skill": "audit1c-extract", "autonomy": "A1", "hitl": false },
+      { "id": "audit1c-graph-build", "kind": "skill", "skill": "audit1c-graph-build", "autonomy": "A1", "hitl": false },
+      { "id": "audit1c-match-weak", "kind": "skill", "skill": "audit1c-match-weak", "autonomy": "A1", "hitl": false },
+      { "id": "audit1c-checks", "kind": "skill", "skill": "audit1c-checks", "autonomy": "A1", "hitl": false },
+      { "id": "audit1c-root-cause", "kind": "skill", "skill": "audit1c-root-cause", "autonomy": "A1", "hitl": false },
+      { "id": "audit1c-rank", "kind": "skill", "skill": "audit1c-rank", "autonomy": "A1", "hitl": false },
+      { "id": "audit1c-explain", "kind": "skill", "skill": "audit1c-explain", "autonomy": "A1", "hitl": true }
+    ],
+    "edges": [
+      { "from": "audit1c-extract", "to": "audit1c-graph-build" },
+      { "from": "audit1c-graph-build", "to": "audit1c-match-weak" },
+      { "from": "audit1c-match-weak", "to": "audit1c-checks" },
+      { "from": "audit1c-checks", "to": "audit1c-root-cause" },
+      { "from": "audit1c-root-cause", "to": "audit1c-rank" },
+      { "from": "audit1c-rank", "to": "audit1c-explain" }
+    ]
+  }
+}
