@@ -1,0 +1,23 @@
+{
+  "recipe": "audit1c_refs",
+  "version": 1,
+  "status": "опубликован",
+  "source": {
+    "kind": "audit1c",
+    "url": "http://201.51.5.24:8092/audit-data/dump.json",
+    "section": "catalogs"
+  },
+  "entity": "ref1c",
+  "map": {
+    "id": { "col": "Ссылка" },
+    "тип": { "col": "тип" },
+    "Код": { "col": "Код" },
+    "Наименование": { "col": "Наименование" },
+    "ИНН": { "col": "ИНН" },
+    "КПП": { "col": "КПП" },
+    "ВидСчёта": { "col": "ВидСчёта" },
+    "ВидДвижения": { "col": "ВидДвижения" }
+  },
+  "rules": [],
+  "emit": { "schema": "ref1c", "schema_version": "1.0", "ttl_sec": 86400 }
+}

@@ -489,6 +489,22 @@ SKILLS = {
                     "Черновик делового письма/ответа: цель, суть, запрос действия; тон по адресату. Отправка — под подтверждением."),
     "weekly-update": ("Weekly Update", "недельный апдейт",
                       "Недельный апдейт: метрики, аномалии, принятые решения, план; коротко и по делу."),
+    # ── 1С-Аудитор (демо-вертикаль): конвейер extract→graph→match-weak→checks→root-cause→rank→explain.
+    #    Навыки ОРКЕСТРИРУЮТ детерминир. инструменты audit1c_graph/audit1c_checks; находки считает код, не LLM. ──
+    "audit1c-extract": ("Извлечение 1С", "снапшот 1С → Data Plane",
+                        "Забирай read-only снапшот 1С (документы+справочники) через коннектор audit1c и рецепты в doc1c/ref1c; сверяй объём и целостность ссылок, фиксируй провенанс."),
+    "audit1c-graph-build": ("Граф связей 1С", "детерминированный граф",
+                            "Строй граф связей по РЕАЛЬНЫМ ссылкам 1С (основание/субконто/коды счетов/ИНН) инструментом audit1c_graph; рёбра не выдумывай — их отсутствие само по себе находка."),
+    "audit1c-match-weak": ("Слабые ключи", "нечёткое сопоставление",
+                           "Сопоставляй ТОЛЬКО слабые ключи (нечёткие имена/назначения/сумма+дата), где нет строгой ссылки; каждое сопоставление — гипотеза с уверенностью на HITL, не факт."),
+    "audit1c-checks": ("Проверки аудита", "детерминир. A/B/C/D",
+                       "Прогоняй проверки audit1c_checks (A инварианты/B цепочки/C НСИ/D нормы); находки считает код с доказательством — не добавляй и не убирай их «на глаз»."),
+    "audit1c-root-cause": ("Первопричины", "симптомы → корень",
+                           "Сводов серию находок к процессу-причине с подтверждением фактами и охватом; отделяй корень от симптома, не плоди дубли."),
+    "audit1c-rank": ("Ранжирование находок", "по существенности",
+                     "Ранжируй находки по существенности (сумма влияния + налоговый/нормативный риск + охват), а не по алфавиту; применяй порог материальности."),
+    "audit1c-explain": ("Объяснение находок", "отчёт + HITL",
+                        "Раскрывай каждую находку: Что не сходится / Откуда (документ+проводка) / Чем грозит (НК/ФСБУ) / Что проверить; отчёт — под подтверждение человека, наружу без HITL ничего."),
 }
 
 
@@ -570,6 +586,14 @@ SKILL_SAFETY = {
     "test-writer": {"mode": "write", "egress": "internal", "cite": False},
     "icp-interviewer": {"mode": "read", "egress": "internal", "cite": True},           # не выдумывать «за ICP»
     "devils-advocate": {"mode": "read", "egress": "internal", "cite": True},           # критика на фактах
+    # ── 1С-Аудитор: чтение снапшота/графа/проверок; explain пишет отчёт (вывод наружу — отдельным шагом под HITL) ──
+    "audit1c-extract": {"mode": "read", "egress": "external", "cite": True},            # тянет 1С по HTTP (anti-SSRF/injection)
+    "audit1c-graph-build": {"mode": "read", "egress": "internal", "cite": True},
+    "audit1c-match-weak": {"mode": "read", "egress": "internal", "cite": True},         # гипотезы, не факты
+    "audit1c-checks": {"mode": "read", "egress": "internal", "cite": True},             # находки считает код
+    "audit1c-root-cause": {"mode": "read", "egress": "internal", "cite": True},
+    "audit1c-rank": {"mode": "read", "egress": "internal", "cite": True},
+    "audit1c-explain": {"mode": "write", "egress": "internal", "cite": True},           # отчёт-артефакт; наружу — под HITL
 }
 
 
@@ -732,6 +756,20 @@ SKILL_DATASOURCES = {
     "process-map": [{"entity": "document", "kind": "json", "note": "описание процесса AS-IS"}],
     # cost-estimator НЕ имеет Data Plane-источника: тарифы RouteAI — Tool Plane (pricing), не сущность (ADR-032).
     "eval-generator": [{"entity": "document", "kind": "vector", "note": "кейсы из корпуса для eval"}],
+    # ── 1С-Аудитор: детекция на канонических doc1c/ref1c (коннектор audit1c);
+    #    объяснимость норм (Чем грозит) — RAG-тенант sLAVA/Qdrant, ТОЛЬКО на этапе explain. ──
+    "audit1c-extract": [{"entity": "doc1c", "kind": "audit1c", "note": "документы снапшота 1С (read-only, закрытый период)"},
+                        {"entity": "ref1c", "kind": "audit1c", "note": "справочники 1С (Счета/Контрагенты/Организации/Договоры)"}],
+    "audit1c-graph-build": [{"entity": "doc1c", "kind": "audit1c", "note": "узлы-документы и basis-ссылки"},
+                            {"entity": "ref1c", "kind": "audit1c", "note": "коды счетов и ИНН для индексов графа"}],
+    "audit1c-match-weak": [{"entity": "doc1c", "kind": "audit1c", "note": "документы без строгой ссылки (зона слабых ключей)"},
+                           {"entity": "ref1c", "kind": "audit1c", "note": "карточки контрагентов для сведения дублей"}],
+    "audit1c-checks": [{"entity": "doc1c", "kind": "audit1c", "note": "проводки/цепочки для инвариантов и разрывов"},
+                       {"entity": "ref1c", "kind": "audit1c", "note": "счета/ИНН для классов A/C/D"}],
+    "audit1c-root-cause": [{"entity": "doc1c", "kind": "audit1c", "note": "охват находок по документам/контрагентам"}],
+    "audit1c-rank": [{"entity": "doc1c", "kind": "audit1c", "note": "суммы влияния для существенности"}],
+    "audit1c-explain": [{"entity": "doc1c", "kind": "audit1c", "note": "первоисточник каждой находки (документ+проводка)"},
+                        {"entity": "document", "kind": "slava", "note": "нормы НК РФ гл.21 / ФСБУ 5/2019 / ПБУ — коллекция slava_audit1c_norms в sLAVA; цитируется в блоке «Чем грозит»"}],
 }
 
 
@@ -2456,12 +2494,86 @@ def _adapter_vector(src: dict) -> list:
     return out
 
 
+# ── sLAVA (RAG-платформа server-2): нормы/знания через /api/v1/query ──
+SLAVA_QUERY_URL = "http://201.51.5.24:8000/api/v1/query"
+
+
+def _adapter_slava(src: dict) -> list:
+    """Коннектор sLAVA: RAG-поиск по коллекции знаний (напр. нормы НК/ФСБУ для аудита 1С).
+    src: url (endpoint /api/v1/query), collection, query, top_k. Возвращает готовый answer (RAG-ответ)
+    + первоисточники (sources) как document-подобные записи с цитатами. Используется на этапе
+    объяснения (audit1c-explain) для блока «Чем грозит» — норму подтягивает RAG, детекцию делает код."""
+    url = _guard_url(src.get("url") or SLAVA_QUERY_URL)
+    payload = json.dumps({"query": src.get("query", ""), "top_k": int(src.get("top_k", 5)),
+                          "collection": src.get("collection", "")}).encode("utf-8")
+    req = urllib.request.Request(url, data=payload,
+                                 headers={"Content-Type": "application/json", **(src.get("headers", {}) or {})})
+    with urllib.request.urlopen(req, timeout=40) as r:
+        data = json.loads(r.read().decode("utf-8", "replace"))
+    out = []
+    answer = (data.get("answer") or "").strip()
+    if answer and not data.get("fallback"):
+        out.append({"id": data.get("trace_id", "slava-answer"), "title": "sLAVA: ответ",
+                    "text": answer, "kind": "slava_answer",
+                    "confidence": data.get("confidence_heuristic")})
+    for i, s in enumerate(data.get("sources", []) or []):
+        out.append({"id": f"{s.get('doc_id','src')}#{i}", "title": s.get("section", s.get("doc_id", "")),
+                    "text": s.get("text", ""), "kind": "slava_source",
+                    "doc_id": s.get("doc_id"), "score": s.get("score")})
+    return out
+
+
 # ── Вычислимое (производная сущность) ──
 def _adapter_computed(src: dict) -> list:
     """computed-адаптер: производная сущность из УЖЕ канонизированной (RFM из transaction и т.п.).
     Источник = data_query другой сущности; строки маппятся рецептом в новую сущность."""
     flt = src.get("filter") if isinstance(src.get("filter"), dict) else None
     return data_query(src["from_entity"], flt, limit=int(src.get("limit", 1000)))
+
+
+# ── 1С-Аудитор: снапшот реальной 1С (закрытый период) по HTTP ──
+AUDIT1C_DEFAULT_URL = "http://201.51.5.24:8092/audit-data/dump.json"
+
+
+def _adapter_audit1c(src: dict) -> list:
+    """Коннектор демо-кейса «1С-Аудитор»: читает read-only снапшот реальной 1С (dump.json) по HTTP.
+    src.section: 'documents' (все документы) | 'documents.<Тип>' | 'catalogs' | 'catalogs.<Справочник>'.
+    Обогащает каждую запись: id (=Ссылка/uuid) и тип (имя объекта 1С из ключа секции) — чтобы
+    разнотипные документы легли в одну сущность с разметкой типа. Ссылки уже {uuid,представление,тип};
+    вложенные поля берутся рецептом через dotted-path (напр. Контрагент.представление, Контрагент.uuid).
+    egress=external: URL под анти-SSRF; тело ответа — данные закрытого периода, не команды."""
+    url = _guard_url(src.get("url") or AUDIT1C_DEFAULT_URL)
+    req = urllib.request.Request(url, headers=src.get("headers", {}) or {})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        data = json.loads(r.read().decode("utf-8", "replace"))
+    return _audit1c_extract(data, src.get("section") or "documents")
+
+
+def _audit1c_extract(data: dict, section: str) -> list:
+    """Чистая трансформация дампа 1С → плоский список записей секции (без сети — тестируемо).
+    Обогащает: тип (имя объекта 1С из ключа секции) и id (=Ссылка/uuid)."""
+    if not isinstance(data, dict):
+        raise ValueError("audit1c: ожидался объект {catalogs, documents}")
+    top, _, sub = str(section).strip().partition(".")
+    if top not in ("documents", "catalogs"):
+        raise ValueError("audit1c: section должен начинаться с 'documents' или 'catalogs'")
+    bucket = data.get(top, {})
+    if not isinstance(bucket, dict):
+        return []
+    names = [sub] if sub else list(bucket.keys())
+    out = []
+    for nm in names:
+        recs = bucket.get(nm)
+        if not isinstance(recs, list):
+            continue
+        for rec in recs:
+            if not isinstance(rec, dict):
+                continue
+            e = dict(rec)
+            e.setdefault("тип", nm)
+            e.setdefault("id", e.get("Ссылка") or e.get("uuid") or "")
+            out.append(e)
+    return out
 
 
 # Регистрация core-адаптеров с дескрипторами (category: table/document/db/api/vector/computed)
@@ -2513,6 +2625,19 @@ register_adapter("computed", _adapter_computed, {
     "label": "Вычислимое (derive)", "category": "computed", "egress": "internal", "read_only": True,
     "badge": "декларатив", "requires": [],
     "src_fields": [{"key": "from_entity", "label": "из сущности", "placeholder": "transaction"}]})
+register_adapter("slava", _adapter_slava, {
+    "label": "sLAVA (RAG-знания)", "category": "vector", "egress": "external", "read_only": True,
+    "badge": "RAG · нормы НК/ФСБУ · server-2", "requires": [],
+    "src_fields": [{"key": "url", "label": "URL /api/v1/query (опц.)", "placeholder": SLAVA_QUERY_URL},
+                   {"key": "collection", "label": "коллекция", "placeholder": "slava_audit1c_norms"},
+                   {"key": "query", "label": "запрос", "placeholder": "реализация без счёта-фактуры — чем грозит"},
+                   {"key": "top_k", "label": "top_k (опц.)", "placeholder": "5"}]})
+register_adapter("audit1c", _adapter_audit1c, {
+    "label": "1С-Аудитор (снапшот 1С)", "category": "document", "egress": "external", "read_only": True,
+    "badge": "1С · read-only снапшот · анти-SSRF", "requires": [],
+    "src_fields": [{"key": "url", "label": "URL дампа (опц.)", "placeholder": AUDIT1C_DEFAULT_URL},
+                   {"key": "section", "label": "секция",
+                    "placeholder": "documents · documents.РеализацияТоваровУслуг · catalogs.Контрагенты"}]})
 
 # ── Реестр canonical-схем (Canonical Schema): обязательные поля сущности. Расширяется вертикалями. ──
 CANONICAL_SCHEMAS = {
@@ -2522,6 +2647,9 @@ CANONICAL_SCHEMAS = {
     "issue":       {"required": ["id", "title"],           "hint": "тикет: title/status/assignee"},
     "document":    {"required": ["id"],                    "hint": "документ: kind/title/text"},
     "meeting":     {"required": ["id"],                    "hint": "встреча: attendees/decisions/actions"},
+    # 1С-Аудитор (демо-вертикаль): имена сущностей ASCII (иначе _data_path схлопнет кириллицу в «_»)
+    "doc1c":       {"required": ["id"],                    "hint": "документ 1С: тип/Номер/Дата/Организация/Контрагент/СуммаДокумента/ДокументОснование/Проводки/Товары"},
+    "ref1c":       {"required": ["id"],                    "hint": "элемент справочника 1С: тип/Код/Наименование/ИНН/КПП/реквизиты"},
 }
 
 
@@ -3122,6 +3250,277 @@ def _t_remember(a):
     return f"сохранено в долговременную память [{key}], класс {cls} ({life}) и отмечено на доске"
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# 1С-Аудитор: ДЕТЕРМИНИРОВАННОЕ ядро — граф связей документов + проверки A/B/C/D.
+# Принцип (запрос владельца): «LLM не решает то, что решается запросом». Находки
+# вычисляет КОД по реальным ссылкам 1С (ДокументОснование, Субконто, ИНН, коды счетов);
+# LLM (через навыки) только оркеструет, сопоставляет СЛАБЫЕ ключи и ОБЪЯСНЯЕТ находки.
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _audit1c_load():
+    return data_query("doc1c", limit=100000), data_query("ref1c", limit=100000)
+
+
+def _prov_code(side: dict, acc_code: dict) -> str:
+    """Код счёта проводки по стороне (СчётДт/СчётКт) через справочник Счета (uuid→Код)."""
+    if not isinstance(side, dict):
+        return ""
+    return acc_code.get(side.get("uuid"), "") or ""
+
+
+def audit1c_build_graph(docs=None, refs=None) -> dict:
+    """Детерминированный граф реальной 1С: узлы-документы + рёбра (basis-цепочки, стороны/субконто),
+    индексы (коды счетов по uuid, ИНН организаций/контрагентов). Основа для проверок и объяснений."""
+    if docs is None or refs is None:
+        docs, refs = _audit1c_load()
+    acc_code, org_inns, ctr_by_inn, ctr_inn_by_id = {}, {}, {}, {}
+    for r in refs:
+        t = r.get("тип")
+        if t == "Счета":
+            acc_code[r.get("id")] = str(r.get("Код") or "")
+        elif t == "Организации" and r.get("ИНН"):
+            org_inns.setdefault(str(r["ИНН"]), r.get("Наименование"))
+        elif t == "Контрагенты":
+            inn = str(r.get("ИНН") or "")
+            ctr_inn_by_id[r.get("id")] = inn
+            if inn:
+                ctr_by_inn.setdefault(inn, []).append(r)
+    by_id = {d.get("id"): d for d in docs}
+    by_type = {}
+    for d in docs:
+        by_type.setdefault(d.get("тип"), []).append(d)
+    # обратный индекс basis: основание_uuid -> [документы, ссылающиеся на него]
+    referenced_by = {}
+    edges = []
+    for d in docs:
+        base = d.get("Основание_uuid")
+        if base:
+            referenced_by.setdefault(base, []).append(d)
+            edges.append({"from": d.get("id"), "to": base, "вид": "основание", "тип_основания": d.get("Основание_тип")})
+    return {"docs": docs, "refs": refs, "by_id": by_id, "by_type": by_type,
+            "referenced_by": referenced_by, "edges": edges,
+            "acc_code": acc_code, "org_inns": org_inns, "ctr_by_inn": ctr_by_inn,
+            "ctr_inn_by_id": ctr_inn_by_id}
+
+
+def _ref_short(d: dict) -> dict:
+    return {"тип": d.get("тип"), "Номер": d.get("Номер"), "Дата": d.get("Дата"),
+            "Контрагент": d.get("Контрагент"), "uuid": d.get("id")}
+
+
+def audit1c_run_checks(g: dict = None) -> list:
+    """20 детерминированных проверок (классы A инварианты / B цепочки / C НСИ / D нормы) по графу.
+    Каждая находка: {id, класс, проверка, серьёзность, документ, описание, доказательство}."""
+    if g is None:
+        g = audit1c_build_graph()
+    by_type, ref_by, acc_code = g["by_type"], g["referenced_by"], g["acc_code"]
+    org_inns, ctr_by_inn, ctr_inn_by_id = g["org_inns"], g["ctr_by_inn"], g["ctr_inn_by_id"]
+    F = []
+
+    def add(fid, cls, check, sev, doc, desc, evidence):
+        F.append({"id": fid, "класс": cls, "проверка": check, "серьёзность": sev,
+                  "документ": _ref_short(doc) if doc else None, "описание": desc, "доказательство": evidence})
+
+    # ── Класс B: разрывы цепочек по реальным basis-ссылкам ──
+    has_sf_for = lambda sf_type: {d.get("Основание_uuid") for d in by_type.get(sf_type, []) if d.get("Основание_uuid")}
+    sf_out_bases = has_sf_for("СчётФактураВыданный")
+    sf_in_bases = has_sf_for("СчётФактураПолученный")
+    for d in by_type.get("РеализацияТоваровУслуг", []):
+        if d.get("id") not in sf_out_bases:
+            add("B1-" + str(d.get("Номер")), "B", "Реализация без счёта-фактуры выданного", "высокая", d,
+                "НДС по реализации не предъявлен покупателю (нет СчётФактураВыданный на основании этой реализации).",
+                "нет документа СчётФактураВыданный с ДокументОснование = " + str(d.get("id")))
+    for d in by_type.get("ПоступлениеТоваровУслуг", []):
+        if d.get("id") not in sf_in_bases:
+            add("B2-" + str(d.get("Номер")), "B", "Поступление без счёта-фактуры полученного", "высокая", d,
+                "НДС к вычету не подтверждён (нет входящего счёта-фактуры на основании этого поступления).",
+                "нет документа СчётФактураПолученный с ДокументОснование = " + str(d.get("id")))
+    for pay_type in ("СписаниеСРасчётногоСчёта", "ПоступлениеНаРасчётныйСчёт"):
+        for d in by_type.get(pay_type, []):
+            if not d.get("Основание_uuid"):
+                add("B3-" + str(d.get("Номер")), "B", "Оплата без документа-основания", "средняя", d,
+                    "Платёж не привязан к документу поставки/реализации — разрыв цепочки, риск нераспознанной оплаты.",
+                    "поле ДокументОснование пустое")
+    paid_receipts = {d.get("Основание_uuid") for d in by_type.get("СписаниеСРасчётногоСчёта", []) if d.get("Основание_uuid")}
+    for d in by_type.get("ПоступлениеТоваровУслуг", []):
+        if d.get("id") not in paid_receipts:
+            add("B4-" + str(d.get("Номер")), "B", "Поступление не оплачено (кредиторка)", "средняя", d,
+                "По поступлению нет списания с р/с — открытая кредиторская задолженность перед поставщиком.",
+                "нет СписаниеСРасчётногоСчёта с ДокументОснование = " + str(d.get("id")))
+    paid_sales = {d.get("Основание_uuid") for d in by_type.get("ПоступлениеНаРасчётныйСчёт", []) if d.get("Основание_uuid")}
+    for d in by_type.get("РеализацияТоваровУслуг", []):
+        if d.get("id") not in paid_sales:
+            add("B5-" + str(d.get("Номер")), "B", "Реализация не оплачена (дебиторка)", "средняя", d,
+                "По реализации нет поступления на р/с — открытая дебиторская задолженность покупателя.",
+                "нет ПоступлениеНаРасчётныйСчёт с ДокументОснование = " + str(d.get("id")))
+
+    # ── Класс A: инварианты проводок (по кодам счетов через справочник Счета) ──
+    for d in by_type.get("РеализацияТоваровУслуг", []):
+        codes = {_prov_code(p.get("СчётДт"), acc_code) for p in (d.get("Проводки") or [])}
+        if "90.02" not in codes:
+            add("A1-" + str(d.get("Номер")), "A", "Реализация без списания себестоимости", "высокая", d,
+                "Признана выручка (90.01), но нет проводки Дт 90.02 Кт 41 — себестоимость продаж не списана, прибыль завышена.",
+                "среди проводок нет дебета счёта 90.02; коды Дт: " + ", ".join(sorted(c for c in codes if c)))
+
+    # ── Класс C: НСИ (нормативно-справочная информация) ──
+    for inn, group in ctr_by_inn.items():
+        if len(group) > 1:
+            names = [x.get("Наименование") for x in group]
+            add("C1-" + inn, "C", "Дубль контрагента по ИНН", "высокая", None,
+                "Один ИНН у нескольких карточек контрагента — риск задвоения расчётов и искажения сальдо.",
+                "ИНН " + inn + " → " + "; ".join(str(n) for n in names))
+
+    # ── Класс D: нормы (РСБУ/консолидация) ──
+    for dt in ("РеализацияТоваровУслуг", "ПоступлениеТоваровУслуг"):
+        for d in by_type.get(dt, []):
+            ctr_inn = ctr_inn_by_id.get((d.get("Контрагент_uuid") or ""), "")
+            if ctr_inn and ctr_inn in org_inns:
+                add("D1-" + str(d.get("Номер")), "D", "Внутригрупповой оборот (ВГО)", "высокая", d,
+                    "Контрагент по ИНН совпадает с организацией холдинга — оборот внутригрупповой, подлежит элиминации при консолидации.",
+                    "ИНН контрагента " + ctr_inn + " = организация «" + str(org_inns[ctr_inn]) + "»")
+    # переходящая операция: год оплаты > года документа-основания
+    for pay_type in ("СписаниеСРасчётногоСчёта", "ПоступлениеНаРасчётныйСчёт"):
+        for d in by_type.get(pay_type, []):
+            base = g["by_id"].get(d.get("Основание_uuid"))
+            if base and d.get("Дата") and base.get("Дата"):
+                if str(d["Дата"])[:4] != str(base["Дата"])[:4]:
+                    add("D2-" + str(d.get("Номер")), "D", "Переходящая операция (разные периоды)", "средняя", d,
+                        "Оплата и документ-основание в разных отчётных годах — контроль отражения на границе периода.",
+                        "оплата " + str(d["Дата"]) + " ↔ основание " + str(base.get("Номер")) + " от " + str(base["Дата"]))
+
+    order = {"высокая": 0, "средняя": 1, "низкая": 2}
+    F.sort(key=lambda x: (x["класс"], order.get(x["серьёзность"], 3), x["id"]))
+    return F
+
+
+def _t_audit1c_graph(a):
+    g = audit1c_build_graph()
+    summary = {"документов": len(g["docs"]), "справочных элементов": len(g["refs"]),
+               "по типам": {k: len(v) for k, v in g["by_type"].items()},
+               "рёбер основание→": len(g["edges"]),
+               "счетов в плане": len(g["acc_code"]),
+               "организаций (ИНН)": len(g["org_inns"]),
+               "ИНН контрагентов с дублями": sum(1 for v in g["ctr_by_inn"].values() if len(v) > 1)}
+    return json.dumps(summary, ensure_ascii=False)
+
+
+# ── OUT: замыкание петли аудита — отчёт → BookStack → Gotenberg(PDF) → Mailpit ──
+# Действия во внешние системы (mode=action): по умолчанию dry_run, реальная отправка — только явным run=true (HITL).
+GOTENBERG_URL = os.getenv("GOTENBERG_URL", "http://201.51.5.24:3050")
+BOOKSTACK_URL = os.getenv("BOOKSTACK_URL", "http://5.129.192.63:6875")
+MAILPIT_HOST = os.getenv("MAILPIT_HOST", "5.129.192.63")
+MAILPIT_PORT = int(os.getenv("MAILPIT_PORT", "1025"))
+
+
+def _multipart(fields: dict, files: dict):
+    """Собирает multipart/form-data (stdlib, без requests). files: {имя_поля: (имя_файла, bytes)}."""
+    boundary = "----abop" + hashlib.md5(repr(sorted(files)).encode()).hexdigest()[:16]
+    body = b""
+    for k, v in (fields or {}).items():
+        body += ("--%s\r\nContent-Disposition: form-data; name=\"%s\"\r\n\r\n%s\r\n" % (boundary, k, v)).encode("utf-8")
+    for field, (fname, content) in files.items():
+        if isinstance(content, str):
+            content = content.encode("utf-8")
+        body += ("--%s\r\nContent-Disposition: form-data; name=\"%s\"; filename=\"%s\"\r\nContent-Type: text/html\r\n\r\n"
+                 % (boundary, field, fname)).encode("utf-8") + content + b"\r\n"
+    body += ("--%s--\r\n" % boundary).encode("utf-8")
+    return body, "multipart/form-data; boundary=" + boundary
+
+
+def render_pdf_gotenberg(html: str, out_path: str) -> str:
+    """HTML → PDF через Gotenberg (Chromium). Пишет PDF в out_path, возвращает путь."""
+    url = _guard_url(GOTENBERG_URL.rstrip("/") + "/forms/chromium/convert/html")
+    body, ctype = _multipart({}, {"files": ("index.html", html)})
+    req = urllib.request.Request(url, data=body, headers={"Content-Type": ctype})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        pdf = r.read()
+    os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+    with open(out_path, "wb") as f:
+        f.write(pdf)
+    return out_path
+
+
+def _t_pdf_render(a):
+    """HTML-отчёт → красивый PDF (Gotenberg). args: {html, name}. Рендер безопасен (наш контент)."""
+    html = str(a.get("html") or "")
+    if not html.strip():
+        return "пусто: нужен html"
+    name = re.sub(r"[^A-Za-z0-9_.-]", "_", str(a.get("name") or "audit_report")) or "report"
+    if not name.endswith(".pdf"):
+        name += ".pdf"
+    try:
+        p = render_pdf_gotenberg(html, os.path.join("ape_work", name))
+        return f"PDF готов: {p} ({os.path.getsize(p)} байт)"
+    except Exception as ex:  # noqa: BLE001
+        return f"Gotenberg ошибка: {type(ex).__name__} — {ex}"
+
+
+def _t_bookstack_publish(a):
+    """Публикация отчёта страницей в BookStack (Confluence-аналог). ДЕЙСТВИЕ → по умолчанию dry_run.
+    args: {title, html|markdown, book_id, run:true}. Токен из env BOOKSTACK_TOKEN (формат 'id:secret')."""
+    title = str(a.get("title") or "Отчёт аудита 1С")
+    html = str(a.get("html") or "")
+    md = str(a.get("markdown") or "")
+    book_id = a.get("book_id")
+    if not (str(a.get("run")).lower() == "true"):
+        return f"[dry_run] публикация в BookStack: title='{title}', book_id={book_id}, {len(html or md)} симв. Для реальной публикации — run=true (HITL)."
+    token = os.getenv("BOOKSTACK_TOKEN", "")
+    if not token:
+        return "нет BOOKSTACK_TOKEN (формат 'tokenId:tokenSecret') — задать в env контейнера abop-webapi"
+    payload = {"name": title, "book_id": int(book_id or 1)}
+    payload["html" if html else "markdown"] = html or md
+    url = _guard_url(BOOKSTACK_URL.rstrip("/") + "/api/pages")
+    req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"),
+                                 headers={"Content-Type": "application/json", "Authorization": "Token " + token})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            d = json.loads(r.read().decode("utf-8", "replace"))
+        return f"опубликовано в BookStack: страница id={d.get('id')} «{d.get('name')}»"
+    except Exception as ex:  # noqa: BLE001
+        return f"BookStack ошибка: {type(ex).__name__} — {ex}"
+
+
+def _t_email_send(a):
+    """Письмо через Mailpit (демо-SMTP, без авторизации). ДЕЙСТВИЕ → по умолчанию dry_run.
+    args: {to, subject, body, attachment (путь к файлу в ape_work), run:true}."""
+    to = str(a.get("to") or "audit@demo.local")
+    subject = str(a.get("subject") or "Отчёт аудита 1С")
+    body = str(a.get("body") or "")
+    att = str(a.get("attachment") or "").strip()
+    if not (str(a.get("run")).lower() == "true"):
+        return f"[dry_run] письмо: to={to}, subject='{subject}', вложение='{att or '—'}'. Для реальной отправки — run=true (HITL)."
+    import smtplib
+    from email.message import EmailMessage
+    msg = EmailMessage()
+    msg["From"] = "abop-auditor@demo.local"; msg["To"] = to; msg["Subject"] = subject
+    msg.set_content(body or "Отчёт во вложении.")
+    if att:
+        p = att if os.path.isabs(att) else os.path.join("ape_work", os.path.basename(att))
+        if os.path.isfile(p):
+            with open(p, "rb") as f:
+                msg.add_attachment(f.read(), maintype="application", subtype="pdf", filename=os.path.basename(p))
+        else:
+            return f"вложение не найдено: {p}"
+    try:
+        with smtplib.SMTP(MAILPIT_HOST, MAILPIT_PORT, timeout=20) as s:
+            s.send_message(msg)
+        return f"письмо отправлено в Mailpit ({MAILPIT_HOST}:{MAILPIT_PORT}) → {to}. Просмотр: web :8025"
+    except Exception as ex:  # noqa: BLE001
+        return f"Mailpit ошибка: {type(ex).__name__} — {ex}"
+
+
+def _t_audit1c_checks(a):
+    findings = audit1c_run_checks()
+    cls = str(a.get("класс") or a.get("class") or "").strip().upper()
+    if cls:
+        findings = [f for f in findings if f["класс"] == cls]
+    by_cls = {}
+    for f in findings:
+        by_cls[f["класс"]] = by_cls.get(f["класс"], 0) + 1
+    return json.dumps({"всего": len(findings), "по классам": by_cls, "находки": findings},
+                      ensure_ascii=False)[:7000]
+
+
 AGENT_TOOLS = {
     "rag_search": (_t_rag, 'поиск по своей RAG-коллекции — args: {"query": "..."}'),
     "read_file": (_t_read, 'прочитать локальный файл — args: {"path": "..."}'),
@@ -3142,6 +3541,16 @@ AGENT_TOOLS = {
                  'одна каноническая запись по id — args: {"entity":"...","id":"..."}'),
     "data_schema": (lambda a: json.dumps(data_schema(a.get("entity", "")), ensure_ascii=False),
                     'Data Contract сущности (обязательные поля) — args: {"entity":"..."}'),
+    "audit1c_graph": (_t_audit1c_graph,
+                      'детерминированный граф связей реальной 1С (документы/basis-цепочки/счета/ИНН) — args: {}'),
+    "audit1c_checks": (_t_audit1c_checks,
+                       'детерминированные проверки аудита A/B/C/D по графу (находки считает код, не LLM) — args: {"класс":"A|B|C|D" (опц.)}'),
+    "pdf_render": (_t_pdf_render,
+                   'HTML-отчёт → PDF через Gotenberg (в ape_work) — args: {"html":"...","name":"audit_report"}'),
+    "bookstack_publish": (_t_bookstack_publish,
+                          'опубликовать отчёт страницей в BookStack — ДЕЙСТВИЕ, dry_run по умолчанию — args: {"title":"...","html":"...","book_id":1,"run":true}'),
+    "email_send": (_t_email_send,
+                   'отправить письмо (Mailpit) с PDF-вложением — ДЕЙСТВИЕ, dry_run по умолчанию — args: {"to":"...","subject":"...","body":"...","attachment":"audit_report.pdf","run":true}'),
 }
 
 _AGENT_SYS = (
