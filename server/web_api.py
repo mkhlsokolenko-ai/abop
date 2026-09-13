@@ -27,7 +27,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import agent_store, assembly, clients, contract_store, ingress, run_store, runner  # noqa: E402
+from . import agent_store, assembly, clients, contract_store, ingress, layout_store, run_store, runner  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
 
@@ -423,6 +423,24 @@ def data_query(entity: str, limit: int = 30, u: dict = Depends(user)) -> dict:
     return {"entity": entity, "records": ape.data_query(entity, limit=limit)}
 
 
+# ── Раскладка канвы (координаты узлов) в Postgres, НЕ localStorage (директива владельца) ──
+@app.get("/api/canvas/layout/{key}")
+async def canvas_layout_get(key: str, u: dict = Depends(user)) -> dict:
+    """Прочитать сохранённую раскладку канвы (узлы с x/y + рёбра) по ключу (контракт/сценарий)."""
+    row = await layout_store.get(key)
+    return row or {"key": key, "nodes": None, "edges": None}
+
+
+@app.post("/api/canvas/layout/{key}")
+async def canvas_layout_save(key: str, body: dict, u: dict = Depends(user)) -> dict:
+    """Сохранить раскладку канвы в Postgres. Тело: {nodes:[{id,kind,x,y,...}], edges:[...]}."""
+    require_level(u, "manager")  # правка раскладки — мутация (analyst read-only)
+    nodes = (body or {}).get("nodes") or []
+    edges = (body or {}).get("edges") or []
+    saved = await layout_store.save(key, nodes, edges)
+    return {"key": key, "saved": True, "updated_at": saved.get("updated_at")}
+
+
 @app.post("/api/plan")
 def plan(body: dict, u: dict = Depends(user)) -> dict:
     """Превью декомпозиции цели по семьям (детерминированно, без LLM). §9.1 запуск."""
@@ -444,6 +462,7 @@ async def _startup() -> None:
     await contract_store.init()
     await agent_store.init()
     await run_store.init()
+    await layout_store.init()
 
 
 @app.post("/api/contracts/ingest")
