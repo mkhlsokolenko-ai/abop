@@ -27,7 +27,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import agent_store, assembly, clients, contract_store, ingress, layout_store, run_store, runner  # noqa: E402
+from . import agent_store, assembly, audit_store, clients, contract_store, ingress, layout_store, run_store, runner  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
 
@@ -245,6 +245,43 @@ async def admin_staff(u: dict = Depends(user)) -> dict:
     return {"staff": staff, "source": "redmine"}
 
 
+@app.get("/api/admin/audit")
+async def admin_audit(limit: int = 100, u: dict = Depends(user)) -> dict:
+    """Аудит ИБ: неизменяемый лог governance-событий среды (не хардкод). Только admin/support."""
+    require_level(u, "support")
+    return {"events": await audit_store.list_events(limit=limit), "source": "audit_log"}
+
+
+@app.get("/api/admin/rbac")
+async def admin_rbac(u: dict = Depends(user)) -> dict:
+    """RBAC-матрица из РЕАЛЬНЫХ ролей Keycloak: роль → люди + разрешения/запреты (не хардкод-константа)."""
+    require_level(u, "support")
+    try:
+        data = await admin_users(u)  # переиспользуем живой список Keycloak
+    except HTTPException:
+        raise
+    users = data.get("users", [])
+    # разрешения по уровню (ADR-013/014): что уровень может в среде
+    POLICY = {
+        "admin":   {"allow": "всё: RBAC, арендаторы, модели, все отделы, деплой в прод",
+                    "deny": "—"},
+        "support": {"allow": "чтение всех отделов, аудит ИБ, штат, эскалации",
+                    "deny": "правка RBAC, деплой в прод"},
+        "manager": {"allow": "сборка/прогон/деплой агентов своего отдела, HITL-подтверждения",
+                    "deny": "чужие отделы, правка политик безопасности"},
+        "analyst": {"allow": "чтение агентов/прогонов/данных своего отдела",
+                    "deny": "любые мутации (read-only), действия наружу"},
+    }
+    rows = []
+    for lvl in ("admin", "support", "manager", "analyst"):
+        people = [usr["name"] or usr["username"] for usr in users if usr.get("level") == lvl]
+        depts = sorted({usr.get("department") for usr in users if usr.get("level") == lvl and usr.get("department") not in (None, "—", "*")})
+        pol = POLICY.get(lvl, {"allow": "—", "deny": "—"})
+        rows.append({"role": lvl, "count": len(people), "people": ", ".join(people[:6]) or "нет пользователей",
+                     "departments": depts, "allow": pol["allow"], "deny": pol["deny"]})
+    return {"rows": rows, "realm": data.get("realm"), "source": "keycloak"}
+
+
 @app.get("/api/families")
 def families(u: dict = Depends(user)) -> dict:
     """Ростер Семья→Роль→Навык (для палитры канвы и каталога). §4/§6 ABOP_SCREENS."""
@@ -419,6 +456,8 @@ def recipe_rebind(name: str, body: dict, u: dict = Depends(user)) -> dict:
     r.setdefault("emit", {})["schema"] = entity
     saved = ape.data_save_recipe(name, r)
     out = {"recipe": saved.get("recipe"), "entity": entity, "rebound": True}
+    await audit_store.record(u.get("name") or u.get("sub") or "dev", "data.rebind", saved.get("recipe"),
+                             {"entity": entity})
     if (body or {}).get("run"):
         try:
             ent, written, dropped, invalid = ape.data_run(saved.get("recipe"))
@@ -474,6 +513,7 @@ async def _startup() -> None:
     await agent_store.init()
     await run_store.init()
     await layout_store.init()
+    await audit_store.init()
 
 
 @app.post("/api/contracts/ingest")
@@ -490,6 +530,9 @@ async def contracts_ingest(body: dict, u: dict = Depends(user)) -> JSONResponse:
             status_code=422,
         )
     saved = await contract_store.save(body, res.intake, ingested_by=u.get("name") or u.get("sub") or "dev")
+    await audit_store.record(u.get("name") or u.get("sub") or "dev", "contract.ingest", saved["audit_id"],
+                             {"family": res.intake.get("family"), "autonomy_ceiling": res.intake.get("autonomy_ceiling"),
+                              "skills": len(res.intake.get("skills") or [])})
     return JSONResponse({
         "accepted": True, "warnings": res.warnings,
         "audit_id": saved["audit_id"], "intake": res.intake,
@@ -550,6 +593,9 @@ async def agent_save(body: dict, u: dict = Depends(user)) -> JSONResponse:
                                    autonomy_max=check["autonomy_max"],
                                    created_by=u.get("name") or u.get("sub") or "dev",
                                    family=fam, role=role)
+    await audit_store.record(u.get("name") or u.get("sub") or "dev", "agent.save", saved["id"],
+                             {"family": fam, "role": role, "autonomy_max": check["autonomy_max"],
+                              "hitl": check["hitl_count"]})
     return JSONResponse({"saved": True, "id": saved["id"], "version": version, "status": "draft",
                          "family": fam, "role": role,
                          "autonomy_max": check["autonomy_max"], "hitl_count": check["hitl_count"],
@@ -639,6 +685,8 @@ async def agent_author(body: dict, u: dict = Depends(user)) -> JSONResponse:
                                    autonomy_max=env["autonomy_max"], created_by=u.get("name") or "dev",
                                    family=family, role=spec["role"], transitions=spec["transitions"],
                                    source="authored")
+    await audit_store.record(u.get("name") or "dev", "agent.author", saved["id"],
+                             {"family": family, "role": spec["role"], "autonomy_max": env["autonomy_max"]})
     return JSONResponse({"saved": True, "id": saved["id"], "version": version, "status": "draft",
                          "family": family, "role": spec["role"], "autonomy_max": env["autonomy_max"],
                          "skills": [s["id"] for s in spec["skills"]], "data_scope": spec["data_scope"]},
@@ -703,6 +751,12 @@ async def run_start(body: dict, u: dict = Depends(user)) -> JSONResponse:
             result["findings"] = []
             result["findings_error"] = f"{type(ex).__name__}: {ex}"
     saved = await run_store.save(result)
+    _v = result.get("verdict") or {}
+    await audit_store.record(u.get("name") or u.get("sub") or "dev", "agent.run", saved["id"],
+                             {"agent_id": agent_id, "verdict_ok": bool(_v.get("ok")),
+                              "autonomy_used": _v.get("autonomy_used"),
+                              "findings": (result.get("findings_summary") or {}).get("total")},
+                             severity=("info" if _v.get("ok") else "warn"))
     return JSONResponse({"run_id": saved["id"], **result}, status_code=201)
 
 
