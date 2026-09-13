@@ -629,6 +629,21 @@ async def run_start(body: dict, u: dict = Depends(user)) -> JSONResponse:
                                    skill_sources=ape.skill_datasources_resolved,
                                    load_body=ape.load_skill_body,
                                    chat_fn=clients.chat)
+    # Петля прогон→канва: для аудит-агента доносим СТРУКТУРИРОВАННЫЕ находки (детерминир. движок, не LLM)
+    # прямо в результат Run — чтобы «Строю» идемпотентно подхватывал их из последнего прогона.
+    _skills = [n.get("skill") for n in (agent.get("graph") or {}).get("nodes", [])]
+    if "audit1c-checks" in _skills:
+        try:
+            _g = ape.audit1c_build_graph()
+            _findings = ape.audit1c_run_checks(_g)
+            result["findings"] = _findings
+            result["findings_summary"] = {
+                "total": len(_findings),
+                "by_class": {c: sum(1 for f in _findings if f.get("класс") == c) for c in ("A", "B", "C", "D")},
+            }
+        except Exception as ex:  # noqa: BLE001 — находки опциональны, прогон не падает
+            result["findings"] = []
+            result["findings_error"] = f"{type(ex).__name__}: {ex}"
     saved = await run_store.save(result)
     return JSONResponse({"run_id": saved["id"], **result}, status_code=201)
 
