@@ -389,6 +389,34 @@ def recipe_run(name: str, u: dict = Depends(user)) -> dict:
     return {"entity": entity, "written": written, "dropped": dropped, "invalid": invalid}
 
 
+@app.post("/api/data/recipes/{name}/rebind")
+def recipe_rebind(name: str, body: dict, u: dict = Depends(user)) -> dict:
+    """Перепривязка рецепта на графе «Данные»: сменить целевую сущность (entity) и опц. запустить.
+    Тело: {entity: <новая сущность>, run?: bool}. Меняет recipe.entity+emit.schema, сохраняет,
+    при run=true сразу пишет в canonical store. Питает drag-перепривязку в графе Data Plane."""
+    require_level(u, "manager")  # перепривязка = мутация Data Plane (analyst read-only)
+    entity = str((body or {}).get("entity", "")).strip()
+    if not entity:
+        raise HTTPException(422, "нужна целевая entity")
+    if entity not in ape.CANONICAL_SCHEMAS:
+        raise HTTPException(422, f"неизвестная сущность {entity!r} (нет в canonical schemas)")
+    try:
+        r = ape.data_load_recipe(name)
+    except (OSError, ValueError):
+        raise HTTPException(404, "нет рецепта")
+    r["entity"] = entity
+    r.setdefault("emit", {})["schema"] = entity
+    saved = ape.data_save_recipe(name, r)
+    out = {"recipe": saved.get("recipe"), "entity": entity, "rebound": True}
+    if (body or {}).get("run"):
+        try:
+            ent, written, dropped, invalid = ape.data_run(saved.get("recipe"))
+            out.update({"ran": True, "written": written, "dropped": dropped, "invalid": invalid})
+        except Exception as ex:  # noqa: BLE001 — перепривязка удалась, прогон нет → сообщаем
+            out.update({"ran": False, "run_error": str(ex)})
+    return out
+
+
 @app.get("/api/data/query/{entity}")
 def data_query(entity: str, limit: int = 30, u: dict = Depends(user)) -> dict:
     """Чтение canonical store (только свежие). §5 предпросмотр."""
