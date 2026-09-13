@@ -438,7 +438,7 @@ def recipe_run(name: str, u: dict = Depends(user)) -> dict:
 
 
 @app.post("/api/data/recipes/{name}/rebind")
-def recipe_rebind(name: str, body: dict, u: dict = Depends(user)) -> dict:
+async def recipe_rebind(name: str, body: dict, u: dict = Depends(user)) -> dict:
     """Перепривязка рецепта на графе «Данные»: сменить целевую сущность (entity) и опц. запустить.
     Тело: {entity: <новая сущность>, run?: bool}. Меняет recipe.entity+emit.schema, сохраняет,
     при run=true сразу пишет в canonical store. Питает drag-перепривязку в графе Data Plane."""
