@@ -114,6 +114,17 @@ app = FastAPI(title="ABOP Web API", version="0.1.0",
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
+@app.middleware("http")
+async def _no_cache_html(request, call_next):
+    """index.html фронта не кэшировать в браузере (иначе деплой не виден без hard-refresh).
+    Браузер ревалидирует по etag/last-modified. Шрифты/бинарники StaticFiles кэшируются как есть."""
+    resp = await call_next(request)
+    path = request.url.path
+    if path == "/" or path.endswith(".html"):
+        resp.headers["Cache-Control"] = "no-cache, must-revalidate"
+    return resp
+
+
 # ═══════════════ READ: реальные вызовы ядра ═══════════════
 
 @app.get("/api/health")
