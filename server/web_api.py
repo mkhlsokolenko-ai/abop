@@ -750,6 +750,7 @@ async def run_start(body: dict, u: dict = Depends(user)) -> JSONResponse:
         except Exception as ex:  # noqa: BLE001 — находки опциональны, прогон не падает
             result["findings"] = []
             result["findings_error"] = f"{type(ex).__name__}: {ex}"
+    result["started_by"] = u.get("name") or u.get("sub") or "dev"  # кто запустил (для журнала)
     saved = await run_store.save(result)
     _v = result.get("verdict") or {}
     await audit_store.record(u.get("name") or u.get("sub") or "dev", "agent.run", saved["id"],
@@ -778,6 +779,8 @@ async def runs_list(agent_id: str = "", u: dict = Depends(user)) -> dict:
             continue
         it["agent_name"] = ag.get("name") or aid
         it["family"] = fam
+        it["version"] = ag.get("version")
+        it["role"] = ag.get("role")
         out.append(it)
     return {"runs": out}
 
