@@ -588,12 +588,23 @@ async def agent_save(body: dict, u: dict = Depends(user)) -> JSONResponse:
         _members = list(ape.AGENT_FAMILIES[fam]["members"].keys())
         if len(_members) == 1:
             role = _members[0]
-    version = await agent_store.next_version(audit_id)
-    saved = await agent_store.save(name=name, audit_id=audit_id, version=version, graph=graph,
-                                   autonomy_max=check["autonomy_max"],
-                                   created_by=u.get("name") or u.get("sub") or "dev",
-                                   family=fam, role=role)
-    await audit_store.record(u.get("name") or u.get("sub") or "dev", "agent.save", saved["id"],
+    # ADR-024: обычное сохранение/автосейв ПЕРЕЗАПИСЫВАЕТ draft (не плодит версии).
+    # Новая версия — только при осознанном Пересмотре (revise=true) поверх НЕ-draft.
+    revise = bool((body or {}).get("revise"))
+    if revise:
+        version = await agent_store.next_version(audit_id)
+        saved = await agent_store.save(name=name, audit_id=audit_id, version=version, graph=graph,
+                                       autonomy_max=check["autonomy_max"],
+                                       created_by=u.get("name") or u.get("sub") or "dev",
+                                       family=fam, role=role)
+    else:
+        saved = await agent_store.save_draft(name=name, audit_id=audit_id, graph=graph,
+                                             autonomy_max=check["autonomy_max"],
+                                             created_by=u.get("name") or u.get("sub") or "dev",
+                                             family=fam, role=role)
+    version = saved.get("version")
+    await audit_store.record(u.get("name") or u.get("sub") or "dev",
+                             "agent.revise" if revise else "agent.save", saved["id"],
                              {"family": fam, "role": role, "autonomy_max": check["autonomy_max"],
                               "hitl": check["hitl_count"]})
     return JSONResponse({"saved": True, "id": saved["id"], "version": version, "status": "draft",

@@ -83,6 +83,46 @@ async def save(*, name: str, audit_id: str, version: int, graph: dict,
     return await get(aid) or row
 
 
+async def latest(audit_id: str) -> dict | None:
+    """Последняя (по версии) НЕ retired версия агента контракта — для upsert draft."""
+    if not _has_pg():
+        rows = [a for a in _MEM.values() if a["contract_audit_id"] == audit_id and a.get("status") != "retired"]
+        rows.sort(key=lambda a: a.get("version", 0), reverse=True)
+        return rows[0] if rows else None
+    from .db import _conn
+    async with _conn() as conn:
+        cur = await conn.execute(
+            "SELECT id,version,status FROM agent_versions WHERE contract_audit_id=%s AND status<>'retired' "
+            "ORDER BY version DESC LIMIT 1", (audit_id,))
+        r = await cur.fetchone()
+    return {"id": r[0], "version": r[1], "status": r[2]} if r else None
+
+
+async def save_draft(*, name: str, audit_id: str, graph: dict, autonomy_max: str,
+                     created_by: str = "dev", family: str = "", role: str = "") -> dict:
+    """UPSERT draft-версии (ADR-024): автосейв/сборка НЕ плодит версии — перезаписывает
+    последний draft. Новая версия — только осознанным Пересмотром (revise → save()).
+    Если последняя версия НЕ draft (tested/deployed) → создаёт новую (next_version)."""
+    last = await latest(audit_id)
+    if last and last.get("status") == "draft":
+        aid = last["id"]; version = last["version"]
+        if not _has_pg():
+            a = _MEM.get(aid) or {}
+            a.update({"graph": graph, "autonomy_max": autonomy_max, "name": name,
+                      "family": family, "role": role})
+            _MEM[aid] = a
+            return a
+        from .db import _conn
+        async with _conn() as conn:
+            await conn.execute(
+                "UPDATE agent_versions SET graph=%s, autonomy_max=%s, name=%s, family=%s, role=%s WHERE id=%s",
+                (json.dumps(graph), autonomy_max, name, family, role, aid))
+        return await get(aid) or {"id": aid, "version": version}
+    version = await next_version(audit_id)
+    return await save(name=name, audit_id=audit_id, version=version, graph=graph,
+                      autonomy_max=autonomy_max, created_by=created_by, family=family, role=role)
+
+
 async def get(agent_id: str) -> dict | None:
     if not _has_pg():
         return _MEM.get(agent_id)
