@@ -27,7 +27,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import agent_store, assembly, audit_store, clients, contract_store, ingress, layout_store, run_store, runner, skill_store  # noqa: E402
+from . import agent_store, assembly, audit_store, clients, contract_store, dataplane_store, ingress, layout_store, run_store, runner, skill_store  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
 
@@ -437,6 +437,34 @@ def data_schema(entity: str, u: dict = Depends(user)) -> dict:
     return ape.data_schema(entity)
 
 
+async def _refresh_dataplane_cache() -> None:
+    """Подтянуть рецепты/коннекторы из Postgres и инжектнуть в ape (общие для всех, переживают перенакат)."""
+    try:
+        ape.set_recipe_store(await dataplane_store.recipes_all())
+        ape.set_connector_store(await dataplane_store.connectors_all())
+    except Exception:  # noqa: BLE001
+        pass
+
+
+async def _backfill_dataplane_from_files() -> None:
+    """Одноразовый перенос существующих файловых рецептов/коннекторов (~/.ape) в Postgres, чтобы
+    демо-данные не исчезли при переходе на PG. Читает файлы, пока ape ещё в файловом режиме (стор
+    не инжектнут); выполняется только если в PG соответствующая таблица пуста."""
+    try:
+        if not await dataplane_store.recipes_all():
+            for name in ape.data_recipes():          # файловый режим
+                try:
+                    await dataplane_store.save_recipe(name, ape.data_load_recipe(name), editor="migrate")
+                except Exception:  # noqa: BLE001
+                    pass
+        if not await dataplane_store.connectors_all():
+            for c in ape.data_connectors():           # файловый режим
+                if c.get("id"):
+                    await dataplane_store.save_connector(c["id"], c, editor="migrate")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 # ── Коннекторы-инстансы (подключённые источники) — §5 таб «Коннекторы» ──
 @app.get("/api/data/connectors")
 def connectors_list(u: dict = Depends(user)) -> dict:
@@ -444,11 +472,17 @@ def connectors_list(u: dict = Depends(user)) -> dict:
 
 
 @app.post("/api/data/connectors")
-def connector_save(body: dict, u: dict = Depends(user)) -> dict:
-    """Подключить коннектор (сохранить инстанс источника). §5 [＋ подключить]."""
+async def connector_save(body: dict, u: dict = Depends(user)) -> dict:
+    """Подключить коннектор (сохранить инстанс источника в Postgres). §5 [＋ подключить]."""
+    require_level(u, "manager")
     if not str((body or {}).get("title", "")).strip():
         raise HTTPException(422, "нужен title коннектора")
-    return ape.data_save_connector(body)
+    card = ape.build_connector(body)
+    editor = u.get("name") or u.get("sub") or "dev"
+    await dataplane_store.save_connector(card["id"], card, editor=editor)
+    await _refresh_dataplane_cache()
+    await audit_store.record(editor, "data.connector", card["id"], {"adapter": card.get("adapter")})
+    return card
 
 
 @app.post("/api/data/connectors/test")
@@ -472,15 +506,21 @@ def recipe_get(name: str, u: dict = Depends(user)) -> dict:
 
 
 @app.post("/api/data/recipes")
-def recipe_save(body: dict, u: dict = Depends(user)) -> dict:
-    """Сохранить рецепт (нормализует UI-форму в canonical). §5 [Сохранить]."""
+async def recipe_save(body: dict, u: dict = Depends(user)) -> dict:
+    """Сохранить рецепт (нормализует UI-форму в canonical) в Postgres. §5 [Сохранить]."""
+    require_level(u, "manager")
     name = str((body or {}).get("recipe") or (body or {}).get("title", "")).strip()
     if not name:
         raise HTTPException(422, "нужно имя рецепта")
     try:
-        return ape.data_save_recipe(name, body)
+        r = ape.normalize_recipe(name, body)
     except Exception as ex:  # noqa: BLE001 — любой сбой нормализации → 400, не 500
         raise HTTPException(400, f"не удалось сохранить рецепт: {ex}")
+    editor = u.get("name") or u.get("sub") or "dev"
+    await dataplane_store.save_recipe(r["recipe"], r, editor=editor)
+    await _refresh_dataplane_cache()
+    await audit_store.record(editor, "data.recipe", r["recipe"], {"entity": r.get("entity")})
+    return r
 
 
 @app.post("/api/data/recipe/preview")
@@ -520,10 +560,12 @@ async def recipe_rebind(name: str, body: dict, u: dict = Depends(user)) -> dict:
         raise HTTPException(404, "нет рецепта")
     r["entity"] = entity
     r.setdefault("emit", {})["schema"] = entity
-    saved = ape.data_save_recipe(name, r)
+    saved = ape.normalize_recipe(name, r)
+    editor = u.get("name") or u.get("sub") or "dev"
+    await dataplane_store.save_recipe(saved["recipe"], saved, editor=editor)
+    await _refresh_dataplane_cache()   # чтобы data_run ниже прочитал перепривязанный рецепт
     out = {"recipe": saved.get("recipe"), "entity": entity, "rebound": True}
-    await audit_store.record(u.get("name") or u.get("sub") or "dev", "data.rebind", saved.get("recipe"),
-                             {"entity": entity})
+    await audit_store.record(editor, "data.rebind", saved.get("recipe"), {"entity": entity})
     if (body or {}).get("run"):
         try:
             ent, written, dropped, invalid = ape.data_run(saved.get("recipe"))
@@ -582,6 +624,9 @@ async def _startup() -> None:
     await audit_store.init()
     await skill_store.init()
     await _refresh_skill_ds_cache()  # инжект data-need оверрайдов из PG в ape
+    await dataplane_store.init()
+    await _backfill_dataplane_from_files()  # одноразовый перенос ~/.ape → PG (сохранить демо-рецепты)
+    await _refresh_dataplane_cache()  # инжект рецептов/коннекторов из PG в ape
 
 
 @app.post("/api/contracts/ingest")

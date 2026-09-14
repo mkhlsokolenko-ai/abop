@@ -2709,11 +2709,38 @@ def _data_path(entity: str) -> str:
     return os.path.join(d, f"{safe}.jsonl")
 
 
+# Инъекция рецептов/коннекторов из Postgres (server/dataplane_store): сервер вызывает
+# set_recipe_store()/set_connector_store() на старте и после правок, чтобы ape-потребители
+# (data_recipes_cards / data_lineage / data_run / skill_datasources_resolved) читали PG, а не файлы.
+# None ⇒ файловый режим (CLI). §БД-фаза (persistence-localstorage-hole).
+_RECIPE_STORE: dict | None = None
+_CONNECTOR_STORE: list | None = None
+
+
+def set_recipe_store(recipes) -> None:
+    """Сервер инжектит рецепты (list canonical-специй) из Postgres. None — вернуть файловый режим."""
+    global _RECIPE_STORE
+    _RECIPE_STORE = None if recipes is None else {r.get("recipe"): r for r in recipes if r.get("recipe")}
+
+
+def set_connector_store(connectors) -> None:
+    """Сервер инжектит коннекторы (list карточек) из Postgres. None — файловый режим."""
+    global _CONNECTOR_STORE
+    _CONNECTOR_STORE = None if connectors is None else list(connectors)
+
+
 def data_recipes() -> list:
+    if _RECIPE_STORE is not None:
+        return sorted(_RECIPE_STORE.keys())
     return sorted(f[:-5] for f in os.listdir(_recipes_dir()) if f.endswith(".json"))
 
 
 def data_load_recipe(name: str) -> dict:
+    if _RECIPE_STORE is not None:
+        r = _RECIPE_STORE.get(name)
+        if r is None:
+            raise OSError(f"нет рецепта {name}")
+        return r
     with open(os.path.join(_recipes_dir(), name + ".json"), encoding="utf-8") as f:
         return json.load(f)
 
@@ -2965,11 +2992,17 @@ def data_preview(spec: dict, limit: int = 20) -> dict:
             "dropped": dropped, "invalid": invalid, "recipe": r}
 
 
-def data_save_recipe(name: str, spec: dict) -> dict:
-    """Сохранить рецепт (нормализованный canonical) в ~/.ape/recipes/<name>.json. Возвращает рецепт."""
+def normalize_recipe(name: str, spec: dict) -> dict:
+    """Нормализовать UI-форму рецепта в canonical (без записи). Сервер сохраняет результат в Postgres."""
     safe = re.sub(r"[^A-Za-z0-9_-]", "_", name.strip()) or "recipe"
     r = _normalize_recipe(spec); r["recipe"] = safe; r.setdefault("version", 1)
-    with open(os.path.join(_recipes_dir(), safe + ".json"), "w", encoding="utf-8") as f:
+    return r
+
+
+def data_save_recipe(name: str, spec: dict) -> dict:
+    """CLI-путь: нормализовать и сохранить рецепт в ~/.ape/recipes/<name>.json. Сервер — Postgres."""
+    r = normalize_recipe(name, spec)
+    with open(os.path.join(_recipes_dir(), r["recipe"] + ".json"), "w", encoding="utf-8") as f:
         json.dump(r, f, ensure_ascii=False, indent=2)
     return r
 
@@ -2998,6 +3031,15 @@ def data_connectors() -> list:
     """Список подключённых коннекторов (инстансы источников): id/title/adapter/target/headers/root/badge/ok.
     ok=None означает «не проверялся» (честно) — реальную доступность даёт ТЕСТ (data_test_connector),
     т.к. авторизованный источник без валидного токена вернёт 401 (нельзя судить по наличию адаптера)."""
+    if _CONNECTOR_STORE is not None:   # серверный режим: коннекторы из Postgres
+        out = []
+        for c in _CONNECTOR_STORE:
+            c = dict(c)
+            c.setdefault("badge", _connector_badge(c.get("adapter", "")))
+            c.setdefault("ok", None)
+            c["has_auth"] = bool(c.get("headers"))
+            out.append(c)
+        return out
     out = []
     d = _connectors_dir()
     for fn in sorted(f for f in os.listdir(d) if f.endswith(".json")):
@@ -3014,18 +3056,21 @@ def data_connectors() -> list:
     return out
 
 
-def data_save_connector(spec: dict) -> dict:
-    """Подключить коннектор КАК источник рецепта: adapter/target + headers(токен) + root + query.
-    Рецепты ссылаются на него; тест использует те же headers (иначе авторизованный источник → 401)."""
+def build_connector(spec: dict) -> dict:
+    """Собрать карточку коннектора из UI-формы (без записи). Сервер сохраняет её в Postgres."""
     title = str((spec or {}).get("title", "")).strip() or "connector"
     cid = re.sub(r"[^A-Za-z0-9_-]", "_", title) or "connector"
     kind = (spec or {}).get("adapter") or (spec or {}).get("kind") or "csv"
-    c = {"title": title, "adapter": kind, "target": (spec or {}).get("target", ""),
-         "headers": (spec or {}).get("headers") or {}, "root": (spec or {}).get("root", ""),
-         "badge": _connector_badge(kind), "ok": None, "has_auth": bool((spec or {}).get("headers"))}
-    with open(os.path.join(_connectors_dir(), cid + ".json"), "w", encoding="utf-8") as f:
-        json.dump(c, f, ensure_ascii=False, indent=2)
-    c["id"] = cid
+    return {"id": cid, "title": title, "adapter": kind, "target": (spec or {}).get("target", ""),
+            "headers": (spec or {}).get("headers") or {}, "root": (spec or {}).get("root", ""),
+            "badge": _connector_badge(kind), "ok": None, "has_auth": bool((spec or {}).get("headers"))}
+
+
+def data_save_connector(spec: dict) -> dict:
+    """CLI-путь: собрать и сохранить коннектор в ~/.ape/connectors/<id>.json. Сервер — Postgres."""
+    c = build_connector(spec)
+    with open(os.path.join(_connectors_dir(), c["id"] + ".json"), "w", encoding="utf-8") as f:
+        json.dump({k: v for k, v in c.items() if k != "id"}, f, ensure_ascii=False, indent=2)
     return c
 
 
