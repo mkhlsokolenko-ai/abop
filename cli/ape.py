@@ -786,18 +786,32 @@ def _load_skill_ds_override() -> dict:
         return {}
 
 
+# Инъекция data-need оверрайдов из Postgres (server/skill_store): сервер вызывает
+# set_skill_ds_overrides() на старте и после каждой правки, чтобы ape-потребители
+# (build_agent_spec / data_lineage / assembly-резолв) видели ТЕ ЖЕ источники, что и UI,
+# без файла ~/.ape и без async в ape. Приоритет: PG-инъекция → файл (CLI) → дефолт кода.
+_SKILL_DS_OVERRIDES: dict = {}
+
+
+def set_skill_ds_overrides(overrides: dict | None) -> None:
+    """Сервер инжектит {sid: datasources[]} из Postgres. §БД-фаза (persistence-localstorage-hole)."""
+    global _SKILL_DS_OVERRIDES
+    _SKILL_DS_OVERRIDES = dict(overrides or {})
+
+
 def skill_datasources(sid: str) -> list:
-    """Источники данных навыка (data-need, связка §4 конверт↔данные): override оператора ИЛИ дефолт из кода.
+    """Источники данных навыка (data-need, связка §4 конверт↔данные): PG-оверрайд → файл → дефолт кода.
     Нет записи ⇒ навык без внешних источников."""
+    if sid in _SKILL_DS_OVERRIDES:
+        return _SKILL_DS_OVERRIDES[sid]
     ov = _load_skill_ds_override()
     if sid in ov:
         return ov[sid]
     return SKILL_DATASOURCES.get(sid, [])
 
 
-def set_skill_datasources(sid: str, datasources: list) -> list:
-    """Сохранить data-need навыка (оператор в UI): список {entity, fields[], kind?, note?}.
-    Пустой список — валиден (навык без источников). Возвращает нормализованный список."""
+def normalize_skill_datasources(datasources: list) -> list:
+    """Нормализовать data-need из UI: список {entity, fields[], kind?, note?}. Пустой — валиден."""
     norm = []
     for ds in (datasources or []):
         if not isinstance(ds, dict):
@@ -810,6 +824,12 @@ def set_skill_datasources(sid: str, datasources: list) -> list:
             flds = [x.strip() for x in flds.replace(",", " ").split() if x.strip()]
         norm.append({"entity": ent, "fields": [str(f).strip() for f in flds if str(f).strip()],
                      "kind": ds.get("kind") or _entity_default_kind(ent), "note": ds.get("note", "")})
+    return norm
+
+
+def set_skill_datasources(sid: str, datasources: list) -> list:
+    """CLI-путь: сохранить data-need навыка в файл ~/.ape. Сервер использует Postgres (skill_store)."""
+    norm = normalize_skill_datasources(datasources)
     ov = _load_skill_ds_override()
     ov[sid] = norm
     os.makedirs(CFG_DIR, exist_ok=True)

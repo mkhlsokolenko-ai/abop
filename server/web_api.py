@@ -27,7 +27,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import agent_store, assembly, audit_store, clients, contract_store, ingress, layout_store, run_store, runner  # noqa: E402
+from . import agent_store, assembly, audit_store, clients, contract_store, ingress, layout_store, run_store, runner, skill_store  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
 
@@ -305,49 +305,115 @@ def agent_spec(family: str, member: str = "", u: dict = Depends(user)) -> dict:
         raise HTTPException(404, str(ex))
 
 
-@app.get("/api/skills")
-def skills(u: dict = Depends(user)) -> dict:
-    """Каталог навыков с безопасностью (permission-scoping видимо). §4 ABOP_SCREENS."""
-    in_fam = {}
+async def _refresh_skill_ds_cache() -> None:
+    """Подтянуть data-need оверрайды из Postgres и инжектнуть в ape (build_agent_spec/lineage/assembly)."""
+    try:
+        ape.set_skill_ds_overrides(await skill_store.datasources_map())
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _skill_families() -> dict:
+    in_fam: dict = {}
     for fid, fam in ape.AGENT_FAMILIES.items():
-        for mk, (_mt, sk) in fam["members"].items():
+        for _mk, (_mt, sk) in fam["members"].items():
             for s in sk:
                 in_fam.setdefault(s, []).append(fid)
-    out = []
-    for sid, (title, short, _instr) in ape.SKILLS.items():
-        parsed = ape.parse_skill_md(sid)   # секции/шаги — чтобы drawer не был пустым
-        out.append({"id": sid, "title": title, "short": short,
-                    "safety": ape.skill_safety(sid), "scope": ape.skill_scope(sid),
-                    "families": sorted(set(in_fam.get(sid, []))),
-                    "sections": parsed["sections"], "flow": parsed["flow"],
-                    "when": parsed["when"], "method": parsed["method"],
-                    "dod": parsed["dod"], "anti": parsed["anti"],
-                    "datasources": ape.skill_datasources_resolved(sid)})
-    return {"skills": out, "count": len(out)}
+    return {k: sorted(set(v)) for k, v in in_fam.items()}
 
 
-@app.get("/api/skills/{sid}")
-def skill(sid: str, u: dict = Depends(user)) -> dict:
-    """Полное тело навыка (progressive disclosure = use_skill). §4 drawer."""
-    if sid not in ape.SKILLS:
-        raise HTTPException(404, "нет навыка")
-    title, short, _ = ape.SKILLS[sid]
-    parsed = ape.parse_skill_md(sid)
-    return {"id": sid, "title": title, "short": short, "safety": ape.skill_safety(sid),
-            "scope": ape.skill_scope(sid), "body": ape.load_skill_body(sid),
-            "sections": parsed["sections"], "flow": parsed["flow"], "intro": parsed["intro"],
+# поля навыка, которые оператор правит в UI и которые оверрайдятся из Postgres (skill_store.patch)
+_SKILL_TEXT_FIELDS = ("title", "short", "flow", "when", "method", "dod", "anti")
+_SKILL_SAFETY_FIELDS = ("mode", "egress", "cite")
+
+
+def _skill_base_card(sid: str, fam: dict) -> dict:
+    title, short, _instr = ape.SKILLS[sid]
+    parsed = ape.parse_skill_md(sid)   # секции/шаги — чтобы drawer не был пустым
+    return {"id": sid, "title": title, "short": short,
+            "safety": ape.skill_safety(sid), "scope": ape.skill_scope(sid),
+            "families": fam.get(sid, []),
+            "sections": parsed["sections"], "flow": parsed["flow"],
             "when": parsed["when"], "method": parsed["method"],
             "dod": parsed["dod"], "anti": parsed["anti"],
             "datasources": ape.skill_datasources_resolved(sid)}
 
 
-@app.post("/api/skills/{sid}/datasources")
-def skill_datasources_set(sid: str, body: dict, u: dict = Depends(user)) -> dict:
-    """Оператор правит data-need навыка (ADR-032): какие сущности/поля берёт навык. §4 drawer.
-    Тело: {datasources:[{entity, fields[], kind?, note?}]}. Возвращает резолвнутые (с рецептом по entity)."""
+def _overlay_skill(card: dict, ov: dict | None) -> dict:
+    """Наложить сохранённые в Postgres правки навыка (общие для всех) поверх базового каталога (.md).
+    Governance-безопасность узла берётся АВТОРИТЕТНО из базового каталога (assembly), а не из правок."""
+    if ov:
+        patch = ov.get("patch") or {}
+        for k in _SKILL_TEXT_FIELDS:
+            if k in patch and patch[k]:
+                card[k] = patch[k]
+        saf = dict(card.get("safety") or {})
+        for k in _SKILL_SAFETY_FIELDS:
+            if k in patch:
+                saf[k] = patch[k]
+        card["safety"] = saf
+        card["version"] = ov.get("version")
+        card["editor"] = ov.get("editor")
+        card["edited_at"] = ov.get("updated_at")
+    else:
+        card["version"] = "v1.0"
+        card["editor"] = None
+        card["edited_at"] = None
+    return card
+
+
+@app.get("/api/skills")
+async def skills(u: dict = Depends(user)) -> dict:
+    """Каталог навыков (.md) + сохранённые в Postgres правки (общие для всех, переживают перенакат). §4."""
+    fam = _skill_families()
+    overrides = await skill_store.all()
+    out = [_overlay_skill(_skill_base_card(sid, fam), overrides.get(sid)) for sid in ape.SKILLS]
+    return {"skills": out, "count": len(out)}
+
+
+@app.get("/api/skills/{sid}")
+async def skill(sid: str, u: dict = Depends(user)) -> dict:
+    """Полное тело навыка (progressive disclosure = use_skill) + PG-правки. §4 drawer."""
     if sid not in ape.SKILLS:
         raise HTTPException(404, "нет навыка")
-    ape.set_skill_datasources(sid, (body or {}).get("datasources") or [])
+    card = _overlay_skill(_skill_base_card(sid, _skill_families()), await skill_store.get(sid))
+    parsed = ape.parse_skill_md(sid)
+    card["body"] = ape.load_skill_body(sid)
+    card["intro"] = parsed["intro"]
+    return card
+
+
+@app.post("/api/skills/{sid}")
+async def skill_save(sid: str, body: dict, u: dict = Depends(user)) -> dict:
+    """Сохранить правки навыка НОВОЙ версией в Postgres (общие для всех пользователей, переживают
+    перенакат/рестарт — не localStorage). Редактор = текущий пользователь. Тело: {title?, short?,
+    mode?, egress?, cite?, flow?, when?, method?, dod?, anti?}. §БД-фаза (persistence-localstorage-hole)."""
+    require_level(u, "manager")  # analyst — только чтение
+    if sid not in ape.SKILLS:
+        raise HTTPException(404, "нет навыка")
+    allowed = set(_SKILL_TEXT_FIELDS) | set(_SKILL_SAFETY_FIELDS)
+    patch = {k: v for k, v in (body or {}).items() if k in allowed}
+    if not patch:
+        raise HTTPException(422, "нет полей для сохранения")
+    editor = u.get("name") or u.get("sub") or "dev"
+    ov = await skill_store.save_patch(sid, patch, editor=editor)
+    await audit_store.record(editor, "skill.save", sid,
+                             {"version": ov.get("version"), "fields": sorted(patch.keys())})
+    return _overlay_skill(_skill_base_card(sid, _skill_families()), ov)
+
+
+@app.post("/api/skills/{sid}/datasources")
+async def skill_datasources_set(sid: str, body: dict, u: dict = Depends(user)) -> dict:
+    """Оператор правит data-need навыка (ADR-032): какие сущности/поля берёт навык → Postgres. §4 drawer.
+    Тело: {datasources:[{entity, fields[], kind?, note?}]}. Возвращает резолвнутые (с рецептом по entity)."""
+    require_level(u, "manager")
+    if sid not in ape.SKILLS:
+        raise HTTPException(404, "нет навыка")
+    norm = ape.normalize_skill_datasources((body or {}).get("datasources") or [])
+    editor = u.get("name") or u.get("sub") or "dev"
+    await skill_store.save_datasources(sid, norm, editor=editor)
+    await _refresh_skill_ds_cache()   # чтобы build_agent_spec/lineage сразу видели новые источники
+    await audit_store.record(editor, "skill.datasources", sid, {"count": len(norm)})
     return {"id": sid, "datasources": ape.skill_datasources_resolved(sid)}
 
 
@@ -514,6 +580,8 @@ async def _startup() -> None:
     await run_store.init()
     await layout_store.init()
     await audit_store.init()
+    await skill_store.init()
+    await _refresh_skill_ds_cache()  # инжект data-need оверрайдов из PG в ape
 
 
 @app.post("/api/contracts/ingest")
