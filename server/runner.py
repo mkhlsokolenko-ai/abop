@@ -156,7 +156,7 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
         know_block = ""
         if knowledge_fn and (safety_of(sid) or {}).get("cite"):
             try:
-                chunks = await knowledge_fn(sid, entities)
+                chunks = await knowledge_fn(sid, entities, body)   # body = методика навыка → релевантный запрос
             except Exception:  # noqa: BLE001
                 chunks = []
             if chunks:

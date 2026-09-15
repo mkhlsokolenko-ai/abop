@@ -1247,8 +1247,9 @@ def _agent_knowledge_fn(agent: dict, actor: str):
             return []
         return _denied
 
-    async def _kfn(sid, entities):
-        q = f"нормы и требования для навыка «{sid}» по: {', '.join(entities) or 'учёт'}"
+    async def _kfn(sid, entities, hint: str = ""):
+        # запрос из методики навыка (домен-релевантный) + сущности — иначе sLAVA отсекает по релевантности
+        q = ((hint or "")[:400] + " " + " ".join(entities)).strip() or f"нормы для {sid}"
         try:
             res = await slava.query(corpus_col, q, top_k=top_k, tenant="abop")
             return [s.get("text", "") for s in (res.get("sources") or []) if s.get("text")]
