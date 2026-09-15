@@ -118,7 +118,7 @@ def run_agent(agent: dict, contract: dict, safety_of) -> dict:
 
 
 async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_sources,
-                   load_body, chat_fn, blocked_entities=None) -> dict:
+                   load_body, chat_fn, blocked_entities=None, knowledge_fn=None) -> dict:
     """НАСТОЯЩИЙ прогон: governance-каркас (run_agent) + для каждого навыка с data-scope
     собирает РЕАЛЬНЫЕ данные из canonical store (data_query) и прогоняет их через LLM
     (тело навыка = методика) → находки на доску. Числа — только из данных (анти-галлюцинация).
@@ -151,12 +151,24 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
         if not any(data.values()):
             return None  # навык без данных в store — LLM-анализ не запускаем
         body = (load_body(sid) or "")[:_LIM["body"]]
+        # RAG-знание (нормы/регламент) из корпуса семьи через sLAVA — только норм-цитирующим навыкам
+        # (safety.cite). knowledge_fn уже с ABAC-гейтом (вернёт [], если семья без доступа к корпусу).
+        know_block = ""
+        if knowledge_fn and (safety_of(sid) or {}).get("cite"):
+            try:
+                chunks = await knowledge_fn(sid, entities)
+            except Exception:  # noqa: BLE001
+                chunks = []
+            if chunks:
+                know_block = ("=== НОРМЫ/ЗНАНИЕ (RAG из корпуса семьи, sLAVA) ===\n"
+                              + "\n---\n".join(c[:800] for c in chunks[:4]) + "\n\n")
         prompt = ("Ты — навык агента ABOP. Ниже методика навыка и РЕАЛЬНЫЕ данные из Data Plane (canonical, с provenance).\n\n"
                   "=== МЕТОДИКА ===\n" + body + "\n\n"
-                  "=== ДАННЫЕ (JSON по сущностям) ===\n" + _json.dumps(data, ensure_ascii=False)[:_LIM["data"]] + "\n\n"
+                  + know_block
+                  + "=== ДАННЫЕ (JSON по сущностям) ===\n" + _json.dumps(data, ensure_ascii=False)[:_LIM["data"]] + "\n\n"
                   "ЗАДАЧА: примени методику к данным. Верни КОНКРЕТНЫЕ находки/расхождения списком — "
-                  "каждая со ссылкой на id записи и суммой. Только из данных, ничего не выдумывай. "
-                  "Если расхождений нет — так и скажи.")
+                  "каждая со ссылкой на id записи и суммой" + (", и на норму из блока ЗНАНИЕ, если применимо" if know_block else "")
+                  + ". Только из данных и приведённых норм, ничего не выдумывай. Если расхождений нет — так и скажи.")
         async with sem:  # батчинг: семафор пускает по _LLM_CONCURRENCY вызовов за раз
             try:
                 resp = await chat_fn(messages=[{"role": "user", "content": prompt}], profile="standard",

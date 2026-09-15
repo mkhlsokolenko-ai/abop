@@ -808,6 +808,12 @@ async def connector_save(body: dict, u: dict = Depends(user)) -> dict:
     if not str((body or {}).get("title", "")).strip():
         raise HTTPException(422, "нужен title коннектора")
     card = ape.build_connector(body)
+    # slava/vector-коннектор = KNOWLEDGE-источник (не canonical): храним корпус (collection/family/top_k)
+    if card.get("adapter") in ("slava", "vector"):
+        fam = str((body or {}).get("family", "")).strip()
+        col = str((body or {}).get("collection", "")).strip() or (slava.fam_collection(fam) if fam else "")
+        card["corpus"] = {"collection": col, "family": fam or None, "top_k": int((body or {}).get("top_k") or 4)}
+        card["kind_role"] = "knowledge"
     sid = str((body or {}).get("system_id", "")).strip()
     if sid:
         sysrec = await systems_store.get(sid)
@@ -1213,6 +1219,40 @@ async def _gate_agent_data(agent: dict, fam_key: str, actor: str) -> tuple[set, 
     return blocked, denied
 
 
+def _agent_knowledge_fn(agent: dict, actor: str):
+    """Собрать knowledge_fn для прогона: RAG-запрос к корпусу семьи (sLAVA) с ABAC-гейтом. Корпус —
+    из knowledge-source узла графа (node.corpus{collection|family,top_k}); нет узла ⇒ None (без RAG)."""
+    corpus_col = corpus_fam = None
+    top_k = 4
+    for n in (agent.get("graph") or {}).get("nodes") or []:
+        if n.get("kind") in ("source", "doc"):
+            c = n.get("corpus") or {}
+            if c.get("collection") or c.get("family"):
+                corpus_fam = c.get("family")
+                corpus_col = c.get("collection") or slava.fam_collection(c.get("family"))
+                top_k = int(c.get("top_k") or 4)
+                break
+    if not corpus_col:
+        return None
+    fam = agent.get("family")
+    fam_key = access.scope_key(family=fam)
+    # ABAC: корпус привязан к СЕМЬЕ и семья агента её не достигает → знание закрыто (аналитик ≠ архитектура)
+    if corpus_fam and fam != "*" and not access.can_reach_family(fam, corpus_fam):
+        async def _denied(sid, entities):
+            await access.audit_denial(actor, fam_key, corpus_col, "knowledge", "семья без доступа к корпусу")
+            return []
+        return _denied
+
+    async def _kfn(sid, entities):
+        q = f"нормы и требования для навыка «{sid}» по: {', '.join(entities) or 'учёт'}"
+        try:
+            res = await slava.query(corpus_col, q, top_k=top_k, tenant="abop")
+            return [s.get("text", "") for s in (res.get("sources") or []) if s.get("text")]
+        except Exception:  # noqa: BLE001 — корпус недоступен → без RAG, прогон не падает
+            return []
+    return _kfn
+
+
 async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, trigger: dict | None = None) -> dict:
     """Ядро прогона (LLM-раскладка + находки audit1c + сохранение + аудит). Переиспользуется
     POST /api/runs и планировщиком триггеров (server/triggers.py). Возвращает {saved, result}."""
@@ -1222,7 +1262,8 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
                                    data_query=ape.data_query,
                                    skill_sources=ape.skill_datasources_resolved,
                                    load_body=ape.load_skill_body,
-                                   chat_fn=clients.chat, blocked_entities=blocked)
+                                   chat_fn=clients.chat, blocked_entities=blocked,
+                                   knowledge_fn=_agent_knowledge_fn(agent, started_by))
     # Петля прогон→канва: для аудит-агента доносим СТРУКТУРИРОВАННЫЕ находки (детерминир. движок, не LLM).
     _skills = [n.get("skill") for n in (agent.get("graph") or {}).get("nodes", [])]
     if "audit1c-checks" in _skills:
