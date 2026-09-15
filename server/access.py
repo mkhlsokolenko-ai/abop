@@ -49,9 +49,16 @@ async def manifest(key: str) -> dict:
 
 
 def qdrant_tenant(key: str) -> str:
-    """Коллекция/тенант Qdrant НА СЕМЬЮ (изоляция RAG-корпуса). '*' ⇒ общий. Имя безопасно для Qdrant."""
+    """Коллекция/тенант Qdrant НА СЕМЬЮ (изоляция RAG-корпуса). Совпадает с поднятыми в sLAVA
+    slava_fam_<family>. '*' ⇒ общий. Имя безопасно для Qdrant."""
     k = re.sub(r"[^a-z0-9_]", "_", (key or "shared").lower())
-    return "ape_fam_" + (k if k and k != "_" else "shared")
+    return "slava_fam_" + (k if k and k != "_" else "shared")
+
+
+def can_reach_family(department: str | None, family: str) -> bool:
+    """ABAC-изоляция знания: отдел вправе читать/писать корпус семьи? admin/support ('*') ⇒ везде;
+    иначе department должен совпасть с family. Так аналитик не читает вектор-корпус архитектуры."""
+    return department in ("*", None) or department == family
 
 
 async def audit_denial(actor: str, key: str, system_id: str, action: str, reason: str) -> None:

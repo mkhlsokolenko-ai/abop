@@ -27,7 +27,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, assembly, audit_store, clients, contract_store, dataplane_store, ingress, layout_store, reglament_store, run_store, runner, skill_store, systems_store, trigger_store, triggers, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, assembly, audit_store, clients, contract_store, dataplane_store, ingress, layout_store, reglament_store, run_store, runner, skill_store, slava, systems_store, trigger_store, triggers, userdata_store  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
 
@@ -440,6 +440,59 @@ async def reglament_ingest(body: dict, u: dict = Depends(user)) -> dict:
         saved.append({"nsi_key": key, "op": m.get("op") or chunk[:60], "process": m.get("process") or "—"})
     await audit_store.record(editor, "reglament.ingest", tenant, {"chunks": len(saved), "model": resp.get("model")})
     return {"tenant": tenant, "chunks": saved, "count": len(saved), "markup_model": resp.get("model")}
+
+
+@app.get("/api/family/collections")
+async def family_collections(u: dict = Depends(user)) -> dict:
+    """Коллекции sLAVA (в т.ч. slava_fam_<family>) + доступность текущему отделу (ABAC)."""
+    try:
+        cols = await slava.collections()
+    except Exception as ex:  # noqa: BLE001
+        raise HTTPException(502, f"sLAVA недоступна: {ex}")
+    return {"collections": cols, "department": u.get("department")}
+
+
+@app.post("/api/family/ingest")
+async def family_ingest(body: dict, u: dict = Depends(user)) -> dict:
+    """Загрузить знание/регламент в корпус СЕМЬИ (slava_fam_<family>) через sLAVA. ABAC: отдел = семья
+    (или admin/support). Тело: {family, text, filename?, replace?}. §graph-RAG по семьям."""
+    require_level(u, "manager")
+    family = str((body or {}).get("family") or "").strip()
+    text = str((body or {}).get("text") or "").strip()
+    if not family or not text:
+        raise HTTPException(422, "нужны family и text")
+    if not access.can_reach_family(u.get("department"), family):
+        await access.audit_denial(u.get("name") or u.get("sub") or "dev", u.get("department"),
+                                  slava.fam_collection(family), "family.ingest", "отдел ≠ семья")
+        raise HTTPException(403, f"нет доступа к корпусу семьи «{family}» (изоляция знания)")
+    col = slava.fam_collection(family)
+    try:
+        res = await slava.ingest(col, str((body or {}).get("filename") or f"{family}.txt"), text,
+                                 tenant="abop", replace=bool((body or {}).get("replace")))
+    except Exception as ex:  # noqa: BLE001
+        raise HTTPException(502, f"sLAVA ingest не удался: {ex}")
+    await audit_store.record(u.get("name") or u.get("sub") or "dev", "family.ingest", col, {"family": family})
+    return {"family": family, "collection": col, "result": res}
+
+
+@app.post("/api/family/query")
+async def family_query(body: dict, u: dict = Depends(user)) -> dict:
+    """RAG-поиск по корпусу СЕМЬИ (slava_fam_<family>) через sLAVA. ABAC-изоляция: отдел = семья
+    (аналитик не читает корпус архитектуры). Тело: {family, query, top_k?}."""
+    family = str((body or {}).get("family") or "").strip()
+    q = str((body or {}).get("query") or "").strip()
+    if not family or not q:
+        raise HTTPException(422, "нужны family и query")
+    if not access.can_reach_family(u.get("department"), family):
+        await access.audit_denial(u.get("name") or u.get("sub") or "dev", u.get("department"),
+                                  slava.fam_collection(family), "family.query", "отдел ≠ семья")
+        raise HTTPException(403, f"нет доступа к корпусу семьи «{family}» (изоляция знания)")
+    col = slava.fam_collection(family)
+    try:
+        res = await slava.query(col, q, top_k=int((body or {}).get("top_k") or 5), tenant="abop")
+    except Exception as ex:  # noqa: BLE001
+        raise HTTPException(502, f"sLAVA query не удался: {ex}")
+    return {"family": family, "collection": col, "result": res}
 
 
 @app.get("/api/reglament")
