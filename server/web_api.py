@@ -491,17 +491,21 @@ async def family_seed(body: dict, u: dict = Depends(user)) -> dict:
     return {"seeded": out, "families": len(out)}
 
 
+# СПЕЦИФИЧНЫЕ под-запросы (sLAVA отсекает широкие/generic по релевантности — нужны точные темы норм)
 _FAMILY_NORM_QUERY = {
-    "finance": "бухгалтерский учёт НДС налог на прибыль ФСБУ проводки отчётность признание выручки",
-    "audit": "аудит расхождений в учёте НК РФ ФСБУ счёт-фактура вычет НДС проводки регистры",
-    "credit": "кредитование скоринг лимиты выдача займа резервы обеспечение",
-    "analytics": "финансовый анализ показатели оценка эффективности отчётность",
-    "management": "управление процессами регламент договоры сроки ответственность",
-    "architecture": "проектирование систем требования интеграция API стандарты",
-    "engineering": "разработка тестирование качество код требования",
-    "research": "исследование источники методология анализ данных",
-    "critic": "проверка качества соответствие требованиям контроль",
-    "decisions": "принятие решений governance полномочия согласование",
+    "finance": ["вычет НДС при наличии счёта-фактуры", "признание выручки и себестоимости ФСБУ",
+                "налог на прибыль расходы уменьшают доход", "уточнённая декларация по НДС"],
+    "audit": ["реализация без счёта-фактуры выданного НДС", "поступление без счёта-фактуры вычет НДС",
+              "переходящая операция разные периоды", "сделки взаимозависимых лиц деловая цель"],
+    "credit": ["резервы на возможные потери по ссудам", "оценка кредитоспособности заёмщика",
+               "обеспечение по кредиту залог"],
+    "analytics": ["финансовые показатели отчётность", "оценка эффективности рентабельность"],
+    "management": ["договорные условия сроки ответственность", "регламент бизнес-процесса"],
+    "architecture": ["требования к интеграции API", "стандарты проектирования систем"],
+    "engineering": ["требования к разработке тестирование", "качество кода стандарты"],
+    "research": ["методология исследования источники", "анализ данных достоверность"],
+    "critic": ["контроль соответствия требованиям", "проверка качества результата"],
+    "decisions": ["полномочия и согласование решений", "governance принятие решений"],
 }
 
 
@@ -518,25 +522,28 @@ async def family_seed_norms(body: dict, u: dict = Depends(user)) -> dict:
     fams = [fam] if fam else ["finance", "audit", "credit"]
     out = {}
     for fid in fams:
-        q = str((body or {}).get("query") or "") or _FAMILY_NORM_QUERY.get(fid, fid)
-        try:
-            srcs = (await slava.query(src, q, top_k=count, tenant="abop")).get("sources") or []
-        except Exception as ex:  # noqa: BLE001
-            out[fid] = {"error": str(ex)[:80]}
-            continue
+        qs = ([str((body or {}).get("query"))] if (body or {}).get("query")
+              else _FAMILY_NORM_QUERY.get(fid, [fid]))
+        seen_txt, chunks = set(), []
+        for q in qs:  # специфичные под-запросы: собираем уникальные чанки
+            try:
+                for s in (await slava.query(src, q, top_k=max(2, count // len(qs)), tenant="abop")).get("sources") or []:
+                    txt = (s.get("text") or "").strip()
+                    if len(txt) >= 30 and txt[:120] not in seen_txt:
+                        seen_txt.add(txt[:120])
+                        chunks.append(txt)
+            except Exception:  # noqa: BLE001
+                pass
         col = slava.fam_collection(fid)
         n = 0
-        for i, s in enumerate(srcs):
-            txt = (s.get("text") or "").strip()
-            if len(txt) < 30:
-                continue
+        for i, txt in enumerate(chunks[:count * 2]):
             try:
                 await slava.ingest(col, f"norm_reg_{i}.txt", "[закон/норма] " + txt, tenant="abop",
                                    replace=False, doc_id=f"reg_{fid}_{i}")
                 n += 1
             except Exception:  # noqa: BLE001
                 pass
-        out[fid] = {"collection": col, "norms_ingested": n, "from": src}
+        out[fid] = {"collection": col, "norms_ingested": n, "from": src, "subqueries": len(qs)}
     await audit_store.record(u.get("name") or u.get("sub") or "dev", "family.seed_norms", fam or "norm-fams",
                              {"families": len(out)})
     return {"seeded_norms": out}
