@@ -27,7 +27,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import admin_store, agent_store, assembly, audit_store, clients, contract_store, dataplane_store, ingress, layout_store, run_store, runner, skill_store, systems_store, userdata_store  # noqa: E402
+from . import admin_store, agent_store, assembly, audit_store, clients, contract_store, dataplane_store, ingress, layout_store, run_store, runner, skill_store, systems_store, trigger_store, triggers, userdata_store  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
 
@@ -370,6 +370,24 @@ async def system_delete(sid: str, u: dict = Depends(user)) -> dict:
     await systems_store.delete(sid)
     await audit_store.record(u.get("name") or u.get("sub") or "dev", "system.delete", sid, {})
     return {"id": sid, "deleted": True}
+
+
+@app.get("/api/triggers")
+async def triggers_list(u: dict = Depends(user)) -> dict:
+    """Стартовые события агентов (триггеры из графов) + последний фаер. Планировщик фаерит только
+    enabled schedule/event-триггеры. §триггер-узел (persistence-localstorage-hole)."""
+    return {"triggers": await triggers.list_triggers(), "fires": await trigger_store.list_fires(limit=30)}
+
+
+@app.post("/api/triggers/{agent_id}/{trigger_id}/fire")
+async def trigger_fire(agent_id: str, trigger_id: str, u: dict = Depends(user)) -> dict:
+    """Ручной запуск триггера (кнопка/тест): чтит политику spawn (автономия ≤ контракт, HITL-на-создание),
+    но игнорирует enabled/min-interval. Уровень manager+ (запуск = мутация среды)."""
+    require_level(u, "manager")
+    res = await triggers.fire_manual(agent_id, trigger_id, execute_agent_run)
+    await audit_store.record(u.get("name") or u.get("sub") or "dev", "trigger.fire", trigger_id,
+                             {"agent_id": agent_id, "status": res.get("status")})
+    return res
 
 
 @app.get("/api/memory/{scope}")
@@ -736,6 +754,9 @@ async def _startup() -> None:
     await userdata_store.init()
     await systems_store.init()
     await systems_store.seed_if_empty()  # одноразовый сид реестра из server-inventory (демо-стенд)
+    await trigger_store.init()
+    import asyncio as _asyncio
+    _asyncio.create_task(triggers.scheduler_loop(execute_agent_run))  # фоновый планировщик триггеров
     await _refresh_skill_ds_cache()  # инжект data-need оверрайдов из PG в ape
     await dataplane_store.init()
     await _backfill_dataplane_from_files()  # одноразовый перенос ~/.ape → PG (сохранить демо-рецепты)
