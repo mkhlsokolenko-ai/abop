@@ -420,8 +420,9 @@ async def reglament_ingest(body: dict, u: dict = Depends(user)) -> dict:
         "[{\"i\":0,\"nsi_key\":\"[1][01][001]\",\"process\":\"...\",\"subprocess\":\"...\",\"op\":\"...\"}].\n\n"
         + "\n".join(f"[{i}] {c[:300]}" for i, c in enumerate(raw)))
     try:
+        # deepseek-v4-pro — reasoning-модель: даём запас max_tokens, иначе «мышление» съедает бюджет → пустой content
         resp = await clients.chat(messages=[{"role": "user", "content": prompt}],
-                                  model="deepseek/deepseek-v4-pro", max_tokens=2000)
+                                  model="deepseek/deepseek-v4-pro", max_tokens=4000)
         marks = _parse_json_array(resp.get("text") or "")
     except Exception as ex:  # noqa: BLE001
         raise HTTPException(502, f"LLM-разметка недоступна: {ex}")
