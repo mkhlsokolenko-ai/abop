@@ -580,6 +580,28 @@ async def process_conformance(body: dict, u: dict = Depends(user)) -> dict:
     конформанс. Тело: {ops:[{nsi_key,label}], tenant?}."""
     ops = [o for o in ((body or {}).get("ops") or []) if o.get("nsi_key")]
     tenant = str((body or {}).get("tenant") or "default").strip() or "default"
+    # sLAVA-режим: сверка против РЕАЛЬНОГО регламент-корпуса (slava_reglament_ru/audit1c_norms) —
+    # для каждой операции ABOP vector-поиск в sLAVA → лучший чанк+score → статус. Прямое направление
+    # (ABOP-операция vs регламент); «не собрано» тут не считаем (корпус 22k чанков не перечислить).
+    if str((body or {}).get("source") or "pg").strip() == "slava":
+        collection = str((body or {}).get("collection") or "slava_reglament_ru").strip()
+        report = []
+        for o in ops:
+            label = o.get("label") or ""
+            try:
+                srcs = (await slava.query(collection, label, top_k=1, tenant="abop")).get("sources") or []
+            except Exception:  # noqa: BLE001
+                srcs = []
+            if not srcs:
+                report.append({"nsi_key": o.get("nsi_key"), "label": label, "status": "нет в регламенте", "sim": None})
+            else:
+                sc = float(srcs[0].get("score") or 0)
+                status = "соответствует" if sc >= 0.7 else ("расходится по сути" if sc >= 0.5 else "сильно расходится")
+                report.append({"nsi_key": o.get("nsi_key"), "label": label, "status": status,
+                               "sim": round(sc, 3), "reglament_op": (srcs[0].get("text") or "")[:90]})
+        summary = {"total": len(report), "ok": sum(1 for x in report if x["status"] == "соответствует"),
+                   "drift": sum(1 for x in report if x["status"] != "соответствует")}
+        return {"collection": collection, "source": "slava", "report": report, "summary": summary}
     reg = await reglament_store.all_for(tenant)
     reg_by_key: dict = {}
     for r in reg:
