@@ -1291,7 +1291,7 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
         for f in result["findings"][:10]:
             if not isinstance(f, dict):
                 continue
-            q = " ".join(str(f.get(k) or "") for k in ("проверка", "описание", "доказательство")).strip()
+            q = " ".join(str(f.get(k) or "") for k in ("проверка", "описание")).strip()
             if not q:
                 continue
             try:
