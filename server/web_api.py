@@ -1224,6 +1224,7 @@ def _agent_knowledge_fn(agent: dict, actor: str):
     из knowledge-source узла графа (node.corpus{collection|family,top_k}); нет узла ⇒ None (без RAG)."""
     corpus_col = corpus_fam = None
     top_k = 4
+    fam = agent.get("family")
     for n in (agent.get("graph") or {}).get("nodes") or []:
         if n.get("kind") in ("source", "doc"):
             c = n.get("corpus") or {}
@@ -1232,9 +1233,12 @@ def _agent_knowledge_fn(agent: dict, actor: str):
                 corpus_col = c.get("collection") or slava.fam_collection(c.get("family"))
                 top_k = int(c.get("top_k") or 4)
                 break
+    # фолбэк: если source-узла с corpus нет в сохранённом графе — берём корпус СЕМЬИ агента (slava_fam_<family>)
+    if not corpus_col and fam and fam != "*":
+        corpus_col = slava.fam_collection(fam)
+        corpus_fam = fam
     if not corpus_col:
         return None
-    fam = agent.get("family")
     fam_key = access.scope_key(family=fam)
     # ABAC: корпус привязан к СЕМЬЕ и семья агента её не достигает → знание закрыто (аналитик ≠ архитектура)
     if corpus_fam and fam != "*" and not access.can_reach_family(fam, corpus_fam):
