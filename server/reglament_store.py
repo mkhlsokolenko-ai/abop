@@ -28,9 +28,20 @@ CREATE TABLE IF NOT EXISTS reglament (
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_reglament_key ON reglament (tenant, nsi_key);
+-- граф-слой: рёбра между узлами (nsi_key). relation: contains (иерархия НСИ) | entails/cites/action
+-- (кросс-цитирование норм: нарушение одной нормы влечёт проверку связанной / требуемое действие).
+CREATE TABLE IF NOT EXISTS reglament_edges (
+    tenant      TEXT NOT NULL,
+    from_key    TEXT NOT NULL,
+    to_key      TEXT NOT NULL,
+    relation    TEXT NOT NULL DEFAULT 'entails',
+    note        TEXT,
+    PRIMARY KEY (tenant, from_key, to_key, relation)
+);
 """
 
 _MEM: list[dict] = []
+_MEM_EDGES: list[dict] = []
 
 
 def _has_pg() -> bool:
@@ -80,3 +91,45 @@ async def all_for(tenant: str) -> list[dict]:
         rows = await cur.fetchall()
     return [{"nsi_key": r[0], "process": r[1], "subprocess": r[2], "op": r[3], "text": r[4],
              "embedding": r[5]} for r in rows]
+
+
+# ─── граф-слой: рёбра (иерархия НСИ + кросс-цитирование норм) ───
+async def save_edge(tenant: str, from_key: str, to_key: str, relation: str = "entails", note: str = "") -> None:
+    if not _has_pg():
+        _MEM_EDGES.append({"tenant": tenant, "from_key": from_key, "to_key": to_key,
+                           "relation": relation, "note": note})
+        return
+    from .db import _conn
+    async with _conn() as conn:
+        await conn.execute(
+            "INSERT INTO reglament_edges (tenant,from_key,to_key,relation,note) VALUES (%s,%s,%s,%s,%s) "
+            "ON CONFLICT (tenant,from_key,to_key,relation) DO UPDATE SET note=EXCLUDED.note",
+            (tenant, from_key, to_key, relation, note))
+
+
+async def edges_for(tenant: str, relation: str | None = None) -> list[dict]:
+    if not _has_pg():
+        return [e for e in _MEM_EDGES if e["tenant"] == tenant and (relation is None or e["relation"] == relation)]
+    from .db import _conn
+    async with _conn() as conn:
+        if relation:
+            cur = await conn.execute(
+                "SELECT from_key,to_key,relation,note FROM reglament_edges WHERE tenant=%s AND relation=%s",
+                (tenant, relation))
+        else:
+            cur = await conn.execute(
+                "SELECT from_key,to_key,relation,note FROM reglament_edges WHERE tenant=%s", (tenant,))
+        rows = await cur.fetchall()
+    return [{"from_key": r[0], "to_key": r[1], "relation": r[2], "note": r[3]} for r in rows]
+
+
+async def clear_edges(tenant: str, relation: str | None = None) -> None:
+    if not _has_pg():
+        _MEM_EDGES[:] = [e for e in _MEM_EDGES if not (e["tenant"] == tenant and (relation is None or e["relation"] == relation))]
+        return
+    from .db import _conn
+    async with _conn() as conn:
+        if relation:
+            await conn.execute("DELETE FROM reglament_edges WHERE tenant=%s AND relation=%s", (tenant, relation))
+        else:
+            await conn.execute("DELETE FROM reglament_edges WHERE tenant=%s", (tenant,))
