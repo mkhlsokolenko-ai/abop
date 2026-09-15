@@ -282,11 +282,13 @@ async def admin_rbac(u: dict = Depends(user)) -> dict:
     return {"rows": rows, "realm": data.get("realm"), "source": "keycloak"}
 
 
-# ── Админ-конфиг среды (модели/арендаторы/квоты/пороги ИБ) в Postgres — §7.2/БД-фаза ──
+# ── Админ-конфиг среды (модели/арендаторы/квоты/пороги ИБ) + карта процессов (области) в Postgres — §7.2/БД-фаза ──
 # Раньше эти настройки правились в UI и оседали в localStorage браузера (per-браузер, терялись
 # при перенакате). Теперь общие для всех операторов и переживают рестарт. См.
 # persistence-localstorage-hole. Отсутствующие ключи ⇒ клиент берёт свой дефолт (сид в state).
-_ADMIN_CONFIG_KEYS = {"modelCfg", "defaultProfile", "tenantMode", "quotaLimit", "quotaPolicy", "escThresholds"}
+# tree/assignments — карта процессов (области ответственности агентов), авторится в RBAC-редакторе.
+_ADMIN_CONFIG_KEYS = {"modelCfg", "defaultProfile", "tenantMode", "quotaLimit", "quotaPolicy",
+                      "escThresholds", "tree", "assignments"}
 
 
 @app.get("/api/admin/config")
