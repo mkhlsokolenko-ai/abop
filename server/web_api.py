@@ -27,7 +27,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import admin_store, agent_store, assembly, audit_store, clients, contract_store, dataplane_store, ingress, layout_store, run_store, runner, skill_store, userdata_store  # noqa: E402
+from . import admin_store, agent_store, assembly, audit_store, clients, contract_store, dataplane_store, ingress, layout_store, run_store, runner, skill_store, systems_store, userdata_store  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
 
@@ -328,6 +328,41 @@ async def my_scenarios_save(body: dict, u: dict = Depends(user)) -> dict:
         raise HTTPException(422, "нужен объект scenarios")
     saved = await userdata_store.save_scenarios(u.get("sub") or "", data)
     return {"scenarios": saved}
+
+
+@app.get("/api/systems")
+async def systems_list(u: dict = Depends(user)) -> dict:
+    """Реестр систем/подключений (эндпоинты REST/БД/вектор + Kafka-топики) из Postgres. Единый каталог,
+    на который ссылаются коннекторы/рецепты/триггеры (system_id + путь/топик), а не хардкод URL.
+    Секреты НЕ отдаём — только auth_ref (имя переменной). §БД-фаза (persistence-localstorage-hole)."""
+    return {"systems": await systems_store.all()}
+
+
+@app.get("/api/systems/{sid}")
+async def system_get(sid: str, u: dict = Depends(user)) -> dict:
+    s = await systems_store.get(sid)
+    if not s:
+        raise HTTPException(404, "нет такой системы")
+    return s
+
+
+@app.post("/api/systems/{sid}")
+async def system_save(sid: str, body: dict, u: dict = Depends(user)) -> dict:
+    """Сохранить систему в реестр (эндпоинт/топики/auth_ref/egress). Тело: {kind, base_url, brokers[],
+    topics[], auth_ref, tenant, egress, note}. Правка интеграций — уровень manager+ (RBAC-гейт)."""
+    require_level(u, "manager")
+    saved = await systems_store.save(sid, body or {}, editor=u.get("name") or u.get("sub") or "dev")
+    await audit_store.record(u.get("name") or u.get("sub") or "dev", "system.save", sid,
+                             {"kind": saved.get("kind"), "egress": saved.get("egress")})
+    return saved
+
+
+@app.delete("/api/systems/{sid}")
+async def system_delete(sid: str, u: dict = Depends(user)) -> dict:
+    require_level(u, "manager")
+    await systems_store.delete(sid)
+    await audit_store.record(u.get("name") or u.get("sub") or "dev", "system.delete", sid, {})
+    return {"id": sid, "deleted": True}
 
 
 @app.get("/api/memory/{scope}")
@@ -692,6 +727,8 @@ async def _startup() -> None:
     await skill_store.init()
     await admin_store.init()
     await userdata_store.init()
+    await systems_store.init()
+    await systems_store.seed_if_empty()  # одноразовый сид реестра из server-inventory (демо-стенд)
     await _refresh_skill_ds_cache()  # инжект data-need оверрайдов из PG в ape
     await dataplane_store.init()
     await _backfill_dataplane_from_files()  # одноразовый перенос ~/.ape → PG (сохранить демо-рецепты)
@@ -901,35 +938,15 @@ _NOT_IMPL = ("Прогон через API требует выноса cmd_agents
              "Форма ответа зафиксирована в docs/ABOP_API.md; сейчас — 501.")
 
 
-@app.post("/api/runs")
-async def run_start(body: dict, u: dict = Depends(user)) -> JSONResponse:
-    """Запуск прогона агента (детерминированно, без LLM в раскладке).
-
-    Тело: {agent_id} ИЛИ {contract_audit_id} (берётся последний AgentVersion контракта).
-    Возвращает 201 {run_id, waves, board, verdict, run_metrics}.
-    """
-    agent_id = str((body or {}).get("agent_id", "")).strip()
-    audit_id = str((body or {}).get("contract_audit_id", "")).strip()
-    if not agent_id and audit_id:
-        lst = await agent_store.list_for(audit_id)
-        if not lst:
-            raise HTTPException(404, "нет сохранённого агента для контракта")
-        agent_id = lst[0]["id"]
-    agent = await agent_store.get(agent_id) if agent_id else None
-    if not agent:
-        raise HTTPException(404, "нет такого AgentVersion")
-    contract = await contract_store.get(agent.get("contract_audit_id") or audit_id)
-    if not contract:
-        # авторинг-агент (source=authored) без контракта LUDA → песочница-конверт (ADR-029: только A0/тест)
-        contract = {"intake": {"autonomy_ceiling": agent.get("autonomy_max") or "A2"}, "bundle": {}}
-    # НАСТОЯЩИЙ LLM-прогон: навыки читают canonical store и анализируют через RouteAI (агентский движок)
+async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, trigger: dict | None = None) -> dict:
+    """Ядро прогона (LLM-раскладка + находки audit1c + сохранение + аудит). Переиспользуется
+    POST /api/runs и планировщиком триггеров (server/triggers.py). Возвращает {saved, result}."""
     result = await runner.run_live(agent, contract, ape.skill_safety,
                                    data_query=ape.data_query,
                                    skill_sources=ape.skill_datasources_resolved,
                                    load_body=ape.load_skill_body,
                                    chat_fn=clients.chat)
-    # Петля прогон→канва: для аудит-агента доносим СТРУКТУРИРОВАННЫЕ находки (детерминир. движок, не LLM)
-    # прямо в результат Run — чтобы «Строю» идемпотентно подхватывал их из последнего прогона.
+    # Петля прогон→канва: для аудит-агента доносим СТРУКТУРИРОВАННЫЕ находки (детерминир. движок, не LLM).
     _skills = [n.get("skill") for n in (agent.get("graph") or {}).get("nodes", [])]
     if "audit1c-checks" in _skills:
         try:
@@ -943,15 +960,39 @@ async def run_start(body: dict, u: dict = Depends(user)) -> JSONResponse:
         except Exception as ex:  # noqa: BLE001 — находки опциональны, прогон не падает
             result["findings"] = []
             result["findings_error"] = f"{type(ex).__name__}: {ex}"
-    result["started_by"] = u.get("name") or u.get("sub") or "dev"  # кто запустил (для журнала)
+    result["started_by"] = started_by
+    if trigger:  # прогон запущен триггером — фиксируем происхождение (наблюдаемость цепочек)
+        result["trigger"] = {"id": trigger.get("id"), "type": (trigger.get("trig") or {}).get("type"),
+                             "title": trigger.get("title")}
     saved = await run_store.save(result)
     _v = result.get("verdict") or {}
-    await audit_store.record(u.get("name") or u.get("sub") or "dev", "agent.run", saved["id"],
-                             {"agent_id": agent_id, "verdict_ok": bool(_v.get("ok")),
+    await audit_store.record(started_by, "agent.run", saved["id"],
+                             {"agent_id": agent.get("id"), "verdict_ok": bool(_v.get("ok")),
                               "autonomy_used": _v.get("autonomy_used"),
-                              "findings": (result.get("findings_summary") or {}).get("total")},
+                              "findings": (result.get("findings_summary") or {}).get("total"),
+                              "trigger": (trigger or {}).get("id")},
                              severity=("info" if _v.get("ok") else "warn"))
-    return JSONResponse({"run_id": saved["id"], **result}, status_code=201)
+    return {"saved": saved, "result": result}
+
+
+@app.post("/api/runs")
+async def run_start(body: dict, u: dict = Depends(user)) -> JSONResponse:
+    """Запуск прогона агента. Тело: {agent_id} ИЛИ {contract_audit_id}. Возвращает 201."""
+    agent_id = str((body or {}).get("agent_id", "")).strip()
+    audit_id = str((body or {}).get("contract_audit_id", "")).strip()
+    if not agent_id and audit_id:
+        lst = await agent_store.list_for(audit_id)
+        if not lst:
+            raise HTTPException(404, "нет сохранённого агента для контракта")
+        agent_id = lst[0]["id"]
+    agent = await agent_store.get(agent_id) if agent_id else None
+    if not agent:
+        raise HTTPException(404, "нет такого AgentVersion")
+    contract = await contract_store.get(agent.get("contract_audit_id") or audit_id)
+    if not contract:
+        contract = {"intake": {"autonomy_ceiling": agent.get("autonomy_max") or "A2"}, "bundle": {}}
+    out = await execute_agent_run(agent, contract, u.get("name") or u.get("sub") or "dev")
+    return JSONResponse({"run_id": out["saved"]["id"], **out["result"]}, status_code=201)
 
 
 @app.get("/api/runs")
