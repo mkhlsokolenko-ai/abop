@@ -330,6 +330,25 @@ async def my_scenarios_save(body: dict, u: dict = Depends(user)) -> dict:
     return {"scenarios": saved}
 
 
+@app.get("/api/memory/{scope}")
+async def memory_get(scope: str, u: dict = Depends(user)) -> dict:
+    """Память агента/процесса (per-АГЕНТ, ОБЩАЯ для всех — не пер-юзер, не localStorage). scope =
+    сценарий/процесс. None ⇒ клиент берёт свой сид. §БД-фаза (persistence-localstorage-hole)."""
+    mem = await userdata_store.get_memory(scope)
+    return {"scope": scope, "memory": mem, "seeded": mem is not None}
+
+
+@app.post("/api/memory/{scope}")
+async def memory_save(scope: str, body: dict, u: dict = Depends(user)) -> dict:
+    """Сохранить память агента/процесса в Postgres (общая для всех операторов). Тело: {memory:[...]}."""
+    require_level(u, "manager")
+    data = (body or {}).get("memory")
+    if not isinstance(data, list):
+        raise HTTPException(422, "нужен массив memory")
+    saved = await userdata_store.save_memory(scope, data)
+    return {"scope": scope, "memory": saved}
+
+
 @app.get("/api/families")
 def families(u: dict = Depends(user)) -> dict:
     """Ростер Семья→Роль→Навык (для палитры канвы и каталога). §4/§6 ABOP_SCREENS."""
