@@ -27,7 +27,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import agent_store, assembly, audit_store, clients, contract_store, dataplane_store, ingress, layout_store, run_store, runner, skill_store  # noqa: E402
+from . import admin_store, agent_store, assembly, audit_store, clients, contract_store, dataplane_store, ingress, layout_store, run_store, runner, skill_store  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
 
@@ -280,6 +280,35 @@ async def admin_rbac(u: dict = Depends(user)) -> dict:
         rows.append({"role": lvl, "count": len(people), "people": ", ".join(people[:6]) or "нет пользователей",
                      "departments": depts, "allow": pol["allow"], "deny": pol["deny"]})
     return {"rows": rows, "realm": data.get("realm"), "source": "keycloak"}
+
+
+# ── Админ-конфиг среды (модели/арендаторы/квоты/пороги ИБ) в Postgres — §7.2/БД-фаза ──
+# Раньше эти настройки правились в UI и оседали в localStorage браузера (per-браузер, терялись
+# при перенакате). Теперь общие для всех операторов и переживают рестарт. См.
+# persistence-localstorage-hole. Отсутствующие ключи ⇒ клиент берёт свой дефолт (сид в state).
+_ADMIN_CONFIG_KEYS = {"modelCfg", "defaultProfile", "tenantMode", "quotaLimit", "quotaPolicy", "escThresholds"}
+
+
+@app.get("/api/admin/config")
+async def admin_config(u: dict = Depends(user)) -> dict:
+    """Сохранённые в Postgres админ-настройки среды (только правки; дефолты — на клиенте)."""
+    return {"config": await admin_store.all()}
+
+
+@app.post("/api/admin/config")
+async def admin_config_set(body: dict, u: dict = Depends(user)) -> dict:
+    """Сохранить админ-настройку в Postgres (общая для всех операторов, переживает перенакат —
+    не localStorage). Тело: {key, value}. key ∈ modelCfg/defaultProfile/tenantMode/quotaLimit/
+    quotaPolicy/escThresholds. Правка настроек среды — уровень manager+ (RBAC-гейт)."""
+    require_level(u, "manager")
+    key = (body or {}).get("key")
+    if key not in _ADMIN_CONFIG_KEYS:
+        raise HTTPException(422, "неизвестный ключ конфига")
+    value = (body or {}).get("value")
+    editor = u.get("name") or u.get("sub") or "dev"
+    await admin_store.save(key, value, editor=editor)
+    await audit_store.record(editor, "admin.config", key, {"key": key})
+    return {"key": key, "value": value}
 
 
 @app.get("/api/families")
@@ -623,6 +652,7 @@ async def _startup() -> None:
     await layout_store.init()
     await audit_store.init()
     await skill_store.init()
+    await admin_store.init()
     await _refresh_skill_ds_cache()  # инжект data-need оверрайдов из PG в ape
     await dataplane_store.init()
     await _backfill_dataplane_from_files()  # одноразовый перенос ~/.ape → PG (сохранить демо-рецепты)
