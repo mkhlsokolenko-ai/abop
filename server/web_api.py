@@ -675,7 +675,7 @@ async def process_conformance(body: dict, u: dict = Depends(user)) -> dict:
     """Сверка собранного процесса ABOP с регламентом по ключу НСИ: структурный drift (нет в регламенте /
     не собрано) + смысловой (cosine эмбеддинга операции ABOP vs чанк регламента, порог). §регламент-
     конформанс. Тело: {ops:[{nsi_key,label}], tenant?}."""
-    ops = [o for o in ((body or {}).get("ops") or []) if o.get("nsi_key")]
+    ops = [o for o in ((body or {}).get("ops") or []) if o.get("nsi_key") or o.get("label")]
     tenant = str((body or {}).get("tenant") or "default").strip() or "default"
     # sLAVA-режим: сверка против РЕАЛЬНОГО регламент-корпуса (slava_reglament_ru/audit1c_norms) —
     # для каждой операции ABOP vector-поиск в sLAVA → лучший чанк+score → статус. Прямое направление
