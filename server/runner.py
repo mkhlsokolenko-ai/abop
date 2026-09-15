@@ -156,9 +156,11 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
                                      max_tokens=_LIM["max_tokens"])
                 txt = (resp.get("text") or "").strip() or "(пустой ответ модели)"
                 model = resp.get("model", "")
+                tin, tout = int(resp.get("input_tokens") or 0), int(resp.get("output_tokens") or 0)
             except Exception as ex:  # noqa: BLE001 — LLM недоступен → честно помечаем, прогон не падает
-                txt, model = f"(LLM недоступен: {type(ex).__name__}: {ex})", ""
-        return {"skill": sid, "entities": entities, "model": model, "text": txt}
+                txt, model, tin, tout = f"(LLM недоступен: {type(ex).__name__}: {ex})", "", 0, 0
+        return {"skill": sid, "entities": entities, "model": model, "text": txt,
+                "input_tokens": tin, "output_tokens": tout}
 
     # навыки — параллельно, но с rate-limit (семафор): батч по _LLM_CONCURRENCY к RouteAI
     results = await asyncio.gather(*[_analyze(s) for s in skills])
@@ -166,5 +168,27 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
     for f in findings:
         base["board"].append({"kind": "finding", "agent": f["skill"], "text": f["text"][:1800]})
     base["findings"] = findings
+    # Реальный биллинг (7.1): токены из ответов RouteAI + тариф pricing.cost_rub → cost в RunMetrics
+    # (НЕ хардкод). Пустые модели (LLM был недоступен) в стоимость не идут. Персистится в payload.
+    from . import pricing
+    by_model: dict[str, dict] = {}
+    tin = tout = 0
+    for f in findings:
+        m = f.get("model") or ""
+        if not m:
+            continue
+        i, o = int(f.get("input_tokens") or 0), int(f.get("output_tokens") or 0)
+        tin += i; tout += o
+        bm = by_model.setdefault(m, {"input_tokens": 0, "output_tokens": 0, "rub": 0.0, "calls": 0})
+        bm["input_tokens"] += i; bm["output_tokens"] += o
+        bm["rub"] = round(bm["rub"] + pricing.cost_rub(m, i, o), 4)
+        bm["calls"] += 1
+    base["run_metrics"]["cost"] = {
+        "schema": "abop.run_cost/1.0",
+        "rub": round(sum(v["rub"] for v in by_model.values()), 4),
+        "input_tokens": tin, "output_tokens": tout,
+        "calls": sum(v["calls"] for v in by_model.values()),
+        "by_model": by_model,
+    }
     base["live"] = True
     return base
