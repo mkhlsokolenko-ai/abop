@@ -17,7 +17,7 @@ import datetime as dt
 import os
 import re
 
-from . import agent_store, contract_store, systems_store, trigger_store
+from . import access, agent_store, contract_store, systems_store, trigger_store
 
 A_LEVELS = ["A0", "A1", "A2", "A3", "A4"]
 TICK_SEC = int(os.getenv("ABOP_SCHEDULER_TICK", "45"))
@@ -188,6 +188,14 @@ async def _tick(run_executor) -> None:
                 sysid = trig.get("source")
                 system = await systems_store.get(sysid) if sysid else None
                 if not system:
+                    continue
+                # ABAC: агент вправе слушать эту систему? (семья агента ∈ scope системы) — иначе отказ+аудит
+                key = access.scope_key(family=full.get("family"))
+                ok, reason = access.can_reach_system(key, system)
+                if not ok:
+                    await trigger_store.record_fire(full["id"], tn["id"], "event", None, "skipped",
+                                                    f"нет доступа к «{sysid}»: {reason}")
+                    await access.audit_denial("agent:" + full["id"], key, sysid, "event", reason)
                     continue
                 cnt = await _poll_count(system, trig.get("path") or _DEFAULT_PATH.get(sysid, ""))
                 if cnt is None:

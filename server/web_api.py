@@ -27,7 +27,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import admin_store, agent_store, assembly, audit_store, clients, contract_store, dataplane_store, ingress, layout_store, run_store, runner, skill_store, systems_store, trigger_store, triggers, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, assembly, audit_store, clients, contract_store, dataplane_store, ingress, layout_store, run_store, runner, skill_store, systems_store, trigger_store, triggers, userdata_store  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
 
@@ -370,6 +370,29 @@ async def system_delete(sid: str, u: dict = Depends(user)) -> dict:
     await systems_store.delete(sid)
     await audit_store.record(u.get("name") or u.get("sub") or "dev", "system.delete", sid, {})
     return {"id": sid, "deleted": True}
+
+
+@app.get("/api/access/manifest")
+async def access_manifest(department: str = "", family: str = "", u: dict = Depends(user)) -> dict:
+    """Least-privilege манифест области (отдел/семья): доступные/закрытые системы реестра + Qdrant-тенант.
+    Основа гейта агентов на MCP-шлюзе (agent-rbac-mcp-gateway). Без параметров — область текущего юзера."""
+    key = access.scope_key(department=department or None, family=family or None) if (department or family) \
+        else access.scope_key(department=u.get("department"))
+    return await access.manifest(key)
+
+
+@app.post("/api/access/check")
+async def access_check(body: dict, u: dict = Depends(user)) -> dict:
+    """Проверка права доступа: {department|family, system_id} → {allowed, reason}. Отказ пишется в аудит."""
+    b = body or {}
+    key = access.scope_key(department=b.get("department"), family=b.get("family"))
+    system = await systems_store.get(str(b.get("system_id") or ""))
+    ok, reason = access.can_reach_system(key, system or {})
+    if not ok:
+        await access.audit_denial(u.get("name") or u.get("sub") or "dev", key,
+                                  str(b.get("system_id") or "?"), "check", reason)
+    return {"scope": key, "system_id": b.get("system_id"), "allowed": ok, "reason": reason,
+            "qdrant_tenant": access.qdrant_tenant(key)}
 
 
 @app.get("/api/triggers")
@@ -989,6 +1012,11 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
             result["findings"] = []
             result["findings_error"] = f"{type(ex).__name__}: {ex}"
     result["started_by"] = started_by
+    # Least-privilege манифест агента (ABAC): какие системы реестра доступны его семье, какой Qdrant-тенант.
+    try:
+        result["access"] = await access.manifest(access.scope_key(family=agent.get("family")))
+    except Exception:  # noqa: BLE001 — манифест опционален
+        pass
     if trigger:  # прогон запущен триггером — фиксируем происхождение (наблюдаемость цепочек)
         result["trigger"] = {"id": trigger.get("id"), "type": (trigger.get("trig") or {}).get("type"),
                              "title": trigger.get("title")}
