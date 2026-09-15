@@ -1283,6 +1283,25 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
         except Exception as ex:  # noqa: BLE001 — находки опциональны, прогон не падает
             result["findings"] = []
             result["findings_error"] = f"{type(ex).__name__}: {ex}"
+    # Обогащение находок НОРМАМИ из корпуса семьи (sLAVA): запрос ПО ТЕКСТУ находки (специфичный →
+    # sLAVA-retrieval срабатывает, в отличие от generic per-skill). Так объяснение получает реальную норму.
+    kfn = _agent_knowledge_fn(agent, started_by)
+    if kfn and isinstance(result.get("findings"), list):
+        enriched = 0
+        for f in result["findings"][:10]:
+            if not isinstance(f, dict):
+                continue
+            q = " ".join(str(f.get(k) or "") for k in ("проверка", "описание", "доказательство")).strip()
+            if not q:
+                continue
+            try:
+                norms = await kfn("audit1c-explain", [], q)
+            except Exception:  # noqa: BLE001
+                norms = []
+            if norms:
+                f["нормы_rag"] = norms[:2]
+                enriched += 1
+        result["norms_enriched"] = enriched
     result["started_by"] = started_by
     # Least-privilege манифест агента (ABAC): какие системы реестра доступны его семье, Qdrant-тенант,
     # и какие сущности закрыты на пути данных (система вне scope).
