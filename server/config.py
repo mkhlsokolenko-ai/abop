@@ -53,7 +53,7 @@ class Settings:
                       "qwen/qwen3-30b-a3b-instruct-2507,deepseek/deepseek-v4-flash")
         )
     )
-    embed_model: str = os.getenv("ROUTEAI_EMBED_MODEL", "bge-m3")
+    embed_model: str = os.getenv("ROUTEAI_EMBED_MODEL", "baai/bge-m3")  # RouteAI id — с префиксом baai/ (иначе 400)
 
     def cascade_for(self, profile: str) -> list[str]:
         """Каскад моделей под профиль задачи. code->Qwen, research->DeepSeek."""
