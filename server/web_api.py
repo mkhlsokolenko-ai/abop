@@ -537,7 +537,7 @@ async def reglament_graph_build(body: dict, u: dict = Depends(user)) -> dict:
     model = ""
     try:
         resp = await clients.chat(messages=[{"role": "user", "content": prompt}],
-                                  model="deepseek/deepseek-v4-pro", max_tokens=4000)
+                                  model="deepseek/deepseek-v4-pro", max_tokens=8000)  # reasoning + граф-вывод
         model = resp.get("model", "")
         for e in _parse_json_array(resp.get("text") or ""):
             if isinstance(e, dict) and e.get("from"):
