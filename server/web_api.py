@@ -452,6 +452,45 @@ async def family_collections(u: dict = Depends(user)) -> dict:
     return {"collections": cols, "department": u.get("department")}
 
 
+@app.post("/api/family/seed")
+async def family_seed(body: dict, u: dict = Depends(user)) -> dict:
+    """Наполнить корпуса семей РЕАЛЬНЫМ знанием из каталога навыков: тело каждого навыка (методика .md)
+    → slava_fam_<family> той семьи, что несёт навык. Тело: {family?} (пусто ⇒ все семьи). Admin-уровень."""
+    require_level(u, "admin")
+    only = str((body or {}).get("family") or "").strip()
+    out = {}
+    for fid, fam in ape.AGENT_FAMILIES.items():
+        if only and fid != only:
+            continue
+        col = slava.fam_collection(fid)
+        sids = []
+        for _mk, (_mt, sk) in (fam.get("members") or {}).items():
+            for s in sk:
+                if s not in sids:
+                    sids.append(s)
+        n = 0
+        for sid in sids:
+            if sid not in ape.SKILLS:
+                continue
+            title, short, _instr = ape.SKILLS[sid]
+            try:
+                body_txt = (ape.load_skill_body(sid) or "")[:4000]
+            except Exception:  # noqa: BLE001
+                body_txt = ""
+            text = f"[{fam.get('title', fid)}] Навык «{title}». {short}\n\n{body_txt}".strip()
+            if len(text) < 20:
+                continue
+            try:
+                await slava.ingest(col, f"{sid}.md", text, tenant="abop", replace=False, doc_id=sid)
+                n += 1
+            except Exception:  # noqa: BLE001 — пропускаем сбойный навык, продолжаем
+                pass
+        out[fid] = {"collection": col, "skills_ingested": n}
+    await audit_store.record(u.get("name") or u.get("sub") or "dev", "family.seed", only or "all",
+                             {"families": len(out)})
+    return {"seeded": out, "families": len(out)}
+
+
 @app.post("/api/family/ingest")
 async def family_ingest(body: dict, u: dict = Depends(user)) -> dict:
     """Загрузить знание/регламент в корпус СЕМЬИ (slava_fam_<family>) через sLAVA. ABAC: отдел = семья
