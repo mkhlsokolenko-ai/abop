@@ -2996,6 +2996,8 @@ def normalize_recipe(name: str, spec: dict) -> dict:
     """Нормализовать UI-форму рецепта в canonical (без записи). Сервер сохраняет результат в Postgres."""
     safe = re.sub(r"[^A-Za-z0-9_-]", "_", name.strip()) or "recipe"
     r = _normalize_recipe(spec); r["recipe"] = safe; r.setdefault("version", 1)
+    if (spec or {}).get("system_id"):  # привязка рецепта к системе реестра (connector.system_id → гейт на данных)
+        r["system_id"] = str(spec["system_id"]).strip()
     return r
 
 

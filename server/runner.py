@@ -118,12 +118,14 @@ def run_agent(agent: dict, contract: dict, safety_of) -> dict:
 
 
 async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_sources,
-                   load_body, chat_fn) -> dict:
+                   load_body, chat_fn, blocked_entities=None) -> dict:
     """НАСТОЯЩИЙ прогон: governance-каркас (run_agent) + для каждого навыка с data-scope
     собирает РЕАЛЬНЫЕ данные из canonical store (data_query) и прогоняет их через LLM
-    (тело навыка = методика) → находки на доску. Числа — только из данных (анти-галлюцинация)."""
+    (тело навыка = методика) → находки на доску. Числа — только из данных (анти-галлюцинация).
+    blocked_entities — сущности, закрытые ABAC (система вне scope семьи): навык их НЕ читает."""
     import json as _json
     import asyncio
+    blocked = set(blocked_entities or [])
     base = run_agent(agent, contract, safety_of)
     graph = agent.get("graph") or {}
     skills = [n.get("skill") or n["id"] for n in (graph.get("nodes") or []) if n.get("kind") == "skill"]
@@ -135,6 +137,11 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
             e = ds.get("entity")
             if e and e not in entities:
                 entities.append(e)
+        blk = [e for e in entities if e in blocked]        # ABAC: закрытые сущности
+        entities = [e for e in entities if e not in blocked]
+        if blk and not entities:  # весь data-scope навыка закрыт правами — навык не читает, честно помечаем
+            return {"skill": sid, "entities": [], "model": "", "input_tokens": 0, "output_tokens": 0,
+                    "text": "⛔ доступ к данным запрещён ABAC (система вне scope семьи): " + ", ".join(blk)}
         data = {}
         for e in entities:
             try:

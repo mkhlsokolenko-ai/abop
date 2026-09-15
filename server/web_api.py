@@ -617,21 +617,49 @@ async def _backfill_dataplane_from_files() -> None:
 
 # ── Коннекторы-инстансы (подключённые источники) — §5 таб «Коннекторы» ──
 @app.get("/api/data/connectors")
-def connectors_list(u: dict = Depends(user)) -> dict:
-    return {"connectors": ape.data_connectors()}
+async def connectors_list(u: dict = Depends(user)) -> dict:
+    """Коннекторы + (если привязан system_id) резолв эндпоинта из реестра систем и флаг `allowed`
+    для текущего отдела (ABAC). §5 таб «Коннекторы»."""
+    key = access.scope_key(department=u.get("department"))
+    out = []
+    for c in ape.data_connectors():
+        c = dict(c)
+        sid = c.get("system_id")
+        if sid:
+            sysrec = await systems_store.get(sid)
+            if sysrec:
+                c["system"] = {"id": sid, "kind": sysrec["kind"], "egress": sysrec["egress"], "scope": sysrec.get("scope") or []}
+                ok, reason = access.can_reach_system(key, sysrec)
+                c["allowed"] = ok
+                c["access_reason"] = reason
+        out.append(c)
+    return {"connectors": out}
 
 
 @app.post("/api/data/connectors")
 async def connector_save(body: dict, u: dict = Depends(user)) -> dict:
-    """Подключить коннектор (сохранить инстанс источника в Postgres). §5 [＋ подключить]."""
+    """Подключить коннектор (сохранить инстанс источника в Postgres). §5 [＋ подключить]. Если задан
+    system_id — эндпоинт/egress берутся из реестра систем (не хардкод URL); ABAC-гейт по scope."""
     require_level(u, "manager")
     if not str((body or {}).get("title", "")).strip():
         raise HTTPException(422, "нужен title коннектора")
     card = ape.build_connector(body)
+    sid = str((body or {}).get("system_id", "")).strip()
+    if sid:
+        sysrec = await systems_store.get(sid)
+        if not sysrec:
+            raise HTTPException(422, f"нет системы «{sid}» в реестре")
+        card["system_id"] = sid
+        # эндпоинт из реестра: base_url + относительный путь (если target не задан явно)
+        path = str((body or {}).get("path", "")).strip()
+        if not card.get("target") or path:
+            card["target"] = (sysrec.get("base_url") or "").rstrip("/") + ("/" + path.lstrip("/") if path else "")
+        card["egress"] = sysrec.get("egress")
     editor = u.get("name") or u.get("sub") or "dev"
     await dataplane_store.save_connector(card["id"], card, editor=editor)
     await _refresh_dataplane_cache()
-    await audit_store.record(editor, "data.connector", card["id"], {"adapter": card.get("adapter")})
+    await audit_store.record(editor, "data.connector", card["id"],
+                             {"adapter": card.get("adapter"), "system_id": card.get("system_id")})
     return card
 
 
@@ -989,14 +1017,47 @@ _NOT_IMPL = ("Прогон через API требует выноса cmd_agents
              "Форма ответа зафиксирована в docs/ABOP_API.md; сейчас — 501.")
 
 
+async def _gate_agent_data(agent: dict, fam_key: str, actor: str) -> tuple[set, list]:
+    """ABAC на пути ДАННЫХ: сущности агента, чьи наполняющие рецепты привязаны к системам (system_id)
+    вне scope семьи, — закрываем. Возвращает (blocked_entities, data_denied[]). Отказы → аудит."""
+    ents = set()
+    for n in (agent.get("graph") or {}).get("nodes") or []:
+        if n.get("kind") == "skill":
+            sid = n.get("skill") or n.get("title")
+            for ds in (ape.skill_datasources_resolved(sid) or []):
+                if ds.get("entity"):
+                    ents.add(ds["entity"])
+    ent_sys: dict = {}
+    for r in await dataplane_store.recipes_all():
+        e, sid = r.get("entity"), r.get("system_id")
+        if e and sid:
+            ent_sys.setdefault(e, set()).add(sid)
+    blocked, denied = set(), []
+    for e in ents:
+        sids = ent_sys.get(e) or set()
+        if not sids:
+            continue  # сущность не привязана к системе реестра (локально/публично) — не гейтим
+        allowed_any = False
+        for sid in sids:
+            ok, _r = access.can_reach_system(fam_key, await systems_store.get(sid) or {})
+            allowed_any = allowed_any or ok
+        if not allowed_any:
+            blocked.add(e)
+            denied.append({"entity": e, "systems": sorted(sids)})
+            await access.audit_denial(actor, fam_key, ",".join(sorted(sids)), "data:" + e, "система сущности вне scope")
+    return blocked, denied
+
+
 async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, trigger: dict | None = None) -> dict:
     """Ядро прогона (LLM-раскладка + находки audit1c + сохранение + аудит). Переиспользуется
     POST /api/runs и планировщиком триггеров (server/triggers.py). Возвращает {saved, result}."""
+    fam_key = access.scope_key(family=agent.get("family"))
+    blocked, data_denied = await _gate_agent_data(agent, fam_key, started_by)  # ABAC на данных
     result = await runner.run_live(agent, contract, ape.skill_safety,
                                    data_query=ape.data_query,
                                    skill_sources=ape.skill_datasources_resolved,
                                    load_body=ape.load_skill_body,
-                                   chat_fn=clients.chat)
+                                   chat_fn=clients.chat, blocked_entities=blocked)
     # Петля прогон→канва: для аудит-агента доносим СТРУКТУРИРОВАННЫЕ находки (детерминир. движок, не LLM).
     _skills = [n.get("skill") for n in (agent.get("graph") or {}).get("nodes", [])]
     if "audit1c-checks" in _skills:
@@ -1012,9 +1073,12 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
             result["findings"] = []
             result["findings_error"] = f"{type(ex).__name__}: {ex}"
     result["started_by"] = started_by
-    # Least-privilege манифест агента (ABAC): какие системы реестра доступны его семье, какой Qdrant-тенант.
+    # Least-privilege манифест агента (ABAC): какие системы реестра доступны его семье, Qdrant-тенант,
+    # и какие сущности закрыты на пути данных (система вне scope).
     try:
-        result["access"] = await access.manifest(access.scope_key(family=agent.get("family")))
+        result["access"] = await access.manifest(fam_key)
+        if data_denied:
+            result["access"]["data_denied"] = data_denied
     except Exception:  # noqa: BLE001 — манифест опционален
         pass
     if trigger:  # прогон запущен триггером — фиксируем происхождение (наблюдаемость цепочек)
