@@ -700,10 +700,29 @@ async def process_conformance(body: dict, u: dict = Depends(user)) -> dict:
                    "drift": sum(1 for x in report if x["status"] != "соответствует")}
         return {"collection": collection, "source": "slava", "report": report, "summary": summary}
     reg = await reglament_store.all_for(tenant)
+    op_embs = await clients.embed([o.get("label") or "" for o in ops]) if ops else []
+    # match='label': сопоставление по ЛУЧШЕМУ cosine (без обязательного nsi_key на узлах) — для карты
+    # прогона, где узлы = навыки без ключей НСИ. Матчим операцию сборки к чанку регламента по смыслу.
+    if str((body or {}).get("match") or "").strip() == "label":
+        report = []
+        for o, emb in zip(ops, op_embs):
+            best, best_sim = None, 0.0
+            for r in reg:
+                sim = _cosine(emb, r.get("embedding") or [])
+                if sim > best_sim:
+                    best, best_sim = r, sim
+            if not best or best_sim < 0.4:
+                report.append({"nsi_key": o.get("nsi_key"), "label": o.get("label"), "status": "нет в регламенте", "sim": round(best_sim, 3)})
+            else:
+                status = "соответствует" if best_sim >= 0.7 else "расходится по сути"
+                report.append({"nsi_key": best.get("nsi_key"), "label": o.get("label"),
+                               "reglament_op": best.get("op"), "status": status, "sim": round(best_sim, 3)})
+        summary = {"total": len(report), "ok": sum(1 for x in report if x["status"] == "соответствует"),
+                   "drift": sum(1 for x in report if x["status"] != "соответствует")}
+        return {"tenant": tenant, "report": report, "summary": summary, "match": "label"}
     reg_by_key: dict = {}
     for r in reg:
         reg_by_key.setdefault(r["nsi_key"], r)
-    op_embs = await clients.embed([o.get("label") or "" for o in ops]) if ops else []
     report, seen = [], set()
     for o, emb in zip(ops, op_embs):
         k = o.get("nsi_key")
