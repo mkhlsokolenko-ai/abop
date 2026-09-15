@@ -27,7 +27,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, assembly, audit_store, clients, contract_store, dataplane_store, ingress, layout_store, run_store, runner, skill_store, systems_store, trigger_store, triggers, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, assembly, audit_store, clients, contract_store, dataplane_store, ingress, layout_store, reglament_store, run_store, runner, skill_store, systems_store, trigger_store, triggers, userdata_store  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
 
@@ -370,6 +370,116 @@ async def system_delete(sid: str, u: dict = Depends(user)) -> dict:
     await systems_store.delete(sid)
     await audit_store.record(u.get("name") or u.get("sub") or "dev", "system.delete", sid, {})
     return {"id": sid, "deleted": True}
+
+
+def _cosine(a: list, b: list) -> float:
+    import math
+    if not a or not b:
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(y * y for y in b))
+    return dot / (na * nb) if na and nb else 0.0
+
+
+def _parse_json_array(text: str) -> list:
+    import json as _json
+    import re as _re
+    t = (text or "").strip()
+    m = _re.search(r"\[.*\]", t, _re.S)
+    if m:
+        t = m.group(0)
+    try:
+        return _json.loads(t)
+    except Exception:  # noqa: BLE001
+        return []
+
+
+@app.post("/api/reglament/ingest")
+async def reglament_ingest(body: dict, u: dict = Depends(user)) -> dict:
+    """Загрузить регламент и РАЗМЕТИТЬ чанки ЛЛМ (RouteAI DeepSeek v4): каждому — ключ НСИ [P][SS][OOO]
+    + метки процесс/подпроцесс/операция; посчитать эмбеддинг (BGE-M3) и сохранить в Postgres.
+    Тело: {text, tenant?, replace?}. §регламент-конформанс (reglament-conformance-slava)."""
+    require_level(u, "manager")
+    text = str((body or {}).get("text") or "").strip()
+    if not text:
+        raise HTTPException(422, "нужен text регламента")
+    tenant = str((body or {}).get("tenant") or "default").strip() or "default"
+    import re as _re
+    raw = [c.strip() for c in _re.split(r"\n\s*\n", text) if len(c.strip()) >= 15]
+    if not raw:
+        raw = [c.strip() for c in text.split("\n") if len(c.strip()) >= 15]
+    raw = raw[:40]
+    if not raw:
+        raise HTTPException(422, "не удалось выделить фрагменты")
+    prompt = (
+        "Ты размечаешь регламент бизнес-процесса ключами НСИ. Для КАЖДОГО фрагмента присвой "
+        "иерархический ключ вида [P][SS][OOO] (P=номер процесса 1..9, SS=подпроцесс 01..99, "
+        "OOO=операция 001..999; связанные фрагменты — общий процесс/подпроцесс) и краткие метки. "
+        "Верни СТРОГО JSON-массив без пояснений: "
+        "[{\"i\":0,\"nsi_key\":\"[1][01][001]\",\"process\":\"...\",\"subprocess\":\"...\",\"op\":\"...\"}].\n\n"
+        + "\n".join(f"[{i}] {c[:300]}" for i, c in enumerate(raw)))
+    try:
+        resp = await clients.chat(messages=[{"role": "user", "content": prompt}],
+                                  model="deepseek/deepseek-v4-pro", max_tokens=2000)
+        marks = _parse_json_array(resp.get("text") or "")
+    except Exception as ex:  # noqa: BLE001
+        raise HTTPException(502, f"LLM-разметка недоступна: {ex}")
+    by_i = {int(m["i"]): m for m in marks if isinstance(m, dict) and m.get("i") is not None}
+    embs = await clients.embed(raw)
+    if (body or {}).get("replace"):
+        await reglament_store.clear(tenant)
+    editor = u.get("name") or u.get("sub") or "dev"
+    saved = []
+    for i, (chunk, emb) in enumerate(zip(raw, embs)):
+        m = by_i.get(i, {})
+        key = str(m.get("nsi_key") or f"[9][99][{i + 1:03d}]")
+        await reglament_store.save_chunk(tenant, key, m.get("process") or "—", m.get("subprocess") or "—",
+                                         m.get("op") or chunk[:60], chunk, emb, editor=editor)
+        saved.append({"nsi_key": key, "op": m.get("op") or chunk[:60], "process": m.get("process") or "—"})
+    await audit_store.record(editor, "reglament.ingest", tenant, {"chunks": len(saved), "model": resp.get("model")})
+    return {"tenant": tenant, "chunks": saved, "count": len(saved), "markup_model": resp.get("model")}
+
+
+@app.get("/api/reglament")
+async def reglament_list(tenant: str = "default", u: dict = Depends(user)) -> dict:
+    """Размеченный регламент (чанки + ключи НСИ, без эмбеддингов)."""
+    reg = await reglament_store.all_for(tenant)
+    return {"tenant": tenant, "chunks": [{"nsi_key": r["nsi_key"], "process": r["process"],
+            "subprocess": r["subprocess"], "op": r["op"], "text": r["text"]} for r in reg]}
+
+
+@app.post("/api/process/conformance")
+async def process_conformance(body: dict, u: dict = Depends(user)) -> dict:
+    """Сверка собранного процесса ABOP с регламентом по ключу НСИ: структурный drift (нет в регламенте /
+    не собрано) + смысловой (cosine эмбеддинга операции ABOP vs чанк регламента, порог). §регламент-
+    конформанс. Тело: {ops:[{nsi_key,label}], tenant?}."""
+    ops = [o for o in ((body or {}).get("ops") or []) if o.get("nsi_key")]
+    tenant = str((body or {}).get("tenant") or "default").strip() or "default"
+    reg = await reglament_store.all_for(tenant)
+    reg_by_key: dict = {}
+    for r in reg:
+        reg_by_key.setdefault(r["nsi_key"], r)
+    op_embs = await clients.embed([o.get("label") or "" for o in ops]) if ops else []
+    report, seen = [], set()
+    for o, emb in zip(ops, op_embs):
+        k = o.get("nsi_key")
+        seen.add(k)
+        r = reg_by_key.get(k)
+        if not r:
+            report.append({"nsi_key": k, "label": o.get("label"), "status": "нет в регламенте", "sim": None})
+        else:
+            sim = _cosine(emb, r.get("embedding") or [])
+            status = "соответствует" if sim >= 0.75 else ("расходится по сути" if sim >= 0.5 else "сильно расходится")
+            report.append({"nsi_key": k, "label": o.get("label"), "reglament_op": r.get("op"),
+                           "status": status, "sim": round(sim, 3)})
+    for k, r in reg_by_key.items():
+        if k not in seen:
+            report.append({"nsi_key": k, "label": None, "reglament_op": r.get("op"),
+                           "status": "не собрано (есть в регламенте)", "sim": None})
+    summary = {"total": len(report), "ok": sum(1 for x in report if x["status"] == "соответствует"),
+               "drift": sum(1 for x in report if x["status"] != "соответствует")}
+    return {"tenant": tenant, "report": report, "summary": summary}
 
 
 @app.get("/api/access/manifest")
@@ -806,6 +916,7 @@ async def _startup() -> None:
     await systems_store.init()
     await systems_store.seed_if_empty()  # одноразовый сид реестра из server-inventory (демо-стенд)
     await trigger_store.init()
+    await reglament_store.init()
     import asyncio as _asyncio
     _asyncio.create_task(triggers.scheduler_loop(execute_agent_run))  # фоновый планировщик триггеров
     await _refresh_skill_ds_cache()  # инжект data-need оверрайдов из PG в ape
