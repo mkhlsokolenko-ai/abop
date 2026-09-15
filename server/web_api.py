@@ -334,8 +334,15 @@ async def my_scenarios_save(body: dict, u: dict = Depends(user)) -> dict:
 async def systems_list(u: dict = Depends(user)) -> dict:
     """Реестр систем/подключений (эндпоинты REST/БД/вектор + Kafka-топики) из Postgres. Единый каталог,
     на который ссылаются коннекторы/рецепты/триггеры (system_id + путь/топик), а не хардкод URL.
-    Секреты НЕ отдаём — только auth_ref (имя переменной). §БД-фаза (persistence-localstorage-hole)."""
-    return {"systems": await systems_store.all()}
+    Секреты НЕ отдаём — только auth_ref (имя переменной). Каждой системе проставляем `allowed` —
+    доступна ли текущему отделу (ABAC-scope, изоляция агентов на MCP-шлюзе). §БД-фаза."""
+    dept = u.get("department")
+    out = []
+    for s in await systems_store.all():
+        s = dict(s)
+        s["allowed"] = systems_store.allowed_for(s, dept)
+        out.append(s)
+    return {"systems": out, "department": dept}
 
 
 @app.get("/api/systems/{sid}")

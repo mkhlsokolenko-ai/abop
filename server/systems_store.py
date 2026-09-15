@@ -30,11 +30,14 @@ CREATE TABLE IF NOT EXISTS systems (
     editor      TEXT,
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- scope: разрешённые отделы/семьи (ABAC-изоляция доступа агента); пусто ⇒ доступно всем. Добавляем
+-- идемпотентно (таблица могла быть создана раньше без колонки). См. agent-rbac-mcp-gateway.
+ALTER TABLE systems ADD COLUMN IF NOT EXISTS scope JSONB NOT NULL DEFAULT '[]'::jsonb;
 """
 
 _MEM: dict[str, dict] = {}
 
-_COLS = "id,kind,base_url,brokers,topics,auth_ref,tenant,egress,note,editor,updated_at"
+_COLS = "id,kind,base_url,brokers,topics,auth_ref,tenant,egress,note,editor,updated_at,scope"
 
 
 def _has_pg() -> bool:
@@ -44,7 +47,16 @@ def _has_pg() -> bool:
 def _row(r) -> dict:
     return {"id": r[0], "kind": r[1], "base_url": r[2], "brokers": r[3] or [], "topics": r[4] or [],
             "auth_ref": r[5], "tenant": r[6], "egress": r[7], "note": r[8], "editor": r[9],
-            "updated_at": r[10].isoformat() if r[10] else None}
+            "updated_at": r[10].isoformat() if r[10] else None, "scope": r[11] or []}
+
+
+def allowed_for(system: dict, department: str | None) -> bool:
+    """ABAC: агент/пользователь отдела `department` вправе обращаться к системе? Пустой scope ⇒ всем;
+    admin/support (область '*') ⇒ везде; иначе department должен быть в scope системы."""
+    scope = (system or {}).get("scope") or []
+    if not scope or department in ("*", None):
+        return True
+    return department in scope
 
 
 async def init() -> None:
@@ -77,10 +89,13 @@ async def get(sid: str) -> dict | None:
 def normalize(sid: str, spec: dict) -> dict:
     """UI/сид-форма → каноническая карточка системы (без записи)."""
     spec = spec or {}
+    scope = spec.get("scope") or []
+    if not isinstance(scope, list):
+        scope = []
     return {"id": sid, "kind": spec.get("kind") or "rest", "base_url": spec.get("base_url") or "",
             "brokers": spec.get("brokers") or [], "topics": spec.get("topics") or [],
             "auth_ref": spec.get("auth_ref") or "", "tenant": spec.get("tenant") or "",
-            "egress": spec.get("egress") or "external", "note": spec.get("note") or ""}
+            "egress": spec.get("egress") or "external", "note": spec.get("note") or "", "scope": scope}
 
 
 async def save(sid: str, spec: dict, editor: str = "dev") -> dict:
@@ -92,13 +107,14 @@ async def save(sid: str, spec: dict, editor: str = "dev") -> dict:
     from .db import _conn
     async with _conn() as conn:
         await conn.execute(
-            "INSERT INTO systems (id,kind,base_url,brokers,topics,auth_ref,tenant,egress,note,editor,updated_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now()) "
+            "INSERT INTO systems (id,kind,base_url,brokers,topics,auth_ref,tenant,egress,note,scope,editor,updated_at) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now()) "
             "ON CONFLICT (id) DO UPDATE SET kind=EXCLUDED.kind, base_url=EXCLUDED.base_url, "
             "brokers=EXCLUDED.brokers, topics=EXCLUDED.topics, auth_ref=EXCLUDED.auth_ref, "
-            "tenant=EXCLUDED.tenant, egress=EXCLUDED.egress, note=EXCLUDED.note, editor=EXCLUDED.editor, updated_at=now()",
+            "tenant=EXCLUDED.tenant, egress=EXCLUDED.egress, note=EXCLUDED.note, scope=EXCLUDED.scope, "
+            "editor=EXCLUDED.editor, updated_at=now()",
             (sid, card["kind"], card["base_url"], json.dumps(card["brokers"]), json.dumps(card["topics"]),
-             card["auth_ref"], card["tenant"], card["egress"], card["note"], editor))
+             card["auth_ref"], card["tenant"], card["egress"], card["note"], json.dumps(card["scope"]), editor))
     return await get(sid)
 
 
@@ -118,7 +134,8 @@ _SEED = [
     ("bookstack", {"kind": "rest", "base_url": "http://5.129.192.63:6875", "auth_ref": "BOOKSTACK_TOKEN",
                    "egress": "external", "note": "Вики (аналог Confluence) → document. Authorization: Token. /api/pages"}),
     ("twenty",   {"kind": "rest", "base_url": "http://5.129.192.63:3002", "auth_ref": "TWENTY_API_KEY",
-                  "egress": "external", "note": "CRM → customer. Bearer JWT. /rest/opportunities (root data.opportunities)"}),
+                  "egress": "external", "scope": ["management", "analytics"],
+                  "note": "CRM → customer. Bearer JWT. /rest/opportunities (root data.opportunities). Доступ: продажи/аналитика"}),
     ("mailpit",  {"kind": "rest", "base_url": "http://5.129.192.63:8025", "auth_ref": "",
                   "egress": "external", "note": "Почта → email. /api/v1/messages (без auth). SMTP :1025"}),
     ("minio",    {"kind": "s3", "base_url": "http://5.129.192.63:9000", "auth_ref": "MINIO_CREDS",
@@ -126,9 +143,11 @@ _SEED = [
     ("nocodb",   {"kind": "rest", "base_url": "http://5.129.192.63:8090", "auth_ref": "NOCODB_TOKEN",
                   "egress": "external", "note": "No-code БД/таблицы (как база 1С: invoices/payments/vendors)"}),
     ("gitea",    {"kind": "rest", "base_url": "http://5.129.192.63:3001", "auth_ref": "GITEA_TOKEN",
-                  "egress": "external", "note": "Git-хостинг"}),
+                  "egress": "external", "scope": ["architecture", "engineering"],
+                  "note": "Git-хостинг. Доступ: архитектура/инженерия (аналитик/финансы не видят)"}),
     ("kroki",    {"kind": "rest", "base_url": "http://5.129.192.63:8000", "auth_ref": "",
-                  "egress": "external", "note": "Рендер диаграмм"}),
+                  "egress": "external", "scope": ["architecture", "engineering"],
+                  "note": "Рендер диаграмм. Доступ: архитектура/инженерия"}),
     ("postgres", {"kind": "db", "base_url": "postgresql://127.0.0.1:5433/abop", "auth_ref": "POSTGRES_DSN",
                   "egress": "internal", "note": "Canonical store / агенты / контракты / прогоны (persist)"}),
     ("qdrant",   {"kind": "vector", "base_url": "http://127.0.0.1:6333", "auth_ref": "QDRANT_API_KEY",
