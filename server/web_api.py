@@ -27,7 +27,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import admin_store, agent_store, assembly, audit_store, clients, contract_store, dataplane_store, ingress, layout_store, run_store, runner, skill_store  # noqa: E402
+from . import admin_store, agent_store, assembly, audit_store, clients, contract_store, dataplane_store, ingress, layout_store, run_store, runner, skill_store, userdata_store  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
 
@@ -311,6 +311,23 @@ async def admin_config_set(body: dict, u: dict = Depends(user)) -> dict:
     await admin_store.save(key, value, editor=editor)
     await audit_store.record(editor, "admin.config", key, {"key": key})
     return {"key": key, "value": value}
+
+
+@app.get("/api/me/scenarios")
+async def my_scenarios(u: dict = Depends(user)) -> dict:
+    """Черновики агентов ТЕКУЩЕГО пользователя (per-user, ключ = JWT sub) из Postgres — не localStorage,
+    не видны другим. §БД-фаза (persistence-localstorage-hole)."""
+    return {"scenarios": await userdata_store.get_scenarios(u.get("sub") or "")}
+
+
+@app.post("/api/me/scenarios")
+async def my_scenarios_save(body: dict, u: dict = Depends(user)) -> dict:
+    """Сохранить черновики агентов текущего пользователя в Postgres. Тело: {scenarios:{key:scenario}}."""
+    data = (body or {}).get("scenarios")
+    if not isinstance(data, dict):
+        raise HTTPException(422, "нужен объект scenarios")
+    saved = await userdata_store.save_scenarios(u.get("sub") or "", data)
+    return {"scenarios": saved}
 
 
 @app.get("/api/families")
@@ -655,6 +672,7 @@ async def _startup() -> None:
     await audit_store.init()
     await skill_store.init()
     await admin_store.init()
+    await userdata_store.init()
     await _refresh_skill_ds_cache()  # инжект data-need оверрайдов из PG в ape
     await dataplane_store.init()
     await _backfill_dataplane_from_files()  # одноразовый перенос ~/.ape → PG (сохранить демо-рецепты)
