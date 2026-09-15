@@ -491,6 +491,57 @@ async def family_seed(body: dict, u: dict = Depends(user)) -> dict:
     return {"seeded": out, "families": len(out)}
 
 
+_FAMILY_NORM_QUERY = {
+    "finance": "бухгалтерский учёт НДС налог на прибыль ФСБУ проводки отчётность признание выручки",
+    "audit": "аудит расхождений в учёте НК РФ ФСБУ счёт-фактура вычет НДС проводки регистры",
+    "credit": "кредитование скоринг лимиты выдача займа резервы обеспечение",
+    "analytics": "финансовый анализ показатели оценка эффективности отчётность",
+    "management": "управление процессами регламент договоры сроки ответственность",
+    "architecture": "проектирование систем требования интеграция API стандарты",
+    "engineering": "разработка тестирование качество код требования",
+    "research": "исследование источники методология анализ данных",
+    "critic": "проверка качества соответствие требованиям контроль",
+    "decisions": "принятие решений governance полномочия согласование",
+}
+
+
+@app.post("/api/family/seed-norms")
+async def family_seed_norms(body: dict, u: dict = Depends(user)) -> dict:
+    """Раздать ЗАКОНОДАТЕЛЬНЫЕ НОРМЫ по корпусам семей из большого корпуса регламента (slava_reglament_ru):
+    семантический запрос по домену семьи → top-N чанков → в slava_fam_<family>. Тело: {family?, query?,
+    count?, source?}. Пусто family ⇒ норм-релевантные семьи (finance/audit/credit). Admin-уровень.
+    NB: запускать ПО ОДНОЙ семье с паузой (sLAVA cooldown)."""
+    require_level(u, "admin")
+    src = str((body or {}).get("source") or "slava_reglament_ru").strip()
+    count = int((body or {}).get("count") or 6)
+    fam = str((body or {}).get("family") or "").strip()
+    fams = [fam] if fam else ["finance", "audit", "credit"]
+    out = {}
+    for fid in fams:
+        q = str((body or {}).get("query") or "") or _FAMILY_NORM_QUERY.get(fid, fid)
+        try:
+            srcs = (await slava.query(src, q, top_k=count, tenant="abop")).get("sources") or []
+        except Exception as ex:  # noqa: BLE001
+            out[fid] = {"error": str(ex)[:80]}
+            continue
+        col = slava.fam_collection(fid)
+        n = 0
+        for i, s in enumerate(srcs):
+            txt = (s.get("text") or "").strip()
+            if len(txt) < 30:
+                continue
+            try:
+                await slava.ingest(col, f"norm_reg_{i}.txt", "[закон/норма] " + txt, tenant="abop",
+                                   replace=False, doc_id=f"reg_{fid}_{i}")
+                n += 1
+            except Exception:  # noqa: BLE001
+                pass
+        out[fid] = {"collection": col, "norms_ingested": n, "from": src}
+    await audit_store.record(u.get("name") or u.get("sub") or "dev", "family.seed_norms", fam or "norm-fams",
+                             {"families": len(out)})
+    return {"seeded_norms": out}
+
+
 @app.post("/api/family/ingest")
 async def family_ingest(body: dict, u: dict = Depends(user)) -> dict:
     """Загрузить знание/регламент в корпус СЕМЬИ (slava_fam_<family>) через sLAVA. ABAC: отдел = семья
