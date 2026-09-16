@@ -505,6 +505,11 @@ SKILLS = {
                      "Ранжируй находки по существенности (сумма влияния + налоговый/нормативный риск + охват), а не по алфавиту; применяй порог материальности."),
     "audit1c-explain": ("Объяснение находок", "отчёт + HITL",
                         "Раскрывай каждую находку: Что не сходится / Откуда (документ+проводка) / Чем грозит (НК/ФСБУ) / Что проверить; отчёт — под подтверждение человека, наружу без HITL ничего."),
+    # ── Расследование ОТ СИМПТОМА (демо-сценарий №2): реализация→взаиморасчёты→НДС ──
+    "invest1c-trace": ("Трассировка цепочки", "реализация→оплата→НДС",
+                       "От симптома протягивай цепочку реализация→взаиморасчёты→НДС инструментом invest1c_trace по РЕАЛЬНЫМ basis-ссылкам; сверяй суммы по звеньям, звено с разрывом — корень. Цепочки не выдумывай."),
+    "invest1c-verdict": ("Заключение по цепочке", "риск + норма + HITL",
+                         "По каждой цепочке дай заключение: где разрыв / сумма расхождения / чем грозит по НК РФ гл.21 (счёт-фактура, вычет, момент определения базы) / что проверить. Существенные — под подтверждение человека (HITL), наружу без HITL ничего."),
 }
 
 
@@ -594,6 +599,8 @@ SKILL_SAFETY = {
     "audit1c-root-cause": {"mode": "read", "egress": "internal", "cite": True},
     "audit1c-rank": {"mode": "read", "egress": "internal", "cite": True},
     "audit1c-explain": {"mode": "write", "egress": "internal", "cite": True},           # отчёт-артефакт; наружу — под HITL
+    "invest1c-trace": {"mode": "read", "egress": "internal", "cite": True},              # трассировка по графу; цепочки считает код
+    "invest1c-verdict": {"mode": "write", "egress": "internal", "cite": True},           # заключение-артефакт; норма НК гл.21 из RAG
 }
 
 
@@ -770,6 +777,11 @@ SKILL_DATASOURCES = {
     "audit1c-rank": [{"entity": "doc1c", "kind": "audit1c", "note": "суммы влияния для существенности"}],
     "audit1c-explain": [{"entity": "doc1c", "kind": "audit1c", "note": "первоисточник каждой находки (документ+проводка)"},
                         {"entity": "document", "kind": "slava", "note": "нормы НК РФ гл.21 / ФСБУ 5/2019 / ПБУ — коллекция slava_audit1c_norms в sLAVA; цитируется в блоке «Чем грозит»"}],
+    # ── Расследование от симптома: те же канонические doc1c/ref1c + нормы НК гл.21 ──
+    "invest1c-trace": [{"entity": "doc1c", "kind": "audit1c", "note": "документы цепочки: реализация, оплата на р/с, счёт-фактура (basis-ссылки)"},
+                       {"entity": "ref1c", "kind": "audit1c", "note": "контрагенты/договоры для идентификации сторон цепочки"}],
+    "invest1c-verdict": [{"entity": "doc1c", "kind": "audit1c", "note": "первоисточник каждого звена цепочки (документ+сумма)"},
+                         {"entity": "document", "kind": "slava", "note": "нормы НК РФ гл.21 (счёт-фактура, вычет, момент базы) — коллекция slava_audit1c_norms; цитируется в заключении"}],
 }
 
 
@@ -963,6 +975,9 @@ AGENT_FAMILIES = {
             # демо-вертикаль «Аудитор данных в 1С»: конвейер extract→graph→match-weak→checks→root-cause→rank→explain
             "auditor-1c": ("Аудитор 1С", ["audit1c-extract", "audit1c-graph-build", "audit1c-match-weak",
                                            "audit1c-checks", "audit1c-root-cause", "audit1c-rank", "audit1c-explain"]),
+            # демо-сценарий №2 «расследование от симптома»: extract→graph→trace(цепочка)→verdict
+            "investigator-1c": ("Следователь 1С", ["audit1c-extract", "audit1c-graph-build",
+                                                    "invest1c-trace", "invest1c-verdict"]),
         },
     },
     "architecture": {
@@ -3470,6 +3485,86 @@ def audit1c_run_checks(g: dict = None) -> list:
     return F
 
 
+def _num(x) -> float:
+    """Безопасно приводит сумму 1С к float (строки/None/запятые)."""
+    if x is None:
+        return 0.0
+    try:
+        return float(str(x).replace(" ", "").replace(",", "."))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def audit1c_trace_chains(g: dict = None) -> list:
+    """Расследование ОТ СИМПТОМА: по каждой реализации протягивает цепочку
+    реализация → взаиморасчёты (оплата на р/с) → НДС (счёт-фактура выданный) по РЕАЛЬНЫМ
+    basis-ссылкам (Основание_uuid/referenced_by), сверяет суммы по звеньям и фиксирует РАЗРЫВ.
+    Возвращает только цепочки с симптомом (разрыв/несходимость) — детерминированно, находку
+    считает код. Норму НК гл.21 подтягивает RAG в объяснении (invest1c-verdict)."""
+    if g is None:
+        g = audit1c_build_graph()
+    by_type, ref_by = g["by_type"], g["referenced_by"]
+
+    def link(doc, kind, present, note=""):
+        return {"звено": kind, "есть": bool(present),
+                "документ": _ref_short(doc) if doc else None,
+                "статус": ("есть" if present else "РАЗРЫВ"), "примечание": note}
+
+    invs = []
+    for real in by_type.get("РеализацияТоваровУслуг", []):
+        rid = real.get("id")
+        children = ref_by.get(rid, [])
+        sf = next((d for d in children if d.get("тип") == "СчётФактураВыданный"), None)
+        pay = next((d for d in children if d.get("тип") == "ПоступлениеНаРасчётныйСчёт"), None)
+        sum_real = _num(real.get("СуммаДокумента") or real.get("Сумма"))
+        sum_nds = _num(real.get("СуммаНДС"))
+        sum_pay = _num((pay or {}).get("СуммаДокумента") or (pay or {}).get("Сумма")) if pay else 0.0
+        diff = round(sum_real - sum_pay, 2)
+
+        # симптомы (разрывы цепочки) — от них и ведём расследование
+        симптомы = []
+        if not sf:
+            симптомы.append("НДС не предъявлен покупателю (нет счёта-фактуры выданного)")
+        if not pay:
+            симптомы.append("нет оплаты — открытая дебиторская задолженность")
+        elif abs(diff) > 0.01:
+            симптомы.append(f"сумма оплаты ≠ сумме реализации (разница {diff:+.2f} ₽)")
+        if not симптомы:
+            continue  # цепочка целостна — не расследуем
+
+        sev = "высокая" if (not sf or abs(diff) > 0.01) else "средняя"
+        цепочка = [
+            link(real, "Реализация", True, f"СуммаДокумента {sum_real:.2f} ₽, НДС {sum_nds:.2f} ₽"),
+            link(sf, "Счёт-фактура выданный (НДС)", sf,
+                 "НДС предъявлен покупателю" if sf else "счёта-фактуры нет"),
+            link(pay, "Оплата · взаиморасчёты", pay,
+                 f"поступило {sum_pay:.2f} ₽" if pay else "поступления на р/с нет"),
+        ]
+        invs_id = "INV-" + str(real.get("Номер"))
+        invs.append({
+            "id": invs_id, "серьёзность": sev,
+            "симптом": "; ".join(симптомы),
+            "старт": _ref_short(real),
+            "цепочка": цепочка,
+            "сверка": {"реализация_₽": sum_real, "оплачено_₽": sum_pay, "разница_₽": diff,
+                       "ндс_₽": sum_nds, "ндс_предъявлен": bool(sf)},
+            "проверка": "Расследование цепочки реализация→взаиморасчёты→НДС",
+            "описание": "Прослежена цепочка от реализации до оплаты и НДС; звено с разрывом — корень симптома.",
+            "доказательство": "; ".join(
+                f"{l['звено']}: {l['статус']}" for l in цепочка),
+        })
+    order = {"высокая": 0, "средняя": 1, "низкая": 2}
+    invs.sort(key=lambda x: (order.get(x["серьёзность"], 3), x["id"]))
+    return invs
+
+
+def _t_invest1c_trace(a):
+    invs = audit1c_trace_chains()
+    broken = sum(1 for i in invs if any(not l["есть"] for l in i["цепочка"]))
+    return json.dumps({"расследований": len(invs), "с_разрывом": broken, "цепочки": invs},
+                      ensure_ascii=False)[:7000]
+
+
 def _t_audit1c_graph(a):
     g = audit1c_build_graph()
     summary = {"документов": len(g["docs"]), "справочных элементов": len(g["refs"]),
@@ -3622,6 +3717,8 @@ AGENT_TOOLS = {
                       'детерминированный граф связей реальной 1С (документы/basis-цепочки/счета/ИНН) — args: {}'),
     "audit1c_checks": (_t_audit1c_checks,
                        'детерминированные проверки аудита A/B/C/D по графу (находки считает код, не LLM) — args: {"класс":"A|B|C|D" (опц.)}'),
+    "invest1c_trace": (_t_invest1c_trace,
+                       'расследование ОТ СИМПТОМА: трассировка цепочек реализация→взаиморасчёты→НДС со сверкой сумм и разрывами (детерминированно) — args: {}'),
     "pdf_render": (_t_pdf_render,
                    'HTML-отчёт → PDF через Gotenberg (в ape_work) — args: {"html":"...","name":"audit_report"}'),
     "bookstack_publish": (_t_bookstack_publish,

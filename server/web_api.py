@@ -1262,9 +1262,18 @@ async def agent_save(body: dict, u: dict = Depends(user)) -> JSONResponse:
     fam = intake.get("family") or ""
     role = ""
     if fam in ape.AGENT_FAMILIES:
-        _members = list(ape.AGENT_FAMILIES[fam]["members"].keys())
+        _members = ape.AGENT_FAMILIES[fam]["members"]
         if len(_members) == 1:
-            role = _members[0]
+            role = next(iter(_members))
+        else:
+            # семья с несколькими ролями — выбираем роль по максимальному совпадению навыков контракта
+            want = set(intake.get("skills") or [])
+            best, best_score = "", 0
+            for rid, (_title, _sk) in _members.items():
+                score = len(want & set(_sk))
+                if score > best_score:
+                    best, best_score = rid, score
+            role = best
     # ADR-024: обычное сохранение/автосейв ПЕРЕЗАПИСЫВАЕТ draft (не плодит версии).
     # Новая версия — только при осознанном Пересмотре (revise=true) поверх НЕ-draft.
     revise = bool((body or {}).get("revise"))
@@ -1491,6 +1500,22 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
         except Exception as ex:  # noqa: BLE001 — находки опциональны, прогон не падает
             result["findings"] = []
             result["findings_error"] = f"{type(ex).__name__}: {ex}"
+    # Демо-сценарий №2 «расследование от симптома»: цепочки реализация→взаиморасчёты→НДС
+    # (детерминированный трассировщик; норму НК гл.21 подтягивает RAG ниже — как для находок).
+    if "invest1c-trace" in _skills:
+        try:
+            _invs = ape.audit1c_trace_chains()
+            result["investigations"] = _invs
+            result["investigations_summary"] = {
+                "total": len(_invs),
+                "broken": sum(1 for i in _invs
+                              if any(not l.get("есть") for l in i.get("цепочка", []))),
+                "by_sev": {s: sum(1 for i in _invs if i.get("серьёзность") == s)
+                           for s in ("высокая", "средняя")},
+            }
+        except Exception as ex:  # noqa: BLE001 — расследования опциональны, прогон не падает
+            result["investigations"] = []
+            result["investigations_error"] = f"{type(ex).__name__}: {ex}"
     # Обогащение находок НОРМАМИ из корпуса семьи (sLAVA): запрос ПО ТЕКСТУ находки (специфичный →
     # sLAVA-retrieval срабатывает, в отличие от generic per-skill). Так объяснение получает реальную норму.
     kfn = _agent_knowledge_fn(agent, started_by)
@@ -1508,6 +1533,20 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
                 norms = []
             if norms:
                 f["нормы_rag"] = norms[:2]
+                enriched += 1
+        # обогащаем нормами и цепочки-расследования (по тексту симптома + проверки)
+        for inv in (result.get("investigations") or [])[:10]:
+            if not isinstance(inv, dict):
+                continue
+            q = " ".join(str(inv.get(k) or "") for k in ("симптом", "проверка")).strip()
+            if not q:
+                continue
+            try:
+                norms = await kfn("invest1c-verdict", [], q)
+            except Exception:  # noqa: BLE001
+                norms = []
+            if norms:
+                inv["нормы_rag"] = norms[:2]
                 enriched += 1
         result["norms_enriched"] = enriched
     result["started_by"] = started_by

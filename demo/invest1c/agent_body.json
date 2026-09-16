@@ -1,0 +1,17 @@
+{
+  "name": "Следователь 1С",
+  "contract_audit_id": "invest1c-holding-2026",
+  "graph": {
+    "nodes": [
+      { "id": "audit1c-extract", "kind": "skill", "skill": "audit1c-extract", "autonomy": "A1", "hitl": false },
+      { "id": "audit1c-graph-build", "kind": "skill", "skill": "audit1c-graph-build", "autonomy": "A1", "hitl": false },
+      { "id": "invest1c-trace", "kind": "skill", "skill": "invest1c-trace", "autonomy": "A1", "hitl": false },
+      { "id": "invest1c-verdict", "kind": "skill", "skill": "invest1c-verdict", "autonomy": "A1", "hitl": true }
+    ],
+    "edges": [
+      { "from": "audit1c-extract", "to": "audit1c-graph-build" },
+      { "from": "audit1c-graph-build", "to": "invest1c-trace" },
+      { "from": "invest1c-trace", "to": "invest1c-verdict" }
+    ]
+  }
+}
