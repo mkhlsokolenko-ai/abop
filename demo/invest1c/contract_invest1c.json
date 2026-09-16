@@ -5,16 +5,32 @@
     "segment": "Расследование от симптома в 1С: реализация → взаиморасчёты → НДС",
     "family": "audit",
     "skills": [
-      { "id": "audit1c-extract" },
-      { "id": "audit1c-graph-build" },
-      { "id": "invest1c-trace" },
-      { "id": "invest1c-verdict" }
+      {
+        "id": "audit1c-extract"
+      },
+      {
+        "id": "audit1c-graph-build"
+      },
+      {
+        "id": "invest1c-trace"
+      },
+      {
+        "id": "invest1c-verdict"
+      }
     ],
     "modules": [
-      { "id": "Снимок 1С · doc1c/ref1c", "access": "read" },
-      { "id": "Нормы НК гл.21 / ФСБУ · sLAVA", "access": "read" }
+      {
+        "id": "Снимок 1С · doc1c/ref1c",
+        "access": "read"
+      },
+      {
+        "id": "Нормы НК гл.21 / ФСБУ · sLAVA",
+        "access": "read"
+      }
     ],
-    "evidence": ["ev:inv1c7788aa"]
+    "evidence": [
+      "ev:1c7788aabb"
+    ]
   },
   "deployment_contract": {
     "schema": "luda.deployment_contract/1.0",
@@ -24,11 +40,16 @@
     "limiting_axis": "нормативный риск (НК РФ гл.21: счёт-фактура/вычет/момент базы) + существенность сумм цепочки",
     "criticality": "T2",
     "hitl_points": [
-      { "id": "главбух-подтверждает-заключение" }
+      {
+        "id": "главбух-подтверждает-заключение"
+      }
     ],
-    "data_residency": { "zone": "on-prem", "egress": "sLAVA-proxy (анти-SSRF)" },
+    "data_residency": {
+      "zone": "on-prem",
+      "egress": "sLAVA-proxy (анти-SSRF)"
+    },
     "acceptance": {
-      "first_time_right": 0.90,
+      "first_time_right": 0.9,
       "escalation_rate": 0.15
     }
   },
@@ -37,11 +58,21 @@
     "audit_id": "invest1c-holding-2026",
     "methodology_version": "1.0",
     "metrics": {
-      "first_time_right": { "value": 0.55, "evidence": ["ev:inv1c7788aa"] },
-      "escalation_rate": { "value": 0.45, "evidence": ["ev:inv1c7788aa"] }
+      "first_time_right": {
+        "value": 0.55,
+        "evidence": [
+          "ev:1c7788aabb"
+        ]
+      },
+      "escalation_rate": {
+        "value": 0.45,
+        "evidence": [
+          "ev:1c7788aabb"
+        ]
+      }
     }
   },
   "evidence_pack": [
-    "inv1c7788aabbccddeeff00112233445566778899aabbccddeeff0011223344"
+    "1c7788aabbccddeeff00112233445566778899aabbccddeeff00112233445566"
   ]
 }
