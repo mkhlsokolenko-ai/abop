@@ -1634,6 +1634,23 @@ async def _deliver_out_nodes(agent: dict, result: dict, actor: str) -> None:
                                                  {"to": cfg.get("to") or "audit@demo.local", "subject": title,
                                                   "body": body_txt, "attachment": att,
                                                   "run": "true" if real else "false"})
+            elif channel == "yougile":
+                out = await loop.run_in_executor(None, ape._t_yougile_task,
+                                                 {"title": title, "description": _html_to_text(html_report)[:6000],
+                                                  "column_id": cfg.get("column_id") or cfg.get("to") or "",
+                                                  "run": "true" if real else "false"})
+            elif channel == "yandex":
+                att = ""
+                if (cfg.get("format") or "pdf") == "pdf":
+                    pr = await loop.run_in_executor(None, ape._t_pdf_render,
+                                                    {"html": html_report, "name": "report"})
+                    m = _re.search(r"PDF готов:\s*(\S+)", pr or "")
+                    att = m.group(1) if m else ""
+                body_txt = "Отчёт агента ABOP во вложении." if att else _html_to_text(html_report)[:4000]
+                out = await loop.run_in_executor(None, ape._t_yandex_email,
+                                                 {"to": cfg.get("to") or "", "subject": title,
+                                                  "body": body_txt, "attachment": att,
+                                                  "run": "true" if real else "false"})
             elif channel in ("pdf", "file"):
                 out = await loop.run_in_executor(None, ape._t_pdf_render,
                                                  {"html": html_report, "name": cfg.get("to") or "report"})

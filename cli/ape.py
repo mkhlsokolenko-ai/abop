@@ -3582,6 +3582,14 @@ GOTENBERG_URL = os.getenv("GOTENBERG_URL", "http://201.51.5.24:3050")
 BOOKSTACK_URL = os.getenv("BOOKSTACK_URL", "http://5.129.192.63:6875")
 MAILPIT_HOST = os.getenv("MAILPIT_HOST", "5.129.192.63")
 MAILPIT_PORT = int(os.getenv("MAILPIT_PORT", "1025"))
+# ── Реальные внешние API доставки (каркас; включаются, когда заданы токены в env) ──
+YOUGILE_BASE = os.getenv("YOUGILE_BASE", "https://ru.yougile.com/api-v2")
+YOUGILE_TOKEN = os.getenv("YOUGILE_TOKEN", "")          # Bearer-токен компании (Настройки→API)
+YOUGILE_COLUMN = os.getenv("YOUGILE_COLUMN_ID", "")     # id колонки по умолчанию (куда класть задачу)
+YANDEX_SMTP_HOST = os.getenv("YANDEX_SMTP_HOST", "smtp.yandex.ru")
+YANDEX_SMTP_PORT = int(os.getenv("YANDEX_SMTP_PORT", "465"))
+YANDEX_SMTP_USER = os.getenv("YANDEX_SMTP_USER", "")    # ящик-отправитель (полный адрес)
+YANDEX_SMTP_PASSWORD = os.getenv("YANDEX_SMTP_PASSWORD", "")  # ПАРОЛЬ ПРИЛОЖЕНИЯ (не основной)
 
 
 def _multipart(fields: dict, files: dict):
@@ -3679,6 +3687,69 @@ def _t_email_send(a):
         return f"письмо отправлено в Mailpit ({MAILPIT_HOST}:{MAILPIT_PORT}) → {to}. Просмотр: web :8025"
     except Exception as ex:  # noqa: BLE001
         return f"Mailpit ошибка: {type(ex).__name__} — {ex}"
+
+
+def _t_yougile_task(a):
+    """Создать РЕАЛЬНУЮ задачу в YouGile (таск-трекер) через REST API v2. ДЕЙСТВИЕ → dry_run по умолчанию.
+    args: {title, description, column_id, run:true}. Токен из env YOUGILE_TOKEN, колонка из column_id|YOUGILE_COLUMN_ID."""
+    title = str(a.get("title") or "Задача от агента ABOP")
+    desc = str(a.get("description") or "")
+    column = str(a.get("column_id") or YOUGILE_COLUMN or "")
+    if not (str(a.get("run")).lower() == "true"):
+        return f"[dry_run] YouGile: создать задачу «{title}» в колонке {column or '—'} ({len(desc)} симв.). Реально — run=true (HITL)."
+    if not YOUGILE_TOKEN:
+        return "нет YOUGILE_TOKEN в env контейнера abop-webapi — реальная отправка недоступна (каркас готов)"
+    if not column:
+        return "не задана колонка (column_id или env YOUGILE_COLUMN_ID) — некуда класть задачу"
+    payload = {"title": title, "columnId": column, "description": desc[:8000]}
+    url = _guard_url(YOUGILE_BASE.rstrip("/") + "/tasks")
+    req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"),
+                                 headers={"Content-Type": "application/json", "Authorization": "Bearer " + YOUGILE_TOKEN})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            d = json.loads(r.read().decode("utf-8", "replace"))
+        return f"задача создана в YouGile: id={d.get('id')} «{title}»"
+    except Exception as ex:  # noqa: BLE001
+        return f"YouGile ошибка: {type(ex).__name__} — {ex}"
+
+
+def _t_yandex_email(a):
+    """РЕАЛЬНОЕ письмо через Яндекс.Почту (SMTP SSL :465). ДЕЙСТВИЕ → dry_run по умолчанию.
+    args: {to, subject, body, attachment, run:true}. Логин/пароль из env YANDEX_SMTP_USER/PASSWORD
+    (ПАРОЛЬ ПРИЛОЖЕНИЯ, не основной пароль аккаунта)."""
+    to = str(a.get("to") or "")
+    subject = str(a.get("subject") or "Отчёт агента ABOP")
+    body = str(a.get("body") or "")
+    att = str(a.get("attachment") or "").strip()
+    if not (str(a.get("run")).lower() == "true"):
+        return f"[dry_run] Яндекс.Почта: письмо to={to or '—'}, subject='{subject}', вложение='{att or '—'}'. Реально — run=true (HITL)."
+    if not (YANDEX_SMTP_USER and YANDEX_SMTP_PASSWORD):
+        return "нет YANDEX_SMTP_USER/YANDEX_SMTP_PASSWORD (пароль приложения) в env — реальная отправка недоступна (каркас готов)"
+    if not to:
+        return "не указан адрес получателя"
+    import smtplib
+    import ssl
+    from email.message import EmailMessage
+    msg = EmailMessage()
+    msg["From"] = YANDEX_SMTP_USER
+    msg["To"] = to
+    msg["Subject"] = subject
+    msg.set_content(body or "Отчёт во вложении.")
+    if att:
+        p = att if os.path.isabs(att) else os.path.join("ape_work", os.path.basename(att))
+        if os.path.isfile(p):
+            with open(p, "rb") as f:
+                msg.add_attachment(f.read(), maintype="application", subtype="pdf", filename=os.path.basename(p))
+        else:
+            return f"вложение не найдено: {p}"
+    try:
+        ctx = ssl.create_default_context()
+        with smtplib.SMTP_SSL(YANDEX_SMTP_HOST, YANDEX_SMTP_PORT, timeout=25, context=ctx) as s:
+            s.login(YANDEX_SMTP_USER, YANDEX_SMTP_PASSWORD)
+            s.send_message(msg)
+        return f"письмо отправлено через Яндекс ({YANDEX_SMTP_USER}) → {to}"
+    except Exception as ex:  # noqa: BLE001
+        return f"Яндекс SMTP ошибка: {type(ex).__name__} — {ex}"
 
 
 def _t_audit1c_checks(a):
