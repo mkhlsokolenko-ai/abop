@@ -1234,6 +1234,84 @@ async def contracts_get(audit_id: str, u: dict = Depends(user)) -> dict:
 
 # ═══════════════ AGENTS: сборка агента на канве → AgentVersion (ADR-013/014, SDD §4.4) ═══════════════
 
+def _resolve_role(fam: str, intake: dict) -> str:
+    """Роль в семье по контракту: единственная — она; иначе — по макс. совпадению навыков intake."""
+    if fam not in ape.AGENT_FAMILIES:
+        return ""
+    members = ape.AGENT_FAMILIES[fam]["members"]
+    if len(members) == 1:
+        return next(iter(members))
+    want = set(intake.get("skills") or [])
+    best, best_score = "", 0
+    for rid, (_title, _sk) in members.items():
+        score = len(want & set(_sk))
+        if score > best_score:
+            best, best_score = rid, score
+    return best
+
+
+_DEMO_DIR = Path(__file__).resolve().parents[1] / "demo"
+
+
+@app.post("/api/demo/prepare")
+async def demo_prepare(body: dict, u: dict = Depends(user)) -> dict:
+    """Один клик «Собрать и запустить»: идемпотентно готовит демо-сценарий к прогону —
+    ингест контракта + сохранение AgentVersion из demo/<key>/ (contract*.json + agent_body.json).
+    Возвращает {audit_id, agent_id, contract} для привязки на канве. Сценарий без демо-пакета → 404.
+
+    Закрывает разрыв UX: вкладка сценария на канве не привязывала контракт, поэтому «Запустить
+    прогон» молча ничего не делал. Теперь запуск из UI доступен в один клик (см. persistence-hole)."""
+    import json as _json
+    import glob as _glob
+    key = str((body or {}).get("scenario") or "").strip()
+    ddir = _DEMO_DIR / key
+    if not key or not ddir.is_dir():
+        raise HTTPException(404, f"нет демо-пакета для сценария «{key}»")
+    cfiles = sorted(_glob.glob(str(ddir / "contract*.json")))
+    bfile = ddir / "agent_body.json"
+    if not cfiles or not bfile.is_file():
+        raise HTTPException(404, f"демо-пакет «{key}» неполон (нужны contract*.json + agent_body.json)")
+    with open(cfiles[0], encoding="utf-8") as f:
+        contract = _json.load(f)
+    audit_id = ((contract.get("capability_request") or {}).get("audit_id") or "").strip()
+    if not audit_id:
+        raise HTTPException(422, "в контракте нет capability_request.audit_id")
+    actor = u.get("name") or u.get("sub") or "demo"
+    # 1) контракт — ингест, если ещё не принят (идемпотентно)
+    if not await contract_store.get(audit_id):
+        res = ingress.validate(contract)
+        if not res.accepted:
+            raise HTTPException(422, {"errors": res.errors})
+        await contract_store.save(contract, res.intake, ingested_by=actor)
+    cs = await contract_store.get(audit_id)
+    intake = cs.get("intake") or {}
+    # ABAC: пользователь должен иметь доступ к семье контракта (иначе чужой процесс не запустить)
+    if not can_see_family(u, intake.get("family")):
+        raise HTTPException(403, f"нет доступа к семье «{intake.get('family')}»")
+    # 2) агент — сохранить из agent_body.json, если для контракта его ещё нет
+    agents = await agent_store.list_for(audit_id)
+    if agents:
+        agent_id = agents[0]["id"]
+    else:
+        with open(bfile, encoding="utf-8") as f:
+            body_data = _json.load(f)
+        graph = body_data.get("graph") or {}
+        check = assembly.check_graph(graph, intake, ape.skill_safety)
+        if check["errors"]:
+            raise HTTPException(422, {"errors": check["errors"]})
+        fam = intake.get("family") or ""
+        saved = await agent_store.save_draft(
+            name=body_data.get("name") or key, audit_id=audit_id, graph=graph,
+            autonomy_max=check["autonomy_max"], created_by=actor,
+            family=fam, role=_resolve_role(fam, intake))
+        agent_id = saved["id"]
+        await audit_store.record(actor, "agent.save", agent_id,
+                                 {"family": fam, "via": "demo.prepare", "scenario": key})
+    return {"audit_id": audit_id, "agent_id": agent_id,
+            "contract": {"audit_id": audit_id, "autonomy": intake.get("autonomy_ceiling"),
+                         "family": intake.get("family"), "skills": intake.get("skills") or []}}
+
+
 @app.post("/api/agents")
 async def agent_save(body: dict, u: dict = Depends(user)) -> JSONResponse:
     """Сохранить собранный на канве граф как AgentVersion (draft), привязав к ContractSet.
@@ -1260,20 +1338,7 @@ async def agent_save(body: dict, u: dict = Depends(user)) -> JSONResponse:
     # проходил ABAC (can_see_family) и обогащал журнал/Флот (ADR-032).
     intake = cs.get("intake") or {}
     fam = intake.get("family") or ""
-    role = ""
-    if fam in ape.AGENT_FAMILIES:
-        _members = ape.AGENT_FAMILIES[fam]["members"]
-        if len(_members) == 1:
-            role = next(iter(_members))
-        else:
-            # семья с несколькими ролями — выбираем роль по максимальному совпадению навыков контракта
-            want = set(intake.get("skills") or [])
-            best, best_score = "", 0
-            for rid, (_title, _sk) in _members.items():
-                score = len(want & set(_sk))
-                if score > best_score:
-                    best, best_score = rid, score
-            role = best
+    role = _resolve_role(fam, intake)
     # ADR-024: обычное сохранение/автосейв ПЕРЕЗАПИСЫВАЕТ draft (не плодит версии).
     # Новая версия — только при осознанном Пересмотре (revise=true) поверх НЕ-draft.
     revise = bool((body or {}).get("revise"))
