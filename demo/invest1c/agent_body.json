@@ -6,12 +6,16 @@
       { "id": "audit1c-extract", "kind": "skill", "skill": "audit1c-extract", "autonomy": "A1", "hitl": false },
       { "id": "audit1c-graph-build", "kind": "skill", "skill": "audit1c-graph-build", "autonomy": "A1", "hitl": false },
       { "id": "invest1c-trace", "kind": "skill", "skill": "invest1c-trace", "autonomy": "A1", "hitl": false },
-      { "id": "invest1c-verdict", "kind": "skill", "skill": "invest1c-verdict", "autonomy": "A1", "hitl": true }
+      { "id": "invest1c-verdict", "kind": "skill", "skill": "invest1c-verdict", "autonomy": "A1", "hitl": true },
+      { "id": "out", "kind": "out", "title": "Заключение → BookStack",
+        "out": { "channel": "bookstack", "book_id": 1, "subject": "Заключение по расследованию 1С",
+                 "format": "html", "run": false, "hitl": true } }
     ],
     "edges": [
       { "from": "audit1c-extract", "to": "audit1c-graph-build" },
       { "from": "audit1c-graph-build", "to": "invest1c-trace" },
-      { "from": "invest1c-trace", "to": "invest1c-verdict" }
+      { "from": "invest1c-trace", "to": "invest1c-verdict" },
+      { "from": "invest1c-verdict", "to": "out" }
     ]
   }
 }

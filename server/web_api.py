@@ -1288,25 +1288,22 @@ async def demo_prepare(body: dict, u: dict = Depends(user)) -> dict:
     # ABAC: пользователь должен иметь доступ к семье контракта (иначе чужой процесс не запустить)
     if not can_see_family(u, intake.get("family")):
         raise HTTPException(403, f"нет доступа к семье «{intake.get('family')}»")
-    # 2) агент — сохранить из agent_body.json, если для контракта его ещё нет
-    agents = await agent_store.list_for(audit_id)
-    if agents:
-        agent_id = agents[0]["id"]
-    else:
-        with open(bfile, encoding="utf-8") as f:
-            body_data = _json.load(f)
-        graph = body_data.get("graph") or {}
-        check = assembly.check_graph(graph, intake, ape.skill_safety)
-        if check["errors"]:
-            raise HTTPException(422, {"errors": check["errors"]})
-        fam = intake.get("family") or ""
-        saved = await agent_store.save_draft(
-            name=body_data.get("name") or key, audit_id=audit_id, graph=graph,
-            autonomy_max=check["autonomy_max"], created_by=actor,
-            family=fam, role=_resolve_role(fam, intake))
-        agent_id = saved["id"]
-        await audit_store.record(actor, "agent.save", agent_id,
-                                 {"family": fam, "via": "demo.prepare", "scenario": key})
+    # 2) агент — upsert draft из agent_body.json (идемпотентно: правки файла, вкл. OUT-узел,
+    #    подхватываются на следующем «Собрать и запустить», версии не плодятся — ADR-024).
+    with open(bfile, encoding="utf-8") as f:
+        body_data = _json.load(f)
+    graph = body_data.get("graph") or {}
+    check = assembly.check_graph(graph, intake, ape.skill_safety)
+    if check["errors"]:
+        raise HTTPException(422, {"errors": check["errors"]})
+    fam = intake.get("family") or ""
+    saved = await agent_store.save_draft(
+        name=body_data.get("name") or key, audit_id=audit_id, graph=graph,
+        autonomy_max=check["autonomy_max"], created_by=actor,
+        family=fam, role=_resolve_role(fam, intake))
+    agent_id = saved["id"]
+    await audit_store.record(actor, "agent.save", agent_id,
+                             {"family": fam, "via": "demo.prepare", "scenario": key})
     return {"audit_id": audit_id, "agent_id": agent_id,
             "contract": {"audit_id": audit_id, "autonomy": intake.get("autonomy_ceiling"),
                          "family": intake.get("family"), "skills": intake.get("skills") or []}}
@@ -1540,6 +1537,119 @@ def _agent_knowledge_fn(agent: dict, actor: str):
     return _kfn
 
 
+def _build_report_html(agent: dict, result: dict) -> str:
+    """Детерминированный HTML-отчёт из результата прогона (находки A/B/C/D, цепочки-расследования,
+    результаты навыков). Используется OUT-узлом для доставки (PDF/BookStack/почта)."""
+    import html as _html
+    esc = lambda x: _html.escape(str(x if x is not None else ""))  # noqa: E731
+    name = esc(agent.get("name") or "Агент ABOP")
+    v = result.get("verdict") or {}
+    parts = [f"<h1>Отчёт агента: {name}</h1>",
+             f"<p>Вердикт: <b>{'пройден' if v.get('ok') else 'есть замечания'}</b> · "
+             f"автономия {esc(v.get('autonomy_used'))} · волн {len(result.get('waves') or [])}</p>"]
+    fs = result.get("findings_summary")
+    if fs:
+        bc = fs.get("by_class") or {}
+        parts.append(f"<h2>Находки аудита: {esc(fs.get('total'))}</h2>")
+        parts.append("<p>" + " · ".join(f"{k}: {esc(bc.get(k, 0))}" for k in ("A", "B", "C", "D")) + "</p>")
+    fnds = result.get("findings") or []
+    struct = [f for f in fnds if isinstance(f, dict) and f.get("проверка")]
+    if struct:
+        parts.append("<ul>")
+        for f in struct[:30]:
+            norm = (f.get("нормы_rag") or [""])[0]
+            parts.append(f"<li><b>[{esc(f.get('класс'))}] {esc(f.get('проверка'))}</b> — {esc(f.get('описание'))}"
+                         + (f"<br><i>§ {esc(norm[:200])}</i>" if norm else "") + "</li>")
+        parts.append("</ul>")
+    invs = result.get("investigations") or []
+    if invs:
+        parts.append(f"<h2>Расследования от симптома: {len(invs)}</h2><ul>")
+        for iv in invs[:30]:
+            chain = " → ".join(f"{esc(l.get('звено'))}: {esc(l.get('статус'))}" for l in (iv.get("цепочка") or []))
+            rec = iv.get("сверка") or {}
+            norm = (iv.get("нормы_rag") or [""])[0]
+            parts.append(f"<li><b>{esc(iv.get('id'))} [{esc(iv.get('серьёзность'))}]</b> — {esc(iv.get('симптом'))}"
+                         f"<br>{chain}<br>расхождение Δ {esc(rec.get('разница_₽'))} ₽"
+                         + (f"<br><i>§ {esc(norm[:200])}</i>" if norm else "") + "</li>")
+        parts.append("</ul>")
+    llm = [f for f in fnds if isinstance(f, dict) and f.get("skill") and f.get("text")]
+    if llm and not struct:
+        parts.append("<h2>Результаты навыков</h2>")
+        for f in llm[:20]:
+            parts.append(f"<h3>{esc(f.get('skill'))}</h3>"
+                         f"<pre style='white-space:pre-wrap'>{esc((f.get('text') or '')[:2000])}</pre>")
+    body = "".join(parts)
+    return ("<!doctype html><html><head><meta charset='utf-8'><style>"
+            "body{font-family:Arial,sans-serif;max-width:800px;margin:24px auto;color:#111;line-height:1.5}"
+            "h1{font-size:22px}h2{font-size:17px;margin-top:20px}li{margin:6px 0}i{color:#0a6}</style></head>"
+            f"<body>{body}<hr><p style='color:#888;font-size:12px'>Сформировано ABOP · {name}</p></body></html>")
+
+
+def _html_to_text(h: str) -> str:
+    import re as _re
+    t = _re.sub(r"<br\s*/?>", "\n", h or "")
+    t = _re.sub(r"</(li|p|h1|h2|h3)>", "\n", t)
+    t = _re.sub(r"<[^>]+>", "", t)
+    return _re.sub(r"\n{3,}", "\n\n", t).strip()
+
+
+def _out_nodes(agent: dict) -> list:
+    """OUT-узлы графа с настроенным каналом доставки (kind:'out', out{channel,...})."""
+    return [n for n in (agent.get("graph") or {}).get("nodes") or []
+            if n.get("kind") == "out" and (n.get("out") or {}).get("channel")]
+
+
+async def _deliver_out_nodes(agent: dict, result: dict, actor: str) -> None:
+    """Проброс OUT-узла в РЕАЛЬНУЮ доставку: строит отчёт и отправляет по каналу узла
+    (почта Mailpit / BookStack / PDF-файл через Gotenberg). dry_run по умолчанию — реальная
+    отправка только при out.run==true И без HITL-гейта на узле (ADR-014, наружу под подтверждением)."""
+    import asyncio
+    import re as _re
+    nodes = _out_nodes(agent)
+    if not nodes:
+        return
+    html_report = _build_report_html(agent, result)
+    loop = asyncio.get_event_loop()
+    deliveries = []
+    for n in nodes:
+        cfg = n.get("out") or {}
+        channel = cfg.get("channel")
+        real = (str(cfg.get("run")).lower() == "true") and not cfg.get("hitl")
+        title = cfg.get("subject") or ((agent.get("name") or "Отчёт ABOP"))
+        try:
+            if channel == "bookstack":
+                out = await loop.run_in_executor(None, ape._t_bookstack_publish,
+                                                 {"title": title, "html": html_report,
+                                                  "book_id": cfg.get("book_id") or 1,
+                                                  "run": "true" if real else "false"})
+            elif channel == "email":
+                att = ""
+                if (cfg.get("format") or "pdf") == "pdf":
+                    pr = await loop.run_in_executor(None, ape._t_pdf_render,
+                                                    {"html": html_report, "name": "report"})
+                    m = _re.search(r"PDF готов:\s*(\S+)", pr or "")
+                    att = m.group(1) if m else ""
+                body_txt = "Отчёт агента ABOP во вложении." if att else _html_to_text(html_report)[:4000]
+                out = await loop.run_in_executor(None, ape._t_email_send,
+                                                 {"to": cfg.get("to") or "audit@demo.local", "subject": title,
+                                                  "body": body_txt, "attachment": att,
+                                                  "run": "true" if real else "false"})
+            elif channel in ("pdf", "file"):
+                out = await loop.run_in_executor(None, ape._t_pdf_render,
+                                                 {"html": html_report, "name": cfg.get("to") or "report"})
+            else:
+                out = f"неизвестный канал: {channel}"
+        except Exception as ex:  # noqa: BLE001 — доставка опциональна, прогон не падает
+            out = f"ошибка доставки: {type(ex).__name__}: {ex}"
+        deliveries.append({"node": n.get("id"), "title": n.get("title"), "channel": channel,
+                           "to": cfg.get("to"), "format": cfg.get("format"),
+                           "mode": "real" if real else "dry_run", "result": str(out)[:400]})
+        await audit_store.record(actor, "agent.deliver", agent.get("id"),
+                                 {"channel": channel, "to": cfg.get("to"),
+                                  "mode": "real" if real else "dry_run"}, severity="info")
+    result["delivery"] = deliveries
+
+
 async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, trigger: dict | None = None) -> dict:
     """Ядро прогона (LLM-раскладка + находки audit1c + сохранение + аудит). Переиспользуется
     POST /api/runs и планировщиком триггеров (server/triggers.py). Возвращает {saved, result}."""
@@ -1614,6 +1724,11 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
                 inv["нормы_rag"] = norms[:2]
                 enriched += 1
         result["norms_enriched"] = enriched
+    # Проброс OUT-узла в реальную доставку (почта/BookStack/PDF) — dry_run по умолчанию.
+    try:
+        await _deliver_out_nodes(agent, result, started_by)
+    except Exception as ex:  # noqa: BLE001 — доставка опциональна, прогон не падает
+        result["delivery_error"] = f"{type(ex).__name__}: {ex}"
     result["started_by"] = started_by
     # Least-privilege манифест агента (ABAC): какие системы реестра доступны его семье, Qdrant-тенант,
     # и какие сущности закрыты на пути данных (система вне scope).

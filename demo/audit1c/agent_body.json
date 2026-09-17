@@ -9,7 +9,10 @@
       { "id": "audit1c-checks", "kind": "skill", "skill": "audit1c-checks", "autonomy": "A1", "hitl": false },
       { "id": "audit1c-root-cause", "kind": "skill", "skill": "audit1c-root-cause", "autonomy": "A1", "hitl": false },
       { "id": "audit1c-rank", "kind": "skill", "skill": "audit1c-rank", "autonomy": "A1", "hitl": false },
-      { "id": "audit1c-explain", "kind": "skill", "skill": "audit1c-explain", "autonomy": "A1", "hitl": true }
+      { "id": "audit1c-explain", "kind": "skill", "skill": "audit1c-explain", "autonomy": "A1", "hitl": true },
+      { "id": "out", "kind": "out", "title": "Отчёт → почта главбуху",
+        "out": { "channel": "email", "to": "glavbuh@demo.local", "subject": "Отчёт аудита данных 1С",
+                 "format": "pdf", "run": false, "hitl": true } }
     ],
     "edges": [
       { "from": "audit1c-extract", "to": "audit1c-graph-build" },
@@ -17,7 +20,8 @@
       { "from": "audit1c-match-weak", "to": "audit1c-checks" },
       { "from": "audit1c-checks", "to": "audit1c-root-cause" },
       { "from": "audit1c-root-cause", "to": "audit1c-rank" },
-      { "from": "audit1c-rank", "to": "audit1c-explain" }
+      { "from": "audit1c-rank", "to": "audit1c-explain" },
+      { "from": "audit1c-explain", "to": "out" }
     ]
   }
 }

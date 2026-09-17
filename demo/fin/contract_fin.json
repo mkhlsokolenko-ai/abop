@@ -1,0 +1,71 @@
+{
+  "capability_request": {
+    "schema": "luda.capability_request/1.0",
+    "audit_id": "fin-analyst-2026",
+    "segment": "Финансовая аналитика: оценка и юнит-экономика",
+    "family": "analytics",
+    "skills": [
+      {
+        "id": "dcf-valuation"
+      },
+      {
+        "id": "unit-economics-checker"
+      },
+      {
+        "id": "finance-report"
+      }
+    ],
+    "modules": [
+      {
+        "id": "Транзакции · transaction",
+        "access": "read"
+      }
+    ],
+    "evidence": [
+      "ev:fa11c20260"
+    ]
+  },
+  "deployment_contract": {
+    "schema": "luda.deployment_contract/1.0",
+    "audit_id": "fin-analyst-2026",
+    "segment": "Финансовая аналитика: оценка и юнит-экономика",
+    "autonomy_level": "A1",
+    "limiting_axis": "финансовый риск оценки (WACC/FCF допущения) + существенность сумм",
+    "criticality": "T2",
+    "hitl_points": [
+      {
+        "id": "оператор-подтверждает-письмо"
+      }
+    ],
+    "data_residency": {
+      "zone": "on-prem",
+      "egress": "внутренний периметр"
+    },
+    "acceptance": {
+      "first_time_right": 0.9,
+      "escalation_rate": 0.15
+    }
+  },
+  "baseline_measurement": {
+    "schema": "luda.baseline_measurement/1.0",
+    "audit_id": "fin-analyst-2026",
+    "methodology_version": "1.0",
+    "metrics": {
+      "first_time_right": {
+        "value": 0.6,
+        "evidence": [
+          "ev:fa11c20260"
+        ]
+      },
+      "escalation_rate": {
+        "value": 0.35,
+        "evidence": [
+          "ev:fa11c20260"
+        ]
+      }
+    }
+  },
+  "evidence_pack": [
+    "fa11c20260000000000000000000000000000000000000000000000000000000"
+  ]
+}

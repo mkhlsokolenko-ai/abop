@@ -1,0 +1,56 @@
+{
+  "name": "Финаналитик",
+  "contract_audit_id": "fin-analyst-2026",
+  "graph": {
+    "nodes": [
+      {
+        "id": "dcf-valuation",
+        "kind": "skill",
+        "skill": "dcf-valuation",
+        "autonomy": "A1",
+        "hitl": false
+      },
+      {
+        "id": "unit-economics-checker",
+        "kind": "skill",
+        "skill": "unit-economics-checker",
+        "autonomy": "A1",
+        "hitl": false
+      },
+      {
+        "id": "finance-report",
+        "kind": "skill",
+        "skill": "finance-report",
+        "autonomy": "A1",
+        "hitl": true
+      },
+      {
+        "id": "out",
+        "kind": "out",
+        "title": "Финотчёт → почта CFO",
+        "out": {
+          "channel": "email",
+          "to": "cfo@demo.local",
+          "subject": "Финансовый отчёт",
+          "format": "pdf",
+          "run": false,
+          "hitl": true
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from": "dcf-valuation",
+        "to": "unit-economics-checker"
+      },
+      {
+        "from": "unit-economics-checker",
+        "to": "finance-report"
+      },
+      {
+        "from": "finance-report",
+        "to": "out"
+      }
+    ]
+  }
+}
