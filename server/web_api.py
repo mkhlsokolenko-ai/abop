@@ -16,18 +16,19 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 # ── ядро: импорт функций `ape` без запуска REPL (верхний уровень чист) ──
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, assembly, audit_store, clients, contract_store, dataplane_store, ingress, layout_store, reglament_store, run_store, runner, skill_store, slava, systems_store, trigger_store, triggers, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, assembly, audit_store, clients, contract_store, dataplane_store, ingress, layout_store, observability as obs, reglament_store, run_store, runner, skill_store, slava, systems_store, trigger_store, triggers, userdata_store  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
 
@@ -125,12 +126,51 @@ async def _no_cache_html(request, call_next):
     return resp
 
 
+@app.middleware("http")
+async def _observability(request, call_next):
+    """Observability spine (Фаза 0): сквозной trace_id (из заголовка X-Trace-Id или новый),
+    структурный лог запроса, метрики латентности/статусов. Пробрасывается в прогон и доставку."""
+    tid = request.headers.get("x-trace-id") or obs.new_trace_id()
+    token = obs.trace_id_var.set(tid)
+    t0 = time.perf_counter()
+    try:
+        resp = await call_next(request)
+        dt = time.perf_counter() - t0
+        path = request.url.path
+        if path.startswith("/api/"):
+            obs.inc("abop_http_requests_total", route=path, status=resp.status_code)
+            obs.observe("abop_http_request_seconds", dt, route=path)
+            obs.log_event("info", "http.request", route=path, method=request.method,
+                          status=resp.status_code, ms=round(dt * 1000, 1))
+        resp.headers["X-Trace-Id"] = tid
+        return resp
+    except Exception as ex:  # noqa: BLE001 — фиксируем ошибку в метрики/лог и пробрасываем
+        obs.inc("abop_http_requests_total", route=request.url.path, status="500")
+        obs.log_event("error", "http.error", route=request.url.path,
+                      error=f"{type(ex).__name__}: {ex}")
+        raise
+    finally:
+        obs.trace_id_var.reset(token)
+
+
 # ═══════════════ READ: реальные вызовы ядра ═══════════════
 
 @app.get("/api/health")
 def health() -> dict:
     return {"ok": True, "families": len(ape.AGENT_FAMILIES), "skills": len(ape.SKILLS),
             "adapters": sorted(ape.SOURCE_ADAPTERS)}
+
+
+@app.get("/metrics")
+def metrics() -> PlainTextResponse:
+    """Метрики в формате Prometheus (scrape). Открыт для внутреннего мониторинга."""
+    return PlainTextResponse(obs.render_prometheus(), media_type="text/plain; version=0.0.4")
+
+
+@app.get("/api/observability")
+def observability_snapshot(u: dict = Depends(user)) -> dict:
+    """JSON-срез метрик для внутренних дашбордов ABOP (кто/что/сколько прогонов, латентность, стоимость)."""
+    return obs.snapshot()
 
 
 @app.get("/api/me")
@@ -1667,9 +1707,31 @@ async def _deliver_out_nodes(agent: dict, result: dict, actor: str) -> None:
     result["delivery"] = deliveries
 
 
+def _collect_soft_errors(result: dict) -> list:
+    """Собирает МЯГКИЕ (не фатальные) ошибки прогона в один список — чтобы опциональные шаги
+    (находки/расследования/доставка/нормы) не отваливались МОЛЧА. Каждая логируется с trace_id;
+    выводится в результат (soft_errors) и в модалку прогона. Прогон при этом не падает."""
+    soft = []
+    for key, stage in (("findings_error", "находки"), ("investigations_error", "расследования"),
+                       ("delivery_error", "доставка"), ("manifest_error", "манифест доступа")):
+        if result.get(key):
+            soft.append({"stage": stage, "error": str(result.get(key))[:300]})
+    for d in result.get("delivery") or []:
+        r = str(d.get("result") or "")
+        if "ошибка" in r.lower():
+            soft.append({"stage": "доставка·" + (d.get("channel") or "?"), "error": r[:300]})
+    if result.get("norms_error"):
+        soft.append({"stage": "нормы (RAG)", "error": str(result["norms_error"])[:300]})
+    for s in soft:
+        obs.log_event("warn", "run.soft_error", stage=s["stage"], error=s["error"])
+    return soft
+
+
 async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, trigger: dict | None = None) -> dict:
     """Ядро прогона (LLM-раскладка + находки audit1c + сохранение + аудит). Переиспользуется
     POST /api/runs и планировщиком триггеров (server/triggers.py). Возвращает {saved, result}."""
+    _t0 = time.perf_counter()
+    _trace = obs.current_trace_id()
     fam_key = access.scope_key(family=agent.get("family"))
     blocked, data_denied = await _gate_agent_data(agent, fam_key, started_by)  # ABAC на данных
     result = await runner.run_live(agent, contract, ape.skill_safety,
@@ -1753,19 +1815,43 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
         result["access"] = await access.manifest(fam_key)
         if data_denied:
             result["access"]["data_denied"] = data_denied
-    except Exception:  # noqa: BLE001 — манифест опционален
-        pass
+    except Exception as ex:  # noqa: BLE001 — манифест опционален, но НЕ молча: фиксируем
+        result["manifest_error"] = f"{type(ex).__name__}: {ex}"
     if trigger:  # прогон запущен триггером — фиксируем происхождение (наблюдаемость цепочек)
         result["trigger"] = {"id": trigger.get("id"), "type": (trigger.get("trig") or {}).get("type"),
                              "title": trigger.get("title")}
+    # Observability: сквозной trace_id + тайминг + мягкие ошибки прогона (НЕ падаем молча — см. ниже).
+    result["trace_id"] = _trace
+    _dur = time.perf_counter() - _t0
+    result.setdefault("run_metrics", {})["timings"] = {"total_ms": round(_dur * 1000, 1)}
+    _soft = _collect_soft_errors(result)  # опциональные шаги, что отвалились (доставка/находки/нормы/…)
+    if _soft:
+        result["soft_errors"] = _soft
     saved = await run_store.save(result)
     _v = result.get("verdict") or {}
     await audit_store.record(started_by, "agent.run", saved["id"],
                              {"agent_id": agent.get("id"), "verdict_ok": bool(_v.get("ok")),
                               "autonomy_used": _v.get("autonomy_used"),
                               "findings": (result.get("findings_summary") or {}).get("total"),
-                              "trigger": (trigger or {}).get("id")},
-                             severity=("info" if _v.get("ok") else "warn"))
+                              "soft_errors": len(_soft), "trigger": (trigger or {}).get("id")},
+                             severity=("warn" if (_soft or not _v.get("ok")) else "info"))
+    # метрики прогона
+    _fam = agent.get("family") or "-"
+    obs.inc("abop_runs_total", family=_fam, ok=str(bool(_v.get("ok"))).lower())
+    obs.observe("abop_run_seconds", _dur, family=_fam)
+    _ft = (result.get("findings_summary") or {}).get("total")
+    if _ft:
+        obs.inc("abop_findings_total", val=float(_ft))
+    _cost = ((result.get("run_metrics") or {}).get("cost") or {}).get("rub") or 0
+    if _cost:
+        obs.inc("abop_run_cost_rub_total", val=float(_cost))
+    for _d in result.get("delivery") or []:
+        obs.inc("abop_deliveries_total", channel=_d.get("channel") or "-", mode=_d.get("mode") or "-")
+    if _soft:
+        obs.inc("abop_run_soft_errors_total", val=float(len(_soft)))
+    obs.log_event("warn" if _soft else "info", "agent.run.done", run_id=saved["id"],
+                  agent=agent.get("id"), family=_fam, ok=bool(_v.get("ok")),
+                  ms=round(_dur * 1000, 1), findings=_ft, soft_errors=(_soft or None))
     return {"saved": saved, "result": result}
 
 
