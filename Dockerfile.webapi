@@ -14,6 +14,7 @@ COPY server ./server
 COPY cli ./cli
 COPY skills ./skills
 COPY webapp ./webapp
+COPY demo ./demo
 
 EXPOSE 8091
 CMD ["uvicorn", "server.web_api:app", "--host", "0.0.0.0", "--port", "8091"]
