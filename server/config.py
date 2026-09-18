@@ -100,6 +100,8 @@ class Settings:
     course_start_date: str = os.getenv("COURSE_START_DATE", "2026-09-01")
     course_weeks: int = int(os.getenv("COURSE_WEEKS", "15"))
     langfuse_url: str = os.getenv("LANGFUSE_URL", "")
+    langfuse_public_key: str = os.getenv("LANGFUSE_PUBLIC_KEY", "")
+    langfuse_secret_key: str = os.getenv("LANGFUSE_SECRET_KEY", "")
 
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
 

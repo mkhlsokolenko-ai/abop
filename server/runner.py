@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import os
+import time
 
 A_LEVELS = ["A0", "A1", "A2", "A3", "A4"]
 
@@ -169,6 +170,7 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
                   "ЗАДАЧА: примени методику к данным. Верни КОНКРЕТНЫЕ находки/расхождения списком — "
                   "каждая со ссылкой на id записи и суммой" + (", и на норму из блока ЗНАНИЕ, если применимо" if know_block else "")
                   + ". Только из данных и приведённых норм, ничего не выдумывай. Если расхождений нет — так и скажи.")
+        _t = time.perf_counter()
         async with sem:  # батчинг: семафор пускает по _LLM_CONCURRENCY вызовов за раз
             try:
                 resp = await chat_fn(messages=[{"role": "user", "content": prompt}], profile="standard",
@@ -176,10 +178,13 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
                 txt = (resp.get("text") or "").strip() or "(пустой ответ модели)"
                 model = resp.get("model", "")
                 tin, tout = int(resp.get("input_tokens") or 0), int(resp.get("output_tokens") or 0)
+                err = None
             except Exception as ex:  # noqa: BLE001 — LLM недоступен → честно помечаем, прогон не падает
                 txt, model, tin, tout = f"(LLM недоступен: {type(ex).__name__}: {ex})", "", 0, 0
+                err = f"{type(ex).__name__}: {ex}"
+        ms = round((time.perf_counter() - _t) * 1000, 1)  # per-skill тайминг (observability)
         return {"skill": sid, "entities": entities, "model": model, "text": txt,
-                "input_tokens": tin, "output_tokens": tout}
+                "input_tokens": tin, "output_tokens": tout, "ms": ms, "error": err}
 
     # навыки — параллельно, но с rate-limit (семафор): батч по _LLM_CONCURRENCY к RouteAI
     results = await asyncio.gather(*[_analyze(s) for s in skills])
@@ -208,6 +213,14 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
         "input_tokens": tin, "output_tokens": tout,
         "calls": sum(v["calls"] for v in by_model.values()),
         "by_model": by_model,
+    }
+    # per-skill тайминги (observability): где узкое место цепочки; slowest — самый долгий навык
+    by_skill = {f["skill"]: f.get("ms") for f in findings if f.get("ms") is not None}
+    slowest = max(by_skill.items(), key=lambda kv: kv[1]) if by_skill else None
+    base["run_metrics"]["timings"] = {
+        "by_skill_ms": by_skill,
+        "llm_ms_total": round(sum(by_skill.values()), 1),
+        "slowest": ({"skill": slowest[0], "ms": slowest[1]} if slowest else None),
     }
     base["live"] = True
     return base

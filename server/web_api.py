@@ -28,7 +28,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, assembly, audit_store, clients, contract_store, dataplane_store, ingress, layout_store, observability as obs, reglament_store, run_store, runner, skill_store, slava, systems_store, trigger_store, triggers, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, assembly, audit_store, clients, contract_store, dataplane_store, ingress, langfuse_trace, layout_store, observability as obs, reglament_store, run_store, runner, skill_store, slava, systems_store, trigger_store, triggers, userdata_store  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
 
@@ -1722,6 +1722,9 @@ def _collect_soft_errors(result: dict) -> list:
             soft.append({"stage": "доставка·" + (d.get("channel") or "?"), "error": r[:300]})
     if result.get("norms_error"):
         soft.append({"stage": "нормы (RAG)", "error": str(result["norms_error"])[:300]})
+    for f in result.get("findings") or []:
+        if isinstance(f, dict) and f.get("error"):
+            soft.append({"stage": "навык·" + str(f.get("skill") or "?"), "error": str(f["error"])[:300]})
     for s in soft:
         obs.log_event("warn", "run.soft_error", stage=s["stage"], error=s["error"])
     return soft
@@ -1823,7 +1826,7 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
     # Observability: сквозной trace_id + тайминг + мягкие ошибки прогона (НЕ падаем молча — см. ниже).
     result["trace_id"] = _trace
     _dur = time.perf_counter() - _t0
-    result.setdefault("run_metrics", {})["timings"] = {"total_ms": round(_dur * 1000, 1)}
+    result.setdefault("run_metrics", {}).setdefault("timings", {})["total_ms"] = round(_dur * 1000, 1)
     _soft = _collect_soft_errors(result)  # опциональные шаги, что отвалились (доставка/находки/нормы/…)
     if _soft:
         result["soft_errors"] = _soft
@@ -1852,6 +1855,7 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
     obs.log_event("warn" if _soft else "info", "agent.run.done", run_id=saved["id"],
                   agent=agent.get("id"), family=_fam, ok=bool(_v.get("ok")),
                   ms=round(_dur * 1000, 1), findings=_ft, soft_errors=(_soft or None))
+    await langfuse_trace.emit_run(_trace, saved["id"], agent, result)  # LLM-трейс (best-effort, no-op без ключей)
     return {"saved": saved, "result": result}
 
 
