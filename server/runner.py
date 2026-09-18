@@ -22,8 +22,12 @@ A_LEVELS = ["A0", "A1", "A2", "A3", "A4"]
 #   НА ПРОДЕ ВЫСТАВИТЬ ABOP_RUN_LLM_TRUNCATE=0 — полные промпты (обрезка здесь временная, для теста).
 _LLM_CONCURRENCY = max(1, int(os.getenv("ABOP_RUN_LLM_CONCURRENCY", "2")))
 _LLM_TRUNCATE = os.getenv("ABOP_RUN_LLM_TRUNCATE", "1") != "0"
-_LIM = {"rows": 40, "body": 2500, "data": 5000, "max_tokens": 1600} if _LLM_TRUNCATE \
-    else {"rows": 1000, "body": 100000, "data": 200000, "max_tokens": 4096}
+# rows — сколько строк ТЯНЕМ для точного счёта scope (дёшево, in-process); sample — сколько записей
+# реально уходит в LLM-промпт (дорого по токенам); data — потолок символов дайджеста; body — методика.
+# Оптимизация (2026-09-18): в LLM идёт ДАЙДЖЕСТ (counts по типам = весь scope + маленький сэмпл),
+# а не полный дамп → в разы меньше токенов/времени. Находки audit считает КОД (детерминир.), не LLM.
+_LIM = {"rows": 5000, "sample": 6, "body": 2000, "data": 4000, "max_tokens": 1200} if _LLM_TRUNCATE \
+    else {"rows": 5000, "sample": 20, "body": 8000, "data": 20000, "max_tokens": 2500}
 
 
 def _aidx(a: str | None) -> int:
@@ -151,6 +155,17 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
                 data[e] = []
         if not any(data.values()):
             return None  # навык без данных в store — LLM-анализ не запускаем
+        # ДАЙДЖЕСТ вместо полного дампа: точный объём + разбивка по типам (весь scope) + ограниченный
+        # сэмпл записей. Даёт LLM ситуативную осведомлённость без раздувания токенов (детект-находки —
+        # у детерминир. движка). Резко режет стоимость/время (было ~100k токенов/вызов на полном дампе).
+        digest = {}
+        for e, rows in data.items():
+            by_type: dict = {}
+            for r in rows:
+                if isinstance(r, dict) and r.get("тип"):
+                    by_type[r["тип"]] = by_type.get(r["тип"], 0) + 1
+            digest[e] = {"всего": len(rows), "по_типам": (by_type or None),
+                         "сэмпл": rows[:_LIM["sample"]]}
         body = (load_body(sid) or "")[:_LIM["body"]]
         # RAG-знание (нормы/регламент) из корпуса семьи через sLAVA — только норм-цитирующим навыкам
         # (safety.cite). knowledge_fn уже с ABAC-гейтом (вернёт [], если семья без доступа к корпусу).
@@ -166,7 +181,8 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
         prompt = ("Ты — навык агента ABOP. Ниже методика навыка и РЕАЛЬНЫЕ данные из Data Plane (canonical, с provenance).\n\n"
                   "=== МЕТОДИКА ===\n" + body + "\n\n"
                   + know_block
-                  + "=== ДАННЫЕ (JSON по сущностям) ===\n" + _json.dumps(data, ensure_ascii=False)[:_LIM["data"]] + "\n\n"
+                  + "=== ДАННЫЕ (дайджест: всего+по_типам = полный scope, сэмпл = примеры записей) ===\n"
+                  + _json.dumps(digest, ensure_ascii=False)[:_LIM["data"]] + "\n\n"
                   "ЗАДАЧА: примени методику к данным. Верни КОНКРЕТНЫЕ находки/расхождения списком — "
                   "каждая со ссылкой на id записи и суммой" + (", и на норму из блока ЗНАНИЕ, если применимо" if know_block else "")
                   + ". Только из данных и приведённых норм, ничего не выдумывай. Если расхождений нет — так и скажи.")
