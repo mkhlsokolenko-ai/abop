@@ -1707,6 +1707,23 @@ async def _deliver_out_nodes(agent: dict, result: dict, actor: str) -> None:
     result["delivery"] = deliveries
 
 
+def _findings_context_text(findings: list, investigations: list) -> str:
+    """Компактный текст детерминированных находок/расследований для grounded-объяснения навыками
+    (LLM объясняет РЕАЛЬНЫЕ находки кода, а не ищет заново на сэмпле-дайджесте)."""
+    lines = []
+    for f in (findings or [])[:30]:
+        if not isinstance(f, dict):
+            continue
+        doc = f.get("документ") or {}
+        num = doc.get("Номер") if isinstance(doc, dict) else None
+        lines.append(f"[{f.get('класс')}] {f.get('проверка')} ({f.get('серьёзность')}) — {f.get('описание')}"
+                     + (f" · док {num}" if num else ""))
+    for iv in (investigations or [])[:20]:
+        if isinstance(iv, dict):
+            lines.append(f"[расследование {iv.get('id')}] {iv.get('симптом')}")
+    return "\n".join(lines)
+
+
 def _collect_soft_errors(result: dict) -> list:
     """Собирает МЯГКИЕ (не фатальные) ошибки прогона в один список — чтобы опциональные шаги
     (находки/расследования/доставка/нормы) не отваливались МОЛЧА. Каждая логируется с trace_id;
@@ -1737,31 +1754,47 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
     _trace = obs.current_trace_id()
     fam_key = access.scope_key(family=agent.get("family"))
     blocked, data_denied = await _gate_agent_data(agent, fam_key, started_by)  # ABAC на данных
+    # Детерминированные находки/расследования считаем ДО прогона (истина, считает КОД) — чтобы навыки в LLM
+    # их ОБЪЯСНЯЛИ (grounded), а не искали заново на сэмпле-дайджесте (иначе LLM ложно пишет «расхождений нет»).
+    _skills = [n.get("skill") for n in (agent.get("graph") or {}).get("nodes", [])]
+    _det_findings, _det_findings_err = [], None
+    if "audit1c-checks" in _skills:
+        try:
+            _det_findings = ape.audit1c_run_checks(ape.audit1c_build_graph())
+        except Exception as ex:  # noqa: BLE001
+            _det_findings_err = f"{type(ex).__name__}: {ex}"
+    _det_invs, _det_invs_err = [], None
+    if "invest1c-trace" in _skills:
+        try:
+            _det_invs = ape.audit1c_trace_chains()
+        except Exception as ex:  # noqa: BLE001
+            _det_invs_err = f"{type(ex).__name__}: {ex}"
+    _ctx = _findings_context_text(_det_findings, _det_invs) or None
     result = await runner.run_live(agent, contract, ape.skill_safety,
                                    data_query=ape.data_query,
                                    skill_sources=ape.skill_datasources_resolved,
                                    load_body=ape.load_skill_body,
                                    chat_fn=clients.chat, blocked_entities=blocked,
-                                   knowledge_fn=_agent_knowledge_fn(agent, started_by))
-    # Петля прогон→канва: для аудит-агента доносим СТРУКТУРИРОВАННЫЕ находки (детерминир. движок, не LLM).
-    _skills = [n.get("skill") for n in (agent.get("graph") or {}).get("nodes", [])]
+                                   knowledge_fn=_agent_knowledge_fn(agent, started_by),
+                                   findings_context=_ctx)
+    # Петля прогон→канва: прикрепляем детерминированные находки (истина, не LLM).
     if "audit1c-checks" in _skills:
-        try:
-            _g = ape.audit1c_build_graph()
-            _findings = ape.audit1c_run_checks(_g)
-            result["findings"] = _findings
-            result["findings_summary"] = {
-                "total": len(_findings),
-                "by_class": {c: sum(1 for f in _findings if f.get("класс") == c) for c in ("A", "B", "C", "D")},
-            }
-        except Exception as ex:  # noqa: BLE001 — находки опциональны, прогон не падает
+        if _det_findings_err:
             result["findings"] = []
-            result["findings_error"] = f"{type(ex).__name__}: {ex}"
-    # Демо-сценарий №2 «расследование от симптома»: цепочки реализация→взаиморасчёты→НДС
-    # (детерминированный трассировщик; норму НК гл.21 подтягивает RAG ниже — как для находок).
+            result["findings_error"] = _det_findings_err
+        else:
+            result["findings"] = _det_findings
+            result["findings_summary"] = {
+                "total": len(_det_findings),
+                "by_class": {c: sum(1 for f in _det_findings if f.get("класс") == c) for c in ("A", "B", "C", "D")},
+            }
+    # Демо-сценарий №2 «расследование от симптома»: цепочки реализация→взаиморасчёты→НДС.
     if "invest1c-trace" in _skills:
-        try:
-            _invs = ape.audit1c_trace_chains()
+        if _det_invs_err:
+            result["investigations"] = []
+            result["investigations_error"] = _det_invs_err
+        else:
+            _invs = _det_invs
             result["investigations"] = _invs
             result["investigations_summary"] = {
                 "total": len(_invs),
@@ -1770,9 +1803,6 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
                 "by_sev": {s: sum(1 for i in _invs if i.get("серьёзность") == s)
                            for s in ("высокая", "средняя")},
             }
-        except Exception as ex:  # noqa: BLE001 — расследования опциональны, прогон не падает
-            result["investigations"] = []
-            result["investigations_error"] = f"{type(ex).__name__}: {ex}"
     # Обогащение находок НОРМАМИ из корпуса семьи (sLAVA): запрос ПО ТЕКСТУ находки (специфичный →
     # sLAVA-retrieval срабатывает, в отличие от generic per-skill). Так объяснение получает реальную норму.
     kfn = _agent_knowledge_fn(agent, started_by)
