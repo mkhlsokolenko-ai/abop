@@ -44,6 +44,59 @@ _MT = os.getenv("ABOP_RUN_MAX_TOKENS")
 if _MT and _MT.isdigit():
     _LIM["max_tokens"] = int(_MT)
 
+# ── Structured output (guided JSON) против «раздутости рассуждений» ──
+# У навыка чёткая задача → просим СТРОГО JSON по схеме. vLLM грамматикой (xgrammar) запрещает прозу/
+# markdown/преамбулу вне схемы → уходит «вода» («Применяю методику… ✅…»), токены ×3-5, вывод парсится.
+# clients.chat уже принимает response_format. Тумблер ABOP_RUN_STRUCTURED=0 → вернуть свободный текст.
+_STRUCTURED = os.getenv("ABOP_RUN_STRUCTURED", "1") != "0"
+_FINDINGS_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "находки": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "запись": {"type": "string"},        # id записи/документа
+                    "наблюдение": {"type": "string"},    # что не так (кратко, без воды)
+                    "сумма": {"type": "string"},
+                    "норма": {"type": "string"},          # ссылка на норму из блока ЗНАНИЕ (если есть)
+                },
+                "required": ["наблюдение"],
+            },
+        },
+        "итог": {"type": "string"},                       # одна фраза-резюме
+    },
+    "required": ["находки", "итог"],
+}
+_RESPONSE_FORMAT = {"type": "json_schema",
+                    "json_schema": {"name": "skill_findings", "schema": _FINDINGS_SCHEMA}}
+
+
+def _render_findings(struct: dict) -> str:
+    """Structured-находки навыка → компактный человекочитаемый текст для доски прогона (без воды)."""
+    if not isinstance(struct, dict):
+        return "(пустой ответ)"
+    items = struct.get("находки") if isinstance(struct.get("находки"), list) else []
+    lines = []
+    for f in items[:20]:
+        if not isinstance(f, dict):
+            continue
+        obs = str(f.get("наблюдение") or "").strip()
+        if not obs:
+            continue
+        line = "• " + obs
+        for key, pfx in (("запись", " ["), ("сумма", " — "), ("норма", " · норма: ")):
+            v = str(f.get(key) or "").strip()
+            if v:
+                line += pfx + v + ("]" if key == "запись" else "")
+        lines.append(line)
+    body = "\n".join(lines) if lines else "расхождений не выявлено"
+    itog = str(struct.get("итог") or "").strip()
+    return body + (("\n— итог: " + itog) if itog else "")
+
 
 def _aidx(a: str | None) -> int:
     try:
@@ -193,14 +246,24 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
             if chunks:
                 know_block = ("=== НОРМЫ/ЗНАНИЕ (RAG из корпуса семьи, sLAVA) ===\n"
                               + "\n---\n".join(c[:800] for c in chunks[:4]) + "\n\n")
-        prompt = ("Ты — навык агента ABOP. Ниже методика навыка и РЕАЛЬНЫЕ данные из Data Plane (canonical, с provenance).\n\n"
-                  "=== МЕТОДИКА ===\n" + body + "\n\n"
-                  + know_block
-                  + "=== ДАННЫЕ (дайджест: всего+по_типам = полный scope, сэмпл = примеры записей) ===\n"
-                  + _json.dumps(digest, ensure_ascii=False)[:_LIM["data"]] + "\n\n"
-                  "ЗАДАЧА: примени методику к данным. Верни КОНКРЕТНЫЕ находки/расхождения списком — "
-                  "каждая со ссылкой на id записи и суммой" + (", и на норму из блока ЗНАНИЕ, если применимо" if know_block else "")
-                  + ". Только из данных и приведённых норм, ничего не выдумывай. Если расхождений нет — так и скажи.")
+        _head = ("Ты — навык агента ABOP. Ниже методика навыка и РЕАЛЬНЫЕ данные из Data Plane (canonical, с provenance).\n\n"
+                 "=== МЕТОДИКА ===\n" + body + "\n\n"
+                 + know_block
+                 + "=== ДАННЫЕ (дайджест: всего+по_типам = полный scope, сэмпл = примеры записей) ===\n"
+                 + _json.dumps(digest, ensure_ascii=False)[:_LIM["data"]] + "\n\n")
+        if _STRUCTURED:
+            prompt = (_head
+                      + "ЗАДАЧА: примени методику к данным. Верни СТРОГО JSON по схеме "
+                      "{находки:[{запись,наблюдение,сумма,норма}], итог}. Каждая находка — со ссылкой на id записи"
+                      + (" и норму из блока ЗНАНИЕ" if know_block else "") + " и суммой, если есть. "
+                      "БЕЗ markdown, БЕЗ преамбулы, БЕЗ рассуждений — только факты из ДАННЫХ и норм. "
+                      "Ничего не выдумывай. Если расхождений нет — находки:[] и итог одной фразой.")
+        else:
+            prompt = (_head
+                      + "ЗАДАЧА: примени методику к данным. Верни КОНКРЕТНЫЕ находки/расхождения списком — "
+                      "каждая со ссылкой на id записи и суммой"
+                      + (", и на норму из блока ЗНАНИЕ, если применимо" if know_block else "")
+                      + ". Только из данных и приведённых норм, ничего не выдумывай. Если расхождений нет — так и скажи.")
         _t = time.perf_counter()
         async with sem:  # батчинг: семафор пускает по _LLM_CONCURRENCY вызовов за раз
             # backoff-ретрай (429/таймаут): рост параллелизма не должен портить вывод скилла —
@@ -210,22 +273,30 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
             for _attempt in range(_LLM_RETRIES + 1):
                 try:
                     resp = await chat_fn(messages=[{"role": "user", "content": prompt}], profile="standard",
-                                         max_tokens=_LIM["max_tokens"])
+                                         max_tokens=_LIM["max_tokens"],
+                                         response_format=(_RESPONSE_FORMAT if _STRUCTURED else None))
                     err = None
                     break
                 except Exception as ex:  # noqa: BLE001
                     err = f"{type(ex).__name__}: {ex}"
                     if _attempt < _LLM_RETRIES:
                         await asyncio.sleep(_LLM_BACKOFF * (_attempt + 1))  # 1.5с, 3с, …
+            struct = None
             if resp is not None:
-                txt = (resp.get("text") or "").strip() or "(пустой ответ модели)"
+                raw = (resp.get("text") or "").strip()
                 model = resp.get("model", "")
                 tin, tout = int(resp.get("input_tokens") or 0), int(resp.get("output_tokens") or 0)
+                if _STRUCTURED and raw.startswith("{"):
+                    try:
+                        struct = _json.loads(raw)
+                    except Exception:  # noqa: BLE001 — модель вернула не-JSON → отдаём как есть
+                        struct = None
+                txt = _render_findings(struct) if struct else (raw or "(пустой ответ модели)")
             else:
                 txt, model, tin, tout = f"(LLM недоступен: {err})", "", 0, 0
         ms = round((time.perf_counter() - _t) * 1000, 1)  # per-skill тайминг (observability)
         return {"skill": sid, "entities": entities, "model": model, "text": txt,
-                "input_tokens": tin, "output_tokens": tout, "ms": ms, "error": err}
+                "structured": struct, "input_tokens": tin, "output_tokens": tout, "ms": ms, "error": err}
 
     # навыки — параллельно, но с rate-limit (семафор): батч по _LLM_CONCURRENCY к RouteAI
     results = await asyncio.gather(*[_analyze(s) for s in skills])
