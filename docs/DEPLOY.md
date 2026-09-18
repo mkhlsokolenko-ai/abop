@@ -1,72 +1,159 @@
-# Деплой на server-1 (sLAVA-пилот, 201.51.5.24)
+# ABOP — разворачивание, восстановление, настройка (runbook)
 
-MCP запускается **на том же сервере**, что sLAVA, и ходит к его сервисам по 127.0.0.1.
-Наружу торчит только Caddy (443).
+> Актуально на 2026-09-18. Прод: **server-1 `5.129.192.63`**. Полный список эндпоинтов/портов — в [`API_ENDPOINTS_PORTS.md`](API_ENDPOINTS_PORTS.md). Инструкция для пользователя (как запускать агентов) — [`INSTRUKCIYA_ZAPUSK_AGENTA.md`](INSTRUKCIYA_ZAPUSK_AGENTA.md).
 
-## Предпосылки
-- Доступ по SSH-ключу (`slava@201.51.5.24`, см. память про пилот-сервер).
-- На хосте уже живут: Qdrant (:6333), доступ к routerai.ru, Docker + Compose.
-- Домен (A-запись → 201.51.5.24), например `mcp.<домен>` — для TLS Caddy.
-- Keycloak с realm `ai-product-engineer` (можно поднять рядом или на отдельном хосте).
+---
 
-## Шаги
+## 1. Что где работает (топология)
 
-```bash
-# 1) На сервере
-ssh slava@201.51.5.24
-git clone https://github.com/mkhlsokolenko-ai/ai-product-engineer.git
-cd ai-product-engineer
+| Что | Где | Порт | Персистентность |
+|---|---|---|---|
+| **ABOP Web API** (`abop-webapi`) | server-1, docker, `--network host` | 8091 | код в образе; данные — в томе `abop_ape` + Postgres |
+| Postgres | server-1 | 5433 | том `ape_pg` (agents/contracts/runs/skills/рецепты/…) |
+| Keycloak | server-1 | 8811 | realm `abop` (JWT) |
+| Prometheus | server-1, docker | 9091 | том `abop_prom_data` |
+| Grafana | server-1, docker | 3300 | том `abop_grafana_data` |
+| Демо-сервисы (Redmine/BookStack/Twenty/Mailpit/NocoDB/Gitea/Kroki/MinIO) | server-1 | см. API-док | свои тома |
+| sLAVA (RAG) + Qdrant + Gotenberg + дамп 1С | **server-2 `201.51.5.24`** | 8000/6333/3050/8092 | — |
 
-# 2) Конфиг
-cp .env.example .env
-# заполни: ROUTEAI_API_KEY, KEYCLOAK_*, POSTGRES_DSN (пароль), домен в Caddyfile
-nano .env
-nano Caddyfile        # свой домен вместо mcp.example.ru
+**Где живут данные (важно для восстановления):**
+- **Postgres (`ape_pg`)**: агенты, контракты, прогоны, навыки-правки, **определения** рецептов/коннекторов (`dp_recipes`/`dp_connectors`), admin-config, RBAC, память агентов, конформанс.
+- **Том `abop_ape` (`/root/.ape`)**: **эмитированные канонические данные** `data/*.jsonl` (doc1c/ref1c/transaction/…), файловые копии рецептов/коннекторов, сессии/память CLI. ⚠️ Эмитированные записи Data Plane живут ТОЛЬКО здесь — без тома пропадут при перенакате.
 
-# 3) (опц.) self-hosted Qwen на арендованной RTX 6000
-#    на GPU-хосте:
-#    vllm serve Qwen/Qwen3.8-27B-AWQ --quantization awq --port 8001 \
-#      --max-model-len 131072 --gpu-memory-utilization 0.92
-#    затем в .env: LOCAL_LLM_BASE_URL=http://<gpu-host>:8001/v1
+---
 
-# 4) Подъём
-docker compose up -d --build
-docker compose logs -f mcp
-```
+## 2. Разворачивание ABOP Web API (с нуля / обновление)
 
-## Проверка
+Каноничный скрипт: [`../ops/deploy-webapi.sh`](../ops/deploy-webapi.sh) — жёстко фиксирует том `abop_ape`, env-файл, health-check.
 
 ```bash
-# health/JWKS Keycloak доступен?
-curl -s "$KEYCLOAK_JWKS_URI" | head -c 200
+# на server-1
+cd /opt/abop
+# 1) выкатить код (из git или scp git archive)
+git pull   # или: tar -xf _deploy.tar   (git archive HEAD cli server skills webapp demo Dockerfile.webapi ops)
 
-# MCP отвечает (изнутри сервера)
-curl -s http://127.0.0.1:8787/  -H "Authorization: Bearer <тестовый JWT>"
-
-# снаружи — через Caddy/TLS
-curl -s https://mcp.<домен>/mcp -H "Authorization: Bearer <тестовый JWT>"
+# 2) собрать и перезапустить (ВСЕГДА с томом abop_ape!)
+bash ops/deploy-webapi.sh
 ```
 
-## Настройка OpenCode у студента
+Что делает скрипт (эквивалент вручную):
+```bash
+docker build -q -f Dockerfile.webapi -t abop-webapi .
+docker rm -f abop-webapi 2>/dev/null || true
+docker run -d --name abop-webapi --network host --restart unless-stopped \
+  --env-file /opt/abop/.env -v abop_ape:/root/.ape abop-webapi
+curl -sf http://127.0.0.1:8091/api/health   # → {"ok":true,...}
+```
 
-Клиент подключается к курсовому MCP по JWT. В конфиге OpenCode пропиши MCP-сервер:
-`https://mcp.<домен>/mcp`, заголовок `Authorization: Bearer <JWT студента>`.
-JWT студент получает через Keycloak (GitHub login). Прямого ключа провайдера у студента
-нет — всё через шлюз.
+> ⚠️ **Никогда не запускать без `-v abop_ape:/root/.ape`** — потеряете canonical store Data Plane.
 
-## Обновление
+### Деплой с локальной машины (как в разработке)
+```bash
+git archive HEAD cli server skills webapp demo Dockerfile.webapi ops -o _deploy.tar
+scp _deploy.tar root@5.129.192.63:/opt/abop/
+ssh root@5.129.192.63 'cd /opt/abop && tar -xf _deploy.tar && bash ops/deploy-webapi.sh'
+```
+
+---
+
+## 3. Observability-стек (Prometheus + Grafana)
 
 ```bash
-cd ~/ai-product-engineer && git pull && docker compose up -d --build mcp
+cd /opt/abop
+docker compose -f ops/docker-compose.observability.yml up -d
+```
+- Prometheus `http://5.129.192.63:9091` — scrape-ит `abop-webapi:/metrics` (target `abop-webapi`).
+- Grafana `http://5.129.192.63:3300` (admin/admin — сменить). Источник данных: Prometheus.
+- Метрики ABOP: `abop_http_requests_total`, `abop_http_request_seconds`, `abop_runs_total`, `abop_run_seconds`, `abop_findings_total`, `abop_run_cost_rub_total`, `abop_deliveries_total`, `abop_run_soft_errors_total`.
+- Сквозной `trace_id` — заголовок `X-Trace-Id` (генерится/пробрасывается); в прогоне поле `trace_id`.
+- LLM-трейсы (langfuse) — каркас; включаются заданием `LANGFUSE_URL/PUBLIC_KEY/SECRET_KEY`.
+
+---
+
+## 4. Восстановление Data Plane (если прогоны дают 0 находок)
+
+Симптом: прогон отрабатывает <1с, `findings: 0`, LLM не звался. Диагностика по шагам:
+
+```bash
+# 1) том смонтирован?
+docker inspect abop-webapi --format '{{json .Mounts}}' | grep abop_ape
+
+# 2) файлы данных есть и непустые?
+docker exec abop-webapi wc -l /root/.ape/data/*.jsonl
+#   ожидаемо: doc1c.jsonl ~300+, ref1c.jsonl ~150+, transaction.jsonl ~15
+
+# 3) data_query отдаёт записи?
+docker exec abop-webapi python -c "import sys;sys.path.insert(0,'/app/cli');import ape;print('doc1c',len(ape.data_query('doc1c',limit=99999)))"
 ```
 
-## Изоляция от sLAVA (важно)
-- НЕ трогай коллекции Qdrant без префикса `ape_` — это корпус sLAVA.
-- Postgres курса — отдельная БД `ape` (в compose свой контейнер), не лезь в БД sLAVA.
-- При смене `.env` пересоздай контейнер: `docker compose up -d --force-recreate mcp`
-  (иначе running-контейнер держит старое окружение — известная ловушка sLAVA).
+- **Файлы есть, но data_query=0** → это была бага бинарного TTL (исправлено 2026-09-18: версионная freshness — последняя версия не протухает по времени). Если снова всплывёт — проверить `_fresh`/`data_query` в `cli/ape.py`.
+- **Файлы пусты** → прогнать рецепты наполнения:
+```bash
+TOKEN=$(curl -s -XPOST http://127.0.0.1:8091/api/auth/login -H 'Content-Type: application/json' \
+  -d '{"username":"<admin>","password":"<pass>"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+for r in audit1c_docs audit1c_refs invoices crm_deals payments redmine_issues; do
+  curl -s -XPOST "http://127.0.0.1:8091/api/data/recipes/$r/run" -H "Authorization: Bearer $TOKEN"; echo
+done
+```
+Рецепты тянут из источников (дамп 1С `201.51.5.24:8092`, CRM и т.п.) и пишут в `~/.ape/data/*.jsonl`.
 
-## Безопасность
-- `.env` в git не коммитится (`.gitignore`).
-- Внутренние порты (8787, 5432, 6333) наружу не публикуй — только Caddy :443.
-- В проде `cost_report` гейти по realm-role `lecturer` из JWT (см. `server/tools/admin.py`).
+**Версионная семантика (решение владельца 2026-09-18):** `data_query` держит ПОСЛЕДНЮЮ созданную версию записи всегда (не протухает по wall-clock); по TTL уходят только перекрытые старые версии (`_data_compact` при `data_run`). `include_stale=True` → вся история версий.
+
+---
+
+## 5. Запуск демо-агента (после разворачивания)
+
+Три готовых сценария (кнопка «▶ Собрать и запустить» на канве, либо API):
+```bash
+# идемпотентно собрать агента из demo/<scenario>/ и запустить
+curl -s -XPOST http://127.0.0.1:8091/api/demo/prepare -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"scenario":"audit1c"}'   # audit1c | invest1c | fin
+curl -s -XPOST http://127.0.0.1:8091/api/runs -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"agent_id":"audit1c-holding-2026.v1"}'
+```
+Демо-пакеты: `demo/audit1c/`, `demo/invest1c/`, `demo/fin/` (contract*.json + agent_body.json). Требуют наполненного Data Plane (§4).
+
+---
+
+## 6. Конфигурация (`.env` на server-1)
+
+Полный список — в [`API_ENDPOINTS_PORTS.md` §3](API_ENDPOINTS_PORTS.md). Ключевое:
+- **База/аутентификация**: `POSTGRES_DSN`, `KEYCLOAK_ISSUER/JWKS_URI/JWKS_INTERNAL/AUDIENCE`.
+- **LLM/RAG**: `ROUTEAI_API_KEY`, `ROUTEAI_BASE_URL`, `SLAVA_API_BASE_URL`, `QDRANT_URL`, `EMBED_MODEL=baai/bge-m3`.
+- **OUT-доставка (реальные API, опц.)**: `YOUGILE_TOKEN`/`YOUGILE_COLUMN_ID`, `YANDEX_SMTP_USER`/`YANDEX_SMTP_PASSWORD` (пароль приложения). Без них — dry_run.
+- **Прогон/производительность**: `ABOP_RUN_LLM_CONCURRENCY` (по умолч. 3 — единая карта RouteAI троттлит при бо́льших; замер 2026-09-18), `ABOP_RUN_LLM_RETRIES`, `ABOP_RUN_LLM_BACKOFF`, `ABOP_RUN_LLM_TRUNCATE` (0 на проде).
+- **Планировщик**: `ABOP_SCHEDULER` (0=выкл на N-1 репликах — leader-election нет), `ABOP_SCHEDULER_TICK`.
+- **Observability**: `LANGFUSE_URL/PUBLIC_KEY/SECRET_KEY`, `LOG_LEVEL`.
+
+---
+
+## 7. Производительность прогона (замеры 2026-09-18)
+
+Оптимизация прогона audit1c (10 находок, снимок 1С):
+| | до | дайджест данных | +параллелизм 5 |
+|---|---|---|---|
+| время | 357 с | **110 с** | 299 с (хуже — троттлинг RouteAI) |
+| входные токены | 779 655 | **93 836** | 93 836 |
+| стоимость | 15.35 ₽ | **2.80 ₽** | 2.76 ₽ |
+| находки/нормы | 10 / 5 | **10 / 5** (без изменений) | 10 / 6 |
+
+**Выводы:** реальный выигрыш — **дайджест данных** в LLM-промпт (счётчики по типам = полный scope + сэмпл, вместо полного дампа), качество 1:1 (детекцию считает детерминированный код, не LLM). Параллелизм на **одной** карте RouteAI не помогает (троттлинг) — держим `ABOP_RUN_LLM_CONCURRENCY=3`. Дальнейшее ускорение — только с несколькими картами/своим vLLM или сокращением числа LLM-вызовов у детерминированных навыков.
+
+---
+
+## 8. Частые проблемы
+
+| Симптом | Причина / решение |
+|---|---|
+| Прогон 0 находок, <1с | Data Plane пуст/протух — §4 |
+| «Собрать и запустить» → «нет демо-пакета» | сценарий без `demo/<key>/` (готовы: audit1c, invest1c, fin) |
+| «нет доступа к семье» | ABAC: у пользователя нет прав на семью — войти админом |
+| OUT не отправился реально | у OUT-узла нет `✓ Реальная отправка` / стоит `Под HITL` / нет токенов в env |
+| Фронт не обновился после деплоя | index.html no-cache, но браузер закешировал — hard refresh (Ctrl+F5) |
+| Двойной запуск триггера | планировщик in-process без leader-election — `ABOP_SCHEDULER=0` на лишних репликах |
+
+---
+
+## 9. Что дальше (см. `CONCEPT_SCALING_OBSERVABILITY.md`)
+
+Async-исполнение (`202`+Notification) и чат-оркестратор — **на холде** (точка входа простого пользователя = внешний менеджерский интерфейс, смычка позже). Observability Фаза 0 — сделана. Следующий инфра-шаг — по готовности внешнего UI.
