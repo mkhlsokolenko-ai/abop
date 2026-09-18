@@ -20,7 +20,12 @@ A_LEVELS = ["A0", "A1", "A2", "A3", "A4"]
 #   и batch-sizing — можно повышать.
 # ABOP_RUN_LLM_TRUNCATE=1 (dev) режет промпт/данные/вывод для скорости отладки.
 #   НА ПРОДЕ ВЫСТАВИТЬ ABOP_RUN_LLM_TRUNCATE=0 — полные промпты (обрезка здесь временная, для теста).
-_LLM_CONCURRENCY = max(1, int(os.getenv("ABOP_RUN_LLM_CONCURRENCY", "2")))
+# Параллелизм LLM-вызовов навыков. Раньше держали 2 (щадящий режим RouteAI). Оптимизация 2026-09-18:
+# узкое место — латентность модели × число вызовов, поэтому поднимаем параллелизм + backoff-ретрай на
+# 429 (перегруз RouteAI не портит вывод скилла). Ускорение БЕЗ влияния на качество (вывод тот же).
+_LLM_CONCURRENCY = max(1, int(os.getenv("ABOP_RUN_LLM_CONCURRENCY", "5")))
+_LLM_RETRIES = max(0, int(os.getenv("ABOP_RUN_LLM_RETRIES", "2")))       # ретраи при 429/таймауте
+_LLM_BACKOFF = float(os.getenv("ABOP_RUN_LLM_BACKOFF", "1.5"))           # база backoff, сек
 _LLM_TRUNCATE = os.getenv("ABOP_RUN_LLM_TRUNCATE", "1") != "0"
 # rows — сколько строк ТЯНЕМ для точного счёта scope (дёшево, in-process); sample — сколько записей
 # реально уходит в LLM-промпт (дорого по токенам); data — потолок символов дайджеста; body — методика.
@@ -188,16 +193,26 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
                   + ". Только из данных и приведённых норм, ничего не выдумывай. Если расхождений нет — так и скажи.")
         _t = time.perf_counter()
         async with sem:  # батчинг: семафор пускает по _LLM_CONCURRENCY вызовов за раз
-            try:
-                resp = await chat_fn(messages=[{"role": "user", "content": prompt}], profile="standard",
-                                     max_tokens=_LIM["max_tokens"])
+            # backoff-ретрай (429/таймаут): рост параллелизма не должен портить вывод скилла —
+            # при перегрузе RouteAI ждём и повторяем, а не отдаём «LLM недоступен». Качество без изменений.
+            resp = None
+            err = None
+            for _attempt in range(_LLM_RETRIES + 1):
+                try:
+                    resp = await chat_fn(messages=[{"role": "user", "content": prompt}], profile="standard",
+                                         max_tokens=_LIM["max_tokens"])
+                    err = None
+                    break
+                except Exception as ex:  # noqa: BLE001
+                    err = f"{type(ex).__name__}: {ex}"
+                    if _attempt < _LLM_RETRIES:
+                        await asyncio.sleep(_LLM_BACKOFF * (_attempt + 1))  # 1.5с, 3с, …
+            if resp is not None:
                 txt = (resp.get("text") or "").strip() or "(пустой ответ модели)"
                 model = resp.get("model", "")
                 tin, tout = int(resp.get("input_tokens") or 0), int(resp.get("output_tokens") or 0)
-                err = None
-            except Exception as ex:  # noqa: BLE001 — LLM недоступен → честно помечаем, прогон не падает
-                txt, model, tin, tout = f"(LLM недоступен: {type(ex).__name__}: {ex})", "", 0, 0
-                err = f"{type(ex).__name__}: {ex}"
+            else:
+                txt, model, tin, tout = f"(LLM недоступен: {err})", "", 0, 0
         ms = round((time.perf_counter() - _t) * 1000, 1)  # per-skill тайминг (observability)
         return {"skill": sid, "entities": entities, "model": model, "text": txt,
                 "input_tokens": tin, "output_tokens": tout, "ms": ms, "error": err}
