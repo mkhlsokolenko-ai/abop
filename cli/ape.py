@@ -3031,6 +3031,7 @@ def data_run(name: str) -> tuple:
     with open(_data_path(entity), "a", encoding="utf-8") as f:  # append-only canonical store
         for rec in out:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    _data_compact(entity)  # вытеснить перекрытые старые версии (старьё уходит по TTL, не по wall-clock)
     return entity, len(out), dropped, invalid
 
 
@@ -3133,35 +3134,77 @@ def data_new_recipe(name: str, entity: str = "transaction", kind: str = "csv") -
             "emit": {"schema": entity, "schema_version": "1.0", "ttl_sec": 86400}}
 
 
+def _rec_ts(rec: dict) -> float:
+    """«Номер версии» записи = provenance.fetched_at (когда её создал прогон рецепта)."""
+    return float((rec.get("provenance") or {}).get("fetched_at", 0) or 0)
+
+
 def _fresh(rec: dict, now: float) -> bool:
-    """Freshness-гейт: запись не протухла (fetched_at + ttl_sec ≥ now). ttl_sec=0 → вечная."""
+    """Freshness перекрытой версии: не старше ttl_sec. ttl_sec=0 → вечная. Применяется ТОЛЬКО к
+    старым (перекрытым) версиям; последняя созданная версия записи не протухает по времени."""
     ttl = rec.get("ttl_sec", 0)
     if not ttl:
         return True
-    return float(rec.get("provenance", {}).get("fetched_at", now)) + float(ttl) >= now
+    return _rec_ts(rec) + float(ttl) >= now
 
 
 def data_query(entity: str, filters: dict = None, fields: list = None, limit: int = 50,
                include_stale: bool = False) -> list:
-    """Чтение canonical store: dedup по id (последний), FRESHNESS-фильтр (протухшее не отдаётся),
-    фильтр по точному совпадению, проекция. Агент работает только на свежих данных."""
+    """Чтение canonical store с ВЕРСИОННОЙ семантикой (решение владельца 2026-09-18):
+    dedup по id — остаётся ПОСЛЕДНЯЯ СОЗДАННАЯ версия записи (max fetched_at). Последняя версия
+    НЕ протухает по одному лишь времени — данные не исчезают, пока их не заменит более новая
+    версия. TTL вытесняет только СТАРЫЕ, перекрытые версии (они и так отсеяны дедупом при чтении;
+    физически удаляются компакцией — см. _data_compact). include_stale=True → вся история версий."""
     try:
         with open(_data_path(entity), encoding="utf-8") as f:
             recs = [json.loads(x) for x in f if x.strip()]
     except FileNotFoundError:
         return []
-    now = time.time()
-    seen = {}
-    for r in recs:
-        seen[r.get("id", id(r))] = r          # dedup: последняя запись по id
-    res = list(seen.values())
-    if not include_stale:
-        res = [r for r in res if _fresh(r, now)]           # протухшее по ttl не отдаём
+    if include_stale:
+        res = recs                              # вся история версий (отладка/аудит)
+    else:
+        latest: dict = {}
+        for r in recs:
+            k = r.get("id", id(r))
+            if k not in latest or _rec_ts(r) >= _rec_ts(latest[k]):
+                latest[k] = r                   # оставляем последнюю СОЗДАННУЮ версию id
+        res = list(latest.values())             # последняя версия всегда отдаётся (не по wall-clock)
     for k, v in (filters or {}).items():
         res = [r for r in res if str(r.get(k, "")).lower() == str(v).lower()]
     if fields:
         res = [{k: r.get(k) for k in fields} for r in res]
     return res[:limit]
+
+
+def _data_compact(entity: str) -> int:
+    """Компакция canonical store: оставляем ПОСЛЕДНЮЮ версию каждого id (всегда) + недавно
+    перекрытые версии в пределах TTL; более старые перекрытые — удаляем (чтобы файл не рос
+    бесконечно и старьё уходило по TTL). Возвращает число удалённых строк."""
+    p = _data_path(entity)
+    try:
+        with open(p, encoding="utf-8") as f:
+            recs = [json.loads(x) for x in f if x.strip()]
+    except FileNotFoundError:
+        return 0
+    now = time.time()
+    latest: dict = {}
+    for r in recs:
+        k = r.get("id", id(r))
+        if k not in latest or _rec_ts(r) >= _rec_ts(latest[k]):
+            latest[k] = r
+    keep = []
+    for r in recs:
+        k = r.get("id", id(r))
+        if latest.get(k) is r:
+            keep.append(r)                      # последняя версия — сохраняем всегда
+        elif _fresh(r, now):
+            keep.append(r)                      # перекрытая, но в пределах TTL — храним историю
+    removed = len(recs) - len(keep)
+    if removed:
+        with open(p, "w", encoding="utf-8") as f:
+            for r in keep:
+                f.write(json.dumps(r, ensure_ascii=False) + "\n")
+    return removed
 
 
 def data_get(entity: str, rec_id: str, include_stale: bool = False) -> dict | None:
