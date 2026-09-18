@@ -35,9 +35,11 @@ _LLM_TRUNCATE = os.getenv("ABOP_RUN_LLM_TRUNCATE", "1") != "0"
 # Оптимизация (2026-09-18): в LLM идёт ДАЙДЖЕСТ (counts по типам = весь scope + маленький сэмпл),
 # а не полный дамп → в разы меньше токенов/времени. Находки audit считает КОД (детерминир.), не LLM.
 _LIM = {"rows": 5000, "sample": 6, "body": 2000, "data": 4000, "max_tokens": 1200} if _LLM_TRUNCATE \
-    else {"rows": 5000, "sample": 20, "body": 8000, "data": 20000, "max_tokens": 1200}
-# max_tokens нарратива навыка настраивается на лету (ABOP_RUN_MAX_TOKENS) — узкое место скорости на
-# выделенном боксе = генерация output-токенов; режем длину нарратива (детекцию считает код, не LLM).
+    else {"rows": 5000, "sample": 20, "body": 8000, "data": 20000, "max_tokens": 1600}
+# max_tokens нарратива навыка настраивается на лету (ABOP_RUN_MAX_TOKENS; прод=1600) — узкое место
+# скорости на выделенном боксе = генерация output-токенов; режем длину нарратива (детекцию считает код,
+# не LLM). Замер audit1c: 2500→77с, 1200→42с (обрыв нарратива), 1600 — баланс. Следующий рычаг против
+# «раздутости рассуждений» — structured output (response_format json_schema уже поддержан clients.chat).
 _MT = os.getenv("ABOP_RUN_MAX_TOKENS")
 if _MT and _MT.isdigit():
     _LIM["max_tokens"] = int(_MT)
