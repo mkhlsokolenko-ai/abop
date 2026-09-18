@@ -141,7 +141,11 @@ curl -s -XPOST http://127.0.0.1:8091/api/runs -H "Authorization: Bearer $TOKEN" 
 
 **Выделенный инстанс LLM (СДЕЛАНО 2026-09-18):** ABOP переключён на self-host **Qwen3-30B-A3B FP8** на Vast (`LOCAL_LLM_BASE_URL=http://95.3.33.46:44633/v1`, `LOCAL_LLM_MODEL=qwen3-30b-a3b`, `LOCAL_LLM_API_KEY=EMPTY`; `ROUTEAI_STANDARD_CASCADE=local/qwen3-30b-a3b,…` — local первым, RouteAI fallback). IP:port меняется при пересоздании бокса. На выделенной карте параллелизм заиграл (в отличие от RouteAI): **conc=8 → 77с**, а срез нарратива **max_tokens=1600 → ~50с** (2500→77с, 1200→42с с обрывом нарратива). Итог: **357с → ~50с (≈7×)**, находки/нормы 1:1, стоимость LLM ≈0. Ключи Vast/HF — в `Desktop/Робокасса.txt` (вне репо). **Второй Vast-инстанс = red-team.tech — НЕ ТРОГАТЬ.**
 
-**Актуальные перф-настройки прода (env):** `ABOP_RUN_LLM_CONCURRENCY=8`, `ABOP_RUN_MAX_TOKENS=1600` (нарратив навыка; детекцию считает код). Следующий рычаг против болтливости модели — **structured output (JSON schema)**: `clients.chat` уже принимает `response_format` → включить guided_json в `run_live` (грамматика запрещает прозу вне схемы → минус «вода», токены ×3-5, вывод парсится).
+**Актуальные перф-настройки прода (env):** `ABOP_RUN_LLM_CONCURRENCY=8`, `ABOP_RUN_MAX_TOKENS=1600` (нарратив навыка; детекцию считает код), `ABOP_RUN_STRUCTURED=1` (structured output, по умолч. вкл).
+
+**Structured output + grounded объяснение (СДЕЛАНО 2026-09-18) — качество+скорость.** `run_live` просит СТРОГО JSON по findings-схеме через `response_format={"type":"json_schema",...}` (vLLM xgrammar запрещает прозу/markdown вне схемы → минус «вода»). Детекцию считает КОД (полные данные) ДО прогона и прокидывает в `run_live(findings_context=...)` → навык ОБЪЯСНЯЕТ реальные находки (grounded), не ищет заново на сэмпле (иначе LLM ложно писал «расхождений нет»). Поле `норма` — только статья закона (НК/ФСБУ/ПБУ), иначе пусто. Тумблеры: `ABOP_RUN_STRUCTURED=0` → свободный текст.
+
+**ИТОГ оптимизации прогона: 357с → ~40с (≈9×), out-токены 18338→~9000, стоимость LLM ≈0, находки 10 (A1 B6 C1 D2) 1:1, нарратив объясняет реальные находки (док+проводки+статьи закона), читаемо.** Этапы: дайджест данных (357→110с) → local Qwen conc=8 (77с) → structured output (28с, но нарратив «0») → grounded (объяснение реальных находок, ~40с).
 
 ---
 
