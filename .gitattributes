@@ -1,1 +1,4 @@
 *.pptx binary
+# shell-скрипты всегда с LF — иначе CRLF ломает shebang/`set -euo pipefail` при запуске на сервере
+*.sh text eol=lf
+ops/*.sh text eol=lf
