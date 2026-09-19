@@ -50,6 +50,40 @@ def _client():
     return _jwk_client
 
 
+# ── Кэш верифицированных JWT: verify (RS256) один раз, дальше запросы того же токена — из кэша ──
+# Ключ = хэш токена (не храним сырой токен и не привязываем к юзеру → чужим токеном не прокатиться).
+# TTL = min(остаток жизни токена, потолок) — НИКОГДА не отдаём после exp. Первый запрос токена всё
+# равно полностью верифицирует подпись; в кэш попадает только успех. Потолок мал → окно на ротацию/
+# отзыв ключей крошечное (revocation-list нет → паритет с текущим «принимаем до exp»). Per-worker.
+import hashlib as _hashlib
+import time as _t
+_JWT_CACHE: dict = {}                                   # tokhash -> (identity, deadline_ts)
+_JWT_CACHE_TTL = max(5, int(os.getenv("ABOP_JWT_CACHE_TTL", "60")))
+_JWT_CACHE_MAX = max(256, int(os.getenv("ABOP_JWT_CACHE_MAX", "5000")))
+
+
+def _jwt_cache_get(token: str):
+    h = _hashlib.sha256(token.encode()).hexdigest()
+    hit = _JWT_CACHE.get(h)
+    if hit and _t.time() < hit[1]:                      # не отдаём после дедлайна (учитывает exp)
+        return hit[0]
+    if hit:
+        _JWT_CACHE.pop(h, None)                         # протухло — выкидываем
+    return None
+
+
+def _jwt_cache_put(token: str, identity: dict, exp) -> None:
+    if len(_JWT_CACHE) >= _JWT_CACHE_MAX:               # bounded: не растём бесконечно
+        _JWT_CACHE.clear()
+    deadline = _t.time() + _JWT_CACHE_TTL
+    try:
+        if exp:                                         # не пережить exp токена
+            deadline = min(deadline, float(exp))
+    except (TypeError, ValueError):
+        pass
+    _JWT_CACHE[_hashlib.sha256(token.encode()).hexdigest()] = (identity, deadline)
+
+
 _LEVELS = ["analyst", "manager", "support", "admin"]  # по возрастанию прав (support/admin — сквозной доступ)
 
 
@@ -82,6 +116,9 @@ def user(request: Request) -> dict:
     if auth.startswith("Bearer "):
         token = auth[7:]
         import jwt
+        cached = _jwt_cache_get(token) if _jwks_url() else None   # verify один раз на токен
+        if cached is not None:
+            return cached
         try:
             if _jwks_url():  # строгая верификация подписи по JWKS
                 key = _client().get_signing_key_from_jwt(token).key
@@ -93,7 +130,10 @@ def user(request: Request) -> dict:
                 claims = jwt.decode(token, options={"verify_signature": False})
         except Exception:  # noqa: BLE001
             raise HTTPException(401, "невалидный токен")
-        return _identity(claims, dev=False)
+        ident = _identity(claims, dev=False)
+        if _jwks_url():                                   # кэшируем только верифицированный успех
+            _jwt_cache_put(token, ident, claims.get("exp"))
+        return ident
     if _jwks_url():
         raise HTTPException(401, "нужен Bearer-JWT")
     return _identity({"sub": "dev", "preferred_username": "dev (admin)",
