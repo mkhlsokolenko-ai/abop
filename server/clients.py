@@ -8,9 +8,34 @@
 """
 from __future__ import annotations
 
+import asyncio
+import os
+
 import httpx
 
 from .config import settings
+
+
+# ─────── Admission control: глобальный лимит одновременных LLM-вызовов к боксу ───────
+# Семафор в runner — ПЕР-ПРОГОН; при N юзерах одновременно бокс получает N×concurrency вызовов и
+# захлёбывается. Этот семафор — ПРОЦЕССНЫЙ (на все прогоны/запросы), держит нагрузку на LLM в рамках
+# ёмкости бокса. Ожидающие встают в честную очередь, а не роняют инстанс. Настройка ABOP_LLM_MAX_INFLIGHT.
+_INFLIGHT_MAX = max(1, int(os.getenv("ABOP_LLM_MAX_INFLIGHT", "12")))
+_inflight_sem: asyncio.Semaphore | None = None
+
+
+def _admission() -> asyncio.Semaphore:
+    global _inflight_sem
+    if _inflight_sem is None:                 # лениво: привязка к текущему event loop
+        _inflight_sem = asyncio.Semaphore(_INFLIGHT_MAX)
+    return _inflight_sem
+
+
+def inflight_stats() -> dict:
+    """Диагностика загрузки admission-семафора (для /metrics и наблюдаемости)."""
+    s = _inflight_sem
+    free = s._value if s is not None else _INFLIGHT_MAX  # noqa: SLF001
+    return {"max": _INFLIGHT_MAX, "free": free, "busy": _INFLIGHT_MAX - free}
 
 
 # ─────────────────────────── LLM (chat) ───────────────────────────
@@ -60,14 +85,16 @@ async def chat(
         if base_url == settings.local_llm_base_url and settings.local_llm_base_url:
             payload["chat_template_kwargs"] = {"enable_thinking": False}
         try:
-            async with httpx.AsyncClient(timeout=120) as cli:
-                r = await cli.post(
-                    f"{base_url}/chat/completions",
-                    headers={"Authorization": f"Bearer {api_key}"},
-                    json=payload,
-                )
-                r.raise_for_status()
-                data = r.json()
+            # admission control: глобальный лимит одновременных вызовов к LLM (защита бокса)
+            async with _admission():
+                async with httpx.AsyncClient(timeout=120) as cli:
+                    r = await cli.post(
+                        f"{base_url}/chat/completions",
+                        headers={"Authorization": f"Bearer {api_key}"},
+                        json=payload,
+                    )
+                    r.raise_for_status()
+                    data = r.json()
             usage = data.get("usage", {})
             choice = data["choices"][0]
             text = choice["message"].get("content") or ""

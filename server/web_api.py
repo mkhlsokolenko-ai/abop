@@ -165,7 +165,10 @@ def health() -> dict:
 @app.get("/metrics")
 def metrics() -> PlainTextResponse:
     """Метрики в формате Prometheus (scrape). Открыт для внутреннего мониторинга."""
-    return PlainTextResponse(obs.render_prometheus(), media_type="text/plain; version=0.0.4")
+    st = clients.inflight_stats()  # загрузка admission-семафора LLM (multi-user)
+    extra = (f"# TYPE abop_llm_inflight gauge\nabop_llm_inflight {st['busy']}\n"
+             f"# TYPE abop_llm_inflight_max gauge\nabop_llm_inflight_max {st['max']}\n")
+    return PlainTextResponse(obs.render_prometheus() + extra, media_type="text/plain; version=0.0.4")
 
 
 @app.get("/api/observability")
@@ -1738,6 +1741,37 @@ async def _deliver_out_nodes(agent: dict, result: dict, actor: str) -> None:
     result["delivery"] = deliveries
 
 
+# ─── Multi-user: per-user rate-limit + идемпотентность (дедуп двойных сабмитов) ───
+import asyncio as _aio
+import time as _time
+_USER_RATE_MAX = max(1, int(os.getenv("ABOP_USER_RATE_MAX", "30")))     # прогонов на юзера за окно
+_USER_RATE_WINDOW = max(10, int(os.getenv("ABOP_USER_RATE_WINDOW", "300")))  # окно, сек
+_user_hits: dict = {}          # user -> [timestamps] (скользящее окно, per-replica)
+_run_locks: dict = {}          # ключ дедупа -> asyncio.Lock (сериализация одинаковых сабмитов)
+
+
+def _rate_check(user: str) -> bool:
+    """Скользящее окно: не более _USER_RATE_MAX прогонов на пользователя за _USER_RATE_WINDOW сек."""
+    now = _time.time()
+    hits = [t for t in _user_hits.get(user, []) if now - t < _USER_RATE_WINDOW]
+    if len(hits) >= _USER_RATE_MAX:
+        _user_hits[user] = hits
+        return False
+    hits.append(now)
+    _user_hits[user] = hits
+    return True
+
+
+def _run_lock(key: str) -> "_aio.Lock":
+    """Per-key lock: одинаковые сабмиты (юзер+агент[+idempotency_key]) сериализуются — второй дождётся
+    первого и получит его результат из кэша (дедуп двойного клика без двойного тяжёлого прогона)."""
+    lk = _run_locks.get(key)
+    if lk is None:
+        lk = _aio.Lock()
+        _run_locks[key] = lk
+    return lk
+
+
 def _findings_context_text(findings: list, investigations: list) -> str:
     """Компактный текст детерминированных находок/расследований для grounded-объяснения навыками
     (LLM объясняет РЕАЛЬНЫЕ находки кода, а не ищет заново на сэмпле-дайджесте)."""
@@ -2011,8 +2045,18 @@ async def run_start(body: dict, u: dict = Depends(user)) -> JSONResponse:
     contract = await contract_store.get(agent.get("contract_audit_id") or audit_id)
     if not contract:
         contract = {"intake": {"autonomy_ceiling": agent.get("autonomy_max") or "A2"}, "bundle": {}}
+    actor = u.get("name") or u.get("sub") or "dev"
+    # per-user rate-limit (защита от «стучания» одним пользователем)
+    if not _rate_check(actor):
+        obs.inc("abop_rate_limited_total")
+        raise HTTPException(429, f"слишком много прогонов: лимит {_USER_RATE_MAX} за {_USER_RATE_WINDOW}с — подождите")
     use_cache = not bool((body or {}).get("no_cache"))  # {no_cache:true} → форс свежий прогон
-    out = await execute_agent_run(agent, contract, u.get("name") or u.get("sub") or "dev", use_cache=use_cache)
+    # идемпотентность: одинаковые сабмиты (юзер+агент[+idempotency_key]) сериализуются per-key lock →
+    # второй дождётся первого и заберёт результат из кэша (двойной клик не запускает двойной прогон)
+    idem = str((body or {}).get("idempotency_key", "")).strip()
+    lock_key = f"{actor}:{agent_id}:{idem}"
+    async with _run_lock(lock_key):
+        out = await execute_agent_run(agent, contract, actor, use_cache=use_cache)
     return JSONResponse({"run_id": out["saved"]["id"], **out["result"]}, status_code=201)
 
 
