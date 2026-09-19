@@ -8,7 +8,8 @@ set -eu
 
 ACTION="${1:-}"
 KEY_FILE=/root/.vast_api_key
-API=https://console.vast.ai/api/v1/instances
+API=https://console.vast.ai/api/v1/instances       # листинг (GET) — v1
+API_SET=https://console.vast.ai/api/v0/instances   # смена состояния (PUT state) — v0 (v1 отдаёт Not found)
 QWEN_ID=51396167          # ape-qwen30b — на него завязан ABOP LOCAL_LLM_BASE_URL
 REDTEAM_ID=49036119       # redteam-judge-ab
 ENV_FILE=/opt/abop/.env
@@ -20,9 +21,10 @@ ts() { date "+%Y-%m-%d %H:%M:%S %Z"; }
 log() { echo "$(ts) $*" | tee -a "$LOG"; }
 
 set_state() {  # $1=id $2=stopped|running
-  curl -s --request PUT --url "$API/$1/" \
+  R=$(curl -s --request PUT --url "$API_SET/$1/" \
     --header "Authorization: Bearer $KEY" --header "Content-Type: application/json" \
-    --data "{\"state\":\"$2\"}" >/dev/null && log "instance $1 -> $2"
+    --data "{\"state\":\"$2\"}")
+  log "instance $1 -> $2 : $R"
 }
 
 case "$ACTION" in
