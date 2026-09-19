@@ -149,6 +149,14 @@ curl -s -XPOST http://127.0.0.1:8091/api/runs -H "Authorization: Bearer $TOKEN" 
 
 ---
 
+## 7а. Горизонтальное масштабирование (2+ реплики API)
+
+Разблокировано (2026-09-18): реплики безопасно работают параллельно.
+- **Инвалидация кэшей между репликами** (`server/cachebus.py`): Postgres `LISTEN/NOTIFY` канал `abop_cache`. Писатель делает локальный refresh И `notify(topic)` → все реплики перечитывают из PG (топики `skills`, `dataplane` — инжектятся в `ape`). Без этого реплика B держала бы устаревший кэш навык-источников/рецептов. Проверка: `docker logs abop-webapi | grep cachebus` → `cachebus.listening`/`cachebus.invalidated`.
+- **Leader-election планировщика** (`triggers.scheduler_loop`): `pg_try_advisory_lock(0x41424F50)` — триггеры фаерит ТОЛЬКО реплика-лидер, остальные тикают вхолостую. При падении лидера Postgres освобождает lock → другая реплика перехватывает. Проверка: `SELECT * FROM pg_locks WHERE locktype='advisory' AND objid=1094864720` (держится 1 реплика); лог `scheduler.leader_acquired`.
+- **Что уже общее (PG):** agents/contracts/runs/skills/рецепты/admin/RBAC/память. **Canonical Data Plane** — в томе `abop_ape` (при нескольких хостах нужен общий том/перенос эмита в PG — TODO для мульти-хоста).
+- **Запуск 2-й реплики:** приложение на `--network host :8091` → второй реплике нужен свой порт + LB/Caddy upstream (по готовности). Механизм координации (кэш/лидер) уже готов.
+
 ## 8. Частые проблемы
 
 | Симптом | Причина / решение |
