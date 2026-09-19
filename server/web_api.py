@@ -28,7 +28,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, assembly, audit_store, clients, contract_store, dataplane_store, ingress, langfuse_trace, layout_store, observability as obs, reglament_store, run_store, runner, skill_store, slava, systems_store, trigger_store, triggers, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, assembly, audit_store, cachebus, clients, contract_store, dataplane_store, ingress, langfuse_trace, layout_store, observability as obs, reglament_store, run_store, runner, skill_store, slava, systems_store, trigger_store, triggers, userdata_store  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
 
@@ -975,6 +975,7 @@ async def skill_datasources_set(sid: str, body: dict, u: dict = Depends(user)) -
     editor = u.get("name") or u.get("sub") or "dev"
     await skill_store.save_datasources(sid, norm, editor=editor)
     await _refresh_skill_ds_cache()   # чтобы build_agent_spec/lineage сразу видели новые источники
+    await cachebus.notify("skills")   # инвалидировать кэш навык-источников на других репликах
     await audit_store.record(editor, "skill.datasources", sid, {"count": len(norm)})
     return {"id": sid, "datasources": ape.skill_datasources_resolved(sid)}
 
@@ -1076,6 +1077,7 @@ async def connector_save(body: dict, u: dict = Depends(user)) -> dict:
     editor = u.get("name") or u.get("sub") or "dev"
     await dataplane_store.save_connector(card["id"], card, editor=editor)
     await _refresh_dataplane_cache()
+    await cachebus.notify("dataplane")
     await audit_store.record(editor, "data.connector", card["id"],
                              {"adapter": card.get("adapter"), "system_id": card.get("system_id")})
     return card
@@ -1115,6 +1117,7 @@ async def recipe_save(body: dict, u: dict = Depends(user)) -> dict:
     editor = u.get("name") or u.get("sub") or "dev"
     await dataplane_store.save_recipe(r["recipe"], r, editor=editor)
     await _refresh_dataplane_cache()
+    await cachebus.notify("dataplane")
     await audit_store.record(editor, "data.recipe", r["recipe"], {"entity": r.get("entity")})
     return r
 
@@ -1160,6 +1163,7 @@ async def recipe_rebind(name: str, body: dict, u: dict = Depends(user)) -> dict:
     editor = u.get("name") or u.get("sub") or "dev"
     await dataplane_store.save_recipe(saved["recipe"], saved, editor=editor)
     await _refresh_dataplane_cache()   # чтобы data_run ниже прочитал перепривязанный рецепт
+    await cachebus.notify("dataplane")
     out = {"recipe": saved.get("recipe"), "entity": entity, "rebound": True}
     await audit_store.record(editor, "data.rebind", saved.get("recipe"), {"entity": entity})
     if (body or {}).get("run"):
@@ -1226,11 +1230,15 @@ async def _startup() -> None:
     await trigger_store.init()
     await reglament_store.init()
     import asyncio as _asyncio
-    _asyncio.create_task(triggers.scheduler_loop(execute_agent_run))  # фоновый планировщик триггеров
+    _asyncio.create_task(triggers.scheduler_loop(execute_agent_run))  # фоновый планировщик (leader-election)
     await _refresh_skill_ds_cache()  # инжект data-need оверрайдов из PG в ape
     await dataplane_store.init()
     await _backfill_dataplane_from_files()  # одноразовый перенос ~/.ape → PG (сохранить демо-рецепты)
     await _refresh_dataplane_cache()  # инжект рецептов/коннекторов из PG в ape
+    # Cache-bus: инвалидация in-process кэшей между репликами (LISTEN/NOTIFY). Разблокирует 2+ реплики.
+    cachebus.register("skills", _refresh_skill_ds_cache)
+    cachebus.register("dataplane", _refresh_dataplane_cache)
+    _asyncio.create_task(cachebus.listen_loop())
 
 
 @app.post("/api/contracts/ingest")

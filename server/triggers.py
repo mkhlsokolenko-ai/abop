@@ -208,13 +208,48 @@ async def _tick(run_executor) -> None:
                     fired += 1
 
 
+_LEADER_LOCK_KEY = 0x41424f50  # 'ABOP' — advisory-lock планировщика (фаерит только реплика-лидер)
+
+
+async def _try_become_leader():
+    """Захватить session-level advisory-lock (эта реплика = лидер планировщика). Держим на выделенном
+    коннекте; при его падении Postgres освобождает lock → другая реплика перехватывает лидерство.
+    Возвращает коннект-держатель или None (не лидер / нет PG)."""
+    from .config import settings
+    if not settings.pg_dsn:
+        return None
+    try:
+        import psycopg
+        conn = await psycopg.AsyncConnection.connect(settings.pg_dsn, autocommit=True)
+        cur = await conn.execute("SELECT pg_try_advisory_lock(%s)", (_LEADER_LOCK_KEY,))
+        row = await cur.fetchone()
+        if row and row[0]:
+            from . import observability as obs
+            obs.log_event("info", "scheduler.leader_acquired")
+            return conn
+        await conn.close()
+    except Exception:  # noqa: BLE001 — не смогли захватить → не лидер, попробуем позже
+        return None
+    return None
+
+
 async def scheduler_loop(run_executor) -> None:
-    """Фоновый планировщик (раз в TICK). Kill-switch ABOP_SCHEDULER=0."""
+    """Фоновый планировщик (раз в TICK). Kill-switch ABOP_SCHEDULER=0. Leader-election через
+    Postgres advisory-lock: тикает ТОЛЬКО реплика-лидер → нет двойного запуска триггеров на 2+ репликах."""
     if not SCHEDULER_ON:
         return
+    from .config import settings
+    single = not settings.pg_dsn  # без PG — одна реплика, всегда лидер
+    leader = None                 # коннект-держатель advisory-lock (эта реплика — лидер)
     while True:
         try:
-            await _tick(run_executor)
+            if not single:
+                if leader is not None and getattr(leader, "closed", False):
+                    leader = None  # потеряли коннект → потеряли лидерство
+                if leader is None:
+                    leader = await _try_become_leader()  # пробуем перехватить лидерство
+            if single or leader is not None:
+                await _tick(run_executor)
         except Exception:  # noqa: BLE001 — планировщик не должен падать
             pass
         await asyncio.sleep(TICK_SEC)
