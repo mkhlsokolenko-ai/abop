@@ -26,7 +26,7 @@
       }
     ],
     "evidence": [
-      "ev:ma11ta5c00"
+      "ev:aabbccdd11"
     ]
   },
   "deployment_contract": {
@@ -58,18 +58,18 @@
       "first_time_right": {
         "value": 0.5,
         "evidence": [
-          "ev:ma11ta5c00"
+          "ev:aabbccdd11"
         ]
       },
       "escalation_rate": {
         "value": 0.5,
         "evidence": [
-          "ev:ma11ta5c00"
+          "ev:aabbccdd11"
         ]
       }
     }
   },
   "evidence_pack": [
-    "ma11ta5c00000000000000000000000000000000000000000000000000000000"
+    "aabbccdd11000000000000000000000000000000000000000000000000000000"
   ]
 }
