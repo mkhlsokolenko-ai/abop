@@ -2119,18 +2119,17 @@ async def runs_list(agent_id: str = "", u: dict = Depends(user)) -> dict:
     """Журнал прогонов (последние 100). ABAC: не-admin видит только прогоны агентов своего отдела.
     Обогащается именем/семьёй агента для отображения во Флоте/Обзоре."""
     items = await run_store.list_runs(agent_id=agent_id or None, limit=100)
-    _fam_cache: dict = {}
+    # обогащение агентом: берём ЛЁГКИЕ сводки одним запросом (id/name/family/version/role без graph),
+    # вместо полного agent_store.get() на каждого агента (тот тянул тяжёлый graph-JSONB ради 4 полей).
+    briefs = {a["id"]: a for a in await agent_store.list_for(None)}
+    briefs.update({a["id"]: a for a in await agent_store.list_for(None, archived=True)})  # + Лимб
     out = []
     for it in items:
-        aid = it.get("agent_id")
-        if aid not in _fam_cache:
-            ag = await agent_store.get(aid) if aid else None
-            _fam_cache[aid] = ag or {}
-        ag = _fam_cache[aid]
+        ag = briefs.get(it.get("agent_id"), {})
         fam = ag.get("family")
         if not can_see_family(u, fam):
             continue
-        it["agent_name"] = ag.get("name") or aid
+        it["agent_name"] = ag.get("name") or it.get("agent_id")
         it["family"] = fam
         it["version"] = ag.get("version")
         it["role"] = ag.get("role")
