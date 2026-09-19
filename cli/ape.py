@@ -562,7 +562,7 @@ def skills_system(base: str) -> str:
 #         action — пишет/шлёт во ВНЕШНЮЮ систему (почта/трекер) → ТОЛЬКО dry_run + подтверждение человека (HITL)
 # egress: internal | external — внешний контент на входе/выходе → injection-guard + PII-маскирование на границе
 # cite:   True — числа/факты ТОЛЬКО из источника (анти-галлюцинация), выдумывать запрещено
-_SAFE_DEFAULT = {"mode": "read", "egress": "internal", "cite": False}
+_SAFE_DEFAULT = {"mode": "read", "egress": "internal", "cite": False, "output": "structured"}
 SKILL_SAFETY = {
     # финансы/аналитика — числа только из источника (cite), egress наружу закрыт
     "three-statement-model": {"mode": "write", "egress": "internal", "cite": True},
@@ -611,15 +611,27 @@ SKILL_SAFETY = {
     "audit1c-explain": {"mode": "write", "egress": "internal", "cite": True},           # отчёт-артефакт; наружу — под HITL
     "invest1c-trace": {"mode": "read", "egress": "internal", "cite": True},              # трассировка по графу; цепочки считает код
     "invest1c-verdict": {"mode": "write", "egress": "internal", "cite": True},           # заключение-артефакт; норма НК гл.21 из RAG
-    "mail-triage": {"mode": "read", "egress": "internal", "cite": True},                 # читает письма, извлекает задачи
-    "daily-plan": {"mode": "read", "egress": "internal", "cite": True},                  # план поверх задач
-    "client-letter": {"mode": "write", "egress": "internal", "cite": True},              # письмо-артефакт; наружу под HITL
-    "bft-draft": {"mode": "write", "egress": "internal", "cite": True},                  # БФТ-артефакт; наружу под HITL
+    "mail-triage": {"mode": "read", "egress": "internal", "cite": True},                 # список задач → structured (по умолч.)
+    "daily-plan": {"mode": "read", "egress": "internal", "cite": True, "output": "freeform"},      # план — документ
+    "client-letter": {"mode": "write", "egress": "internal", "cite": True, "output": "freeform"},  # письмо — документ
+    "bft-draft": {"mode": "write", "egress": "internal", "cite": True, "output": "freeform"},      # БФТ — документ
 }
 
 
+_SKILL_OUTPUT_OVERRIDES: dict = {}   # {sid: "structured"|"freeform"} — правки формата вывода из UI (PG)
+
+
+def set_skill_output_overrides(overrides: dict | None) -> None:
+    """Сервер инжектит {sid: output} из Postgres (правка флага «формат вывода» в UI навыка)."""
+    global _SKILL_OUTPUT_OVERRIDES
+    _SKILL_OUTPUT_OVERRIDES = dict(overrides or {})
+
+
 def skill_safety(sid: str) -> dict:
-    return {**_SAFE_DEFAULT, **SKILL_SAFETY.get(sid, {})}
+    sf = {**_SAFE_DEFAULT, **SKILL_SAFETY.get(sid, {})}
+    if sid in _SKILL_OUTPUT_OVERRIDES:           # UI-правка формата вывода перекрывает дефолт кода
+        sf["output"] = _SKILL_OUTPUT_OVERRIDES[sid]
+    return sf
 
 
 def load_skill_body(sid: str) -> str:

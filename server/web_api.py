@@ -869,9 +869,10 @@ def agent_spec(family: str, member: str = "", u: dict = Depends(user)) -> dict:
 
 
 async def _refresh_skill_ds_cache() -> None:
-    """Подтянуть data-need оверрайды из Postgres и инжектнуть в ape (build_agent_spec/lineage/assembly)."""
+    """Подтянуть data-need + флаг формата вывода (output) оверрайды из Postgres → инжект в ape."""
     try:
         ape.set_skill_ds_overrides(await skill_store.datasources_map())
+        ape.set_skill_output_overrides(await skill_store.output_map())
     except Exception:  # noqa: BLE001
         pass
 
@@ -887,7 +888,9 @@ def _skill_families() -> dict:
 
 # поля навыка, которые оператор правит в UI и которые оверрайдятся из Postgres (skill_store.patch)
 _SKILL_TEXT_FIELDS = ("title", "short", "flow", "when", "method", "dod", "anti")
-_SKILL_SAFETY_FIELDS = ("mode", "egress", "cite")
+# output — формат вывода навыка (structured|freeform), редактируется в UI. mode/egress/cite —
+# отображаются, но governance-безопасность узла берётся авторитетно из каталога (assembly), не из правок.
+_SKILL_SAFETY_FIELDS = ("mode", "egress", "cite", "output")
 
 
 def _skill_base_card(sid: str, fam: dict) -> dict:
@@ -960,6 +963,9 @@ async def skill_save(sid: str, body: dict, u: dict = Depends(user)) -> dict:
         raise HTTPException(422, "нет полей для сохранения")
     editor = u.get("name") or u.get("sub") or "dev"
     ov = await skill_store.save_patch(sid, patch, editor=editor)
+    if "output" in patch:                       # флаг формата вывода → в ape + на другие реплики
+        await _refresh_skill_ds_cache()
+        await cachebus.notify("skills")
     await audit_store.record(editor, "skill.save", sid,
                              {"version": ov.get("version"), "fields": sorted(patch.keys())})
     return _overlay_skill(_skill_base_card(sid, _skill_families()), ov)

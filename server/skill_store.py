@@ -98,6 +98,16 @@ async def datasources_map() -> dict[str, list]:
     return out
 
 
+async def output_map() -> dict[str, str]:
+    """sid → формат вывода (structured|freeform) из правок навыка (patch.output) — для инъекции в ape."""
+    out = {}
+    for sid, r in (await all()).items():
+        o = (r.get("patch") or {}).get("output")
+        if o in ("structured", "freeform"):
+            out[sid] = o
+    return out
+
+
 async def _upsert(sid: str, *, patch=None, datasources="__keep__", editor: str = "dev") -> dict:
     cur = await get(sid) or {"patch": {}, "datasources": None, "version": "v1.0"}
     new_patch = dict(cur.get("patch") or {})
