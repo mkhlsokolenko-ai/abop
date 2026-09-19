@@ -23,6 +23,7 @@ import json
 import os
 import random
 import re
+from functools import lru_cache
 import secrets
 import shutil
 import ssl
@@ -634,6 +635,7 @@ def skill_safety(sid: str) -> dict:
     return sf
 
 
+@lru_cache(maxsize=None)   # .md-файлы статичны в образе (правки навыка идут в PG, не в файл) → мемоизация
 def load_skill_body(sid: str) -> str:
     """Полное тело навыка (progressive disclosure): skills/<id>/SKILL.md, иначе — карточка из SKILLS."""
     if sid not in SKILLS:
@@ -677,6 +679,7 @@ def _steps_from(text: str) -> list[str]:
     return steps
 
 
+@lru_cache(maxsize=None)   # парсинг .md — самый дорогой шаг /api/skills; файл статичен → мемоизация
 def parse_skill_md(sid: str) -> dict:
     """Тело SKILL.md → упорядоченные секции [{head,text}] + flow (шаги метода).
     Пустые навыки в §4 были из-за того, что фронт не забирал тело — теперь секции готовы к рендеру."""

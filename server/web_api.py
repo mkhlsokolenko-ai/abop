@@ -1812,6 +1812,27 @@ def _collect_soft_errors(result: dict) -> list:
     return soft
 
 
+_ENT_SIG_CACHE: dict = {}   # entity -> (сигнатура, ts) — короткий TTL, чтобы не читать jsonl на каждый прогон
+_ENT_SIG_TTL = float(os.getenv("ABOP_ENT_SIG_TTL", "5"))
+
+
+def _entity_sig(e: str) -> str:
+    """Сигнатура версии сущности (счёт + max fetched_at) с коротким TTL-кэшем — горячий cached-путь
+    не должен перечитывать весь jsonl на каждый прогон (при всплеске юзеров данные те же)."""
+    now = _time.time()
+    hit = _ENT_SIG_CACHE.get(e)
+    if hit and now - hit[1] < _ENT_SIG_TTL:
+        return hit[0]
+    try:
+        recs = ape.data_query(e, limit=100000)
+        mx = max((float((r.get("provenance") or {}).get("fetched_at", 0) or 0) for r in recs), default=0)
+        sig = f"{e}:{len(recs)}:{mx}"
+    except Exception:  # noqa: BLE001
+        sig = f"{e}:err"
+    _ENT_SIG_CACHE[e] = (sig, now)
+    return sig
+
+
 def _data_fingerprint(agent: dict) -> str:
     """Отпечаток ВЕРСИИ данных, которые читает агент (счёт + max fetched_at по сущностям навыков).
     Меняется при обновлении Data Plane → инвалидирует кэш результатов автоматически."""
@@ -1825,14 +1846,7 @@ def _data_fingerprint(agent: dict) -> str:
             e = ds.get("entity")
             if e:
                 ents.add(e)
-    parts = []
-    for e in sorted(ents):
-        try:
-            recs = ape.data_query(e, limit=100000)
-            mx = max((float((r.get("provenance") or {}).get("fetched_at", 0) or 0) for r in recs), default=0)
-            parts.append(f"{e}:{len(recs)}:{mx}")
-        except Exception:  # noqa: BLE001
-            parts.append(f"{e}:err")
+    parts = [_entity_sig(e) for e in sorted(ents)]
     return hashlib.sha256("|".join(parts).encode()).hexdigest()[:16]
 
 
