@@ -28,7 +28,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, assembly, audit_store, cachebus, clients, contract_store, dataplane_store, ingress, langfuse_trace, layout_store, observability as obs, reglament_store, run_cache_store, run_store, runner, skill_store, slava, systems_store, trigger_store, triggers, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, assembly, audit_store, cachebus, clients, contract_store, dataplane_store, hitl_store, ingress, langfuse_trace, layout_store, observability as obs, reglament_store, run_cache_store, run_store, runner, skill_store, slava, systems_store, trigger_store, triggers, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
@@ -1231,6 +1231,7 @@ async def _startup() -> None:
     await trigger_store.init()
     await reglament_store.init()
     await run_cache_store.init()
+    await hitl_store.init()
     import asyncio as _asyncio
     _asyncio.create_task(triggers.scheduler_loop(execute_agent_run))  # фоновый планировщик (leader-election)
     await _refresh_skill_ds_cache()  # инжект data-need оверрайдов из PG в ape
@@ -1649,65 +1650,75 @@ def _out_nodes(agent: dict) -> list:
             if n.get("kind") == "out" and (n.get("out") or {}).get("channel")]
 
 
-async def _deliver_out_nodes(agent: dict, result: dict, actor: str) -> None:
-    """Проброс OUT-узла в РЕАЛЬНУЮ доставку: строит отчёт и отправляет по каналу узла
-    (почта Mailpit / BookStack / PDF-файл через Gotenberg). dry_run по умолчанию — реальная
-    отправка только при out.run==true И без HITL-гейта на узле (ADR-014, наружу под подтверждением)."""
+async def _send_channel(cfg: dict, agent_name: str, html_report: str, real: bool) -> str:
+    """Отправка отчёта в канал OUT-узла (почта/BookStack/YouGile/Яндекс/PDF). real=False → dry_run
+    (превью). Переиспользуется прогоном и подтверждением HITL (approve → real=True)."""
     import asyncio
     import re as _re
+    channel = cfg.get("channel")
+    title = cfg.get("subject") or (agent_name or "Отчёт ABOP")
+    loop = asyncio.get_event_loop()
+    rf = "true" if real else "false"
+    try:
+        if channel == "bookstack":
+            return await loop.run_in_executor(None, ape._t_bookstack_publish,
+                {"title": title, "html": html_report, "book_id": cfg.get("book_id") or 1, "run": rf})
+        if channel in ("email", "yandex"):
+            att = ""
+            if (cfg.get("format") or "pdf") == "pdf":
+                pr = await loop.run_in_executor(None, ape._t_pdf_render, {"html": html_report, "name": "report"})
+                m = _re.search(r"PDF готов:\s*(\S+)", pr or "")
+                att = m.group(1) if m else ""
+            body_txt = "Отчёт агента ABOP во вложении." if att else _html_to_text(html_report)[:4000]
+            fn = ape._t_yandex_email if channel == "yandex" else ape._t_email_send
+            return await loop.run_in_executor(None, fn,
+                {"to": cfg.get("to") or "audit@demo.local", "subject": title,
+                 "body": body_txt, "attachment": att, "run": rf})
+        if channel == "yougile":
+            return await loop.run_in_executor(None, ape._t_yougile_task,
+                {"title": title, "description": _html_to_text(html_report)[:6000],
+                 "column_id": cfg.get("column_id") or cfg.get("to") or "", "run": rf})
+        if channel in ("pdf", "file"):
+            return await loop.run_in_executor(None, ape._t_pdf_render,
+                {"html": html_report, "name": cfg.get("to") or "report"})
+        return f"неизвестный канал: {channel}"
+    except Exception as ex:  # noqa: BLE001
+        return f"ошибка доставки: {type(ex).__name__}: {ex}"
+
+
+async def _deliver_out_nodes(agent: dict, result: dict, actor: str) -> None:
+    """Проброс OUT-узла в доставку. Три режима на узел:
+    - hitl=true → создаём ЗАЯВКУ в очередь HITL (pending), наружу НЕ шлём (подтвердит человек);
+    - run=true, без hitl → РЕАЛЬНАЯ отправка;
+    - иначе → dry_run (превью). (ADR-014: наружу — под подтверждением/явным флагом.)"""
     nodes = _out_nodes(agent)
     if not nodes:
         return
     html_report = _build_report_html(agent, result)
-    loop = asyncio.get_event_loop()
+    fam = agent.get("family") or ""
+    run_id = result.get("run_id") or (result.get("verdict") or {}).get("run_id") or ""
     deliveries = []
     for n in nodes:
         cfg = n.get("out") or {}
         channel = cfg.get("channel")
-        real = (str(cfg.get("run")).lower() == "true") and not cfg.get("hitl")
-        title = cfg.get("subject") or ((agent.get("name") or "Отчёт ABOP"))
-        try:
-            if channel == "bookstack":
-                out = await loop.run_in_executor(None, ape._t_bookstack_publish,
-                                                 {"title": title, "html": html_report,
-                                                  "book_id": cfg.get("book_id") or 1,
-                                                  "run": "true" if real else "false"})
-            elif channel == "email":
-                att = ""
-                if (cfg.get("format") or "pdf") == "pdf":
-                    pr = await loop.run_in_executor(None, ape._t_pdf_render,
-                                                    {"html": html_report, "name": "report"})
-                    m = _re.search(r"PDF готов:\s*(\S+)", pr or "")
-                    att = m.group(1) if m else ""
-                body_txt = "Отчёт агента ABOP во вложении." if att else _html_to_text(html_report)[:4000]
-                out = await loop.run_in_executor(None, ape._t_email_send,
-                                                 {"to": cfg.get("to") or "audit@demo.local", "subject": title,
-                                                  "body": body_txt, "attachment": att,
-                                                  "run": "true" if real else "false"})
-            elif channel == "yougile":
-                out = await loop.run_in_executor(None, ape._t_yougile_task,
-                                                 {"title": title, "description": _html_to_text(html_report)[:6000],
-                                                  "column_id": cfg.get("column_id") or cfg.get("to") or "",
-                                                  "run": "true" if real else "false"})
-            elif channel == "yandex":
-                att = ""
-                if (cfg.get("format") or "pdf") == "pdf":
-                    pr = await loop.run_in_executor(None, ape._t_pdf_render,
-                                                    {"html": html_report, "name": "report"})
-                    m = _re.search(r"PDF готов:\s*(\S+)", pr or "")
-                    att = m.group(1) if m else ""
-                body_txt = "Отчёт агента ABOP во вложении." if att else _html_to_text(html_report)[:4000]
-                out = await loop.run_in_executor(None, ape._t_yandex_email,
-                                                 {"to": cfg.get("to") or "", "subject": title,
-                                                  "body": body_txt, "attachment": att,
-                                                  "run": "true" if real else "false"})
-            elif channel in ("pdf", "file"):
-                out = await loop.run_in_executor(None, ape._t_pdf_render,
-                                                 {"html": html_report, "name": cfg.get("to") or "report"})
-            else:
-                out = f"неизвестный канал: {channel}"
-        except Exception as ex:  # noqa: BLE001 — доставка опциональна, прогон не падает
-            out = f"ошибка доставки: {type(ex).__name__}: {ex}"
+        if cfg.get("hitl"):
+            # заявка в очередь HITL — оператор подтвердит, тогда отправим реально
+            item = await hitl_store.create(
+                run_id=str(run_id), agent_id=agent.get("id") or "", family=fam,
+                node=n.get("id") or "", title=n.get("title") or channel,
+                channel=channel or "", to_addr=str(cfg.get("to") or cfg.get("book_id") or ""),
+                payload={"cfg": cfg, "html": html_report, "agent_name": agent.get("name")},
+                requested_by=actor)
+            deliveries.append({"node": n.get("id"), "title": n.get("title"), "channel": channel,
+                               "to": cfg.get("to"), "format": cfg.get("format"),
+                               "mode": "awaiting_hitl", "hitl_id": item["id"],
+                               "result": f"ожидает подтверждения оператора (заявка {item['id']})"})
+            await audit_store.record(actor, "agent.deliver", agent.get("id"),
+                                     {"channel": channel, "mode": "awaiting_hitl", "hitl_id": item["id"]},
+                                     severity="info")
+            continue
+        real = str(cfg.get("run")).lower() == "true"
+        out = await _send_channel(cfg, agent.get("name"), html_report, real)
         deliveries.append({"node": n.get("id"), "title": n.get("title"), "channel": channel,
                            "to": cfg.get("to"), "format": cfg.get("format"),
                            "mode": "real" if real else "dry_run", "result": str(out)[:400]})
@@ -2104,17 +2115,44 @@ def run_stream(run_id: str, u: dict = Depends(user)) -> JSONResponse:
 
 
 @app.get("/api/hitl/queue")
-def hitl_queue(u: dict = Depends(user)) -> dict:
-    """Очередь HITL-подтверждений (action-навыки в dry_run). §3 HITL-полоса, §9.2."""
-    return {"queue": [], "note": "наполняется при исполнении прогонов через API (инкремент run/stream)"}
+async def hitl_queue(u: dict = Depends(user)) -> dict:
+    """Очередь HITL-подтверждений: pending-заявки на доставку наружу (ABAC по семье агента)."""
+    items = await hitl_store.list_pending()
+    return {"queue": [i for i in items if can_see_family(u, i.get("family"))]}
 
 
-@app.post("/api/hitl/{item_id}/approve", status_code=501)
-def hitl_approve(item_id: str, body: dict = None, u: dict = Depends(user)) -> JSONResponse:
-    """Одобрить/отклонить действие. Контракт: {decision: approve|reject, reason?}. Сейчас 501."""
-    return JSONResponse({"detail": _NOT_IMPL,
-                         "contract": {"request": {"decision": "approve|reject", "reason": "str?"}}},
-                        status_code=501)
+@app.post("/api/hitl/{item_id}/approve")
+async def hitl_approve(item_id: str, body: dict = None, u: dict = Depends(user)) -> JSONResponse:
+    """Одобрить/отклонить HITL-заявку. Тело: {decision: approve|reject, reason?}. При approve —
+    выполняется РЕАЛЬНАЯ доставка отчёта в канал OUT-узла. manager+ (analyst — только чтение)."""
+    require_level(u, "manager")
+    item = await hitl_store.get(item_id)
+    if not item:
+        raise HTTPException(404, "нет такой HITL-заявки")
+    if not can_see_family(u, item.get("family")):
+        raise HTTPException(403, "нет доступа к семье заявки")
+    if item.get("state") != "pending":
+        raise HTTPException(409, f"заявка уже обработана: {item.get('state')}")
+    decision = str((body or {}).get("decision", "approve")).lower()
+    reason = str((body or {}).get("reason", ""))
+    actor = u.get("name") or u.get("sub") or "operator"
+    if decision == "reject":
+        await hitl_store.decide(item_id, "rejected", actor, reason)
+        await audit_store.record(actor, "hitl.reject", item_id,
+                                 {"agent_id": item.get("agent_id"), "channel": item.get("channel")}, severity="warn")
+        obs.inc("abop_hitl_total", decision="reject")
+        return JSONResponse({"id": item_id, "state": "rejected"})
+    # approve → реальная отправка в канал
+    payload = item.get("payload") or {}
+    cfg = payload.get("cfg") or {}
+    out = await _send_channel(cfg, payload.get("agent_name"), payload.get("html") or "", real=True)
+    await hitl_store.decide(item_id, "approved", actor, reason)
+    await audit_store.record(actor, "hitl.approve", item_id,
+                             {"agent_id": item.get("agent_id"), "channel": item.get("channel"),
+                              "result": str(out)[:200]}, severity="info")
+    obs.inc("abop_hitl_total", decision="approve")
+    obs.log_event("info", "hitl.approved", item_id=item_id, channel=item.get("channel"))
+    return JSONResponse({"id": item_id, "state": "approved", "delivery": str(out)[:400]})
 
 
 # ═══════════════ Статика: buildless-React фронт ABOP (webapp/) ═══════════════
