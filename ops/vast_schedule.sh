@@ -20,6 +20,18 @@ KEY=$(cat "$KEY_FILE")
 ts() { date "+%Y-%m-%d %H:%M:%S %Z"; }
 log() { echo "$(ts) $*" | tee -a "$LOG"; }
 
+# Дата активации: до неё расписание НЕ срабатывает (файл /root/.vast_start_date, YYYY-MM-DD по МСК).
+# Позволяет держать cron установленным, но включить его с нужного дня. Нет файла → активно всегда.
+ACT_FILE=/root/.vast_start_date
+if [ -f "$ACT_FILE" ]; then
+  ACT=$(cat "$ACT_FILE" | tr -d '[:space:]')
+  TODAY=$(TZ=Europe/Moscow date "+%Y-%m-%d")
+  if [ "$TODAY" \< "$ACT" ]; then
+    log "расписание отложено до $ACT (сегодня $TODAY) — действие '$ACTION' пропущено"
+    exit 0
+  fi
+fi
+
 set_state() {  # $1=id $2=stopped|running
   R=$(curl -s --request PUT --url "$API_SET/$1/" \
     --header "Authorization: Bearer $KEY" --header "Content-Type: application/json" \
