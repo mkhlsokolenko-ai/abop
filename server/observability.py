@@ -14,6 +14,8 @@ import time
 import uuid
 from collections import defaultdict
 
+from .config import settings
+
 # ── сквозной идентификатор трассировки (контекст запроса) ──
 trace_id_var: contextvars.ContextVar[str] = contextvars.ContextVar("trace_id", default="-")
 
@@ -84,7 +86,16 @@ def snapshot() -> dict:
 
 
 # ── структурный лог (одна JSON-строка на событие, с trace_id) ──
+# Свой handler на stdout — чтобы события были видны в `docker logs` независимо от конфигурации uvicorn
+# (logging.basicConfig под uvicorn не вызывается → без этого INFO-события ABOP не печатались).
 _log = logging.getLogger("abop")
+if not _log.handlers:
+    import sys as _sys
+    _h = logging.StreamHandler(_sys.stdout)
+    _h.setFormatter(logging.Formatter("%(message)s"))
+    _log.addHandler(_h)
+    _log.setLevel(getattr(logging, str(settings.log_level).upper(), logging.INFO))
+    _log.propagate = False
 
 
 def log_event(level: str, event: str, **fields) -> None:
