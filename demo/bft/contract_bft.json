@@ -1,0 +1,69 @@
+{
+  "capability_request": {
+    "schema": "luda.capability_request/1.0",
+    "audit_id": "bft-writer-2026",
+    "segment": "Задача из трекера → БФТ → вики + письмо автору",
+    "family": "management",
+    "skills": [
+      {
+        "id": "bft-draft"
+      }
+    ],
+    "modules": [
+      {
+        "id": "Трекер · Redmine issue",
+        "access": "read"
+      },
+      {
+        "id": "Вики · BookStack",
+        "access": "write"
+      }
+    ],
+    "evidence": [
+      "ev:bf7d2a4c00"
+    ]
+  },
+  "deployment_contract": {
+    "schema": "luda.deployment_contract/1.0",
+    "audit_id": "bft-writer-2026",
+    "segment": "Задача из трекера → БФТ → вики + письмо автору",
+    "autonomy_level": "A1",
+    "limiting_axis": "публикация документа во внешние системы (вики) + письмо автору",
+    "criticality": "T3",
+    "hitl_points": [
+      {
+        "id": "аналитик-подтверждает-публикацию-БФТ"
+      }
+    ],
+    "data_residency": {
+      "zone": "on-prem",
+      "egress": "внутренний периметр"
+    },
+    "acceptance": {
+      "first_time_right": 0.85,
+      "escalation_rate": 0.2
+    }
+  },
+  "baseline_measurement": {
+    "schema": "luda.baseline_measurement/1.0",
+    "audit_id": "bft-writer-2026",
+    "methodology_version": "1.0",
+    "metrics": {
+      "first_time_right": {
+        "value": 0.5,
+        "evidence": [
+          "ev:bf7d2a4c00"
+        ]
+      },
+      "escalation_rate": {
+        "value": 0.5,
+        "evidence": [
+          "ev:bf7d2a4c00"
+        ]
+      }
+    }
+  },
+  "evidence_pack": [
+    "bf7d2a4c00000000000000000000000000000000000000000000000000000000"
+  ]
+}

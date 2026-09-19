@@ -1,0 +1,61 @@
+{
+  "name": "Аналитик БФТ",
+  "contract_audit_id": "bft-writer-2026",
+  "graph": {
+    "nodes": [
+      {
+        "id": "src_issue",
+        "kind": "source",
+        "title": "Задача · issue (Redmine)",
+        "entity": "issue"
+      },
+      {
+        "id": "bft-draft",
+        "kind": "skill",
+        "skill": "bft-draft",
+        "autonomy": "A1",
+        "hitl": true
+      },
+      {
+        "id": "out_wiki",
+        "kind": "out",
+        "title": "БФТ → BookStack (вики)",
+        "out": {
+          "channel": "bookstack",
+          "book_id": 1,
+          "subject": "БФТ по задаче",
+          "format": "html",
+          "run": false,
+          "hitl": true
+        }
+      },
+      {
+        "id": "out_author",
+        "kind": "out",
+        "title": "БФТ → автору входящего (почта)",
+        "out": {
+          "channel": "email",
+          "to": "author@demo.local",
+          "subject": "БФТ по вашей задаче",
+          "format": "html",
+          "run": false,
+          "hitl": true
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from": "src_issue",
+        "to": "bft-draft"
+      },
+      {
+        "from": "bft-draft",
+        "to": "out_wiki"
+      },
+      {
+        "from": "bft-draft",
+        "to": "out_author"
+      }
+    ]
+  }
+}

@@ -510,6 +510,16 @@ SKILLS = {
                        "От симптома протягивай цепочку реализация→взаиморасчёты→НДС инструментом invest1c_trace по РЕАЛЬНЫМ basis-ссылкам; сверяй суммы по звеньям, звено с разрывом — корень. Цепочки не выдумывай."),
     "invest1c-verdict": ("Заключение по цепочке", "риск + норма + HITL",
                          "По каждой цепочке дай заключение: где разрыв / сумма расхождения / чем грозит по НК РФ гл.21 (счёт-фактура, вычет, момент определения базы) / что проверить. Существенные — под подтверждение человека (HITL), наружу без HITL ничего."),
+    # ── Кейс «Дайджест задач»: почта → задачи в трекер → отчёт + письмо заказчику ──
+    "mail-triage": ("Разбор почты", "письма → задачи",
+                    "Разбери входящие письма (сущность email): выдели КОНКРЕТНЫЕ задачи — тема, от кого, суть, срочность. Только из писем, не выдумывай. Задачи с формулировкой действия, а не пересказ письма."),
+    "daily-plan": ("План на день", "2 приоритетные + план",
+                   "Из разобранных задач выбери 2 приоритетные на день (по срочности/важности), для каждой — краткий план шагов. Обоснуй выбор фактами из писем."),
+    "client-letter": ("Письмо заказчику", "план — адресно, под HITL",
+                      "Составь письмо заказчику: что в работе, план на день по приоритетным задачам, сроки. Деловой тон, по фактам. Наружу — только под подтверждением человека (HITL)."),
+    # ── Кейс «БФТ по задаче»: задача из трекера → БФТ → вики + письмо автору ──
+    "bft-draft": ("Черновик БФТ", "задача → требования",
+                  "По задаче из трекера (сущность issue) составь бизнес-функциональные требования (БФТ): цель, контекст, функциональные требования списком, критерии приёмки, границы. Только из задачи, пробелы помечай явно."),
 }
 
 
@@ -601,6 +611,10 @@ SKILL_SAFETY = {
     "audit1c-explain": {"mode": "write", "egress": "internal", "cite": True},           # отчёт-артефакт; наружу — под HITL
     "invest1c-trace": {"mode": "read", "egress": "internal", "cite": True},              # трассировка по графу; цепочки считает код
     "invest1c-verdict": {"mode": "write", "egress": "internal", "cite": True},           # заключение-артефакт; норма НК гл.21 из RAG
+    "mail-triage": {"mode": "read", "egress": "internal", "cite": True},                 # читает письма, извлекает задачи
+    "daily-plan": {"mode": "read", "egress": "internal", "cite": True},                  # план поверх задач
+    "client-letter": {"mode": "write", "egress": "internal", "cite": True},              # письмо-артефакт; наружу под HITL
+    "bft-draft": {"mode": "write", "egress": "internal", "cite": True},                  # БФТ-артефакт; наружу под HITL
 }
 
 
@@ -782,6 +796,11 @@ SKILL_DATASOURCES = {
                        {"entity": "ref1c", "kind": "audit1c", "note": "контрагенты/договоры для идентификации сторон цепочки"}],
     "invest1c-verdict": [{"entity": "doc1c", "kind": "audit1c", "note": "первоисточник каждого звена цепочки (документ+сумма)"},
                          {"entity": "document", "kind": "slava", "note": "нормы НК РФ гл.21 (счёт-фактура, вычет, момент базы) — коллекция slava_audit1c_norms; цитируется в заключении"}],
+    # ── Кейс «Дайджест задач»: вход — письма из почты (Mailpit) ──
+    "mail-triage": [{"entity": "email", "kind": "http", "note": "входящие письма из Mailpit (тема/от/тело)"}],
+    "daily-plan": [{"entity": "email", "kind": "http", "note": "письма для приоритизации задач на день"}],
+    # ── Кейс «БФТ по задаче»: вход — задачи из Redmine ──
+    "bft-draft": [{"entity": "issue", "kind": "http", "note": "задача из трекера Redmine (тема/описание/автор)"}],
 }
 
 
@@ -996,6 +1015,10 @@ AGENT_FAMILIES = {
             "project-manager": ("Проектный менеджер", ["to-tickets", "status-report", "meeting-action-items"]),
             "delivery-lead": ("Тимлид доставки", ["weekly-update", "dashboard-builder", "one-three-one"]),
             "comms": ("Коммуникации", ["email-draft", "status-report", "weekly-update"]),
+            # демо-кейс «Дайджест задач»: почта → задачи в Redmine → отчёт + письмо заказчику
+            "task-digester": ("Дайджест задач", ["mail-triage", "daily-plan", "client-letter"]),
+            # демо-кейс «БФТ по задаче»: задача из Redmine → БФТ → BookStack + письмо автору
+            "bft-writer": ("Аналитик БФТ", ["bft-draft"]),
         },
     },
     # ═══ Ресёрч и инженерные семьи (структурированы по ролям, как бизнес) ═══
@@ -3633,6 +3656,9 @@ YANDEX_SMTP_HOST = os.getenv("YANDEX_SMTP_HOST", "smtp.yandex.ru")
 YANDEX_SMTP_PORT = int(os.getenv("YANDEX_SMTP_PORT", "465"))
 YANDEX_SMTP_USER = os.getenv("YANDEX_SMTP_USER", "")    # ящик-отправитель (полный адрес)
 YANDEX_SMTP_PASSWORD = os.getenv("YANDEX_SMTP_PASSWORD", "")  # ПАРОЛЬ ПРИЛОЖЕНИЯ (не основной)
+REDMINE_BASE = os.getenv("REDMINE_BASE", "http://5.129.192.63:3000")   # аналог Jira (демо-стенд)
+REDMINE_API_KEY = os.getenv("REDMINE_API_KEY", "")     # X-Redmine-API-Key
+REDMINE_PROJECT = os.getenv("REDMINE_PROJECT", "")     # идентификатор проекта по умолчанию
 
 
 def _multipart(fields: dict, files: dict):
@@ -3756,6 +3782,31 @@ def _t_yougile_task(a):
         return f"YouGile ошибка: {type(ex).__name__} — {ex}"
 
 
+def _t_redmine_create_issue(a):
+    """Создать РЕАЛЬНУЮ задачу в Redmine (аналог Jira) через REST API. ДЕЙСТВИЕ → dry_run по умолчанию.
+    args: {subject, description, project, run:true}. Ключ из env REDMINE_API_KEY, проект из project|REDMINE_PROJECT."""
+    subject = str(a.get("subject") or a.get("title") or "Задача от агента ABOP")
+    desc = str(a.get("description") or "")
+    project = str(a.get("project") or REDMINE_PROJECT or "")
+    if not (str(a.get("run")).lower() == "true"):
+        return f"[dry_run] Redmine: создать задачу «{subject}» в проекте {project or '—'} ({len(desc)} симв.). Реально — run=true (HITL)."
+    if not REDMINE_API_KEY:
+        return "нет REDMINE_API_KEY в env контейнера abop-webapi — реальная отправка недоступна (каркас готов)"
+    if not project:
+        return "не задан проект (project или env REDMINE_PROJECT) — некуда класть задачу"
+    payload = {"issue": {"project_id": project, "subject": subject[:255], "description": desc[:8000]}}
+    url = _guard_url(REDMINE_BASE.rstrip("/") + "/issues.json")
+    req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"),
+                                 headers={"Content-Type": "application/json", "X-Redmine-API-Key": REDMINE_API_KEY})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            d = json.loads(r.read().decode("utf-8", "replace"))
+        iid = (d.get("issue") or {}).get("id")
+        return f"задача создана в Redmine: #{iid} «{subject}»"
+    except Exception as ex:  # noqa: BLE001
+        return f"Redmine ошибка: {type(ex).__name__} — {ex}"
+
+
 def _t_yandex_email(a):
     """РЕАЛЬНОЕ письмо через Яндекс.Почту (SMTP SSL :465). ДЕЙСТВИЕ → dry_run по умолчанию.
     args: {to, subject, body, attachment, run:true}. Логин/пароль из env YANDEX_SMTP_USER/PASSWORD
@@ -3839,6 +3890,8 @@ AGENT_TOOLS = {
                           'опубликовать отчёт страницей в BookStack — ДЕЙСТВИЕ, dry_run по умолчанию — args: {"title":"...","html":"...","book_id":1,"run":true}'),
     "email_send": (_t_email_send,
                    'отправить письмо (Mailpit) с PDF-вложением — ДЕЙСТВИЕ, dry_run по умолчанию — args: {"to":"...","subject":"...","body":"...","attachment":"audit_report.pdf","run":true}'),
+    "redmine_create_issue": (_t_redmine_create_issue,
+                   'создать задачу в Redmine (аналог Jira) — ДЕЙСТВИЕ, dry_run по умолчанию — args: {"subject":"...","description":"...","project":"...","run":true}'),
 }
 
 _AGENT_SYS = (

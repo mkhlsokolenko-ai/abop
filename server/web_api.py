@@ -1678,6 +1678,10 @@ async def _send_channel(cfg: dict, agent_name: str, html_report: str, real: bool
             return await loop.run_in_executor(None, ape._t_yougile_task,
                 {"title": title, "description": _html_to_text(html_report)[:6000],
                  "column_id": cfg.get("column_id") or cfg.get("to") or "", "run": rf})
+        if channel == "redmine":
+            return await loop.run_in_executor(None, ape._t_redmine_create_issue,
+                {"subject": title, "description": _html_to_text(html_report)[:6000],
+                 "project": cfg.get("project") or cfg.get("to") or "", "run": rf})
         if channel in ("pdf", "file"):
             return await loop.run_in_executor(None, ape._t_pdf_render,
                 {"html": html_report, "name": cfg.get("to") or "report"})

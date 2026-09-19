@@ -1,0 +1,83 @@
+{
+  "name": "Дайджест задач",
+  "contract_audit_id": "mailtasks-daily-2026",
+  "graph": {
+    "nodes": [
+      {
+        "id": "src_mail",
+        "kind": "source",
+        "title": "Входящие · email",
+        "entity": "email"
+      },
+      {
+        "id": "mail-triage",
+        "kind": "skill",
+        "skill": "mail-triage",
+        "autonomy": "A1",
+        "hitl": false
+      },
+      {
+        "id": "daily-plan",
+        "kind": "skill",
+        "skill": "daily-plan",
+        "autonomy": "A1",
+        "hitl": false
+      },
+      {
+        "id": "client-letter",
+        "kind": "skill",
+        "skill": "client-letter",
+        "autonomy": "A1",
+        "hitl": true
+      },
+      {
+        "id": "out_redmine",
+        "kind": "out",
+        "title": "Задачи → Redmine",
+        "out": {
+          "channel": "redmine",
+          "to": "",
+          "subject": "Задачи из почты (дайджест дня)",
+          "format": "html",
+          "run": false,
+          "hitl": true
+        }
+      },
+      {
+        "id": "out_mail",
+        "kind": "out",
+        "title": "Письмо заказчику → почта",
+        "out": {
+          "channel": "email",
+          "to": "client@demo.local",
+          "subject": "План на день по вашим задачам",
+          "format": "html",
+          "run": false,
+          "hitl": true
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from": "src_mail",
+        "to": "mail-triage"
+      },
+      {
+        "from": "mail-triage",
+        "to": "daily-plan"
+      },
+      {
+        "from": "daily-plan",
+        "to": "client-letter"
+      },
+      {
+        "from": "daily-plan",
+        "to": "out_redmine"
+      },
+      {
+        "from": "client-letter",
+        "to": "out_mail"
+      }
+    ]
+  }
+}

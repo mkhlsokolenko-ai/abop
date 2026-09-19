@@ -1,0 +1,75 @@
+{
+  "capability_request": {
+    "schema": "luda.capability_request/1.0",
+    "audit_id": "mailtasks-daily-2026",
+    "segment": "Дайджест задач из почты → трекер → отчёт и письмо заказчику",
+    "family": "management",
+    "skills": [
+      {
+        "id": "mail-triage"
+      },
+      {
+        "id": "daily-plan"
+      },
+      {
+        "id": "client-letter"
+      }
+    ],
+    "modules": [
+      {
+        "id": "Почта · email (Mailpit)",
+        "access": "read"
+      },
+      {
+        "id": "Трекер · Redmine",
+        "access": "write"
+      }
+    ],
+    "evidence": [
+      "ev:ma11ta5c00"
+    ]
+  },
+  "deployment_contract": {
+    "schema": "luda.deployment_contract/1.0",
+    "audit_id": "mailtasks-daily-2026",
+    "segment": "Дайджест задач из почты → трекер → отчёт и письмо заказчику",
+    "autonomy_level": "A1",
+    "limiting_axis": "внешние коммуникации с заказчиком (письмо) + создание задач в трекере",
+    "criticality": "T3",
+    "hitl_points": [
+      {
+        "id": "менеджер-подтверждает-письмо-заказчику"
+      }
+    ],
+    "data_residency": {
+      "zone": "on-prem",
+      "egress": "внутренний периметр"
+    },
+    "acceptance": {
+      "first_time_right": 0.85,
+      "escalation_rate": 0.2
+    }
+  },
+  "baseline_measurement": {
+    "schema": "luda.baseline_measurement/1.0",
+    "audit_id": "mailtasks-daily-2026",
+    "methodology_version": "1.0",
+    "metrics": {
+      "first_time_right": {
+        "value": 0.5,
+        "evidence": [
+          "ev:ma11ta5c00"
+        ]
+      },
+      "escalation_rate": {
+        "value": 0.5,
+        "evidence": [
+          "ev:ma11ta5c00"
+        ]
+      }
+    }
+  },
+  "evidence_pack": [
+    "ma11ta5c00000000000000000000000000000000000000000000000000000000"
+  ]
+}
