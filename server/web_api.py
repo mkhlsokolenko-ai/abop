@@ -28,7 +28,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, assembly, audit_store, cachebus, clients, contract_store, dataplane_store, ingress, langfuse_trace, layout_store, observability as obs, reglament_store, run_store, runner, skill_store, slava, systems_store, trigger_store, triggers, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, assembly, audit_store, cachebus, clients, contract_store, dataplane_store, ingress, langfuse_trace, layout_store, observability as obs, reglament_store, run_cache_store, run_store, runner, skill_store, slava, systems_store, trigger_store, triggers, userdata_store  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
 
@@ -1229,6 +1229,7 @@ async def _startup() -> None:
     await systems_store.seed_if_empty()  # одноразовый сид реестра из server-inventory (демо-стенд)
     await trigger_store.init()
     await reglament_store.init()
+    await run_cache_store.init()
     import asyncio as _asyncio
     _asyncio.create_task(triggers.scheduler_loop(execute_agent_run))  # фоновый планировщик (leader-election)
     await _refresh_skill_ds_cache()  # инжект data-need оверрайдов из PG в ape
@@ -1755,13 +1756,79 @@ def _collect_soft_errors(result: dict) -> list:
     return soft
 
 
-async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, trigger: dict | None = None) -> dict:
+def _data_fingerprint(agent: dict) -> str:
+    """Отпечаток ВЕРСИИ данных, которые читает агент (счёт + max fetched_at по сущностям навыков).
+    Меняется при обновлении Data Plane → инвалидирует кэш результатов автоматически."""
+    import hashlib
+    ents = set()
+    for n in (agent.get("graph") or {}).get("nodes") or []:
+        sid = n.get("skill")
+        if not sid:
+            continue
+        for ds in (ape.skill_datasources_resolved(sid) or []):
+            e = ds.get("entity")
+            if e:
+                ents.add(e)
+    parts = []
+    for e in sorted(ents):
+        try:
+            recs = ape.data_query(e, limit=100000)
+            mx = max((float((r.get("provenance") or {}).get("fetched_at", 0) or 0) for r in recs), default=0)
+            parts.append(f"{e}:{len(recs)}:{mx}")
+        except Exception:  # noqa: BLE001
+            parts.append(f"{e}:err")
+    return hashlib.sha256("|".join(parts).encode()).hexdigest()[:16]
+
+
+def _run_cache_key(agent: dict) -> str:
+    """Ключ кэша прогона: агент(версия) + отпечаток данных + конфиг LLM (влияет на вывод)."""
+    import hashlib
+    cfg = f"mt={runner._LIM.get('max_tokens')};st={int(runner._STRUCTURED)};m={settings.local_llm_model or ''}"
+    return f"{agent.get('id')}::{_data_fingerprint(agent)}::{hashlib.sha256(cfg.encode()).hexdigest()[:8]}"
+
+
+async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, trigger: dict | None = None,
+                            use_cache: bool = True) -> dict:
     """Ядро прогона (LLM-раскладка + находки audit1c + сохранение + аудит). Переиспользуется
-    POST /api/runs и планировщиком триггеров (server/triggers.py). Возвращает {saved, result}."""
+    POST /api/runs и планировщиком триггеров (server/triggers.py). Возвращает {saved, result}.
+    Кэш результатов (multi-user): при попадании возвращает сохранённый вывод без LLM/доставки."""
     _t0 = time.perf_counter()
     _trace = obs.current_trace_id()
     fam_key = access.scope_key(family=agent.get("family"))
     blocked, data_denied = await _gate_agent_data(agent, fam_key, started_by)  # ABAC на данных
+    # КЭШ результатов (multi-user): тот же агент+данные+конфиг → отдаём сохранённый вывод без LLM/доставки.
+    _cache_key = None
+    if use_cache and os.getenv("ABOP_RUN_CACHE", "1") != "0":
+        try:
+            _cache_key = _run_cache_key(agent)
+            _cached = await run_cache_store.get(_cache_key)
+        except Exception:  # noqa: BLE001 — кэш опционален
+            _cache_key, _cached = None, None
+        if _cached:
+            result = dict(_cached)
+            result["cached"] = True
+            result["trace_id"] = _trace
+            result["started_by"] = started_by
+            _rm = dict(result.get("run_metrics") or {})
+            _cost = dict(_rm.get("cost") or {})
+            _cost["cached"], _cost["rub"] = True, 0.0  # повтор из кэша — токены не тратились
+            _rm["cost"] = _cost
+            result["run_metrics"] = _rm
+            result.pop("delivery", None)  # доставку НЕ повторяем из кэша (побочные эффекты)
+            if trigger:
+                result["trigger"] = {"id": trigger.get("id"), "type": (trigger.get("trig") or {}).get("type"),
+                                     "title": trigger.get("title")}
+            saved = await run_store.save(result)
+            _dt = time.perf_counter() - _t0
+            obs.inc("abop_run_cache_total", hit="true")
+            obs.observe("abop_run_seconds", _dt, family=agent.get("family") or "-")
+            obs.log_event("info", "run.cache_hit", run_id=saved["id"], agent=agent.get("id"),
+                          ms=round(_dt * 1000, 1))
+            await audit_store.record(started_by, "agent.run", saved["id"],
+                                     {"agent_id": agent.get("id"), "cached": True,
+                                      "findings": (result.get("findings_summary") or {}).get("total")},
+                                     severity="info")
+            return {"saved": saved, "result": result}
     # Детерминированные находки/расследования считаем ДО прогона (истина, считает КОД) — чтобы навыки в LLM
     # их ОБЪЯСНЯЛИ (grounded), а не искали заново на сэмпле-дайджесте (иначе LLM ложно пишет «расхождений нет»).
     _skills = [n.get("skill") for n in (agent.get("graph") or {}).get("nodes", [])]
@@ -1894,6 +1961,15 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
                   agent=agent.get("id"), family=_fam, ok=bool(_v.get("ok")),
                   ms=round(_dur * 1000, 1), findings=_ft, soft_errors=(_soft or None))
     await langfuse_trace.emit_run(_trace, saved["id"], agent, result)  # LLM-трейс (best-effort, no-op без ключей)
+    # Сохранить результат в кэш (multi-user): без волатильных/побочных полей (доставку не кэшируем).
+    if _cache_key:
+        try:
+            _volatile = {"trace_id", "started_by", "cached", "delivery", "delivery_error",
+                         "trigger", "soft_errors"}
+            await run_cache_store.put(_cache_key, {k: v for k, v in result.items() if k not in _volatile})
+            obs.inc("abop_run_cache_total", hit="false")
+        except Exception as ex:  # noqa: BLE001 — кэш опционален
+            obs.log_event("warn", "run.cache_put_fail", error=f"{type(ex).__name__}: {ex}")
     return {"saved": saved, "result": result}
 
 
@@ -1913,7 +1989,8 @@ async def run_start(body: dict, u: dict = Depends(user)) -> JSONResponse:
     contract = await contract_store.get(agent.get("contract_audit_id") or audit_id)
     if not contract:
         contract = {"intake": {"autonomy_ceiling": agent.get("autonomy_max") or "A2"}, "bundle": {}}
-    out = await execute_agent_run(agent, contract, u.get("name") or u.get("sub") or "dev")
+    use_cache = not bool((body or {}).get("no_cache"))  # {no_cache:true} → форс свежий прогон
+    out = await execute_agent_run(agent, contract, u.get("name") or u.get("sub") or "dev", use_cache=use_cache)
     return JSONResponse({"run_id": out["saved"]["id"], **out["result"]}, status_code=201)
 
 
