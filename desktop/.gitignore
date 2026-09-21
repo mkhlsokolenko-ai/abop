@@ -1,0 +1,10 @@
+# Desktop-клиент ABOP: не тащим в git тяжёлые/генерируемые артефакты
+node_modules/
+dist/
+build/
+_smoke_home/
+__pycache__/
+*.pyc
+*.exe
+*.pkg
+ape-sidecar/

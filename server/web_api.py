@@ -34,20 +34,36 @@ from .config import settings  # noqa: E402
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
 
 
-# ── Auth: Keycloak JWT (тот же realm, что MCP). Dev-режим без JWKS. ──
+# ── Auth: Keycloak JWT. Dev-режим без JWKS. Multi-issuer: смычка с desktop (realm ai-product-engineer)
+# требует принимать JWT ДВУХ realm — свой `abop` (demo-логин ABOP) и desktop-realm — оба ВЕРИФИЦИРУЯ
+# по своему JWKS. ABOP_EXTRA_JWKS = "<issuer>|<jwks_url>,..." добавляет доп. доверенные issuer.
+# См. docs/ADR_DESKTOP_ABOP_SMYCHKA.md (Фаза 0, auth-фундамент).
 def _jwks_url() -> str:
     return os.getenv("KEYCLOAK_JWKS_URI") or os.getenv("KEYCLOAK_JWKS_INTERNAL") or ""
 
 
-_jwk_client = None
+def _extra_issuers() -> dict:
+    """{issuer: jwks_url} доп. доверенных realm (напр. desktop ai-product-engineer)."""
+    out = {}
+    for pair in (os.getenv("ABOP_EXTRA_JWKS", "") or "").split(","):
+        pair = pair.strip()
+        if "|" in pair:
+            iss, jwks = pair.split("|", 1)
+            out[iss.strip()] = jwks.strip()
+    return out
 
 
-def _client():
-    global _jwk_client
-    if _jwk_client is None:
-        from jwt import PyJWKClient
-        _jwk_client = PyJWKClient(_jwks_url())
-    return _jwk_client
+_jwk_clients: dict = {}   # jwks_url -> PyJWKClient (кэш по URL, чтобы не плодить клиентов)
+
+
+def _client(jwks_url: str | None = None):
+    from jwt import PyJWKClient
+    url = jwks_url or _jwks_url()
+    cli = _jwk_clients.get(url)
+    if cli is None:
+        cli = PyJWKClient(url)
+        _jwk_clients[url] = cli
+    return cli
 
 
 # ── Кэш верифицированных JWT: verify (RS256) один раз, дальше запросы того же токена — из кэша ──
@@ -119,22 +135,33 @@ def user(request: Request) -> dict:
         cached = _jwt_cache_get(token) if _jwks_url() else None   # verify один раз на токен
         if cached is not None:
             return cached
+        extra = _extra_issuers()
         try:
-            if _jwks_url():  # строгая верификация подписи по JWKS
-                key = _client().get_signing_key_from_jwt(token).key
+            if _jwks_url() or extra:  # строгая верификация подписи по JWKS (свой realm + доп. issuer)
+                unv = jwt.decode(token, options={"verify_signature": False})  # issuer до верификации
+                iss = unv.get("iss") or ""
+                if iss in extra:                       # доп. доверенный realm (desktop) → его JWKS
+                    jwks_url, exp_iss = extra[iss], iss
+                else:                                   # свой realm ABOP
+                    jwks_url, exp_iss = _jwks_url(), (os.getenv("KEYCLOAK_ISSUER") or None)
+                if not jwks_url:
+                    raise HTTPException(401, "issuer не доверен")
+                key = _client(jwks_url).get_signing_key_from_jwt(token).key
                 claims = jwt.decode(token, key, algorithms=["RS256"],
                                     audience=os.getenv("KEYCLOAK_AUDIENCE") or None,
-                                    issuer=os.getenv("KEYCLOAK_ISSUER") or None,
+                                    issuer=exp_iss,
                                     options={"verify_aud": bool(os.getenv("KEYCLOAK_AUDIENCE"))})
             else:  # демо/переключатель: decode без проверки подписи (токен от нашего Keycloak)
                 claims = jwt.decode(token, options={"verify_signature": False})
+        except HTTPException:
+            raise
         except Exception:  # noqa: BLE001
             raise HTTPException(401, "невалидный токен")
         ident = _identity(claims, dev=False)
-        if _jwks_url():                                   # кэшируем только верифицированный успех
+        if _jwks_url() or extra:                          # кэшируем только верифицированный успех
             _jwt_cache_put(token, ident, claims.get("exp"))
         return ident
-    if _jwks_url():
+    if _jwks_url() or _extra_issuers():
         raise HTTPException(401, "нужен Bearer-JWT")
     return _identity({"sub": "dev", "preferred_username": "dev (admin)",
                       "realm_access": {"roles": ["admin"]}, "department": "*"}, dev=True)

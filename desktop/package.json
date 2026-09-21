@@ -1,0 +1,38 @@
+{
+  "name": "ape-desktop",
+  "version": "0.2.9",
+  "description": "APE Desktop — модульная оболочка курса (Electron + Python sidecar)",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis",
+    "publish": "electron-builder --win nsis --publish always"
+  },
+  "dependencies": {
+    "electron-log": "^5.2.0",
+    "electron-updater": "^6.3.9"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "pro.engineer-ai.ape-desktop",
+    "productName": "APE Desktop",
+    "files": ["electron/**", "ui/**"],
+    "extraResources": [
+      { "from": "dist/ape-sidecar", "to": "ape-sidecar" }
+    ],
+    "publish": [
+      { "provider": "github", "owner": "mkhlsokolenko-ai", "repo": "ai-product-engineer", "releaseType": "release" }
+    ],
+    "win": {
+      "target": ["nsis"],
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

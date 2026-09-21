@@ -1,0 +1,157 @@
+/* Inter (бандл, latin+cyrillic) — типографика ДС без внешних CDN (CSP-safe). */
+@font-face { font-family: "Inter"; font-weight: 400; font-style: normal; font-display: swap; src: url("../fonts/inter-latin-400-normal.woff2") format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+2000-206F,U+2074,U+20AC,U+2122,U+2212,U+FEFF,U+FFFD; }
+@font-face { font-family: "Inter"; font-weight: 400; font-style: normal; font-display: swap; src: url("../fonts/inter-cyrillic-400-normal.woff2") format("woff2"); unicode-range: U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116; }
+@font-face { font-family: "Inter"; font-weight: 500; font-style: normal; font-display: swap; src: url("../fonts/inter-latin-500-normal.woff2") format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+2000-206F,U+2074,U+20AC,U+2122,U+2212,U+FEFF,U+FFFD; }
+@font-face { font-family: "Inter"; font-weight: 500; font-style: normal; font-display: swap; src: url("../fonts/inter-cyrillic-500-normal.woff2") format("woff2"); unicode-range: U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116; }
+@font-face { font-family: "Inter"; font-weight: 600; font-style: normal; font-display: swap; src: url("../fonts/inter-latin-600-normal.woff2") format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+2000-206F,U+2074,U+20AC,U+2122,U+2212,U+FEFF,U+FFFD; }
+@font-face { font-family: "Inter"; font-weight: 600; font-style: normal; font-display: swap; src: url("../fonts/inter-cyrillic-600-normal.woff2") format("woff2"); unicode-range: U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116; }
+@font-face { font-family: "Inter"; font-weight: 700; font-style: normal; font-display: swap; src: url("../fonts/inter-latin-700-normal.woff2") format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+2000-206F,U+2074,U+20AC,U+2122,U+2212,U+FEFF,U+FFFD; }
+@font-face { font-family: "Inter"; font-weight: 700; font-style: normal; font-display: swap; src: url("../fonts/inter-cyrillic-700-normal.woff2") format("woff2"); unicode-range: U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116; }
+
+/* APE Desktop — дизайн-система ABOP (1:1 с макетом APE Desktop.dc.html).
+   Токены и рецепты сняты из макета без отхода. Тема — data-theme на <html>.
+   Легаси-алиасы (--bg0/--b1/--ink1…) маппятся на токены ДС, чтобы модули не падали. */
+
+/* ── токены ДС (тёмная) ── */
+:root {
+  --bg: #0f172a;
+  --mesh-a: rgba(99, 102, 241, 0.16);
+  --mesh-b: rgba(139, 92, 246, 0.14);
+  --panel: rgba(255, 255, 255, 0.05);
+  --panel-2: rgba(255, 255, 255, 0.08);
+  --line: rgba(255, 255, 255, 0.1);
+  --line-2: rgba(255, 255, 255, 0.16);
+  --hover: rgba(255, 255, 255, 0.09);
+  --ink: #ffffff;
+  --ink-2: rgba(255, 255, 255, 0.62);
+  --ink-3: rgba(255, 255, 255, 0.42);
+  --field: rgba(15, 23, 42, 0.55);
+  --code: #0b1020;
+  --rail: rgba(15, 23, 42, 0.6);
+  --accent: #6366f1;
+  --accent-2: #818cf8;
+  --accent-ink: #c7d2fe;
+  --accent-ink-2: #a5b4fc;
+  --accent-bg: rgba(99, 102, 241, 0.18);
+  --warn-ink: #fbbf24;
+  --ok-ink: #6ee7b7;
+  --danger-ink: #fca5a5;
+  --ui: "Inter", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+  --blur: blur(16px);
+  /* легаси-алиасы (модули используют эти имена инлайново) */
+  --bg0: var(--bg); --raised: var(--hover); --b1: var(--line);
+  --ink1: var(--ink); --ink2: var(--ink-2); --ink3: var(--ink-3);
+  --ok: var(--ok-ink); --warn: var(--warn-ink); --crit: var(--danger-ink);
+  --radius: 16px;
+}
+/* ── токены ДС (светлая) ── */
+:root[data-theme="light"] {
+  --bg: #f8fafc;
+  --mesh-a: rgba(99, 102, 241, 0.12);
+  --mesh-b: rgba(139, 92, 246, 0.1);
+  --panel: rgba(255, 255, 255, 0.78);
+  --panel-2: #ffffff;
+  --line: #e5e7eb;
+  --line-2: #d1d5db;
+  --hover: rgba(15, 23, 42, 0.05);
+  --ink: #111827;
+  --ink-2: #6b7280;
+  --ink-3: #9ca3af;
+  --field: #ffffff;
+  --code: #0f172a;
+  --rail: rgba(255, 255, 255, 0.7);
+  --accent-ink: #3730a3;
+  --accent-ink-2: #4338ca;
+  --accent-bg: rgba(79, 70, 229, 0.12);
+  --warn-ink: #92400e;
+  --ok-ink: #065f46;
+  --danger-ink: #991b1b;
+}
+
+/* ── анимации ДС (verbatim) ── */
+@keyframes ape-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes ape-drawer { from { transform: translateX(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes ape-drop { from { transform: translateY(-14px) scale(.98); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes ape-caret { 0%, 45% { opacity: 1; } 50%, 100% { opacity: 0; } }
+@keyframes ape-dot { 0%, 100% { transform: translateY(0); opacity: .55; } 50% { transform: translateY(-3px); opacity: 1; } }
+@keyframes ape-scan { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(10px); } }
+@keyframes ape-sheen { from { transform: translateX(-120%); } to { transform: translateX(320%); } }
+@keyframes ab-dot { 0%, 100% { transform: translateY(0); opacity: .55; } 50% { transform: translateY(-3px); opacity: 1; } }
+@keyframes ab-scan { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(10px); } }
+@keyframes ape-drop { from { transform: translateY(-14px) scale(.98); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* ── база ── */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  color: var(--ink); font-family: var(--ui); font-size: 14px; overflow: hidden;
+  background:
+    radial-gradient(58% 48% at 10% 0%, var(--mesh-a), transparent 60%),
+    radial-gradient(52% 44% at 100% 100%, var(--mesh-b), transparent 60%),
+    var(--bg);
+  background-attachment: fixed;
+}
+button, input, textarea, select { font-family: inherit; }
+textarea { resize: none; }
+a { color: var(--accent-2); } a:hover { color: var(--accent); }
+.mono { font-family: var(--mono); }
+.faint { color: var(--ink-3); }
+.sub { color: var(--ink-2); }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 9999px; border: 3px solid transparent; background-clip: content-box; }
+
+/* ── каркас ── */
+#app { display: flex; height: 100vh; }
+#rail {
+  width: 66px; flex-shrink: 0; background: var(--rail); backdrop-filter: var(--blur);
+  border-right: 1px solid var(--line); display: flex; flex-direction: column;
+  align-items: center; padding: 14px 0; gap: 6px;
+}
+#rail .logo { font-family: var(--mono); font-weight: 700; font-size: 15px; letter-spacing: -.3px; color: var(--accent-2); margin-bottom: 10px; }
+.railbtn {
+  width: 46px; height: 46px; border-radius: 12px; border: 1px solid transparent; background: transparent;
+  color: var(--ink-2); font-size: 11px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+}
+.railbtn:hover { background: var(--hover); }
+.railbtn.on { background: var(--accent-bg); color: var(--accent-ink); border-color: var(--line); }
+#rail .spacer { flex: 1; }
+#main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+#topbar {
+  flex: none; height: 48px; display: flex; align-items: center; gap: 16px; padding: 0 16px;
+  border-bottom: 1px solid var(--line); background: var(--rail); backdrop-filter: var(--blur);
+}
+#topbar .title { font-weight: 700; letter-spacing: -.3px; flex: 1; }
+#panel { flex: 1; min-height: 0; overflow: hidden; }
+
+/* ── компонент-классы ДС (рецепты 1:1) ── */
+.ape-card { padding: 20px; border-radius: 16px; background: var(--panel); border: 1px solid var(--line); backdrop-filter: var(--blur); display: flex; flex-direction: column; gap: 12px; }
+.ape-label { font-family: var(--mono); font-size: 9.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--ink-3); }
+.ape-h1 { margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -.7px; }
+.ape-iconbtn { width: 30px; height: 30px; flex: none; border: 1px solid var(--line); border-radius: 9px; background: transparent; color: var(--ink-2); font-size: 13px; cursor: pointer; }
+.ape-iconbtn:hover { background: var(--hover); color: var(--ink); }
+
+.btn {
+  border: 1px solid var(--line); background: var(--panel); backdrop-filter: var(--blur); color: var(--ink);
+  padding: 8px 14px; border-radius: 11px; font-weight: 600; font-size: 12.5px; transition: background .15s, border-color .15s;
+}
+.btn:hover { background: var(--hover); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover { background: var(--accent-2); }
+.btn.sm { padding: 5px 10px; font-size: 12px; border-radius: 9px; }
+.btn:disabled { opacity: .5; cursor: default; }
+.chip {
+  display: inline-block; padding: 3px 9px; border-radius: 9999px; font-size: 11px;
+  font-family: var(--mono); background: var(--panel); border: 1px solid var(--line); color: var(--ink-2);
+}
+.chip.on { background: var(--accent-bg); color: var(--accent-ink); border-color: var(--accent); }
+input, textarea, select {
+  background: var(--field); color: var(--ink); border: 1px solid var(--line);
+  border-radius: 11px; padding: 11px 13px; font-size: 12.5px; line-height: 1.55; outline: none;
+}
+input:focus, textarea:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
+
+/* стекло на инлайновых поверхностях модулей */
+.bcontent, #drawer, #composer, #files, #updateBar { backdrop-filter: var(--blur); }
+#drawer { box-shadow: -20px 0 50px rgba(0, 0, 0, 0.32); animation: ape-drawer .2s ease; }
+.bubble { animation: ape-in .2s ease; }
