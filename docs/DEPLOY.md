@@ -155,6 +155,13 @@ curl -s -XPOST http://127.0.0.1:8091/api/runs -H "Authorization: Bearer $TOKEN" 
 
 ---
 
+## 6а. Аудируемость, трассировка, наблюдаемость
+
+- **Grafana дашборд** (`ops/grafana/`, auto-provisioning): datasource Prometheus + дашборд «ABOP — Обзор» (прогоны/успех%/стоимость/LLM-inflight, латентность p50/p95, HTTP RPS+p95, находки/доставки, soft_errors/429/cache). Grafana `:3300`, Prometheus `:9091`. Разворачивание: `docker compose -f ops/docker-compose.observability.yml up -d`.
+- **Аудит-трасса прогона** (`result.trace`): по каждому навыку — какие сущности читал + **происхождение данных** (`ape.entity_provenance`: рецепт/источник/сколько записей/свежесть `fetched_at`), какая модель рассуждала, токены, тайминг, формат вывода. Отвечает «как модель рассуждала и ОТКУДА взяла данные» — на реальном provenance записей Data Plane. В каждом прогоне (GET `/api/runs/{id}`).
+- **Сквозной trace_id** (`X-Trace-Id`), структурные JSON-логи (`docker logs abop-webapi`), per-skill тайминги (`run_metrics.timings`), «не молчим» (`soft_errors`).
+- **Langfuse LLM-трейсы** (`server/langfuse_trace.py`): каркас готов, no-op без ключей. Включить — задать в `.env`: `LANGFUSE_URL` (self-host или `https://cloud.langfuse.com`), `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` → трейс на прогон + generation на навык (токены/латентность/ошибка) с линком на `trace_id`. Self-host langfuse v3 требует ClickHouse+Redis+PG (не влезает на текущий memory-tight хост — использовать облако langfuse или отдельную машину).
+
 ## 7а. Горизонтальное масштабирование (2+ реплики API)
 
 Разблокировано (2026-09-18): реплики безопасно работают параллельно.
