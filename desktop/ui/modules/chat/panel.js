@@ -203,11 +203,12 @@ export async function mount(root, ctx) {
 
   async function attachFile(f) {
     if (!f || !cur) return;
-    messages.push({ role: "assistant", content: `📎 индексирую «${f.name}»…`, meta: {} }); render();
+    messages.push({ role: "assistant", content: `📎 прикрепляю «${f.name}»…`, meta: {} }); render();
     const text = await f.text();
     const r = await api(M + "/threads/" + cur.id + "/attach", { method: "POST", body: JSON.stringify({ name: f.name, documents: [text] }) });
     messages.pop();
-    messages.push({ role: "assistant", content: r.ok ? `Файл «${f.name}» в знаниях треда (${r.indexed} фр.).` : "Не удалось: " + r.error, meta: {} });
+    const kb = r.indexed ? ` (+${r.indexed} фр. в RAG)` : "";
+    messages.push({ role: "assistant", content: r.ok ? `📎 Файл «${f.name}» прикреплён — модель видит его в этом диалоге${kb}. Спросите по нему.` : "Не удалось: " + r.error, meta: {} });
     render(); renderKb();
   }
 

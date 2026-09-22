@@ -167,17 +167,22 @@ def autotitle(thread_id: int) -> dict:
 # ── вложения → RAG (S3/Qdrant через шлюз) ──
 @router.post("/threads/{thread_id}/attach")
 def attach(thread_id: int, body: AttachIn) -> dict:
+    """Прикрепить документ к треду. Полный текст СОХРАНЯЕТСЯ и идёт в контекст диалога (как в обычных
+    чатах — модель «видит» файл сразу). RAG-индексация — ДОПОЛНИТЕЛЬНО (для больших доков/семантики),
+    best-effort: если шлюз недоступен, файл всё равно доступен модели через контекст."""
+    full = "\n\n".join(body.documents)
+    chars = len(full)
+    indexed = 0
     try:
         res = gateway.call("rag_index", {"documents": body.documents, "session_id": _sid(thread_id)})
+        indexed = res.get("indexed", len(body.documents))
     except gateway.AuthRequired:
         return {"ok": False, "error": "auth_required"}
-    except gateway.GatewayError as e:
-        return {"ok": False, "error": str(e)}
-    indexed = res.get("indexed", len(body.documents))
-    chars = sum(len(d) for d in body.documents)
-    aid = db.run("INSERT INTO attachments(thread_id,name,chars,chunks,created_at) VALUES(?,?,?,?,?)",
-                 (thread_id, body.name, chars, indexed, db.now()))
-    return {"ok": True, "id": aid, "indexed": indexed, "name": body.name}
+    except (gateway.GatewayError, Exception):  # noqa: BLE001 — RAG опционален, файл уже в контексте
+        indexed = 0
+    aid = db.run("INSERT INTO attachments(thread_id,name,chars,chunks,content,created_at) VALUES(?,?,?,?,?,?)",
+                 (thread_id, body.name, chars, indexed, full, db.now()))
+    return {"ok": True, "id": aid, "indexed": indexed, "name": body.name, "chars": chars}
 
 
 @router.get("/threads/{thread_id}/files")
@@ -255,18 +260,8 @@ def send(thread_id: int, body: SendIn) -> dict:
     db.run("INSERT INTO messages(thread_id,role,content,meta,created_at) VALUES(?,?,?,?,?)",
            (thread_id, "user", body.prompt, "{}", db.now()))
 
-    # контекст из вложений (best-effort)
-    ctx = ""
-    try:
-        found = gateway.call("rag_search", {"query": body.prompt, "session_id": _sid(thread_id), "top_k": 3})
-        chunks = [r.get("text", "") for r in (found.get("results") or [])]
-        if chunks:
-            ctx = "Контекст из приложенных документов:\n- " + "\n- ".join(chunks) + "\n\n"
-    except (gateway.GatewayError, Exception):  # noqa: BLE001 — RAG опционален
-        pass
-
-    hist = _history(thread_id)
-    prompt = ctx + (f"История:\n{hist}\n\n" if hist else "") + f"Ты: {body.prompt}"
+    # контекст из вложений: полный текст файла (модель ВИДИТ файл) + история + вопрос
+    prompt = _build_prompt(thread_id, body.prompt)
     try:
         res = gateway.call("chat", {"prompt": prompt, "session_id": _sid(thread_id),
                                     "profile": profile, "system": _system_for(skills), "max_tokens": 1500})
@@ -288,17 +283,42 @@ def _sse(d: dict) -> str:
     return "data: " + json.dumps(d, ensure_ascii=False) + "\n\n"
 
 
-def _build_prompt(thread_id: int, user_prompt: str) -> str:
-    """Контекст из вложений (если есть) + история + текущий вопрос."""
-    ctx = ""
-    if db.q("SELECT 1 FROM attachments WHERE thread_id=? LIMIT 1", (thread_id,)):
+_ATTACH_BUDGET = 24000   # символов вложений в контекст (полный текст небольших файлов; большие → +RAG)
+
+
+def _attach_context(thread_id: int, user_prompt: str) -> str:
+    """Контекст из прикреплённых файлов: полный текст (в пределах бюджета) — модель ВИДИТ файл сразу,
+    как в обычных чатах. Для больших/множественных файлов добавляем релевантные чанки из RAG."""
+    atts = db.q("SELECT name,content,chars FROM attachments WHERE thread_id=? ORDER BY id", (thread_id,))
+    if not atts:
+        return ""
+    total = sum(a["chars"] for a in atts)
+    parts = []
+    if total <= _ATTACH_BUDGET:
+        # всё влезает — кладём документы ЦЕЛИКОМ (полный контекст)
+        for a in atts:
+            if a["content"]:
+                parts.append(f"=== ФАЙЛ: {a['name']} ===\n{a['content']}")
+    else:
+        # не влезает — начало каждого файла + релевантные чанки из RAG по вопросу
+        per = max(1500, _ATTACH_BUDGET // (len(atts) + 1))
+        for a in atts:
+            if a["content"]:
+                head = a["content"][:per]
+                parts.append(f"=== ФАЙЛ: {a['name']} (фрагмент) ===\n{head}")
         try:
-            found = gateway.call("rag_search", {"query": user_prompt, "session_id": _sid(thread_id), "top_k": 3})
-            chunks = [r.get("text", "") for r in (found.get("results") or [])]
+            found = gateway.call("rag_search", {"query": user_prompt, "session_id": _sid(thread_id), "top_k": 4})
+            chunks = [r.get("text", "") for r in (found.get("results") or []) if r.get("text")]
             if chunks:
-                ctx = "Контекст из приложенных документов:\n- " + "\n- ".join(chunks) + "\n\n"
-        except Exception:  # noqa: BLE001
+                parts.append("=== РЕЛЕВАНТНЫЕ ФРАГМЕНТЫ (RAG) ===\n- " + "\n- ".join(chunks))
+        except Exception:  # noqa: BLE001 — RAG опционален
             pass
+    return ("ПРИЛОЖЕННЫЕ ДОКУМЕНТЫ (используй их при ответе):\n" + "\n\n".join(parts) + "\n\n") if parts else ""
+
+
+def _build_prompt(thread_id: int, user_prompt: str) -> str:
+    """Контекст из вложений (полный текст/фрагменты+RAG) + история + текущий вопрос."""
+    ctx = _attach_context(thread_id, user_prompt)
     hist = _history(thread_id)
     return ctx + (f"История:\n{hist}\n\n" if hist else "") + f"Ты: {user_prompt}"
 

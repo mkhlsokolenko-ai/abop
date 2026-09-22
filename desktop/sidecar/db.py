@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS attachments (
     name TEXT NOT NULL,
     chars INTEGER NOT NULL DEFAULT 0,
     chunks INTEGER NOT NULL DEFAULT 0,
+    content TEXT NOT NULL DEFAULT '',   -- полный текст вложения → идёт в контекст диалога (не только RAG)
     created_at REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_att_thread ON attachments(thread_id);
@@ -80,6 +81,10 @@ def init() -> None:
             pass  # колонка уже есть
         try:
             c.execute("ALTER TABLE agents ADD COLUMN outward INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            c.execute("ALTER TABLE attachments ADD COLUMN content TEXT NOT NULL DEFAULT ''")
         except sqlite3.OperationalError:
             pass
         c.commit()
