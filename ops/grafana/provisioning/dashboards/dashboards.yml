@@ -1,0 +1,11 @@
+# Grafana auto-provisioning: подхватить дашборды из /var/lib/grafana/dashboards.
+apiVersion: 1
+providers:
+  - name: ABOP
+    orgId: 1
+    folder: ABOP
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards

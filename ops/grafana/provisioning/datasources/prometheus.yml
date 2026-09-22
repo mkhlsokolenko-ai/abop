@@ -1,0 +1,9 @@
+# Grafana auto-provisioning: источник данных Prometheus (метрики ABOP /metrics).
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://abop-prometheus:9090
+    isDefault: true
+    editable: true

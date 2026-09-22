@@ -25,6 +25,8 @@ services:
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - abop_grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro   # datasource Prometheus + провайдер дашбордов
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro    # JSON-дашборды ABOP (auto-load)
     ports:
       - "3300:3000"
     depends_on:
