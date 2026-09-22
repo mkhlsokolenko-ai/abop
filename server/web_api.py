@@ -1912,6 +1912,42 @@ def _findings_context_text(findings: list, investigations: list) -> str:
     return "\n".join(lines)
 
 
+def _build_run_trace(agent: dict, result: dict) -> list:
+    """Аудит-трасса прогона: по каждому навыку (в порядке волн) — что он читал (сущности+происхождение),
+    какая модель отработала, сколько токенов/времени. Отвечает «как рассуждал / откуда данные».
+    Provenance сущностей кэшируется в пределах прогона (одна сущность у многих навыков)."""
+    findings = {f.get("skill"): f for f in (result.get("findings") or []) if isinstance(f, dict) and f.get("skill")}
+    prov_cache: dict = {}
+
+    def _prov(ent: str) -> dict:
+        if ent not in prov_cache:
+            try:
+                prov_cache[ent] = ape.entity_provenance(ent)
+            except Exception:  # noqa: BLE001
+                prov_cache[ent] = {"entity": ent, "records": 0}
+        return prov_cache[ent]
+
+    steps = []
+    for n in (agent.get("graph") or {}).get("nodes") or []:
+        if n.get("kind") != "skill":
+            continue
+        sid = n.get("skill") or n.get("id")
+        f = findings.get(sid) or {}
+        ents = f.get("entities") or [ds.get("entity") for ds in (ape.skill_datasources_resolved(sid) or []) if ds.get("entity")]
+        sources = [_prov(e) for e in ents if e]
+        steps.append({
+            "skill": sid,
+            "reads_entities": ents,
+            "data_sources": sources,                       # откуда данные: рецепт/источник/объём/свежесть
+            "model": f.get("model") or None,               # какая модель рассуждала
+            "input_tokens": f.get("input_tokens"), "output_tokens": f.get("output_tokens"),
+            "ms": f.get("ms"),
+            "error": f.get("error"),
+            "output_kind": "structured" if f.get("structured") else ("text" if f.get("text") else None),
+        })
+    return steps
+
+
 def _collect_soft_errors(result: dict) -> list:
     """Собирает МЯГКИЕ (не фатальные) ошибки прогона в один список — чтобы опциональные шаги
     (находки/расследования/доставка/нормы) не отваливались МОЛЧА. Каждая логируется с trace_id;
@@ -2125,6 +2161,12 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
     result["trace_id"] = _trace
     _dur = time.perf_counter() - _t0
     result.setdefault("run_metrics", {}).setdefault("timings", {})["total_ms"] = round(_dur * 1000, 1)
+    # АУДИТ-ТРАССА: как модель рассуждала и ОТКУДА взяла данные — по каждому навыку: сущности →
+    # происхождение (рецепт/источник/сколько записей/свежесть) + модель/токены/тайминг. Для аудитора.
+    try:
+        result["trace"] = _build_run_trace(agent, result)
+    except Exception as ex:  # noqa: BLE001 — трасса опциональна
+        result["trace_error"] = f"{type(ex).__name__}: {ex}"
     _soft = _collect_soft_errors(result)  # опциональные шаги, что отвалились (доставка/находки/нормы/…)
     if _soft:
         result["soft_errors"] = _soft

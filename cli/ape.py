@@ -3214,6 +3214,26 @@ def data_query(entity: str, filters: dict = None, fields: list = None, limit: in
     return res[:limit]
 
 
+def entity_provenance(entity: str) -> dict:
+    """Происхождение сущности для аудит-трассы прогона: сколько записей, из каких рецептов/источников,
+    свежесть (max fetched_at). Отвечает на вопрос «откуда агент взял данные»."""
+    recs = data_query(entity, limit=100000)
+    recipes, sources = {}, {}
+    mx = 0.0
+    for r in recs:
+        p = r.get("provenance") or {}
+        rc, sc = p.get("recipe"), p.get("source")
+        if rc:
+            recipes[rc] = recipes.get(rc, 0) + 1
+        if sc:
+            sources[sc] = sources.get(sc, 0) + 1
+        ft = float(p.get("fetched_at", 0) or 0)
+        if ft > mx:
+            mx = ft
+    return {"entity": entity, "records": len(recs),
+            "recipes": recipes, "sources": sources, "fetched_at": mx}
+
+
 def _data_compact(entity: str) -> int:
     """Компакция canonical store: оставляем ПОСЛЕДНЮЮ версию каждого id (всегда) + недавно
     перекрытые версии в пределах TTL; более старые перекрытые — удаляем (чтобы файл не рос
