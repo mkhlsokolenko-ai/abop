@@ -35,6 +35,13 @@ class HitlIn(BaseModel):
     reason: str = ""
 
 
+class AuthorIn(BaseModel):
+    family: str
+    skills: list[str] = []
+    name: str = ""
+    member: str = ""
+
+
 @router.get("/catalog")
 def catalog():
     """Каталог агентов ABOP (ABAC по семье пользователя — сервер отдаёт только доступное)."""
@@ -58,6 +65,33 @@ def skills():
     """Каталог навыков ABOP (mode/egress/cite/output и т.д.)."""
     try:
         return abop.skills()
+    except abop.AbopError as e:
+        return _err(e)
+
+
+@router.get("/families")
+def families():
+    """Палитра для конструктора: семьи → роли → навыки (ABAC)."""
+    try:
+        return abop.families()
+    except abop.AbopError as e:
+        return _err(e)
+
+
+@router.get("/recipes")
+def recipes():
+    """Рецепты Data Plane — какие данные (entity) доступны агенту."""
+    try:
+        return abop.recipes()
+    except abop.AbopError as e:
+        return _err(e)
+
+
+@router.post("/author")
+def author(body: AuthorIn):
+    """Собрать агента-цепочку из выбранных навыков (простой менеджерский агент, без контракта)."""
+    try:
+        return {"ok": True, "agent": abop.author(body.family, body.skills, body.name, body.member)}
     except abop.AbopError as e:
         return _err(e)
 

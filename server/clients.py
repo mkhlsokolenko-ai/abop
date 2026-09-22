@@ -40,14 +40,37 @@ def inflight_stats() -> dict:
 
 # ─────────────────────────── LLM (chat) ───────────────────────────
 
+# Runtime-override LLM-эндпоинта (1-клик переключение бокса из UI, БЕЗ правки .env/рестарта).
+# Задаётся POST /api/admin/llm → инжектится сюда; переживает рестарт (хранится в admin_config → PG).
+# Задел под мультиноду: named-инстансы {name: {base_url, model, api_key}} → per-agent роутинг later.
+_LLM_OVERRIDE: dict = {}   # {base_url, model, api_key} — перекрывает settings.local_llm_* если задан
+
+
+def set_llm_override(cfg: dict | None) -> None:
+    global _LLM_OVERRIDE
+    _LLM_OVERRIDE = dict(cfg or {})
+
+
+def llm_active() -> dict:
+    """Актуальный self-host LLM (override поверх env) — для /api/models и диагностики."""
+    o = _LLM_OVERRIDE
+    return {"base_url": o.get("base_url") or settings.local_llm_base_url,
+            "model": o.get("model") or settings.local_llm_model,
+            "override": bool(o.get("base_url"))}
+
+
 def _route(model: str) -> tuple[str, str, str]:
     """(base_url, api_key, real_model) по имени модели.
 
-    "local/<name>" -> vLLM на LOCAL_LLM_BASE_URL; всё остальное -> RouteAI.
+    "local/<name>" -> self-host vLLM: runtime-override (UI) → иначе LOCAL_LLM_* из env.
+    Всё остальное -> RouteAI.
     """
     if model.startswith("local/") or model == "local":
-        real = settings.local_llm_model or model.removeprefix("local/")
-        return settings.local_llm_base_url, settings.local_llm_api_key, real
+        o = _LLM_OVERRIDE
+        base = o.get("base_url") or settings.local_llm_base_url
+        key = o.get("api_key") or settings.local_llm_api_key
+        real = o.get("model") or settings.local_llm_model or model.removeprefix("local/")
+        return base, key, real
     return settings.routeai_base_url, settings.routeai_api_key, model
 
 

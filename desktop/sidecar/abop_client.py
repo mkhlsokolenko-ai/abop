@@ -64,6 +64,29 @@ def skills() -> list:
     return (r or {}).get("skills", []) if isinstance(r, dict) else (r or [])
 
 
+def families() -> list:
+    """Ростер Семья→Роль→Навык — палитра для конструктора цепочки агентов."""
+    r = _req("GET", "/api/families", timeout=30)
+    return (r or {}).get("families", []) if isinstance(r, dict) else (r or [])
+
+
+def recipes() -> list:
+    """Рецепты Data Plane (источник→entity) — какие данные доступны агенту."""
+    r = _req("GET", "/api/data/recipes", timeout=30)
+    return (r or {}).get("recipes", []) if isinstance(r, dict) else (r or [])
+
+
+def author(family: str, skills: list, name: str = "", member: str = "") -> dict:
+    """Создать агента-цепочку БЕЗ контракта из выбранных навыков (простые менеджерские агенты).
+    Конверт/автономия — консервативно из навыков. manager+."""
+    body = {"family": family, "skills": skills}
+    if name:
+        body["name"] = name
+    if member:
+        body["member"] = member
+    return _req("POST", "/api/agents/author", body, timeout=60)
+
+
 def prepare(scenario: str) -> dict:
     return _req("POST", "/api/demo/prepare", {"scenario": scenario}, timeout=60)
 

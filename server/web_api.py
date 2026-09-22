@@ -229,6 +229,50 @@ def health() -> dict:
             "adapters": sorted(ape.SOURCE_ADAPTERS)}
 
 
+@app.get("/api/models")
+def models() -> dict:
+    """РЕАЛЬНЫЕ модели по профилям (из cascade в .env) — чтобы UI показывал фактическую модель узла,
+    а не хардкод. `active` профиля = первая в каскаде (её и берёт прогон). local — self-host инстанс."""
+    profiles = {}
+    for p in ("standard", "research", "code"):
+        casc = settings.cascade_for(p)
+        profiles[p] = {"cascade": casc, "active": (casc[0] if casc else None)}
+    act = clients.llm_active()   # override поверх env (1-клик из UI)
+    return {"profiles": profiles,
+            "default_profile": "standard",
+            "local": {"model": act.get("model") or None,
+                      "base_url": act.get("base_url") or None,
+                      "override": act.get("override"),
+                      "configured": bool(act.get("base_url"))}}
+
+
+@app.get("/api/admin/llm")
+async def admin_llm_get(u: dict = Depends(user)) -> dict:
+    """Текущий self-host LLM-эндпоинт (для UI-настройки «эндпоинт бокса»)."""
+    return {"llm": clients.llm_active()}
+
+
+@app.post("/api/admin/llm")
+async def admin_llm_set(body: dict, u: dict = Depends(user)) -> dict:
+    """1-клик переключение self-host LLM-эндпоинта БЕЗ правки .env/рестарта. Тело:
+    {base_url, model?, api_key?}. Сохраняется в admin_config (PG, переживает рестарт) + инжект в clients.
+    Пустой base_url → сброс на env. manager+."""
+    require_level(u, "manager")
+    base_url = str((body or {}).get("base_url", "")).strip()
+    cfg = {}
+    if base_url:
+        cfg = {"base_url": base_url,
+               "model": str((body or {}).get("model", "")).strip() or None,
+               "api_key": str((body or {}).get("api_key", "")).strip() or None}
+        cfg = {k: v for k, v in cfg.items() if v}
+    clients.set_llm_override(cfg)
+    await admin_store.save("llmOverride", cfg, editor=u.get("name") or u.get("sub") or "dev")
+    await cachebus.notify("llm")   # применить на других репликах
+    await audit_store.record(u.get("name") or "dev", "admin.llm", "llmOverride",
+                             {"base_url": base_url or "(reset to env)"}, severity="info")
+    return {"ok": True, "llm": clients.llm_active()}
+
+
 @app.get("/metrics")
 def metrics() -> PlainTextResponse:
     """Метрики в формате Prometheus (scrape). Открыт для внутреннего мониторинга."""
@@ -1314,10 +1358,22 @@ async def _startup() -> None:
     await dataplane_store.init()
     await _backfill_dataplane_from_files()  # одноразовый перенос ~/.ape → PG (сохранить демо-рецепты)
     await _refresh_dataplane_cache()  # инжект рецептов/коннекторов из PG в ape
+    # LLM-override (эндпоинт бокса из UI) — восстановить из PG при старте, инжектить в clients
+    await _refresh_llm_override()
     # Cache-bus: инвалидация in-process кэшей между репликами (LISTEN/NOTIFY). Разблокирует 2+ реплики.
     cachebus.register("skills", _refresh_skill_ds_cache)
     cachebus.register("dataplane", _refresh_dataplane_cache)
+    cachebus.register("llm", _refresh_llm_override)
     _asyncio.create_task(cachebus.listen_loop())
+
+
+async def _refresh_llm_override() -> None:
+    """Подтянуть self-host LLM-override из admin_config (PG) → инжект в clients (переживает рестарт)."""
+    try:
+        cfg = (await admin_store.all()).get("llmOverride") or {}
+        clients.set_llm_override(cfg if isinstance(cfg, dict) else {})
+    except Exception:  # noqa: BLE001
+        pass
 
 
 @app.post("/api/contracts/ingest")
