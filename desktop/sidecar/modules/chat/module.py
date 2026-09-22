@@ -62,6 +62,11 @@ class AttachIn(BaseModel):
     documents: list[str]
 
 
+class AttachFileIn(BaseModel):
+    name: str = "документ"
+    data_b64: str        # содержимое файла в base64 (для бинарных: pdf/docx/xlsx)
+
+
 class AgentsIn(BaseModel):
     task: str
     roles: list[str] = []       # id из ROLE_PRESETS (быстрые пресеты)
@@ -183,6 +188,61 @@ def attach(thread_id: int, body: AttachIn) -> dict:
     aid = db.run("INSERT INTO attachments(thread_id,name,chars,chunks,content,created_at) VALUES(?,?,?,?,?,?)",
                  (thread_id, body.name, chars, indexed, full, db.now()))
     return {"ok": True, "id": aid, "indexed": indexed, "name": body.name, "chars": chars}
+
+
+def _extract_text(name: str, raw: bytes) -> str:
+    """Извлечь текст из файла по расширению: pdf (pypdf), docx (python-docx), xlsx (openpyxl),
+    txt/md/csv/json — как текст. Неизвестное — попытка decode. Ошибки не глушим молча."""
+    import io
+    ext = (name.rsplit(".", 1)[-1] if "." in name else "").lower()
+    if ext == "pdf":
+        from pypdf import PdfReader
+        reader = PdfReader(io.BytesIO(raw))
+        return "\n".join((p.extract_text() or "") for p in reader.pages).strip()
+    if ext == "docx":
+        from docx import Document
+        doc = Document(io.BytesIO(raw))
+        parts = [p.text for p in doc.paragraphs if p.text.strip()]
+        for t in doc.tables:  # текст из таблиц Word
+            for row in t.rows:
+                parts.append(" | ".join(c.text for c in row.cells))
+        return "\n".join(parts).strip()
+    if ext == "xlsx":
+        from openpyxl import load_workbook
+        wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+        out = []
+        for ws in wb.worksheets:
+            out.append(f"[Лист: {ws.title}]")
+            for row in ws.iter_rows(values_only=True):
+                cells = [str(c) for c in row if c is not None]
+                if cells:
+                    out.append(" | ".join(cells))
+        return "\n".join(out).strip()
+    # текстовые форматы
+    return raw.decode("utf-8", "replace").strip()
+
+
+@router.post("/threads/{thread_id}/attach-file")
+def attach_file(thread_id: int, body: AttachFileIn) -> dict:
+    """Прикрепить БИНАРНЫЙ файл (pdf/docx/xlsx) — сайдкар извлекает текст и кладёт его в контекст
+    диалога (модель видит содержимое). RAG-индексация — дополнительно, best-effort."""
+    import base64
+    try:
+        raw = base64.b64decode(body.data_b64)
+        text = _extract_text(body.name, raw)
+    except Exception as e:  # noqa: BLE001 — вернуть понятную ошибку, не 500
+        return {"ok": False, "error": f"не удалось извлечь текст: {type(e).__name__}: {e}"}
+    if not text:
+        return {"ok": False, "error": "в файле не найден текстовый слой (возможно скан — нужен OCR)"}
+    indexed = 0
+    try:
+        res = gateway.call("rag_index", {"documents": [text], "session_id": _sid(thread_id)})
+        indexed = res.get("indexed", 1)
+    except (gateway.AuthRequired, gateway.GatewayError, Exception):  # noqa: BLE001 — RAG опционален
+        indexed = 0
+    aid = db.run("INSERT INTO attachments(thread_id,name,chars,chunks,content,created_at) VALUES(?,?,?,?,?,?)",
+                 (thread_id, body.name, len(text), indexed, text, db.now()))
+    return {"ok": True, "id": aid, "indexed": indexed, "name": body.name, "chars": len(text)}
 
 
 @router.get("/threads/{thread_id}/files")

@@ -92,7 +92,7 @@ export async function mount(root, ctx) {
   const sec = $("chatSec");
   sec.addEventListener("dragover", (e) => { e.preventDefault(); if (cur) $("dropHint").style.display = "flex"; });
   sec.addEventListener("dragleave", (e) => { if (!sec.contains(e.relatedTarget)) $("dropHint").style.display = "none"; });
-  sec.addEventListener("drop", async (e) => { e.preventDefault(); $("dropHint").style.display = "none"; if (!cur) return; for (const f of [...(e.dataTransfer.files || [])]) if (/\.(txt|md|csv|json)$/i.test(f.name)) await attachFile(f); });
+  sec.addEventListener("drop", async (e) => { e.preventDefault(); $("dropHint").style.display = "none"; if (!cur) return; for (const f of [...(e.dataTransfer.files || [])]) if (/.(txt|md|csv|json|pdf|docx|xlsx)$/i.test(f.name)) await attachFile(f); });
 
   if (window.__apeChatKey) document.removeEventListener("keydown", window.__apeChatKey);
   window.__apeChatKey = (e) => {
@@ -192,7 +192,7 @@ export async function mount(root, ctx) {
       <option value="research"${cur.profile === "research" ? " selected" : ""}>ask</option></select>`;
     const chips = skills.map((s) => { const on = cur.skills.includes(s.id); return `<button class="skc" data-id="${s.id}" title="${esc(s.hint)}" style="padding:6px 12px;border:1px solid ${on ? "var(--accent)" : "var(--line)"};border-radius:9999px;background:${on ? "var(--accent-bg)" : "var(--panel)"};color:${on ? "var(--accent-ink)" : "var(--ink-2)"};font-size:11.5px;font-weight:600;cursor:pointer">${s.id}</button>`; }).join("");
     const ic = (id, gl, ti) => `<button id="${id}" title="${ti}" style="width:30px;height:30px;border:1px solid var(--line);border-radius:9px;background:transparent;color:var(--ink-2);font-size:13px;cursor:pointer">${gl}</button>`;
-    $("tools").innerHTML = prof + chips + `<span style="margin-left:auto;display:flex;align-items:center;gap:6px">${ic("tRag", "📎", "Прикрепить файл")}${ic("tAgents", "🕸", "Каталог агентов")}${ic("tExport", "📥", "Экспорт")}</span><input type="file" id="fileIn" accept=".txt,.md,.csv,.json" style="display:none"/>`;
+    $("tools").innerHTML = prof + chips + `<span style="margin-left:auto;display:flex;align-items:center;gap:6px">${ic("tRag", "📎", "Прикрепить файл")}${ic("tAgents", "🕸", "Каталог агентов")}${ic("tExport", "📥", "Экспорт")}</span><input type="file" id="fileIn" accept=".txt,.md,.csv,.json,.pdf,.docx,.xlsx" style="display:none"/>`;
     $("prof").onchange = async (e) => { cur.profile = e.target.value; await saveThread(cur); };
     $("tools").querySelectorAll(".skc").forEach((c) => c.onclick = async () => { const i = cur.skills.indexOf(c.dataset.id); if (i >= 0) cur.skills.splice(i, 1); else cur.skills.push(c.dataset.id); await saveThread(cur); renderTools(); });
     $("tRag").onclick = () => $("fileIn").click();
@@ -201,14 +201,24 @@ export async function mount(root, ctx) {
     $("tExport").onclick = openExport;
   }
 
+  const BINARY_RE = /\.(pdf|docx|xlsx)$/i;   // извлечение текста на стороне сайдкара
+  function _b64(buf) { let s = ""; const b = new Uint8Array(buf); for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i]); return btoa(s); }
+
   async function attachFile(f) {
     if (!f || !cur) return;
     messages.push({ role: "assistant", content: `📎 прикрепляю «${f.name}»…`, meta: {} }); render();
-    const text = await f.text();
-    const r = await api(M + "/threads/" + cur.id + "/attach", { method: "POST", body: JSON.stringify({ name: f.name, documents: [text] }) });
+    let r;
+    if (BINARY_RE.test(f.name)) {
+      const data_b64 = _b64(await f.arrayBuffer());   // pdf/docx/xlsx → байты, сайдкар извлечёт текст
+      r = await api(M + "/threads/" + cur.id + "/attach-file", { method: "POST", body: JSON.stringify({ name: f.name, data_b64 }) });
+    } else {
+      const text = await f.text();                    // txt/md/csv/json → текст как есть
+      r = await api(M + "/threads/" + cur.id + "/attach", { method: "POST", body: JSON.stringify({ name: f.name, documents: [text] }) });
+    }
     messages.pop();
     const kb = r.indexed ? ` (+${r.indexed} фр. в RAG)` : "";
-    messages.push({ role: "assistant", content: r.ok ? `📎 Файл «${f.name}» прикреплён — модель видит его в этом диалоге${kb}. Спросите по нему.` : "Не удалось: " + r.error, meta: {} });
+    const sz = r.chars ? ` · ${r.chars} симв.` : "";
+    messages.push({ role: "assistant", content: r.ok ? `📎 Файл «${f.name}» прикреплён — модель видит его в этом диалоге${sz}${kb}. Спросите по нему.` : "Не удалось: " + r.error, meta: {} });
     render(); renderKb();
   }
 
@@ -281,7 +291,7 @@ export async function mount(root, ctx) {
         tool("🔎", "OCR", "скан/картинка → текст → знания (модуль в разработке)", `<button disabled style="padding:9px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink-3);font-size:12px;font-weight:600">Скоро</button>`) +
         tool("🧠", "NLP", "извлечение сущностей / классификация (в разработке)", `<button disabled style="padding:9px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink-3);font-size:12px;font-weight:600">Скоро</button>`) +
         tool("📥", "Экспорт треда", "сохранить в «Загрузки»", `<div style="display:flex;gap:6px;flex-wrap:wrap">${fmts}</div>`);
-      const fileIn = document.createElement("input"); fileIn.type = "file"; fileIn.accept = ".txt,.md,.csv,.json"; fileIn.style.display = "none"; b.appendChild(fileIn);
+      const fileIn = document.createElement("input"); fileIn.type = "file"; fileIn.accept = ".txt,.md,.csv,.json,.pdf,.docx,.xlsx"; fileIn.style.display = "none"; b.appendChild(fileIn);
       b.querySelector("#tlRag").onclick = () => fileIn.click();
       fileIn.onchange = async (e) => { const f = e.target.files[0]; $("drawer").style.transform = "translateX(100%)"; await attachFile(f); e.target.value = ""; };
       b.querySelectorAll(".expf").forEach((x) => x.onclick = () => { $("drawer").style.transform = "translateX(100%)"; exportThread(x.dataset.f); });
