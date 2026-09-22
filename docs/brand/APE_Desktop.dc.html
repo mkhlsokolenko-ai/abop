@@ -1,0 +1,1350 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: 'Inter', system-ui, sans-serif; overflow: hidden;
+      --bg: #0f172a; --mesh-a: rgba(99,102,241,.16); --mesh-b: rgba(139,92,246,.14);
+      --panel: rgba(255,255,255,.05); --panel-2: rgba(255,255,255,.08); --line: rgba(255,255,255,.1);
+      --line-2: rgba(255,255,255,.16); --hover: rgba(255,255,255,.09);
+      --ink: #ffffff; --ink-2: rgba(255,255,255,.62); --ink-3: rgba(255,255,255,.42);
+      --field: rgba(15,23,42,.55); --code: #0b1020; --rail: rgba(15,23,42,.6);
+      --accent-ink: #c7d2fe; --accent-ink-2: #a5b4fc; --warn-ink: #fbbf24; --ok-ink: #6ee7b7; --danger-ink: #fca5a5;
+      background: var(--bg); color: var(--ink);
+    }
+    body[data-ape-theme="light"] {
+      --bg: #f8fafc; --mesh-a: rgba(99,102,241,.12); --mesh-b: rgba(139,92,246,.1);
+      --panel: rgba(255,255,255,.78); --panel-2: #ffffff; --line: #e5e7eb;
+      --line-2: #d1d5db; --hover: rgba(15,23,42,.05);
+      --ink: #111827; --ink-2: #6b7280; --ink-3: #9ca3af;
+      --field: #ffffff; --code: #0f172a; --rail: rgba(255,255,255,.7);
+      --accent-ink: #3730a3; --accent-ink-2: #4338ca; --warn-ink: #92400e; --ok-ink: #065f46; --danger-ink: #991b1b;
+    }
+    a { color: #818cf8; }
+    a:hover { color: #6366f1; }
+    input, textarea, select, button { font-family: inherit; }
+    textarea { resize: none; }
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 9999px; border: 3px solid transparent; background-clip: content-box; }
+    @keyframes ape-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    @keyframes ape-drawer { from { transform: translateX(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+    @keyframes ape-drop { from { transform: translateY(-14px) scale(.98); opacity: 0; } to { transform: none; opacity: 1; } }
+    @keyframes ape-caret { 0%, 45% { opacity: 1; } 50%, 100% { opacity: 0; } }
+    @keyframes ape-dot { 0%, 100% { transform: translateY(0); opacity: .55; } 50% { transform: translateY(-3px); opacity: 1; } }
+    @keyframes ape-scan { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(10px); } }
+    @keyframes ape-sheen { from { transform: translateX(-120%); } to { transform: translateX(320%); } }
+  </style>
+</helmet>
+
+<div data-screen-label="APE Desktop" style="height: 100vh; display: flex; flex-direction: column; background: var(--bg); background-image: radial-gradient(circle at 8% -5%, var(--mesh-a), transparent 45%), radial-gradient(circle at 96% 105%, var(--mesh-b), transparent 45%); color: var(--ink); font-size: 14px;">
+
+  <header style="flex: none; display: flex; align-items: center; gap: 16px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--rail); backdrop-filter: blur(16px);">
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <svg width="30" height="30" viewBox="0 0 72 72" fill="none" style="flex: none;">
+        <defs>
+          <linearGradient id="apeMark" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8b5cf6"></stop><stop offset=".55" stop-color="#6366f1"></stop><stop offset="1" stop-color="#4338ca"></stop></linearGradient>
+          <linearGradient id="apeVisor" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1e1b4b"></stop><stop offset="1" stop-color="#3730a3"></stop></linearGradient>
+        </defs>
+        <rect width="72" height="72" rx="20" fill="url(#apeMark)"></rect>
+        <g transform="translate(3.45 5.85) scale(0.84)">
+          <rect x="34.4" y="9" width="3.2" height="8" rx="1.6" fill="#ffffff" opacity=".8"></rect>
+          <circle cx="36" cy="7.4" r="3.6" fill="#34d399"></circle>
+          <rect x="53" y="37" width="7.5" height="17" rx="3.75" fill="#c7d2fe"></rect>
+          <path d="M17 38a19 19 0 0 1 38 0v16a9 9 0 0 1-9 9H26a9 9 0 0 1-9-9Z" fill="#ffffff"></path>
+          <rect x="24" y="60" width="11" height="8" rx="4" fill="#ffffff"></rect>
+          <rect x="38" y="60" width="11" height="8" rx="4" fill="#ffffff"></rect>
+          <rect x="23.5" y="33" width="25" height="14" rx="7" fill="url(#apeVisor)"></rect>
+        </g>
+      </svg>
+      <span style="display: flex; flex-direction: column; line-height: 1.15;">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 15px; font-weight: 700; letter-spacing: -.3px;">APE</span>
+        <span style="font-size: 10px; color: var(--ink-3);">{{ version }}</span>
+      </span>
+    </div>
+
+    <button onClick="{{ openPalette }}" title="Командная палитра · Ctrl+K" style="display: flex; align-items: center; gap: 10px; min-width: 240px; padding: 7px 12px; border: 1px solid var(--line); border-radius: 9999px; background: var(--panel); color: var(--ink-3); font-size: 12.5px; text-align: left;" style-hover="border-color: #818cf8; color: var(--ink-2);">
+      <span>Поиск и команды</span>
+      <span style="margin-left: auto; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; padding: 2px 7px; border-radius: 6px; background: var(--hover);">Ctrl K</span>
+    </button>
+
+    <div style="margin-left: auto; display: flex; align-items: center; gap: 10px;">
+      <div title="Расход текущей сессии" style="display: flex; align-items: center; gap: 9px; padding: 7px 13px; border-radius: 9999px; background: var(--panel); border: 1px solid var(--line);">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--ink-2);">{{ sessionCost }} ₽</span>
+        <span style="width: 1px; height: 12px; background: var(--line-2);"></span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: {{ quotaFg }};">квота {{ quotaLeft }}%</span>
+      </div>
+      <button onClick="{{ toggleTheme }}" title="{{ themeTitle }}" style="width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink-2); font-size: 14px;" style-hover="border-color: #818cf8; color: var(--ink);">{{ themeGlyph }}</button>
+      <button onClick="{{ toggleLauncher }}" title="Глобальный лаунчер · Ctrl+Space" style="width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink-2); font-size: 13px;" style-hover="border-color: #818cf8; color: var(--ink);">⌁</button>
+    </div>
+  </header>
+
+  <sc-if value="{{ updateVisible }}" hint-placeholder-val="{{ true }}">
+    <div style="flex: none; display: flex; align-items: center; gap: 14px; padding: 10px 18px; background: rgba(99,102,241,.14); border-bottom: 1px solid rgba(129,140,248,.3); animation: ape-drop .3s ease-out;">
+      <dc-import name="Ape" state="{{ updateApe }}" size="22" hint-size="22px,29px"></dc-import>
+      <span style="flex: 1; font-size: 13px; color: var(--accent-ink);">{{ updateText }}</span>
+      <sc-if value="{{ updateDownloading }}" hint-placeholder-val="{{ true }}">
+        <span style="position: relative; width: 140px; height: 6px; border-radius: 9999px; background: rgba(255,255,255,.12); overflow: hidden;">
+          <span style="position: absolute; inset: 0 auto 0 0; width: {{ updatePct }}%; border-radius: 9999px; background: linear-gradient(90deg, #6366f1, #8b5cf6);"></span>
+        </span>
+      </sc-if>
+      <sc-if value="{{ updateReady }}" hint-placeholder-val="{{ false }}">
+        <button onClick="{{ applyUpdate }}" style="padding: 7px 14px; border: none; border-radius: 9999px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; font-size: 12.5px; font-weight: 600;" style-hover="transform: scale(1.02);">Перезапустить и обновить</button>
+      </sc-if>
+      <button onClick="{{ dismissUpdate }}" title="Скрыть" style="width: 26px; height: 26px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--ink-3);">✕</button>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ offline }}" hint-placeholder-val="{{ false }}">
+    <div style="flex: none; display: flex; align-items: center; gap: 14px; padding: 10px 18px; background: rgba(239,68,68,.12); border-bottom: 1px solid rgba(239,68,68,.3);">
+      <dc-import name="Ape" state="stop" size="22" hint-size="22px,29px"></dc-import>
+      <span style="flex: 1; font-size: 13px; color: var(--danger-ink);">Нет соединения со средой. Ответы недоступны, черновики сохраняются локально.</span>
+      <button onClick="{{ goOnline }}" style="padding: 7px 14px; border: 1px solid rgba(239,68,68,.35); border-radius: 9999px; background: rgba(239,68,68,.16); color: var(--danger-ink); font-size: 12.5px; font-weight: 600;">Повторить подключение</button>
+    </div>
+  </sc-if>
+
+  <div style="flex: 1; display: flex; min-height: 0; position: relative;">
+
+    <aside data-screen-label="Левый рейл" style="flex: none; width: 76px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 8px; border-right: 1px solid var(--line); background: var(--rail); backdrop-filter: blur(16px);">
+      <sc-for list="{{ modules }}" as="md" hint-placeholder-count="3">
+        <button onClick="{{ md.go }}" title="{{ md.title }}" style="width: 100%; padding: 10px 4px; display: flex; flex-direction: column; align-items: center; gap: 5px; border: 1px solid {{ md.border }}; border-radius: 12px; background: {{ md.bg }}; color: {{ md.fg }};" style-hover="border-color: #818cf8;">
+          <span style="font-size: 16px; line-height: 1;">{{ md.glyph }}</span>
+          <span style="font-size: 10px; font-weight: 600;">{{ md.label }}</span>
+        </button>
+      </sc-for>
+
+      <span style="width: 34px; height: 1px; background: var(--line); margin: 10px 0 6px;"></span>
+      <span style="font-family: 'JetBrains Mono', monospace; font-size: 8.5px; letter-spacing: .7px; text-transform: uppercase; color: var(--ink-3);">быстрые</span>
+
+      <sc-for list="{{ pinnedSlots }}" as="ps" hint-placeholder-count="4">
+        <button onClick="{{ ps.act }}" title="{{ ps.title }}" style="position: relative; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; border: 1px {{ ps.dash }} {{ ps.border }}; border-radius: 12px; background: {{ ps.bg }}; color: {{ ps.fg }}; font-size: 15px;" style-hover="border-color: #818cf8; color: var(--ink);">
+          {{ ps.glyph }}
+          <sc-if value="{{ ps.filled }}" hint-placeholder-val="{{ true }}">
+            <span onClick="{{ ps.unpin }}" title="Открепить" style="position: absolute; top: -5px; right: -5px; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; border-radius: 9999px; background: var(--bg); border: 1px solid var(--line-2); color: var(--ink-3); font-size: 9px;">✕</span>
+          </sc-if>
+        </button>
+      </sc-for>
+
+      <button onClick="{{ openAgents }}" title="Каталог агентов" style="margin-top: auto; width: 44px; height: 44px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--ink-2); font-size: 15px;" style-hover="border-color: #818cf8; color: var(--ink);">🕸</button>
+    </aside>
+
+    <sc-if value="{{ isChat }}" hint-placeholder-val="{{ true }}">
+      <div data-screen-label="Чат" style="flex: 1; display: flex; min-width: 0; min-height: 0;">
+
+        <aside style="flex: none; width: 252px; display: flex; flex-direction: column; gap: 10px; padding: 14px 12px; border-right: 1px solid var(--line); background: var(--rail); min-height: 0;">
+          <button onClick="{{ newThread }}" style="display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px; border: none; border-radius: 10px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; font-size: 13px; font-weight: 600;" style-hover="transform: scale(1.01);">＋ Новый тред</button>
+
+          <input value="{{ search }}" onChange="{{ setSearch }}" placeholder="Поиск по тредам" style="padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--field); color: var(--ink); font-size: 12.5px;" style-focus="border-color: #6366f1;">
+
+          <div style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; min-height: 0;">
+            <sc-for list="{{ threadGroups }}" as="gr" hint-placeholder-count="2">
+              <div style="display: flex; flex-direction: column; gap: 5px;">
+                <span style="padding: 0 4px; font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: .8px; text-transform: uppercase; color: var(--ink-3);">{{ gr.folder }}</span>
+                <sc-for list="{{ gr.items }}" as="th" hint-placeholder-count="3">
+                  <div style="display: flex; align-items: center; gap: 6px; padding: 8px 9px; border: 1px solid {{ th.border }}; border-radius: 10px; background: {{ th.bg }};" style-hover="border-color: var(--line-2);">
+                    <sc-if value="{{ th.renaming }}" hint-placeholder-val="{{ false }}">
+                      <input value="{{ th.draftTitle }}" onChange="{{ th.setTitle }}" onBlur="{{ th.commit }}" onKeyDown="{{ th.keyCommit }}" style="flex: 1; min-width: 0; padding: 4px 6px; border-radius: 7px; border: 1px solid #6366f1; background: var(--field); color: var(--ink); font-size: 12.5px;">
+                    </sc-if>
+                    <sc-if value="{{ th.normal }}" hint-placeholder-val="{{ true }}">
+                      <button onClick="{{ th.open }}" onDoubleClick="{{ th.rename }}" title="Двойной клик — переименовать" style="flex: 1; min-width: 0; padding: 0; border: none; background: transparent; text-align: left; display: flex; flex-direction: column; gap: 2px;">
+                        <span style="font-size: 12.5px; font-weight: 600; color: {{ th.fg }}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ th.title }}</span>
+                        <span style="font-size: 10.5px; color: var(--ink-3);">{{ th.meta }}</span>
+                      </button>
+                      <button onClick="{{ th.fav }}" title="В избранное" style="width: 22px; height: 22px; flex: none; border: none; border-radius: 6px; background: transparent; color: {{ th.starFg }}; font-size: 12px;">★</button>
+                      <button onClick="{{ th.remove }}" title="Удалить тред" style="width: 22px; height: 22px; flex: none; border: none; border-radius: 6px; background: transparent; color: var(--ink-3); font-size: 11px;" style-hover="color: #f87171;">✕</button>
+                    </sc-if>
+                  </div>
+                </sc-for>
+              </div>
+            </sc-for>
+
+            <sc-if value="{{ noThreadHits }}" hint-placeholder-val="{{ false }}">
+              <div style="padding: 20px 10px; text-align: center; font-size: 12px; color: var(--ink-3);">Ничего не нашлось по «{{ search }}»</div>
+            </sc-if>
+          </div>
+        </aside>
+
+        <section onDragOver="{{ onDragOver }}" onDragLeave="{{ onDragLeave }}" onDrop="{{ onDrop }}" style="flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative;">
+
+          <sc-if value="{{ dragOver }}" hint-placeholder-val="{{ false }}">
+            <div style="position: absolute; inset: 14px; z-index: 8; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; border: 2px dashed #818cf8; border-radius: 18px; background: rgba(99,102,241,.14); backdrop-filter: blur(6px); pointer-events: none;">
+              <dc-import name="Ape" state="scan" size="52" hint-size="52px,69px"></dc-import>
+              <span style="font-size: 15px; font-weight: 600; color: var(--accent-ink);">Отпустите файл — добавлю в знания треда</span>
+            </div>
+          </sc-if>
+
+          <div style="flex: 1; overflow-y: auto; padding: 22px 26px 8px; min-height: 0;">
+            <div style="max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px;">
+
+              <sc-if value="{{ isEmptyThread }}" hint-placeholder-val="{{ false }}">
+                <div style="display: flex; flex-direction: column; gap: 22px; padding: 26px 0; animation: ape-in .4s ease-out;">
+                  <div style="display: flex; align-items: center; gap: 18px;">
+                    <dc-import name="Ape" state="idle" size="66" hint-size="66px,87px"></dc-import>
+                    <div style="display: flex; flex-direction: column; gap: 6px;">
+                      <h1 style="margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -.6px;">С чего начнём?</h1>
+                      <p style="margin: 0; max-width: 460px; font-size: 13.5px; line-height: 1.55; color: var(--ink-2); text-wrap: pretty;">Опишите задачу словами или возьмите готовый шаблон. Файлы можно просто перетащить в окно.</p>
+                    </div>
+                  </div>
+
+                  <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(214px, 1fr)); gap: 12px;">
+                    <sc-for list="{{ templates }}" as="tp" hint-placeholder-count="6">
+                      <button onClick="{{ tp.use }}" style="display: flex; flex-direction: column; align-items: flex-start; gap: 7px; padding: 15px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); backdrop-filter: blur(16px); text-align: left; transition: transform .2s ease, border-color .2s ease;" style-hover="transform: translateY(-4px); border-color: #818cf8;">
+                        <span style="font-size: 17px;">{{ tp.glyph }}</span>
+                        <span style="font-size: 13.5px; font-weight: 600; color: var(--ink);">{{ tp.title }}</span>
+                        <span style="font-size: 11.5px; line-height: 1.45; color: var(--ink-3);">{{ tp.note }}</span>
+                      </button>
+                    </sc-for>
+                  </div>
+
+                  <div style="display: flex; align-items: center; gap: 16px; padding: 14px 18px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); flex-wrap: wrap;">
+                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--ink-3);">первый запуск</span>
+                    <sc-for list="{{ onboarding }}" as="ob" hint-placeholder-count="3">
+                      <span style="display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-2);">
+                        <span style="width: 20px; height: 20px; border-radius: 7px; background: {{ ob.bg }}; color: {{ ob.fg }}; font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center;">{{ ob.mark }}</span>{{ ob.text }}
+                      </span>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-if>
+
+              <sc-for list="{{ messages }}" as="m" hint-placeholder-count="2">
+                <div style="display: flex; flex-direction: column; align-items: {{ m.align }}; gap: 7px; animation: ape-in .3s ease-out;">
+
+                  <sc-if value="{{ m.isAgentRun }}" hint-placeholder-val="{{ false }}">
+                    <div style="width: 100%; padding: 16px 18px; border-radius: 14px; background: var(--panel); border: 1px solid rgba(129,140,248,.3); backdrop-filter: blur(16px); display: flex; flex-direction: column; gap: 12px;">
+                      <div style="display: flex; align-items: center; gap: 10px;">
+                        <dc-import name="Ape" state="{{ m.ape }}" size="22" hint-size="22px,29px"></dc-import>
+                        <span style="flex: 1; font-size: 13.5px; font-weight: 600;">{{ m.title }}</span>
+                        <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--ink-3);">{{ m.meta }}</span>
+                      </div>
+                      <sc-for list="{{ m.steps }}" as="st" hint-placeholder-count="3">
+                        <div style="display: flex; align-items: flex-start; gap: 10px;">
+                          <span style="margin-top: 1px; width: 18px; height: 18px; flex: none; border-radius: 6px; background: {{ st.bg }}; color: {{ st.fg }}; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center;">{{ st.mark }}</span>
+                          <span style="flex: 1; font-size: 12.5px; line-height: 1.5; color: {{ st.textFg }};">{{ st.text }}</span>
+                        </div>
+                      </sc-for>
+                      <sc-if value="{{ m.awaiting }}" hint-placeholder-val="{{ false }}">
+                        <div style="display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 11px; background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.3); flex-wrap: wrap;">
+                          <span style="flex: 1; min-width: 200px; font-size: 12.5px; color: var(--warn-ink);">{{ m.askText }}</span>
+                          <button onClick="{{ m.approve }}" style="padding: 8px 14px; border: none; border-radius: 9999px; background: #10b981; color: #04231a; font-size: 12px; font-weight: 700;">Разрешить</button>
+                          <button onClick="{{ m.deny }}" style="padding: 8px 14px; border: 1px solid rgba(239,68,68,.35); border-radius: 9999px; background: rgba(239,68,68,.12); color: var(--danger-ink); font-size: 12px; font-weight: 600;">Отклонить</button>
+                        </div>
+                      </sc-if>
+                      <sc-if value="{{ m.reviewable }}" hint-placeholder-val="{{ false }}">
+                        <div style="display: flex; align-items: center; gap: 10px; padding-top: 10px; border-top: 1px solid var(--line);">
+                          <span style="flex: 1; font-size: 12.5px; color: var(--ink-2);">Результат готов — принять в тред?</span>
+                          <button onClick="{{ m.accept }}" style="padding: 8px 14px; border: none; border-radius: 9999px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; font-size: 12px; font-weight: 600;">Принять</button>
+                          <button onClick="{{ m.reject }}" style="padding: 8px 14px; border: 1px solid var(--line-2); border-radius: 9999px; background: transparent; color: var(--ink-2); font-size: 12px; font-weight: 600;">Отклонить</button>
+                        </div>
+                      </sc-if>
+                    </div>
+                  </sc-if>
+
+                  <sc-if value="{{ m.isBubble }}" hint-placeholder-val="{{ true }}">
+                    <div style="max-width: {{ m.maxW }}; padding: 13px 16px; border-radius: {{ m.radius }}; background: {{ m.bg }}; border: 1px solid {{ m.border }}; backdrop-filter: blur(16px); display: flex; flex-direction: column; gap: 10px;">
+                      <sc-for list="{{ m.blocks }}" as="bl" hint-placeholder-count="1">
+                        <sc-if value="{{ bl.isText }}" hint-placeholder-val="{{ true }}">
+                          <span style="font-size: 13.5px; line-height: 1.6; color: var(--ink); white-space: pre-wrap;">{{ bl.text }}</span>
+                        </sc-if>
+                        <sc-if value="{{ bl.isCode }}" hint-placeholder-val="{{ false }}">
+                          <span style="display: flex; flex-direction: column; gap: 0; border-radius: 10px; overflow: hidden; border: 1px solid rgba(255,255,255,.12);">
+                            <span style="display: flex; align-items: center; gap: 8px; padding: 7px 11px; background: rgba(15,23,42,.9);">
+                              <span style="flex: 1; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: rgba(255,255,255,.5);">{{ bl.lang }}</span>
+                              <button onClick="{{ bl.copy }}" style="padding: 3px 9px; border: 1px solid rgba(255,255,255,.16); border-radius: 7px; background: rgba(255,255,255,.06); color: rgba(255,255,255,.75); font-size: 10.5px;">⧉ копировать</button>
+                            </span>
+                            <span style="padding: 12px; background: var(--code); font-family: 'JetBrains Mono', monospace; font-size: 11.5px; line-height: 1.65; color: #c7d2fe; white-space: pre-wrap;">{{ bl.text }}</span>
+                          </span>
+                        </sc-if>
+                      </sc-for>
+
+                      <sc-if value="{{ m.hasCites }}" hint-placeholder-val="{{ false }}">
+                        <span style="display: flex; flex-wrap: wrap; gap: 7px; padding-top: 9px; border-top: 1px solid var(--line);">
+                          <sc-for list="{{ m.cites }}" as="ct" hint-placeholder-count="2">
+                            <button onClick="{{ ct.open }}" title="{{ ct.src }}" style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 9999px; background: var(--hover); color: var(--ink-2); font-size: 11px;" style-hover="border-color: #818cf8; color: var(--ink);">
+                              <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: #818cf8;">{{ ct.n }}</span>{{ ct.title }}
+                            </button>
+                          </sc-for>
+                        </span>
+                      </sc-if>
+                    </div>
+
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                      <sc-for list="{{ m.actions }}" as="ac" hint-placeholder-count="3">
+                        <button onClick="{{ ac.act }}" title="{{ ac.title }}" style="padding: 4px 9px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--ink-3); font-size: 11px;" style-hover="border-color: var(--line); color: var(--ink);">{{ ac.label }}</button>
+                      </sc-for>
+                      <sc-if value="{{ m.hasCost }}" hint-placeholder-val="{{ false }}">
+                        <span style="margin-left: 4px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--ink-3);">{{ m.cost }}</span>
+                      </sc-if>
+                    </div>
+                  </sc-if>
+
+                  <sc-if value="{{ m.isError }}" hint-placeholder-val="{{ false }}">
+                    <div style="display: flex; align-items: center; gap: 12px; padding: 13px 16px; border-radius: 14px; background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.3);">
+                      <dc-import name="Ape" state="stop" size="24" hint-size="24px,32px"></dc-import>
+                      <span style="font-size: 13px; color: var(--danger-ink);">{{ m.text }}</span>
+                      <button onClick="{{ m.retry }}" style="padding: 7px 13px; border: 1px solid rgba(239,68,68,.35); border-radius: 9999px; background: rgba(239,68,68,.14); color: var(--danger-ink); font-size: 12px; font-weight: 600;">↻ Повторить</button>
+                    </div>
+                  </sc-if>
+                </div>
+              </sc-for>
+
+              <sc-if value="{{ thinking }}" hint-placeholder-val="{{ false }}">
+                <div style="display: flex; align-items: center; gap: 12px; animation: ape-in .25s ease-out;">
+                  <dc-import name="Ape" state="thinking" size="30" hint-size="30px,40px"></dc-import>
+                  <span style="font-size: 13px; color: var(--ink-2);">думает…</span>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ streaming }}" hint-placeholder-val="{{ false }}">
+                <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 7px;">
+                  <div style="max-width: 88%; padding: 13px 16px; border-radius: 16px 16px 16px 4px; background: var(--panel); border: 1px solid var(--line); backdrop-filter: blur(16px); display: flex; flex-direction: column; gap: 10px;">
+                    <sc-for list="{{ streamBlocks }}" as="sb" hint-placeholder-count="1">
+                      <sc-if value="{{ sb.isText }}" hint-placeholder-val="{{ true }}">
+                        <span style="font-size: 13.5px; line-height: 1.6; white-space: pre-wrap;">{{ sb.text }}</span>
+                      </sc-if>
+                      <sc-if value="{{ sb.isCode }}" hint-placeholder-val="{{ false }}">
+                        <span style="padding: 12px; border-radius: 10px; background: var(--code); font-family: 'JetBrains Mono', monospace; font-size: 11.5px; line-height: 1.65; color: #c7d2fe; white-space: pre-wrap;">{{ sb.text }}</span>
+                      </sc-if>
+                    </sc-for>
+                    <span style="display: inline-block; width: 7px; height: 15px; background: #818cf8; animation: ape-caret 1s steps(1) infinite;"></span>
+                  </div>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ showFollowups }}" hint-placeholder-val="{{ false }}">
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                  <sc-for list="{{ followups }}" as="fu" hint-placeholder-count="3">
+                    <button onClick="{{ fu.act }}" style="padding: 7px 14px; border: 1px solid var(--line); border-radius: 9999px; background: var(--panel); color: var(--ink-2); font-size: 12px;" style-hover="border-color: #818cf8; color: var(--ink);">{{ fu.label }}</button>
+                  </sc-for>
+                </div>
+              </sc-if>
+            </div>
+          </div>
+
+          <div style="flex: none; padding: 10px 26px 18px;">
+            <div style="max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 10px;">
+
+              <sc-if value="{{ hasKb }}" hint-placeholder-val="{{ false }}">
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                  <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--ink-3);">знания треда</span>
+                  <sc-for list="{{ kb }}" as="kf" hint-placeholder-count="2">
+                    <span style="display: inline-flex; align-items: center; gap: 8px; padding: 5px 10px; border: 1px solid var(--line); border-radius: 9999px; background: var(--panel); font-size: 11.5px; color: var(--ink-2);">
+                      {{ kf.name }}<span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: var(--ink-3);">{{ kf.meta }}</span>
+                      <button onClick="{{ kf.remove }}" title="Убрать из знаний" style="width: 15px; height: 15px; border: none; border-radius: 9999px; background: var(--hover); color: var(--ink-3); font-size: 9px;">✕</button>
+                    </span>
+                  </sc-for>
+                </div>
+              </sc-if>
+
+              <div style="padding: 12px 14px; border-radius: 16px; background: var(--panel); border: 1px solid var(--line-2); backdrop-filter: blur(16px); display: flex; flex-direction: column; gap: 11px;">
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                  <select value="{{ profile }}" onChange="{{ setProfile }}" title="Профиль ответа" style="padding: 6px 10px; border-radius: 9999px; border: 1px solid var(--line); background: var(--field); color: var(--ink-2); font-size: 11.5px;">
+                    <sc-for list="{{ profiles }}" as="pf" hint-placeholder-count="3">
+                      <option value="{{ pf }}">{{ pf }}</option>
+                    </sc-for>
+                  </select>
+                  <sc-for list="{{ skillChips }}" as="sk" hint-placeholder-count="3">
+                    <button onClick="{{ sk.toggle }}" title="{{ sk.title }}" style="padding: 6px 12px; border: 1px solid {{ sk.border }}; border-radius: 9999px; background: {{ sk.bg }}; color: {{ sk.fg }}; font-size: 11.5px; font-weight: 600;" style-hover="border-color: #818cf8;">{{ sk.label }}</button>
+                  </sc-for>
+                  <span style="margin-left: auto; display: flex; align-items: center; gap: 6px;">
+                    <button onClick="{{ attachFile }}" title="Прикрепить файл" style="width: 30px; height: 30px; border: 1px solid var(--line); border-radius: 9px; background: transparent; color: var(--ink-2); font-size: 13px;" style-hover="border-color: #818cf8; color: var(--ink);">📎</button>
+                    <button onClick="{{ openAgents }}" title="Каталог агентов" style="width: 30px; height: 30px; border: 1px solid var(--line); border-radius: 9px; background: transparent; color: var(--ink-2); font-size: 13px;" style-hover="border-color: #818cf8; color: var(--ink);">🕸</button>
+                    <button onClick="{{ openExport }}" title="Экспорт ответа" style="width: 30px; height: 30px; border: 1px solid var(--line); border-radius: 9px; background: transparent; color: var(--ink-2); font-size: 13px;" style-hover="border-color: #818cf8; color: var(--ink);">📥</button>
+                  </span>
+                </div>
+
+                <div style="display: flex; align-items: flex-end; gap: 10px;">
+                  <textarea value="{{ draft }}" onChange="{{ setDraft }}" onKeyDown="{{ composerKey }}" rows="2" placeholder="{{ placeholder }}" style="flex: 1; min-width: 0; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--field); color: var(--ink); font-size: 13.5px; line-height: 1.55;" style-focus="border-color: #6366f1;"></textarea>
+                  <sc-if value="{{ busy }}" hint-placeholder-val="{{ false }}">
+                    <button onClick="{{ stopStream }}" title="Остановить" style="width: 44px; height: 44px; flex: none; border: 1px solid rgba(239,68,68,.35); border-radius: 12px; background: rgba(239,68,68,.14); color: var(--danger-ink); font-size: 15px;">⏹</button>
+                  </sc-if>
+                  <sc-if value="{{ idle }}" hint-placeholder-val="{{ true }}">
+                    <button onClick="{{ sendDraft }}" title="Отправить · Enter" style="width: 44px; height: 44px; flex: none; border: none; border-radius: 12px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; font-size: 16px;" style-hover="transform: scale(1.04);">↑</button>
+                  </sc-if>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isCabinet }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="Кабинет" style="flex: 1; overflow-y: auto; padding: 26px 30px; min-width: 0;">
+        <div style="max-width: 1020px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; animation: ape-in .35s ease-out;">
+          <div style="display: flex; flex-direction: column; gap: 6px;">
+            <h1 style="margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -.7px;">Кабинет</h1>
+            <p style="margin: 0; font-size: 13px; color: var(--ink-2);">Расход, доступы и рабочие источники этого рабочего места.</p>
+          </div>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px;">
+            <sc-for list="{{ spendKpis }}" as="kp" hint-placeholder-count="4">
+              <div style="padding: 17px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line); backdrop-filter: blur(16px); display: flex; flex-direction: column; gap: 6px;">
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--ink-3);">{{ kp.label }}</span>
+                <span style="font-size: 26px; font-weight: 800; letter-spacing: -.8px; color: {{ kp.fg }};">{{ kp.value }}</span>
+                <span style="font-size: 11.5px; color: var(--ink-3);">{{ kp.note }}</span>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="padding: 20px; border-radius: 16px; background: var(--panel); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 14px;">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--ink-3);">расход по дням</span>
+            <div style="display: flex; align-items: flex-end; gap: 8px; height: 92px;">
+              <sc-for list="{{ spendBars }}" as="bar" hint-placeholder-count="7">
+                <span title="{{ bar.title }}" style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 7px;">
+                  <span style="width: 100%; height: {{ bar.h }}px; border-radius: 5px 5px 0 0; background: linear-gradient(180deg, #8b5cf6, #6366f1); opacity: .8;"></span>
+                  <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: var(--ink-3);">{{ bar.day }}</span>
+                </span>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+            <div style="flex: 1 1 380px; min-width: 320px; padding: 20px; border-radius: 16px; background: var(--panel); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 14px;">
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--ink-3);">роль и доступ (RBAC)</span>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <sc-for list="{{ roleOptions }}" as="ro" hint-placeholder-count="3">
+                  <button onClick="{{ ro.pick }}" style="padding: 9px 15px; border: 1px solid {{ ro.border }}; border-radius: 9999px; background: {{ ro.bg }}; color: {{ ro.fg }}; font-size: 12.5px; font-weight: 600;" style-hover="border-color: #818cf8;">{{ ro.label }}</button>
+                </sc-for>
+              </div>
+              <sc-for list="{{ roleCaps }}" as="rc" hint-placeholder-count="4">
+                <span style="display: flex; align-items: flex-start; gap: 9px; font-size: 12.5px; line-height: 1.5; color: var(--ink-2);">
+                  <span style="color: {{ rc.fg }}; font-weight: 700;">{{ rc.mark }}</span>{{ rc.text }}
+                </span>
+              </sc-for>
+            </div>
+
+            <div style="flex: 1 1 380px; min-width: 320px; padding: 20px; border-radius: 16px; background: var(--panel); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 12px;">
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--ink-3);">рабочие источники</span>
+              <sc-for list="{{ sources }}" as="so" hint-placeholder-count="4">
+                <div style="display: flex; align-items: center; gap: 12px; padding: 11px 13px; border-radius: 11px; background: var(--hover); border: 1px solid var(--line);">
+                  <span style="font-size: 15px;">{{ so.glyph }}</span>
+                  <span style="flex: 1; display: flex; flex-direction: column; gap: 2px;">
+                    <span style="font-size: 12.5px; font-weight: 600;">{{ so.title }}</span>
+                    <span style="font-size: 11px; color: var(--ink-3);">{{ so.note }}</span>
+                  </span>
+                  <button onClick="{{ so.act }}" style="padding: 7px 12px; border: 1px solid {{ so.btnBorder }}; border-radius: 9px; background: {{ so.btnBg }}; color: {{ so.btnFg }}; font-size: 11.5px; font-weight: 600;">{{ so.btnLabel }}</button>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="padding: 20px; border-radius: 16px; background: var(--panel); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 16px;">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--ink-3);">настройки</span>
+
+            <label style="display: flex; flex-direction: column; gap: 7px;">
+              <span style="font-size: 12.5px; font-weight: 600;">Персона и постоянные инструкции</span>
+              <textarea value="{{ persona }}" onChange="{{ setPersona }}" rows="3" style="padding: 11px 13px; border-radius: 11px; border: 1px solid var(--line); background: var(--field); color: var(--ink); font-size: 12.5px; line-height: 1.55;" style-focus="border-color: #6366f1;"></textarea>
+            </label>
+
+            <div style="display: flex; gap: 18px; flex-wrap: wrap;">
+              <div style="flex: 1 1 260px; display: flex; flex-direction: column; gap: 9px;">
+                <span style="font-size: 12.5px; font-weight: 600;">Горячие клавиши</span>
+                <sc-for list="{{ shortcuts }}" as="sc" hint-placeholder-count="4">
+                  <span style="display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--ink-2);">
+                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; padding: 3px 8px; border-radius: 7px; background: var(--hover); border: 1px solid var(--line);">{{ sc.keys }}</span>{{ sc.text }}
+                  </span>
+                </sc-for>
+              </div>
+
+              <div style="flex: 1 1 260px; display: flex; flex-direction: column; gap: 9px;">
+                <span style="font-size: 12.5px; font-weight: 600;">Состояния для демонстрации</span>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                  <sc-for list="{{ demoStates }}" as="ds" hint-placeholder-count="4">
+                    <button onClick="{{ ds.act }}" style="padding: 8px 13px; border: 1px solid var(--line); border-radius: 9999px; background: var(--hover); color: var(--ink-2); font-size: 11.5px; font-weight: 600;" style-hover="border-color: #818cf8; color: var(--ink);">{{ ds.label }}</button>
+                  </sc-for>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isBuilder }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="Конструктор агента" style="flex: 1; overflow-y: auto; padding: 26px 30px; min-width: 0;">
+        <div style="max-width: 1060px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; animation: ape-in .35s ease-out;">
+          <div style="display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap;">
+            <div style="flex: 1 1 340px; display: flex; flex-direction: column; gap: 6px;">
+              <h1 style="margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -.7px;">Конструктор агента</h1>
+              <p style="margin: 0; font-size: 13px; color: var(--ink-2);">Опишите роль, шаги и границы. Цепочка собирается из ролей — как конвейер.</p>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button onClick="{{ previewAgent }}" style="padding: 10px 16px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--panel); color: var(--ink); font-size: 12.5px; font-weight: 600;" style-hover="border-color: #818cf8;">Предпросмотр</button>
+              <button onClick="{{ saveAgent }}" style="padding: 10px 18px; border: none; border-radius: 10px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; font-size: 12.5px; font-weight: 600;" style-hover="transform: scale(1.02);">Сохранить агента</button>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap;">
+            <div style="flex: 1 1 520px; min-width: 340px; display: flex; flex-direction: column; gap: 16px;">
+
+              <div style="padding: 20px; border-radius: 16px; background: var(--panel); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 14px;">
+                <label style="display: flex; flex-direction: column; gap: 7px;">
+                  <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--ink-3);">имя агента</span>
+                  <input value="{{ agentName }}" onChange="{{ setAgentName }}" style="padding: 11px 13px; border-radius: 11px; border: 1px solid var(--line); background: var(--field); color: var(--ink); font-size: 14px; font-weight: 600;" style-focus="border-color: #6366f1;">
+                </label>
+
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                  <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--ink-3);">скиллы</span>
+                  <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <sc-for list="{{ agentSkills }}" as="as" hint-placeholder-count="5">
+                      <button onClick="{{ as.toggle }}" style="padding: 8px 13px; border: 1px solid {{ as.border }}; border-radius: 9999px; background: {{ as.bg }}; color: {{ as.fg }}; font-size: 12px; font-weight: 600;" style-hover="border-color: #818cf8;">{{ as.label }}</button>
+                    </sc-for>
+                  </div>
+                </div>
+              </div>
+
+              <div style="padding: 20px; border-radius: 16px; background: var(--panel); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 12px;">
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--ink-3);">шаги работы</span>
+                <sc-for list="{{ agentSteps }}" as="stp" hint-placeholder-count="3">
+                  <div style="display: flex; align-items: center; gap: 9px;">
+                    <span style="width: 24px; height: 24px; flex: none; border-radius: 8px; background: rgba(99,102,241,.2); color: var(--accent-ink-2); font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center;">{{ stp.n }}</span>
+                    <input value="{{ stp.text }}" onChange="{{ stp.set }}" style="flex: 1; min-width: 0; padding: 9px 11px; border-radius: 10px; border: 1px solid var(--line); background: var(--field); color: var(--ink); font-size: 12.5px;" style-focus="border-color: #6366f1;">
+                    <button onClick="{{ stp.up }}" title="Выше" style="width: 28px; height: 28px; flex: none; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--ink-2); font-size: 11px;">↑</button>
+                    <button onClick="{{ stp.down }}" title="Ниже" style="width: 28px; height: 28px; flex: none; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--ink-2); font-size: 11px;">↓</button>
+                    <button onClick="{{ stp.remove }}" title="Удалить шаг" style="width: 28px; height: 28px; flex: none; border: 1px solid rgba(239,68,68,.28); border-radius: 8px; background: rgba(239,68,68,.1); color: var(--danger-ink); font-size: 11px;">✕</button>
+                  </div>
+                </sc-for>
+                <button onClick="{{ addStep }}" style="align-self: flex-start; padding: 8px 13px; border: 1px dashed rgba(129,140,248,.5); border-radius: 9px; background: rgba(99,102,241,.1); color: var(--accent-ink-2); font-size: 12px; font-weight: 600;" style-hover="background: rgba(99,102,241,.2);">＋ шаг</button>
+              </div>
+
+              <div style="padding: 20px; border-radius: 16px; background: var(--panel); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 12px;">
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--ink-3);">цепочка ролей</span>
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                  <sc-for list="{{ chain }}" as="ch" hint-placeholder-count="3">
+                    <span style="display: inline-flex; align-items: center; gap: 8px;">
+                      <span style="display: inline-flex; align-items: center; gap: 8px; padding: 10px 13px; border-radius: 12px; background: rgba(99,102,241,.14); border: 1px solid rgba(129,140,248,.32);">
+                        <span style="font-size: 12.5px; font-weight: 600; color: var(--accent-ink);">{{ ch.role }}</span>
+                        <button onClick="{{ ch.left }}" title="Раньше" style="width: 20px; height: 20px; border: none; border-radius: 6px; background: var(--hover); color: var(--ink-2); font-size: 10px;">←</button>
+                        <button onClick="{{ ch.right }}" title="Позже" style="width: 20px; height: 20px; border: none; border-radius: 6px; background: var(--hover); color: var(--ink-2); font-size: 10px;">→</button>
+                        <button onClick="{{ ch.remove }}" title="Убрать роль" style="width: 20px; height: 20px; border: none; border-radius: 6px; background: rgba(239,68,68,.14); color: var(--danger-ink); font-size: 10px;">✕</button>
+                      </span>
+                      <sc-if value="{{ ch.arrow }}" hint-placeholder-val="{{ true }}">
+                        <span style="color: var(--ink-3); font-size: 14px;">→</span>
+                      </sc-if>
+                    </span>
+                  </sc-for>
+                </div>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap; padding-top: 10px; border-top: 1px solid var(--line);">
+                  <span style="font-size: 11.5px; color: var(--ink-3); align-self: center;">добавить роль:</span>
+                  <sc-for list="{{ rolePool }}" as="rp" hint-placeholder-count="4">
+                    <button onClick="{{ rp.add }}" style="padding: 7px 12px; border: 1px dashed var(--line-2); border-radius: 9999px; background: transparent; color: var(--ink-2); font-size: 11.5px;" style-hover="border-color: #818cf8; color: var(--ink);">＋ {{ rp.label }}</button>
+                  </sc-for>
+                </div>
+              </div>
+
+              <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+                <label style="flex: 1 1 250px; display: flex; flex-direction: column; gap: 7px;">
+                  <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--ink-3);">definition of done</span>
+                  <textarea value="{{ agentDod }}" onChange="{{ setDod }}" rows="3" style="padding: 11px 13px; border-radius: 11px; border: 1px solid var(--line); background: var(--field); color: var(--ink); font-size: 12.5px; line-height: 1.55;" style-focus="border-color: #6366f1;"></textarea>
+                </label>
+                <label style="flex: 1 1 250px; display: flex; flex-direction: column; gap: 7px;">
+                  <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--ink-3);">анти-паттерны</span>
+                  <textarea value="{{ agentAnti }}" onChange="{{ setAnti }}" rows="3" style="padding: 11px 13px; border-radius: 11px; border: 1px solid var(--line); background: var(--field); color: var(--ink); font-size: 12.5px; line-height: 1.55;" style-focus="border-color: #6366f1;"></textarea>
+                </label>
+              </div>
+            </div>
+
+            <div style="flex: 0 1 320px; min-width: 280px; position: sticky; top: 0; padding: 20px; border-radius: 16px; background: var(--panel-2); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 14px;">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <dc-import name="Ape" state="idle" size="30" hint-size="30px,40px"></dc-import>
+                <span style="flex: 1; font-size: 14px; font-weight: 700;">{{ agentName }}</span>
+              </div>
+              <span style="font-size: 12px; line-height: 1.5; color: var(--ink-2);">{{ previewSummary }}</span>
+              <div style="display: flex; flex-direction: column; gap: 7px; padding-top: 12px; border-top: 1px solid var(--line);">
+                <sc-for list="{{ previewRows }}" as="pr" hint-placeholder-count="4">
+                  <span style="display: flex; gap: 10px; font-size: 11.5px; line-height: 1.45;">
+                    <span style="width: 74px; flex: none; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .5px; text-transform: uppercase; color: var(--ink-3);">{{ pr.label }}</span>
+                    <span style="flex: 1; color: var(--ink-2);">{{ pr.value }}</span>
+                  </span>
+                </sc-for>
+              </div>
+              <button onClick="{{ runBuilt }}" style="margin-top: auto; padding: 11px; border: 1px solid rgba(129,140,248,.4); border-radius: 11px; background: rgba(99,102,241,.16); color: var(--accent-ink); font-size: 12.5px; font-weight: 600;" style-hover="background: rgba(99,102,241,.26);">Запустить в треде</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ drawerOpen }}" hint-placeholder-val="{{ false }}">
+      <div onClick="{{ closeDrawer }}" title="Клик вне шторки — закрыть" style="position: absolute; inset: 0 0 0 76px; z-index: 40; background: rgba(4,7,18,.42); backdrop-filter: blur(2px); animation: ape-in .2s ease-out;"></div>
+      <div style="position: absolute; top: 0; right: 0; bottom: 0; z-index: 41; width: 386px; max-width: calc(100% - 76px); display: flex; flex-direction: column; border-left: 1px solid var(--line-2); background: var(--rail); backdrop-filter: blur(20px); box-shadow: -20px 0 50px rgba(0,0,0,.32); animation: ape-drawer .28s cubic-bezier(.4,0,.2,1);">
+        <div style="flex: none; display: flex; align-items: center; gap: 8px; padding: 14px 16px; border-bottom: 1px solid var(--line);">
+          <div style="flex: 1; display: flex; gap: 4px; padding: 4px; border-radius: 11px; background: var(--hover); border: 1px solid var(--line);">
+            <sc-for list="{{ drawerTabs }}" as="dt" hint-placeholder-count="2">
+              <button onClick="{{ dt.go }}" style="flex: 1; padding: 8px 10px; border: none; border-radius: 8px; background: {{ dt.bg }}; color: {{ dt.fg }}; font-size: 12.5px; font-weight: 600;">{{ dt.label }}</button>
+            </sc-for>
+          </div>
+          <button onClick="{{ closeDrawer }}" title="Убрать шторку вправо · Esc" style="width: 30px; height: 30px; flex: none; border: 1px solid var(--line); border-radius: 9px; background: transparent; color: var(--ink-2); font-size: 14px;" style-hover="border-color: #818cf8; color: var(--ink);">→</button>
+        </div>
+
+        <div style="flex: 1; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 11px;">
+
+          <sc-if value="{{ isToolsTab }}" hint-placeholder-val="{{ true }}">
+            <sc-for list="{{ tools }}" as="tl" hint-placeholder-count="4">
+              <div style="padding: 14px; border-radius: 13px; background: var(--panel); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  <span style="font-size: 15px;">{{ tl.glyph }}</span>
+                  <span style="flex: 1; display: flex; flex-direction: column; gap: 2px;">
+                    <span style="font-size: 13px; font-weight: 600;">{{ tl.title }}</span>
+                    <span style="font-size: 11.5px; line-height: 1.4; color: var(--ink-3);">{{ tl.note }}</span>
+                  </span>
+                  <button onClick="{{ tl.pin }}" title="{{ tl.pinTitle }}" style="width: 26px; height: 26px; flex: none; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: {{ tl.pinFg }}; font-size: 11px;" style-hover="border-color: #818cf8;">⌾</button>
+                </div>
+                <sc-if value="{{ tl.hasFormats }}" hint-placeholder-val="{{ false }}">
+                  <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                    <sc-for list="{{ tl.formats }}" as="fm" hint-placeholder-count="4">
+                      <button onClick="{{ fm.act }}" style="padding: 6px 11px; border: 1px solid var(--line); border-radius: 9999px; background: var(--hover); color: var(--ink-2); font-family: 'JetBrains Mono', monospace; font-size: 10.5px; font-weight: 600;" style-hover="border-color: #818cf8; color: var(--ink);">{{ fm.label }}</button>
+                    </sc-for>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ tl.running }}" hint-placeholder-val="{{ false }}">
+                  <div style="display: flex; flex-direction: column; gap: 7px; padding: 11px; border-radius: 10px; background: var(--hover);">
+                    <sc-for list="{{ tl.steps }}" as="ts" hint-placeholder-count="3">
+                      <span style="display: flex; align-items: center; gap: 9px; font-size: 11.5px; color: {{ ts.fg }};">
+                        <span style="width: 15px; height: 15px; flex: none; border-radius: 5px; background: {{ ts.bg }}; color: {{ ts.markFg }}; font-size: 9px; font-weight: 700; display: flex; align-items: center; justify-content: center;">{{ ts.mark }}</span>{{ ts.text }}
+                      </span>
+                    </sc-for>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ tl.runnable }}" hint-placeholder-val="{{ true }}">
+                  <button onClick="{{ tl.run }}" style="padding: 9px; border: 1px solid rgba(129,140,248,.4); border-radius: 10px; background: rgba(99,102,241,.16); color: var(--accent-ink); font-size: 12px; font-weight: 600;" style-hover="background: rgba(99,102,241,.26);">Запустить</button>
+                </sc-if>
+              </div>
+            </sc-for>
+          </sc-if>
+
+          <sc-if value="{{ isAgentsTab }}" hint-placeholder-val="{{ false }}">
+            <div style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 11px; background: var(--hover); border: 1px solid var(--line);">
+              <span style="font-size: 11.5px; color: var(--ink-2);">Видно по роли:</span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600; color: var(--accent-ink-2);">{{ role }}</span>
+              <button onClick="{{ goCabinet }}" style="margin-left: auto; padding: 5px 10px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--ink-2); font-size: 11px;">сменить</button>
+            </div>
+
+            <sc-for list="{{ agents }}" as="ag" hint-placeholder-count="4">
+              <div style="padding: 14px; border-radius: 13px; background: var(--panel); border: 1px solid {{ ag.border }}; display: flex; flex-direction: column; gap: 10px; opacity: {{ ag.opacity }};">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  <dc-import name="Ape" state="{{ ag.ape }}" size="24" hint-size="24px,32px"></dc-import>
+                  <span style="flex: 1; display: flex; flex-direction: column; gap: 2px;">
+                    <span style="font-size: 13px; font-weight: 600;">{{ ag.title }}</span>
+                    <span style="font-size: 11.5px; line-height: 1.4; color: var(--ink-3);">{{ ag.note }}</span>
+                  </span>
+                  <sc-if value="{{ ag.locked }}" hint-placeholder-val="{{ false }}">
+                    <span title="{{ ag.lockHint }}" style="font-size: 14px; color: var(--warn-ink);">🔒</span>
+                  </sc-if>
+                </div>
+                <sc-if value="{{ ag.locked }}" hint-placeholder-val="{{ false }}">
+                  <span style="font-size: 11.5px; line-height: 1.45; color: var(--warn-ink);">{{ ag.lockHint }}</span>
+                </sc-if>
+                <sc-if value="{{ ag.allowed }}" hint-placeholder-val="{{ true }}">
+                  <div style="display: flex; gap: 7px;">
+                    <button onClick="{{ ag.run }}" style="flex: 1; padding: 9px; border: 1px solid rgba(129,140,248,.4); border-radius: 10px; background: rgba(99,102,241,.16); color: var(--accent-ink); font-size: 12px; font-weight: 600;" style-hover="background: rgba(99,102,241,.26);">Запустить</button>
+                    <button onClick="{{ ag.configure }}" style="flex: 1; padding: 9px; border: 1px solid var(--line-2); border-radius: 10px; background: transparent; color: var(--ink-2); font-size: 12px; font-weight: 600;" style-hover="color: var(--ink); border-color: #818cf8;">Настроить</button>
+                  </div>
+                </sc-if>
+              </div>
+            </sc-for>
+
+            <button onClick="{{ newAgent }}" style="padding: 11px; border: 1px dashed rgba(129,140,248,.5); border-radius: 12px; background: rgba(99,102,241,.08); color: var(--accent-ink-2); font-size: 12.5px; font-weight: 600;" style-hover="background: rgba(99,102,241,.18);">＋ Собрать нового агента</button>
+          </sc-if>
+        </div>
+      </div>
+    </sc-if>
+  </div>
+</div>
+
+<sc-if value="{{ overlayOpen }}" hint-placeholder-val="{{ false }}">
+  <div style="position: fixed; inset: 0; z-index: 90; display: flex; align-items: flex-start; justify-content: center; padding-top: 14vh;">
+    <div onClick="{{ closeOverlay }}" style="position: absolute; inset: 0; background: rgba(4,7,18,.6); backdrop-filter: blur(6px);"></div>
+    <div style="position: relative; width: 600px; max-width: 92vw; border-radius: 16px; background: var(--panel-2); border: 1px solid var(--line-2); box-shadow: 0 24px 70px rgba(0,0,0,.45); backdrop-filter: blur(20px); overflow: hidden; animation: ape-drop .28s ease-out;">
+      <div style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--line);">
+        <dc-import name="Ape" state="idle" size="24" hint-size="24px,32px"></dc-import>
+        <input value="{{ paletteQuery }}" onChange="{{ setPaletteQuery }}" onKeyDown="{{ paletteKey }}" placeholder="{{ palettePlaceholder }}" style="flex: 1; min-width: 0; padding: 8px 0; border: none; background: transparent; color: var(--ink); font-size: 15px; outline: none;">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--ink-3);">Esc</span>
+      </div>
+
+      <sc-if value="{{ isLauncher }}" hint-placeholder-val="{{ false }}">
+        <div style="padding: 12px 16px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 10px; background: rgba(99,102,241,.1);">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--ink-3);">выделенный текст</span>
+          <span style="flex: 1; font-size: 12px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ selectionText }}</span>
+        </div>
+      </sc-if>
+
+      <div style="max-height: 46vh; overflow-y: auto; padding: 8px;">
+        <sc-for list="{{ paletteItems }}" as="pi" hint-placeholder-count="5">
+          <button onClick="{{ pi.act }}" style="width: 100%; display: flex; align-items: center; gap: 12px; padding: 11px 12px; border: none; border-radius: 10px; background: {{ pi.bg }}; text-align: left;" style-hover="background: var(--hover);">
+            <span style="width: 26px; height: 26px; flex: none; border-radius: 8px; background: var(--hover); display: flex; align-items: center; justify-content: center; font-size: 13px;">{{ pi.glyph }}</span>
+            <span style="flex: 1; display: flex; flex-direction: column; gap: 2px;">
+              <span style="font-size: 13px; font-weight: 600; color: var(--ink);">{{ pi.label }}</span>
+              <span style="font-size: 11px; color: var(--ink-3);">{{ pi.note }}</span>
+            </span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--ink-3);">{{ pi.keys }}</span>
+          </button>
+        </sc-for>
+        <sc-if value="{{ noPaletteHits }}" hint-placeholder-val="{{ false }}">
+          <div style="padding: 26px; text-align: center; font-size: 12.5px; color: var(--ink-3);">Ничего не нашлось. Enter — отправить как запрос в чат.</div>
+        </sc-if>
+      </div>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ toastOn }}" hint-placeholder-val="{{ false }}">
+  <div style="position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); z-index: 95; display: flex; align-items: center; gap: 12px; padding: 12px 18px; border-radius: 9999px; background: rgba(19,28,51,.96); border: 1px solid var(--line-2); box-shadow: 0 16px 40px rgba(0,0,0,.4); animation: ape-in .25s ease-out;">
+    <dc-import name="Ape" state="{{ toastApe }}" size="22" hint-size="22px,29px"></dc-import>
+    <span style="font-size: 12.5px; color: #fff;">{{ toastText }}</span>
+    <sc-if value="{{ toastUndo }}" hint-placeholder-val="{{ false }}">
+      <button onClick="{{ undoToast }}" style="padding: 5px 11px; border: 1px solid rgba(255,255,255,.2); border-radius: 9999px; background: rgba(255,255,255,.08); color: #c7d2fe; font-size: 11.5px; font-weight: 600;">Отменить</button>
+    </sc-if>
+  </div>
+</sc-if>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:900}}">
+const TEMPLATES = [
+  { glyph: '✉', title: 'Письмо клиенту', note: 'Черновик по короткой вводной, тон на выбор', prompt: 'Напиши письмо клиенту: переносим срок поставки на две недели, нужно сохранить отношения.' },
+  { glyph: '▤', title: 'Саммари встречи', note: 'Из расшифровки — решения и задачи', prompt: 'Сделай саммари встречи: решения, ответственные, сроки.' },
+  { glyph: '★', title: 'Разбор отзывов', note: 'Кластеры боли и частота', prompt: 'Разбери отзывы клиентов за квартал: кластеры проблем и частота.' },
+  { glyph: '◈', title: 'Проверка идеи', note: 'Экономика, риски, что проверить первым', prompt: 'Оцени идею внутреннего маркетплейса подрядчиков: экономика и риски.' },
+  { glyph: '⇄', title: 'Сравнение вариантов', note: 'Таблица критериев и вывод', prompt: 'Сравни два варианта подрядчика по стоимости, срокам и рискам.' },
+  { glyph: '◷', title: 'План на неделю', note: 'Приоритеты из списка задач', prompt: 'Собери план на неделю из списка задач с приоритетами.' }
+];
+
+const ANSWERS = {
+  mail: {
+    blocks: [{ t: 'text', v: 'Собрал письмо в деловом тоне: признаём перенос, даём новую дату и компенсацию.\n\nТема: Перенос поставки на 2 недели\n\nДобрый день! Поставка сдвигается на 2 недели — подрядчик задержал комплектующие. Новая дата — 14 октября. Мы зафиксировали её договором и добавили приоритетную отгрузку без доплаты.\n\nГотовы обсудить детали на коротком созвоне.' }],
+    cites: [{ n: '1', title: 'Договор №4417', src: 'Рабочие источники · 1С' }, { n: '2', title: 'Переписка с подрядчиком', src: 'Почта' }],
+    cost: '0.31 ₽ · 940 токенов · 1.8 с'
+  },
+  data: {
+    blocks: [
+      { t: 'text', v: 'Разобрал выгрузку: 3 кластера проблем покрывают 71% обращений.\n\n1. Долгая доставка — 34%\n2. Ошибки в счетах — 22%\n3. Непонятный статус заказа — 15%\n\nПервым стоит закрывать статус заказа: дешевле всего и снимает часть звонков по доставке.' },
+      { t: 'code', lang: 'sql', v: 'SELECT cluster, count(*) AS n\nFROM feedback_2026\nGROUP BY cluster\nORDER BY n DESC;' }
+    ],
+    cites: [{ n: '1', title: 'feedback_2026', src: 'Рабочие источники · хранилище' }],
+    cost: '0.48 ₽ · 1 460 токенов · 2.4 с'
+  },
+  idea: {
+    blocks: [{ t: 'text', v: 'Коротко: экономика сходится при 40+ активных подрядчиках, до этого — дотация.\n\nЧто проверить первым:\n· реальную готовность подрядчиков работать через площадку\n· долю сделок, которые уйдут мимо площадки\n· стоимость поддержки одной сделки\n\nРиски: закупки продолжат вести договоры вручную — площадка станет витриной без транзакций.' }],
+    cites: [{ n: '1', title: 'Расходы на закупки, 2025', src: 'Рабочие источники · 1С' }],
+    cost: '0.52 ₽ · 1 610 токенов · 2.7 с'
+  },
+  generic: {
+    blocks: [{ t: 'text', v: 'Принял. Разложил задачу на шаги и собрал ответ по рабочим источникам — ниже выжимка и что стоит уточнить.\n\n· Что понятно: цель и ограничения\n· Что нужно от вас: приоритет между сроком и стоимостью\n· Что сделаю дальше: черновик и проверка по данным' }],
+    cites: [],
+    cost: '0.27 ₽ · 820 токенов · 1.5 с'
+  }
+};
+
+const TOOL_DEFS = [
+  { id: 'rag', glyph: '◆', title: 'RAG по вложениям', note: 'Поиск ответа в файлах треда со ссылками', steps: ['Индексирую вложения', 'Ищу релевантные фрагменты', 'Собираю ответ с цитатами'], done: 'RAG: проиндексировано 2 файла, найдено 6 фрагментов' },
+  { id: 'ocr', glyph: '⛶', title: 'OCR документа', note: 'Распознавание сканов и фото в текст', steps: ['Открываю файл', 'Распознаю страницы', 'Чищу текст'], done: 'OCR: распознано 4 страницы, текст добавлен в знания' },
+  { id: 'nlp', glyph: '⌥', title: 'NLP-разбор', note: 'Сущности, тональность, ключевые темы', steps: ['Разбираю текст', 'Извлекаю сущности', 'Считаю тональность'], done: 'NLP: 18 сущностей, тональность нейтральная' },
+  { id: 'export', glyph: '📥', title: 'Экспорт ответа', note: 'Сохранить в «Загрузки»', formats: ['md', 'pdf', 'docx', 'xlsx'] }
+];
+
+const AGENT_DEFS = [
+  { id: 'researcher', title: 'Ресёрчер', note: 'Собирает источники и выдержки по теме', roles: ['Менеджер', 'Аналитик', 'Админ'] },
+  { id: 'analyst', title: 'Аналитик', note: 'Считает по данным и сводит в таблицу', roles: ['Менеджер', 'Аналитик', 'Админ'] },
+  { id: 'critic', title: 'Критик', note: 'Ищет дыры в выводах и проверяет числа', roles: ['Менеджер', 'Аналитик', 'Админ'] },
+  { id: 'mailer', title: 'Оформитель писем', note: 'Готовит письмо наружу — уходит после вашего «ок»', roles: ['Менеджер', 'Аналитик', 'Админ'], egress: true },
+  { id: 'finmodel', title: 'Финмодель', note: 'NPV, TCO, окупаемость по вашим данным', roles: ['Аналитик', 'Админ'] },
+  { id: 'integrator', title: 'Интегратор ИС', note: 'Пишет в учётные системы', roles: ['Админ'] }
+];
+
+const ROLE_CAPS = {
+  'Менеджер': { can: ['Работать в чате и тредах', 'Запускать общие агенты и инструменты', 'Экспортировать результаты'], cant: ['Финмодель и запись в учётные системы'] },
+  'Аналитик': { can: ['Всё, что у менеджера', 'Финмодель и работа с хранилищем', 'Настройка агентов'], cant: ['Запись в учётные системы'] },
+  'Админ': { can: ['Все агенты и источники', 'Запись в учётные системы', 'Управление доступом'], cant: [] }
+};
+
+const ROLE_POOL = ['Ресёрчер', 'Аналитик', 'Критик', 'Оформитель'];
+const SKILL_POOL = ['RAG', 'Таблицы', 'Почта', 'OCR', 'Веб-поиск'];
+
+class Component extends DCLogic {
+  state = {
+    theme: 'dark',
+    module: 'chat',
+    threads: [
+      { id: 't1', title: 'Перенос поставки клиенту', folder: 'Закупки', fav: true, msgs: [], kb: [] },
+      { id: 't2', title: 'Отзывы за квартал', folder: 'Аналитика', fav: false, msgs: [], kb: [{ name: 'feedback_2026.csv', meta: '1.2 МБ' }] },
+      { id: 't3', title: 'Новый тред', folder: 'Без папки', fav: false, msgs: [], kb: [] }
+    ],
+    active: 't3',
+    search: '', draft: '', renaming: null, renameDraft: '',
+    thinking: false, streaming: false, streamBlocks: null, shown: 0, total: 0, pending: null,
+    drawer: null, drawerTab: 'tools', runningTool: null, toolStep: 0,
+    overlay: null, paletteQuery: '',
+    pinned: ['ocr', 'rag'],
+    skills: { deep: false, web: true },
+    profile: 'Менеджер', role: 'Менеджер',
+    persona: 'Пиши коротко и по делу. Числа — только из источников. Всегда предлагай следующий шаг.',
+    dragOver: false, offline: false, quota: 68, sessionCost: 2.14,
+    update: 'downloading', updatePct: 18, updateHidden: false,
+    toast: null,
+    agent: {
+      name: 'Разбор подрядчика',
+      skills: ['RAG', 'Таблицы'],
+      steps: ['Собрать данные о подрядчике из 1С и почты', 'Проверить риски по чек-листу', 'Свести вывод и рекомендацию'],
+      chain: ['Ресёрчер', 'Аналитик', 'Критик'],
+      dod: 'Есть вывод с числами из источников и явная рекомендация.',
+      anti: 'Не выдумывать суммы. Не отправлять письма без подтверждения.'
+    }
+  };
+
+  componentDidMount() {
+    document.body.dataset.apeTheme = this.state.theme;
+    this.updTimer = setInterval(() => {
+      const s = this.state;
+      if (s.update !== 'downloading') return;
+      const pct = s.updatePct + 6;
+      if (pct >= 100) this.setState({ updatePct: 100, update: 'ready' });
+      else this.setState({ updatePct: pct });
+    }, 900);
+
+    this.onKey = (e) => {
+      const k = (e.key || '').toLowerCase();
+      if ((e.metaKey || e.ctrlKey) && k === 'k') { e.preventDefault(); this.setState({ overlay: 'palette', paletteQuery: '' }); }
+      else if ((e.metaKey || e.ctrlKey) && (e.code === 'Space' || k === ' ')) { e.preventDefault(); this.setState({ overlay: 'launcher', paletteQuery: '' }); }
+      else if (k === 'escape') {
+        if (this.state.overlay) this.setState({ overlay: null });
+        else if (this.state.drawer) this.setState({ drawer: null });
+      }
+    };
+    document.addEventListener('keydown', this.onKey);
+  }
+
+  componentWillUnmount() {
+    clearInterval(this.updTimer); clearInterval(this.streamTimer);
+    clearTimeout(this.thinkTimer); clearTimeout(this.toastTimer); clearTimeout(this.toolTimer);
+    document.removeEventListener('keydown', this.onKey);
+  }
+
+  thread() { return this.state.threads.find(t => t.id === this.state.active) || this.state.threads[0]; }
+
+  patchThread(fn) {
+    this.setState(p => ({ threads: p.threads.map(t => t.id === p.active ? fn(Object.assign({}, t)) : t) }));
+  }
+
+  toast(text, ape, undo) {
+    clearTimeout(this.toastTimer);
+    this.setState({ toast: { text, ape: ape || 'done', undo: !!undo } });
+    this.toastTimer = setTimeout(() => this.setState({ toast: null }), 3200);
+  }
+
+  pickAnswer(prompt) {
+    const p = (prompt || '').toLowerCase();
+    if (p.indexOf('письм') >= 0 || p.indexOf('клиент') >= 0) return ANSWERS.mail;
+    if (p.indexOf('отзыв') >= 0 || p.indexOf('данн') >= 0 || p.indexOf('разбер') >= 0) return ANSWERS.data;
+    if (p.indexOf('иде') >= 0 || p.indexOf('оцен') >= 0) return ANSWERS.idea;
+    return ANSWERS.generic;
+  }
+
+  send(text) {
+    const body = (text || '').trim();
+    if (!body || this.state.streaming) return;
+    const th = this.thread();
+    const first = th.msgs.filter(m => m.role === 'user').length === 0;
+    const userMsg = { id: 'm' + Date.now(), role: 'user', blocks: [{ t: 'text', v: body }] };
+
+    if (this.state.offline) {
+      this.patchThread(t => {
+        t.msgs = t.msgs.concat([userMsg, { id: 'e' + Date.now(), role: 'error', text: 'Среда недоступна — ответ не получен.', prompt: body }]);
+        return t;
+      });
+      this.setState({ draft: '' });
+      return;
+    }
+
+    this.patchThread(t => {
+      t.msgs = t.msgs.concat([userMsg]);
+      if (first && (t.title === 'Новый тред' || !t.title)) t.title = body.length > 34 ? body.slice(0, 34) + '…' : body;
+      return t;
+    });
+    this.setState({ draft: '', thinking: true });
+    clearTimeout(this.thinkTimer);
+    this.thinkTimer = setTimeout(() => this.startStream(body), 750);
+  }
+
+  startStream(prompt) {
+    const ans = this.pickAnswer(prompt);
+    const total = ans.blocks.reduce((n, b) => n + b.v.length, 0);
+    this.setState({ thinking: false, streaming: true, pending: ans, shown: 0, total });
+    clearInterval(this.streamTimer);
+    this.streamTimer = setInterval(() => {
+      const s = this.state;
+      if (!s.streaming) { clearInterval(this.streamTimer); return; }
+      const next = s.shown + 9;
+      if (next >= s.total) { clearInterval(this.streamTimer); this.finishStream(); }
+      else this.setState({ shown: next });
+    }, 24);
+  }
+
+  finishStream(partial) {
+    const ans = this.state.pending;
+    if (!ans) { this.setState({ streaming: false }); return; }
+    const blocks = partial ? this.slice(ans.blocks, this.state.shown) : ans.blocks;
+    const msg = {
+      id: 'a' + Date.now(), role: 'assistant', blocks: blocks,
+      cites: ans.cites || [], cost: partial ? 'остановлено пользователем' : ans.cost
+    };
+    this.patchThread(t => { t.msgs = t.msgs.concat([msg]); return t; });
+    this.setState({ streaming: false, pending: null, shown: 0, total: 0 });
+  }
+
+  slice(blocks, shown) {
+    let left = shown;
+    const out = [];
+    blocks.forEach(b => {
+      if (left <= 0) return;
+      const take = Math.min(left, b.v.length);
+      out.push({ t: b.t, lang: b.lang, v: b.v.slice(0, take) });
+      left -= take;
+    });
+    return out.length ? out : [{ t: 'text', v: '' }];
+  }
+
+  runTool(id) {
+    const def = TOOL_DEFS.find(t => t.id === id);
+    if (!def || !def.steps) return;
+    clearTimeout(this.toolTimer);
+    this.setState({ runningTool: id, toolStep: 0 });
+    const tick = () => {
+      const n = this.state.toolStep + 1;
+      if (n <= def.steps.length) {
+        this.setState({ toolStep: n });
+        this.toolTimer = setTimeout(tick, 620);
+      } else {
+        this.setState({ runningTool: null, toolStep: 0 });
+        this.patchThread(t => {
+          t.msgs = t.msgs.concat([{ id: 's' + Date.now(), role: 'assistant', blocks: [{ t: 'text', v: def.done }], cites: [], cost: 'инструмент · 0.06 ₽' }]);
+          return t;
+        });
+        this.toast(def.done, 'done');
+      }
+    };
+    this.toolTimer = setTimeout(tick, 500);
+  }
+
+  runAgent(title) {
+    const steps = [
+      { text: 'Собираю контекст из знаний треда', st: 'done' },
+      { text: 'Проверяю числа по рабочим источникам', st: 'done' },
+      { text: 'Готовлю письмо наружу', st: 'ask' }
+    ];
+    const msg = { id: 'r' + Date.now(), role: 'agent', title: title, meta: 'цепочка из 3 ролей', steps: steps, awaiting: true, reviewable: false };
+    this.patchThread(t => { t.msgs = t.msgs.concat([msg]); return t; });
+    this.setState({ drawer: null, module: 'chat' });
+  }
+
+  resolveAgent(id, ok) {
+    this.patchThread(t => {
+      t.msgs = t.msgs.map(m => {
+        if (m.id !== id) return m;
+        const next = Object.assign({}, m);
+        next.awaiting = false;
+        next.steps = m.steps.map(s => Object.assign({}, s, { st: s.st === 'ask' ? (ok ? 'done' : 'stop') : s.st }));
+        next.reviewable = ok;
+        if (!ok) next.meta = 'отклонено — наружу ничего не ушло';
+        return next;
+      });
+      return t;
+    });
+    this.toast(ok ? 'Разрешено — действие выполнено и записано в аудит' : 'Отклонено — письмо не отправлено', ok ? 'done' : 'stop');
+  }
+
+  renderVals() {
+    const s = this.state;
+    const th = this.thread();
+    const q = s.search.trim().toLowerCase();
+    const visible = s.threads.filter(t => !q || t.title.toLowerCase().indexOf(q) >= 0);
+    const busy = s.streaming || s.thinking;
+    const lastMsg = th.msgs[th.msgs.length - 1];
+
+    const folders = [];
+    visible.filter(t => t.fav).length && folders.push({ folder: 'Избранное', items: visible.filter(t => t.fav) });
+    ['Закупки', 'Аналитика', 'Без папки'].forEach(f => {
+      const items = visible.filter(t => t.folder === f && !t.fav);
+      if (items.length) folders.push({ folder: f, items });
+    });
+
+    const mkActions = (m) => {
+      const base = [{ label: '⧉ копировать', title: 'Скопировать текст', act: () => { try { navigator.clipboard.writeText(m.blocks.map(b => b.v).join('\n\n')); } catch (e) {} this.toast('Скопировано в буфер', 'done'); } }];
+      if (m.role === 'assistant') base.push({ label: '↻ ещё раз', title: 'Сгенерировать заново', act: () => {
+        const idx = th.msgs.findIndex(x => x.id === m.id);
+        const prev = th.msgs[idx - 1];
+        this.patchThread(t => { t.msgs = t.msgs.filter(x => x.id !== m.id); return t; });
+        this.setState({ thinking: true });
+        clearTimeout(this.thinkTimer);
+        this.thinkTimer = setTimeout(() => this.startStream(prev ? prev.blocks[0].v : ''), 600);
+      } });
+      if (m.role === 'user') base.push({ label: '✎ изменить', title: 'Изменить и отправить заново', act: () => {
+        const idx = th.msgs.findIndex(x => x.id === m.id);
+        this.patchThread(t => { t.msgs = t.msgs.slice(0, idx); return t; });
+        this.setState({ draft: m.blocks[0].v });
+      } });
+      return base;
+    };
+
+    return {
+      version: 'v0.9.3',
+      themeGlyph: s.theme === 'dark' ? '☀' : '☾',
+      themeTitle: s.theme === 'dark' ? 'Светлая тема' : 'Тёмная тема',
+      toggleTheme: () => {
+        const next = s.theme === 'dark' ? 'light' : 'dark';
+        document.body.dataset.apeTheme = next;
+        this.setState({ theme: next });
+      },
+      sessionCost: s.sessionCost.toFixed(2),
+      quotaLeft: String(s.quota),
+      quotaFg: s.quota < 15 ? 'var(--danger-ink)' : 'var(--ink-2)',
+
+      updateVisible: !s.updateHidden && s.update !== 'none',
+      updateDownloading: s.update === 'downloading',
+      updateReady: s.update === 'ready',
+      updateApe: s.update === 'ready' ? 'done' : 'scan',
+      updatePct: s.updatePct,
+      updateText: s.update === 'ready' ? 'Обновление 0.9.4 готово к установке' : 'Скачиваю обновление 0.9.4 — ' + s.updatePct + '%',
+      applyUpdate: () => { this.setState({ update: 'none' }); this.toast('APE перезапустится и обновится', 'done'); },
+      dismissUpdate: () => this.setState({ updateHidden: true }),
+
+      offline: s.offline,
+      goOnline: () => { this.setState({ offline: false }); this.toast('Соединение восстановлено', 'done'); },
+
+      modules: [
+        { id: 'chat', glyph: '✦', label: 'Чат', title: 'Чат и треды' },
+        { id: 'builder', glyph: '⎔', label: 'Агент', title: 'Конструктор агента' },
+        { id: 'cabinet', glyph: '◉', label: 'Кабинет', title: 'Расход, доступы, источники' }
+      ].map(m => ({
+        glyph: m.glyph, label: m.label, title: m.title,
+        go: () => this.setState({ module: m.id }),
+        bg: s.module === m.id ? 'rgba(99,102,241,.2)' : 'transparent',
+        border: s.module === m.id ? 'rgba(129,140,248,.45)' : 'transparent',
+        fg: s.module === m.id ? 'var(--ink)' : 'var(--ink-3)'
+      })),
+
+      pinnedSlots: (() => {
+        const out = s.pinned.map(id => {
+          const d = TOOL_DEFS.find(t => t.id === id) || { glyph: '◆', title: id };
+          return {
+            glyph: d.glyph, title: d.title + ' — запустить', filled: true, dash: 'solid',
+            border: 'var(--line)', bg: 'var(--panel)', fg: 'var(--ink-2)',
+            act: () => { this.setState({ drawer: 'open', drawerTab: 'tools' }); this.runTool(id); },
+            unpin: (e) => { e.stopPropagation(); this.setState({ pinned: s.pinned.filter(x => x !== id) }); this.toast('Открепил «' + d.title + '»', 'idle'); }
+          };
+        });
+        while (out.length < 4) out.push({
+          glyph: '＋', title: 'Пустой слот — закрепите инструмент из шторки', filled: false, dash: 'dashed',
+          border: 'var(--line-2)', bg: 'transparent', fg: 'var(--ink-3)',
+          act: () => this.setState({ drawer: 'open', drawerTab: 'tools' }), unpin: () => {}
+        });
+        return out.slice(0, 4);
+      })(),
+
+      isChat: s.module === 'chat', isCabinet: s.module === 'cabinet', isBuilder: s.module === 'builder',
+
+      search: s.search, setSearch: (e) => this.setState({ search: e.target.value }),
+      noThreadHits: !!q && visible.length === 0,
+      newThread: () => {
+        const id = 'n' + Date.now();
+        this.setState(p => ({ threads: p.threads.concat([{ id, title: 'Новый тред', folder: 'Без папки', fav: false, msgs: [], kb: [] }]), active: id, module: 'chat' }));
+      },
+      threadGroups: folders.map(g => ({
+        folder: g.folder,
+        items: g.items.map(t => ({
+          title: t.title, meta: t.msgs.length ? (t.msgs.length + ' сообщений') : 'пусто',
+          renaming: s.renaming === t.id, normal: s.renaming !== t.id,
+          draftTitle: s.renameDraft,
+          bg: t.id === s.active ? 'rgba(99,102,241,.16)' : 'transparent',
+          border: t.id === s.active ? 'rgba(129,140,248,.4)' : 'transparent',
+          fg: t.id === s.active ? 'var(--ink)' : 'var(--ink-2)',
+          starFg: t.fav ? 'var(--warn-ink)' : 'var(--ink-3)',
+          open: () => this.setState({ active: t.id, module: 'chat' }),
+          rename: () => this.setState({ renaming: t.id, renameDraft: t.title }),
+          setTitle: (e) => this.setState({ renameDraft: e.target.value }),
+          commit: () => {
+            const v = s.renameDraft.trim();
+            this.setState(p => ({ threads: p.threads.map(x => x.id === t.id && v ? Object.assign({}, x, { title: v }) : x), renaming: null }));
+          },
+          keyCommit: (e) => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') this.setState({ renaming: null }); },
+          fav: () => this.setState(p => ({ threads: p.threads.map(x => x.id === t.id ? Object.assign({}, x, { fav: !x.fav }) : x) })),
+          remove: () => {
+            const rest = s.threads.filter(x => x.id !== t.id);
+            this.setState({ threads: rest.length ? rest : [{ id: 'n0', title: 'Новый тред', folder: 'Без папки', fav: false, msgs: [], kb: [] }], active: (rest[0] || { id: 'n0' }).id });
+            this.toast('Тред «' + t.title + '» удалён', 'stop');
+          }
+        }))
+      })),
+
+      isEmptyThread: th.msgs.length === 0 && !busy,
+      templates: TEMPLATES.map(t => ({ glyph: t.glyph, title: t.title, note: t.note, use: () => this.send(t.prompt) })),
+      onboarding: [
+        { mark: '✓', text: 'вход через GitHub', bg: 'rgba(16,185,129,.2)', fg: 'var(--ok-ink)' },
+        { mark: '2', text: 'возьмите шаблон', bg: 'rgba(99,102,241,.2)', fg: 'var(--accent-ink-2)' },
+        { mark: '3', text: 'перетащите файл', bg: 'rgba(255,255,255,.08)', fg: 'var(--ink-3)' }
+      ],
+
+      messages: th.msgs.map(m => {
+        const user = m.role === 'user';
+        return {
+          isBubble: m.role === 'user' || m.role === 'assistant',
+          isAgentRun: m.role === 'agent', isError: m.role === 'error',
+          align: user ? 'flex-end' : 'flex-start',
+          maxW: user ? '76%' : '88%',
+          radius: user ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+          bg: user ? 'rgba(99,102,241,.16)' : 'var(--panel)',
+          border: user ? 'rgba(129,140,248,.32)' : 'var(--line)',
+          blocks: (m.blocks || []).map(b => ({
+            isText: b.t === 'text', isCode: b.t === 'code', text: b.v, lang: b.lang || 'code',
+            copy: () => { try { navigator.clipboard.writeText(b.v); } catch (e) {} this.toast('Код скопирован', 'done'); }
+          })),
+          hasCites: !!(m.cites && m.cites.length),
+          cites: (m.cites || []).map(c => ({ n: c.n, title: c.title, src: c.src, open: () => this.toast('Источник: ' + c.src, 'idle') })),
+          hasCost: !!m.cost, cost: m.cost,
+          actions: m.blocks ? mkActions(m) : [],
+          text: m.text,
+          retry: () => { this.setState({ offline: false }); this.send(m.prompt); },
+          title: m.title, meta: m.meta, ape: m.awaiting ? 'hitl' : (m.reviewable ? 'done' : 'thinking'),
+          askText: 'Агент просит разрешение отправить письмо наружу',
+          awaiting: !!m.awaiting, reviewable: !!m.reviewable,
+          steps: (m.steps || []).map(st => ({
+            text: st.text,
+            mark: st.st === 'done' ? '✓' : st.st === 'stop' ? '✕' : '…',
+            bg: st.st === 'done' ? 'rgba(16,185,129,.2)' : st.st === 'stop' ? 'rgba(239,68,68,.18)' : 'rgba(245,158,11,.2)',
+            fg: st.st === 'done' ? 'var(--ok-ink)' : st.st === 'stop' ? 'var(--danger-ink)' : 'var(--warn-ink)',
+            textFg: st.st === 'stop' ? 'var(--ink-3)' : 'var(--ink-2)'
+          })),
+          approve: () => this.resolveAgent(m.id, true),
+          deny: () => this.resolveAgent(m.id, false),
+          accept: () => { this.resolveAgentAccept = 1; this.patchThread(t => { t.msgs = t.msgs.map(x => x.id === m.id ? Object.assign({}, x, { reviewable: false, meta: 'принято в тред' }) : x); return t; }); this.toast('Результат принят в тред', 'done'); },
+          reject: () => { this.patchThread(t => { t.msgs = t.msgs.map(x => x.id === m.id ? Object.assign({}, x, { reviewable: false, meta: 'результат отклонён' }) : x); return t; }); this.toast('Результат отклонён', 'stop'); }
+        };
+      }),
+
+      thinking: s.thinking, streaming: s.streaming,
+      streamBlocks: s.streaming && s.pending ? this.slice(s.pending.blocks, s.shown).map(b => ({ isText: b.t === 'text', isCode: b.t === 'code', text: b.v })) : [],
+      showFollowups: !busy && !!lastMsg && lastMsg.role === 'assistant',
+      followups: [
+        { label: 'короче', act: () => this.send('Сократи вдвое, оставь только выводы.') },
+        { label: 'в таблицу', act: () => this.send('Переложи это в таблицу с критериями.') },
+        { label: 'уточнить риски', act: () => this.send('Разверни риски: вероятность и что делать.') }
+      ],
+
+      hasKb: th.kb.length > 0,
+      kb: th.kb.map((f, i) => ({
+        name: f.name, meta: f.meta,
+        remove: () => this.patchThread(t => { t.kb = t.kb.filter((x, j) => j !== i); return t; })
+      })),
+
+      draft: s.draft, setDraft: (e) => this.setState({ draft: e.target.value }),
+      placeholder: s.offline ? 'Оффлайн — черновик сохранится локально' : 'Опишите задачу. Enter — отправить, Shift+Enter — перенос',
+      composerKey: (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this.send(this.state.draft); } },
+      sendDraft: () => this.send(this.state.draft),
+      stopStream: () => { clearInterval(this.streamTimer); clearTimeout(this.thinkTimer); this.setState({ thinking: false }); this.finishStream(true); this.toast('Остановлено', 'stop'); },
+      busy: busy, idle: !busy,
+
+      profile: s.profile, profiles: ['Менеджер', 'Аналитик', 'Инженер'],
+      setProfile: (e) => this.setState({ profile: e.target.value }),
+      skillChips: [
+        { id: 'deep', label: '🧠 думать глубже', title: 'Больше рассуждений, дольше ответ' },
+        { id: 'web', label: '🌐 веб-поиск', title: 'Искать во внешних источниках' }
+      ].map(k => ({
+        label: k.label, title: k.title,
+        toggle: () => this.setState({ skills: Object.assign({}, s.skills, { [k.id]: !s.skills[k.id] }) }),
+        bg: s.skills[k.id] ? 'rgba(99,102,241,.2)' : 'transparent',
+        border: s.skills[k.id] ? 'rgba(129,140,248,.45)' : 'var(--line)',
+        fg: s.skills[k.id] ? 'var(--ink)' : 'var(--ink-3)'
+      })),
+      attachFile: () => {
+        this.patchThread(t => { t.kb = t.kb.concat([{ name: 'договор-4417.pdf', meta: '340 КБ' }]); return t; });
+        this.toast('Файл добавлен в знания треда', 'scan');
+      },
+      openAgents: () => this.setState({ drawer: 'open', drawerTab: 'agents' }),
+      openExport: () => this.setState({ drawer: 'open', drawerTab: 'tools' }),
+
+      onDragOver: (e) => { e.preventDefault(); if (!s.dragOver) this.setState({ dragOver: true }); },
+      onDragLeave: () => this.setState({ dragOver: false }),
+      onDrop: (e) => {
+        e.preventDefault();
+        this.setState({ dragOver: false });
+        this.patchThread(t => { t.kb = t.kb.concat([{ name: 'отчёт-сентябрь.xlsx', meta: '2.1 МБ' }]); return t; });
+        this.toast('Файл добавлен в знания треда', 'scan');
+      },
+      dragOver: s.dragOver,
+
+      drawerOpen: !!s.drawer,
+      closeDrawer: () => this.setState({ drawer: null }),
+      drawerTabs: [{ id: 'tools', label: 'Инструменты' }, { id: 'agents', label: 'Каталог агентов' }].map(t => ({
+        label: t.label, go: () => this.setState({ drawerTab: t.id }),
+        bg: s.drawerTab === t.id ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : 'transparent',
+        fg: s.drawerTab === t.id ? '#fff' : 'var(--ink-2)'
+      })),
+      isToolsTab: s.drawerTab === 'tools', isAgentsTab: s.drawerTab === 'agents',
+      tools: TOOL_DEFS.map(t => ({
+        glyph: t.glyph, title: t.title, note: t.note,
+        hasFormats: !!t.formats,
+        formats: (t.formats || []).map(f => ({ label: f, act: () => this.toast('Сохранено в «Загрузки»: ответ.' + f, 'done') })),
+        runnable: !!t.steps && s.runningTool !== t.id,
+        running: s.runningTool === t.id,
+        steps: (t.steps || []).map((x, i) => ({
+          text: x,
+          mark: i < s.toolStep ? '✓' : '…',
+          bg: i < s.toolStep ? 'rgba(16,185,129,.2)' : 'rgba(255,255,255,.08)',
+          markFg: i < s.toolStep ? 'var(--ok-ink)' : 'var(--ink-3)',
+          fg: i < s.toolStep ? 'var(--ink-2)' : 'var(--ink-3)'
+        })),
+        run: () => this.runTool(t.id),
+        pinTitle: s.pinned.indexOf(t.id) >= 0 ? 'Открепить из рейла' : 'Закрепить в левом рейле',
+        pinFg: s.pinned.indexOf(t.id) >= 0 ? 'var(--accent-ink-2)' : 'var(--ink-3)',
+        pin: () => {
+          const on = s.pinned.indexOf(t.id) >= 0;
+          this.setState({ pinned: on ? s.pinned.filter(x => x !== t.id) : s.pinned.concat([t.id]).slice(0, 4) });
+          this.toast(on ? 'Открепил «' + t.title + '»' : 'Закрепил «' + t.title + '» в рейле', 'idle');
+        }
+      })),
+      role: s.role,
+      goCabinet: () => this.setState({ module: 'cabinet', drawer: null }),
+      agents: AGENT_DEFS.map(a => {
+        const allowed = a.roles.indexOf(s.role) >= 0;
+        return {
+          title: a.title, note: a.note, ape: a.egress ? 'hitl' : 'idle',
+          allowed, locked: !allowed, opacity: allowed ? 1 : .72,
+          border: allowed ? 'var(--line)' : 'rgba(245,158,11,.3)',
+          lockHint: 'Недоступно для роли «' + s.role + '». Нужна роль: ' + a.roles.join(' или ') + '.',
+          run: () => this.runAgent(a.title),
+          configure: () => this.setState({ module: 'builder', drawer: null, agent: Object.assign({}, s.agent, { name: a.title }) })
+        };
+      }),
+      newAgent: () => this.setState({ module: 'builder', drawer: null, agent: { name: 'Новый агент', skills: [], steps: ['Первый шаг'], chain: ['Ресёрчер'], dod: '', anti: '' } }),
+
+      spendKpis: [
+        { label: 'сессия', value: s.sessionCost.toFixed(2) + ' ₽', note: 'текущий диалог', fg: 'var(--ink)' },
+        { label: 'за месяц', value: '412 ₽', note: 'из лимита 600 ₽', fg: 'var(--ink)' },
+        { label: 'токены', value: '1.8 М', note: 'входящие + исходящие', fg: 'var(--accent-ink-2)' },
+        { label: 'остаток квоты', value: s.quota + '%', note: s.quota < 15 ? 'скоро закончится' : 'обновится 1 октября', fg: s.quota < 15 ? 'var(--danger-ink)' : 'var(--ok-ink)' }
+      ],
+      spendBars: [12, 28, 19, 44, 36, 52, 31].map((v, i) => ({ h: 14 + v, day: ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'][i], title: v + ' ₽' })),
+      roleOptions: ['Менеджер', 'Аналитик', 'Админ'].map(r => ({
+        label: r, pick: () => { this.setState({ role: r }); this.toast('Роль: ' + r + ' — каталог агентов обновлён', 'idle'); },
+        bg: s.role === r ? 'rgba(99,102,241,.2)' : 'transparent',
+        border: s.role === r ? 'rgba(129,140,248,.45)' : 'var(--line)',
+        fg: s.role === r ? 'var(--ink)' : 'var(--ink-2)'
+      })),
+      roleCaps: (ROLE_CAPS[s.role].can.map(t => ({ text: t, mark: '✓', fg: 'var(--ok-ink)' }))).concat(ROLE_CAPS[s.role].cant.map(t => ({ text: t, mark: '✕', fg: 'var(--danger-ink)' }))),
+      sources: [
+        { glyph: '▦', title: 'Office 365', note: 'Word, Excel, Outlook — надстройка активна', on: true },
+        { glyph: '⛁', title: '1С: учёт', note: 'чтение справочников и документов', on: true },
+        { glyph: '◵', title: 'Хранилище отчётов', note: 'подключение по правам пользователя', on: false },
+        { glyph: '⎘', title: 'Последние файлы', note: '12 документов за неделю', on: true }
+      ].map(x => ({
+        glyph: x.glyph, title: x.title, note: x.note,
+        btnLabel: x.on ? 'Подключено' : 'Подключить',
+        btnBg: x.on ? 'rgba(16,185,129,.14)' : 'transparent',
+        btnBorder: x.on ? 'rgba(16,185,129,.3)' : 'var(--line-2)',
+        btnFg: x.on ? 'var(--ok-ink)' : 'var(--ink-2)',
+        act: () => this.toast(x.on ? x.title + ': источник уже подключён' : x.title + ': запрошен доступ', x.on ? 'done' : 'scan')
+      })),
+      persona: s.persona, setPersona: (e) => this.setState({ persona: e.target.value }),
+      shortcuts: [
+        { keys: 'Ctrl K', text: 'командная палитра' },
+        { keys: 'Ctrl Space', text: 'глобальный лаунчер поверх окон' },
+        { keys: 'Enter', text: 'отправить сообщение' },
+        { keys: 'Esc', text: 'закрыть шторку или оверлей' }
+      ],
+      demoStates: [
+        { label: 'Оффлайн', act: () => { this.setState({ offline: true, module: 'chat' }); } },
+        { label: 'Квота почти исчерпана', act: () => { this.setState({ quota: 7 }); this.toast('Квота 7% — включён экономный режим', 'hitl'); } },
+        { label: 'Обновление готово', act: () => this.setState({ update: 'ready', updatePct: 100, updateHidden: false }) },
+        { label: 'Сбросить', act: () => { this.setState({ offline: false, quota: 68, update: 'downloading', updatePct: 18, updateHidden: false }); this.toast('Состояния сброшены', 'idle'); } }
+      ],
+
+      agentName: s.agent.name, setAgentName: (e) => this.setState({ agent: Object.assign({}, s.agent, { name: e.target.value }) }),
+      agentSkills: SKILL_POOL.map(k => {
+        const on = s.agent.skills.indexOf(k) >= 0;
+        return {
+          label: k, bg: on ? 'rgba(99,102,241,.2)' : 'transparent',
+          border: on ? 'rgba(129,140,248,.45)' : 'var(--line)', fg: on ? 'var(--ink)' : 'var(--ink-3)',
+          toggle: () => this.setState({ agent: Object.assign({}, s.agent, { skills: on ? s.agent.skills.filter(x => x !== k) : s.agent.skills.concat([k]) }) })
+        };
+      }),
+      agentSteps: s.agent.steps.map((x, i) => ({
+        n: String(i + 1), text: x,
+        set: (e) => { const arr = s.agent.steps.slice(); arr[i] = e.target.value; this.setState({ agent: Object.assign({}, s.agent, { steps: arr }) }); },
+        up: () => { if (!i) return; const arr = s.agent.steps.slice(); const t = arr[i - 1]; arr[i - 1] = arr[i]; arr[i] = t; this.setState({ agent: Object.assign({}, s.agent, { steps: arr }) }); },
+        down: () => { if (i === s.agent.steps.length - 1) return; const arr = s.agent.steps.slice(); const t = arr[i + 1]; arr[i + 1] = arr[i]; arr[i] = t; this.setState({ agent: Object.assign({}, s.agent, { steps: arr }) }); },
+        remove: () => this.setState({ agent: Object.assign({}, s.agent, { steps: s.agent.steps.filter((y, j) => j !== i) }) })
+      })),
+      addStep: () => this.setState({ agent: Object.assign({}, s.agent, { steps: s.agent.steps.concat(['Новый шаг']) }) }),
+      chain: s.agent.chain.map((r, i) => ({
+        role: r, arrow: i < s.agent.chain.length - 1,
+        left: () => { if (!i) return; const arr = s.agent.chain.slice(); const t = arr[i - 1]; arr[i - 1] = arr[i]; arr[i] = t; this.setState({ agent: Object.assign({}, s.agent, { chain: arr }) }); },
+        right: () => { if (i === s.agent.chain.length - 1) return; const arr = s.agent.chain.slice(); const t = arr[i + 1]; arr[i + 1] = arr[i]; arr[i] = t; this.setState({ agent: Object.assign({}, s.agent, { chain: arr }) }); },
+        remove: () => this.setState({ agent: Object.assign({}, s.agent, { chain: s.agent.chain.filter((y, j) => j !== i) }) })
+      })),
+      rolePool: ROLE_POOL.map(r => ({ label: r, add: () => this.setState({ agent: Object.assign({}, s.agent, { chain: s.agent.chain.concat([r]) }) }) })),
+      agentDod: s.agent.dod, setDod: (e) => this.setState({ agent: Object.assign({}, s.agent, { dod: e.target.value }) }),
+      agentAnti: s.agent.anti, setAnti: (e) => this.setState({ agent: Object.assign({}, s.agent, { anti: e.target.value }) }),
+      previewSummary: s.agent.chain.join(' → ') + ' — ' + s.agent.steps.length + ' шагов, ' + (s.agent.skills.length || 'нет') + ' скиллов.',
+      previewRows: [
+        { label: 'скиллы', value: s.agent.skills.length ? s.agent.skills.join(', ') : 'не выбраны' },
+        { label: 'шаги', value: String(s.agent.steps.length) },
+        { label: 'DoD', value: s.agent.dod || 'не задан' },
+        { label: 'анти', value: s.agent.anti || 'не заданы' }
+      ],
+      previewAgent: () => this.toast('Предпросмотр: ' + s.agent.chain.join(' → '), 'idle'),
+      saveAgent: () => this.toast('Агент «' + s.agent.name + '» сохранён в каталог', 'done', true),
+      runBuilt: () => this.runAgent(s.agent.name),
+
+      overlayOpen: !!s.overlay, isLauncher: s.overlay === 'launcher',
+      closeOverlay: () => this.setState({ overlay: null }),
+      openPalette: () => this.setState({ overlay: 'palette', paletteQuery: '' }),
+      toggleLauncher: () => this.setState({ overlay: s.overlay === 'launcher' ? null : 'launcher', paletteQuery: '' }),
+      palettePlaceholder: s.overlay === 'launcher' ? 'Что сделать с выделенным текстом?' : 'Команда, тред или вопрос',
+      selectionText: '«Поставка сдвигается на две недели из-за подрядчика…»',
+      paletteQuery: s.paletteQuery, setPaletteQuery: (e) => this.setState({ paletteQuery: e.target.value }),
+      paletteKey: (e) => {
+        if (e.key === 'Enter') {
+          const list = this.paletteList();
+          if (list.length) list[0].act();
+          else { this.setState({ overlay: null, module: 'chat' }); this.send(s.paletteQuery); }
+        }
+      },
+      paletteItems: this.paletteList(),
+      noPaletteHits: this.paletteList().length === 0,
+
+      toastOn: !!s.toast,
+      toastText: s.toast ? s.toast.text : '',
+      toastApe: s.toast ? s.toast.ape : 'idle',
+      toastUndo: !!(s.toast && s.toast.undo),
+      undoToast: () => { this.setState({ toast: null }); this.toast('Действие отменено', 'idle'); }
+    };
+  }
+
+  paletteList() {
+    const s = this.state;
+    const q = s.paletteQuery.trim().toLowerCase();
+    const all = [
+      { glyph: '＋', label: 'Новый тред', note: 'начать с чистого листа', keys: 'Ctrl N', act: () => { const id = 'n' + Date.now(); this.setState(p => ({ threads: p.threads.concat([{ id, title: 'Новый тред', folder: 'Без папки', fav: false, msgs: [], kb: [] }]), active: id, module: 'chat', overlay: null })); } },
+      { glyph: '🕸', label: 'Каталог агентов', note: 'запустить или настроить агента', keys: '', act: () => this.setState({ drawer: 'open', drawerTab: 'agents', overlay: null, module: 'chat' }) },
+      { glyph: '⛶', label: 'Распознать документ (OCR)', note: 'инструмент в правой шторке', keys: '', act: () => { this.setState({ drawer: 'open', drawerTab: 'tools', overlay: null, module: 'chat' }); this.runTool('ocr'); } },
+      { glyph: '📥', label: 'Экспорт ответа', note: 'md · pdf · docx · xlsx', keys: '', act: () => this.setState({ drawer: 'open', drawerTab: 'tools', overlay: null, module: 'chat' }) },
+      { glyph: '⎔', label: 'Конструктор агента', note: 'шаги, DoD, цепочка ролей', keys: '', act: () => this.setState({ module: 'builder', overlay: null }) },
+      { glyph: '◉', label: 'Кабинет и расход', note: 'квота, RBAC, источники', keys: '', act: () => this.setState({ module: 'cabinet', overlay: null }) },
+      { glyph: '☾', label: 'Переключить тему', note: 'светлая ↔ тёмная', keys: '', act: () => { const next = s.theme === 'dark' ? 'light' : 'dark'; document.body.dataset.apeTheme = next; this.setState({ theme: next, overlay: null }); } },
+      { glyph: '✎', label: 'Переписать выделенное', note: 'короче и деловым тоном', keys: '', act: () => { this.setState({ overlay: null, module: 'chat' }); this.send('Перепиши короче и деловым тоном: перенос поставки на две недели.'); } }
+    ];
+    const hits = all.filter(i => !q || i.label.toLowerCase().indexOf(q) >= 0 || i.note.toLowerCase().indexOf(q) >= 0);
+    return hits.map((i, idx) => ({ glyph: i.glyph, label: i.label, note: i.note, keys: i.keys, act: i.act, bg: idx === 0 && q ? 'var(--hover)' : 'transparent' }));
+  }
+}
+</script>
+</body>
+</html>
