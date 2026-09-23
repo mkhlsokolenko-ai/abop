@@ -8,9 +8,11 @@ const http = require("http");
 const fs = require("fs");
 const os = require("os");
 
-// Удалённый UI: если задан APE_UI_URL — грузим фронт с сервера (правки без релиза),
-// с фоллбеком на локальную копию из asar (офлайн/недоступность). Пусто → всегда локально.
-const REMOTE_UI = process.env.APE_UI_URL || "";
+// Удалённый UI (путь А): по умолчанию грузим фронт десктопа с сервера ABOP — правки чат-панели/UI
+// прилетают через git-deploy БЕЗ пересборки .exe. Фолбэк на локальную копию из asar (офлайн/сбой сети).
+// Переопределить/выключить: APE_UI_URL="" → всегда локально; APE_UI_URL=<url> → свой хост.
+const ABOP_BASE = process.env.ABOP_BASE_URL || "http://5.129.192.63:8091";
+const REMOTE_UI = ("APE_UI_URL" in process.env) ? process.env.APE_UI_URL : (ABOP_BASE.replace(/\/$/, "") + "/desktop-ui/");
 
 let sidecar = null;
 let win = null;
@@ -159,22 +161,30 @@ ipcMain.handle("export:pdf", async (_e, { html, filename }) => {
 // Глобальный хоткей Ctrl+Shift+A: берём выделенный текст (через буфер обмена) из ЛЮБОГО
 // приложения — Word/Excel/браузер/PDF — и отправляем в чат ABOP на анализ. Один шаг для пользователя.
 function registerHotkey() {
-  const grab = () => {
-    // читаем текущее выделение: сохраняем буфер, шлём Ctrl+C активному окну, читаем, восстанавливаем
-    const saved = clipboard.readText();
+  const { execSync } = require("child_process");
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  // Грабим выделение НАДЁЖНО: (1) ЧИСТИМ буфер (маркер) — тогда любое непустое значение = свежая копия,
+  // и исчезает баг «вернули старую ссылку из буфера»; (2) шлём Ctrl+C активному окну (Word/Excel — оно
+  // ещё в фокусе, своё окно фокусим ПОСЛЕ); (3) ПОЛЛИМ буфер до ~900мс, пока не появится текст (Office
+  // кладёт данные асинхронно) — вместо фикс. задержки; по таймауту честно возвращаем пусто.
+  const grab = async () => {
+    const saved = clipboard.readText();       // вернём назад в конце (вежливость к буферу)
+    const marker = " __ABOP_SEL__";
+    try { clipboard.writeText(marker); } catch (e) { /* noop */ }
     try {
-      const { execSync } = require("child_process");
       if (process.platform === "win32") {
-        // SendKeys ^c активному окну (без нативных модулей)
-        execSync('powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait(\'^c\')"', { timeout: 2500 });
+        execSync('powershell -NoProfile -WindowStyle Hidden -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait(\'^c\')"', { timeout: 2500, windowsHide: true });
       }
-    } catch (e) { /* нет прав на SendKeys — используем то, что уже в буфере */ }
-    // небольшая задержка, чтобы копирование успело
-    return new Promise((resolve) => setTimeout(() => {
-      const text = clipboard.readText();
-      // если выделения не было — вернём то, что было в буфере (не затираем)
-      resolve((text && text !== saved) ? text : (text || saved));
-    }, 180));
+    } catch (e) { /* SendKeys недоступен — поллинг ниже вернёт пусто */ }
+    let out = "";
+    for (let i = 0; i < 18; i++) {            // до ~900мс: 18 × 50мс
+      await sleep(50);
+      const t = clipboard.readText();
+      if (t && t !== marker) { out = t; break; }
+    }
+    // восстанавливаем прежнее содержимое буфера, если ничего не скопировалось
+    if (!out) { try { clipboard.writeText(saved); } catch (e) { /* noop */ } }
+    return out;
   };
   try {
     globalShortcut.register("CommandOrControl+Shift+A", async () => {
@@ -182,7 +192,7 @@ function registerHotkey() {
       if (!win || win.isDestroyed()) return;
       if (win.isMinimized()) win.restore();
       win.show(); win.focus();
-      win.webContents.send("ape:analyze", text);
+      win.webContents.send("ape:analyze", text);   // пусто → UI покажет подсказку «выделите текст»
     });
   } catch (e) { console.error("[hotkey] не зарегистрирован:", e && e.message); }
 }

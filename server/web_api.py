@@ -2478,6 +2478,11 @@ async def hitl_approve(item_id: str, body: dict = None, u: dict = Depends(user))
 
 # ═══════════════ Статика: buildless-React фронт ABOP (webapp/) ═══════════════
 # Монтируется ПОСЛЕ всех /api-роутов, чтобы они имели приоритет. html=True → SPA-fallback.
+# UI ДЕСКТОПА (desktop/ui) раздаём по /desktop-ui/ — Electron грузит его по сети (APE_UI_URL),
+# правки чат-панели прилетают через git-deploy БЕЗ пересборки .exe (см. ADR смычки, путь А).
+_DESKTOP_UI = Path(__file__).resolve().parents[1] / "desktop" / "ui"
+if _DESKTOP_UI.is_dir():
+    app.mount("/desktop-ui", StaticFiles(directory=str(_DESKTOP_UI), html=True), name="desktop-ui")
 _WEBAPP = Path(__file__).resolve().parents[1] / "webapp"
 if _WEBAPP.is_dir():
     app.mount("/", StaticFiles(directory=str(_WEBAPP), html=True), name="webapp")
