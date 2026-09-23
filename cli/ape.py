@@ -514,6 +514,8 @@ SKILLS = {
     # ── Кейс «Дайджест задач»: почта → задачи в трекер → отчёт + письмо заказчику ──
     "mail-triage": ("Разбор почты", "письма → задачи",
                     "Разбери входящие письма (сущность email): выдели КОНКРЕТНЫЕ задачи — тема, от кого, суть, срочность. Только из писем, не выдумывай. Задачи с формулировкой действия, а не пересказ письма."),
+    "email-thread-reconstruct": ("Восстановление ветки", "цепочка рассуждений + решения",
+                                 "По одному письму собери всю ветку (сущность email) через нормализованную тему, участников и блоки цитирования; восстанови хронологию, выдели развилки и ПРИНЯТЫЕ решения (кто/когда/на основании какого письма), отдели открытые вопросы. Спасает на 30-40 вложенных письмах. Ничего не выдумывай сверх писем, каждое решение — со ссылкой."),
     "daily-plan": ("План на день", "2 приоритетные + план",
                    "Из разобранных задач выбери 2 приоритетные на день (по срочности/важности), для каждой — краткий план шагов. Обоснуй выбор фактами из писем."),
     "client-letter": ("Письмо заказчику", "план — адресно, под HITL",
@@ -613,6 +615,7 @@ SKILL_SAFETY = {
     "invest1c-trace": {"mode": "read", "egress": "internal", "cite": True},              # трассировка по графу; цепочки считает код
     "invest1c-verdict": {"mode": "write", "egress": "internal", "cite": True},           # заключение-артефакт; норма НК гл.21 из RAG
     "mail-triage": {"mode": "read", "egress": "internal", "cite": True},                 # список задач → structured (по умолч.)
+    "email-thread-reconstruct": {"mode": "read", "egress": "internal", "cite": True, "output": "freeform"},  # разбор ветки — документ
     "daily-plan": {"mode": "read", "egress": "internal", "cite": True, "output": "freeform"},      # план — документ
     "client-letter": {"mode": "write", "egress": "internal", "cite": True, "output": "freeform"},  # письмо — документ
     "bft-draft": {"mode": "write", "egress": "internal", "cite": True, "output": "freeform"},      # БФТ — документ
@@ -813,6 +816,7 @@ SKILL_DATASOURCES = {
                          {"entity": "document", "kind": "slava", "note": "нормы НК РФ гл.21 (счёт-фактура, вычет, момент базы) — коллекция slava_audit1c_norms; цитируется в заключении"}],
     # ── Кейс «Дайджест задач»: вход — письма из почты (Mailpit) ──
     "mail-triage": [{"entity": "email", "kind": "http", "note": "входящие письма из Mailpit (тема/от/тело)"}],
+    "email-thread-reconstruct": [{"entity": "email", "kind": "http", "note": "письма ветки из Mailpit (тема/от/дата/тело с цитатами) для сборки цепочки"}],
     "daily-plan": [{"entity": "email", "kind": "http", "note": "письма для приоритизации задач на день"}],
     # ── Кейс «БФТ по задаче»: вход — задачи из Redmine ──
     "bft-draft": [{"entity": "issue", "kind": "http", "note": "задача из трекера Redmine (тема/описание/автор)"}],
@@ -1032,6 +1036,8 @@ AGENT_FAMILIES = {
             "comms": ("Коммуникации", ["email-draft", "status-report", "weekly-update"]),
             # демо-кейс «Дайджест задач»: почта → задачи в Redmine → отчёт + письмо заказчику
             "task-digester": ("Дайджест задач", ["mail-triage", "daily-plan", "client-letter"]),
+            # восстановление ветки переписки (30-40 писем): цепочка рассуждений + принятые решения
+            "thread-detective": ("Следопыт переписки", ["email-thread-reconstruct", "client-letter"]),
             # демо-кейс «БФТ по задаче»: задача из Redmine → БФТ → BookStack + письмо автору
             "bft-writer": ("Аналитик БФТ", ["bft-draft"]),
         },
