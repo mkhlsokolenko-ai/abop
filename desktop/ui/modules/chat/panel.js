@@ -133,13 +133,28 @@ export async function mount(root, ctx) {
   async function loadThreads() { threads = await api(M + "/threads"); renderThreads(); }
   async function openThread(t) { cur = { ...t, skills: t.skills || [] }; renderThreads(); renderTools(); messages = await api(M + "/threads/" + t.id + "/messages"); render(); renderKb(); }
 
+  // карточка прогона реального ABOP-агента (находки/доставка/HITL) — чат как среда управления
+  function runCard(s) {
+    const fnd = (s.findings || []).map((t) => `<div style="font-size:12px;color:var(--ink);border-left:2px solid var(--accent);padding-left:10px;margin:4px 0">${esc((t || "").replace(/^[•\s]+/, "").slice(0, 400))}</div>`).join("");
+    const dl = (s.delivery || []).map((d) => { const wait = d.mode === "awaiting_hitl"; return `<div style="font-size:11.5px;color:${wait ? "#fbbf24" : "var(--ink-2)"}">${esc(d.channel)}${d.to ? " → " + esc(d.to) : ""} · ${wait ? "ожидает подтверждения (HITL)" : esc(d.mode)}</div>`; }).join("");
+    const hasWait = (s.delivery || []).some((d) => d.mode === "awaiting_hitl");
+    const verd = s.verdict && s.verdict.within_envelope != null ? `<span style="font-family:var(--mono);font-size:10px;color:${s.verdict.within_envelope ? "#6ee7b7" : "#fca5a5"}">конверт: ${s.verdict.within_envelope ? "в рамках" : "превышен"}${s.verdict.autonomy_used ? " · " + esc(s.verdict.autonomy_used) : ""}</span>` : "";
+    return `<div style="display:flex;flex-direction:column;gap:8px">
+      <div style="display:flex;align-items:center;gap:8px"><span style="font-family:var(--mono);font-size:9.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--ink-3)">агент ${esc(s.agent_id || "")}</span>${s.cached ? '<span style="font-size:10px;color:var(--ink-3)">· из кэша</span>' : ""}${s.trace_id ? `<span style="font-size:10px;color:var(--ink-3)">· trace ${esc((s.trace_id || "").slice(0, 8))}</span>` : ""}</div>
+      <div style="font-size:12.5px;color:var(--ink-2)">находок: <b>${esc(String(s.findings_total ?? 0))}</b>${s.investigations_total != null ? ` · расследований: <b>${esc(String(s.investigations_total))}</b>` : ""} ${verd}</div>
+      ${fnd || '<div style="font-size:12px;color:var(--ink-3)">Находок не выявлено.</div>'}
+      ${dl ? `<div style="font-family:var(--mono);font-size:9.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--ink-3);margin-top:4px">доставка</div>${dl}` : ""}
+      ${hasWait ? `<button class="hitlApprove" style="align-self:flex-start;margin-top:4px;padding:8px 13px;border:none;border-radius:10px;background:rgba(16,185,129,.16);color:#6ee7b7;font-size:12px;font-weight:600;cursor:pointer">✓ Подтвердить доставку</button>` : ""}</div>`;
+  }
+
   // ── сообщения ──
   function bubble(m, idx) {
     const mine = m.role === "user";
     const radius = mine ? "16px 16px 4px 16px" : "16px 16px 16px 4px";
     const bg = mine ? "rgba(99,102,241,.16)" : "var(--panel)";
     const bd = mine ? "rgba(129,140,248,.3)" : "var(--line)";
-    const inner = mine ? `<span style="font-size:13.5px;line-height:1.6;white-space:pre-wrap">${esc(m.content)}</span>` : md(m.content);
+    const inner = mine ? `<span style="font-size:13.5px;line-height:1.6;white-space:pre-wrap">${esc(m.content)}</span>`
+      : (m.meta && m.meta.run_agent ? runCard(m.meta.run_agent) : md(m.content));
     const cost = m.meta && m.meta.model ? `<span style="margin-left:4px;font-family:var(--mono);font-size:10.5px;color:var(--ink-3)">${m.meta.model} · ${m.meta.cost_rub ?? 0} ₽</span>` : "";
     const acts = mine
       ? `<button data-edit="${idx}" style="padding:4px 9px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--ink-3);font-size:11px;cursor:pointer">✎ изменить</button>`
@@ -171,7 +186,21 @@ export async function mount(root, ctx) {
     $("col").querySelectorAll("[data-regen]").forEach((e) => e.onclick = () => { const p = messages[+e.dataset.regen - 1]; if (p && p.role === "user") sendPrompt(p.content); });
     $("col").querySelectorAll("[data-edit]").forEach((e) => e.onclick = () => { $("inp").value = messages[+e.dataset.edit].content; $("inp").focus(); });
     $("col").querySelectorAll(".codecopy").forEach((b) => b.onclick = () => { const code = b.closest("span").parentElement.querySelector("span:last-child"); navigator.clipboard.writeText(code ? code.textContent : ""); const o = b.textContent; b.textContent = "✓"; setTimeout(() => b.textContent = o, 1200); });
+    $("col").querySelectorAll(".hitlApprove").forEach((b) => b.onclick = () => approveDelivery(b));
     $("scroll").scrollTop = $("scroll").scrollHeight;
+  }
+
+  // подтвердить всю ожидающую доставку (HITL) — через модуль agents ABOP
+  async function approveDelivery(btn) {
+    btn.textContent = "Подтверждаю…"; btn.disabled = true;
+    try {
+      let q = []; try { q = await api("/api/modules/agents/hitl"); } catch {}
+      if (!Array.isArray(q)) q = [];
+      let n = 0;
+      for (const it of q) { try { await api("/api/modules/agents/hitl/" + encodeURIComponent(it.id) + "/approve", { method: "POST", body: JSON.stringify({ decision: "approve" }) }); n++; } catch {} }
+      btn.textContent = n ? `✓ Подтверждено (${n})` : "✓ Очередь пуста";
+      btn.style.background = "rgba(16,185,129,.24)";
+    } catch (e) { btn.textContent = "Ошибка"; btn.disabled = false; }
   }
 
   async function renderKb() {
@@ -265,13 +294,53 @@ export async function mount(root, ctx) {
   let drTab = "tools";
   function openAgents(tab) { if (!cur) return; drTab = tab || "agents"; $("drawer").style.transform = "translateX(0)"; renderDrawer(); }
   function drTabStyle(on) { return on ? "background:var(--panel);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.2)" : "background:transparent;color:var(--ink-2)"; }
-  async function runAgentsInThread(ids, rl, task) {
+  // запуск РЕАЛЬНОГО ABOP-агента из треда (находки/доставка/HITL карточкой)
+  async function runAbopAgent(agentId, agentName, task) {
     $("drawer").style.transform = "translateX(100%)";
-    messages.push({ role: "user", content: "[агенты] " + task, meta: {} });
+    if (task) messages.push({ role: "user", content: "▶ запустить агента «" + agentName + "»" + (task ? ": " + task : ""), meta: {} });
     const run = { role: "assistant", content: "", meta: {} }; messages.push(run); render();
     const el = $("col").querySelector("div:last-child .bub");
-    if (el) el.innerHTML = `<span style="display:inline-flex;gap:12px;align-items:center">${mascot("thinking", 26)}<span style="color:var(--ink-2)">агенты работают…</span></span>`;
-    const r = await api(M + "/threads/" + cur.id + "/agents", { method: "POST", body: JSON.stringify(ids.length ? { task, agent_ids: ids } : { task, roles: rl }) });
+    if (el) el.innerHTML = `<span style="display:inline-flex;gap:12px;align-items:center">${mascot("thinking", 26)}<span style="color:var(--ink-2)">агент «${esc(agentName)}» работает…</span></span>`;
+    try {
+      const r = await api(M + "/threads/" + cur.id + "/run-agent", { method: "POST", body: JSON.stringify({ agent_id: agentId, context: task || "" }) });
+      if (r.ok) {
+        run.content = "[агент " + agentId + "]"; run.meta = { run_agent: r.run };
+        render(); loadThreads();
+        // конверт требует подтверждения внешнего действия → всплывающее окно HITL в чате
+        const waits = (r.run.delivery || []).filter((d) => d.mode === "awaiting_hitl");
+        if (waits.length) hitlModal(agentName, waits);
+        return;
+      }
+      run.content = "Ошибка запуска: " + (r.error || "не удалось");
+    } catch (e) { run.content = "Сбой: " + (e && e.message || e); }
+    render(); loadThreads();
+  }
+
+  // всплывающее окно подтверждения внешнего действия (HITL из конверта агента)
+  function hitlModal(agentName, waits) {
+    const list = waits.map((d) => `<div style="display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:10px;background:var(--hover);border:1px solid var(--line);margin:6px 0">
+      <span style="font-size:15px">${d.channel === "email" ? "✉" : d.channel === "redmine" ? "🎫" : d.channel === "bookstack" ? "📄" : "↗"}</span>
+      <span style="flex:1;font-size:12.5px;color:var(--ink)">${esc(d.channel)}${d.to ? " → " + esc(d.to) : ""}</span></div>`).join("");
+    const ov = modal(`🛡 Подтвердите действие агента «${agentName}»`,
+      `<p style="margin:0 0 8px;font-size:12.5px;line-height:1.5;color:var(--ink-2)">Конверт агента требует вашего согласия на внешние действия. Ничего не уйдёт наружу без подтверждения:</p>${list}`,
+      async (bodyEl) => {
+        const ok = bodyEl.closest("div").querySelector("#mOk"); if (ok) { ok.textContent = "Подтверждаю…"; ok.disabled = true; }
+        let q = []; try { q = await api("/api/modules/agents/hitl"); } catch {}
+        if (!Array.isArray(q)) q = [];
+        for (const it of q) { try { await api("/api/modules/agents/hitl/" + encodeURIComponent(it.id) + "/approve", { method: "POST", body: JSON.stringify({ decision: "approve" }) }); } catch {} }
+      }, "✓ Подтвердить действие");
+    // кнопка «Отклонить» вместо простой отмены
+    const cancel = ov.querySelector("#mCancel"); if (cancel) cancel.textContent = "Отклонить";
+  }
+
+  // быстрые роли (импровизация LLM без Data Plane) — остаётся как лёгкий режим
+  async function runRolesInThread(rl, task) {
+    $("drawer").style.transform = "translateX(100%)";
+    messages.push({ role: "user", content: "[роли] " + task, meta: {} });
+    const run = { role: "assistant", content: "", meta: {} }; messages.push(run); render();
+    const el = $("col").querySelector("div:last-child .bub");
+    if (el) el.innerHTML = `<span style="display:inline-flex;gap:12px;align-items:center">${mascot("thinking", 26)}<span style="color:var(--ink-2)">роли работают…</span></span>`;
+    const r = await api(M + "/threads/" + cur.id + "/agents", { method: "POST", body: JSON.stringify({ task, roles: rl }) });
     run.content = r.ok ? r.content : ("Ошибка: " + (r.error === "auth_required" ? "нужен вход через GitHub" : r.error));
     render(); loadThreads();
   }
@@ -297,26 +366,38 @@ export async function mount(root, ctx) {
       b.querySelectorAll(".expf").forEach((x) => x.onclick = () => { $("drawer").style.transform = "translateX(100%)"; exportThread(x.dataset.f); });
       return;
     }
-    // agents tab
-    b.innerHTML = `<div class="faint">Загрузка каталога…</div>`;
-    let cat = []; try { cat = await api("/api/modules/agents/catalog"); } catch {}
+    // agents tab — РЕАЛЬНЫЕ ABOP-агенты (инженерная платформа), запуск из чата (среда управления)
+    b.innerHTML = `<div class="faint">Загрузка агентов ABOP…</div>`;
+    let cat = []; try { cat = await api(M + "/abop-agents"); } catch {}
     const roleTxt = (ctx.roles && ctx.roles[0]) || "manager";
-    const catHTML = cat.map((a) => `<div style="padding:14px;border-radius:13px;background:var(--panel);border:1px solid var(--line);display:flex;flex-direction:column;gap:10px">
-      <div style="display:flex;align-items:center;gap:10px"><label style="display:flex;align-items:center;gap:8px;flex:1;cursor:pointer"><input type="checkbox" class="da" value="${a.id}"/><span style="display:flex;flex-direction:column;gap:2px"><span style="font-size:13px;font-weight:600">${esc(a.name)}${a.outward ? " 🛡" : ""}</span><span style="font-size:11.5px;line-height:1.4;color:var(--ink-3)">${esc(a.description || "")}</span></span></label></div></div>`).join("")
-      || `<div style="font-size:12.5px;color:var(--ink-3)">Каталог пуст — соберите агента во вкладке 🤖 Агенты.</div>`;
+    const catHTML = cat.map((a) => `<label style="padding:13px;border-radius:13px;background:var(--panel);border:1px solid var(--line);display:flex;align-items:flex-start;gap:9px;cursor:pointer">
+      <input type="radio" name="abopAgent" class="da" value="${esc(a.id)}" style="accent-color:#6366f1;margin-top:2px"/>
+      <span style="display:flex;flex-direction:column;gap:2px;min-width:0">
+        <span style="font-size:13px;font-weight:600">${esc(a.name)}${a.outward ? " 🛡" : ""}</span>
+        <span style="font-size:11px;line-height:1.4;color:var(--ink-3)">${esc(a.family || "")}${a.role ? " · " + esc(a.role) : ""}${a.autonomy_max ? " · автономия " + esc(a.autonomy_max) : ""}</span>
+      </span></label>`).join("")
+      || `<div style="font-size:12.5px;color:var(--ink-3)">Нет доступных агентов ABOP (проверьте вход/роль). Соберите агента во вкладке 🤖 Агенты.</div>`;
     b.innerHTML = `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:11px;background:var(--hover);border:1px solid var(--line)">
-        <span style="font-size:11.5px;color:var(--ink-2)">Видно по роли:</span><span style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--accent-ink-2)">${esc(roleTxt)}</span></div>
-      <textarea id="drTask" rows="3" style="${"padding:11px 13px;border-radius:11px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-size:12.5px"}" placeholder="Задача для агента(ов)…"></textarea>
+        <span style="font-size:11.5px;color:var(--ink-2)">Агенты ABOP · видно по роли:</span><span style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--accent-ink-2)">${esc(roleTxt)}</span></div>
+      <textarea id="drTask" rows="3" style="${"padding:11px 13px;border-radius:11px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-size:12.5px"}" placeholder="Контекст/задача (необязательно): ссылка на документ, выделенный текст, уточнение…"></textarea>
       ${catHTML}
-      <details><summary style="cursor:pointer;font-size:12px;color:var(--ink-3)">Быстрые роли</summary><div style="margin-top:6px">${roles.map((r) => `<label style="display:flex;gap:8px;align-items:flex-start;padding:5px 0;font-size:12.5px"><input type="checkbox" class="rl" value="${r.id}"/><span><b>${esc(r.name)}</b> <span style="color:var(--ink-3)">${esc(r.brief)}</span></span></label>`).join("")}</div></details>
-      <button id="drRun" style="padding:11px;border:1px solid rgba(129,140,248,.4);border-radius:11px;background:rgba(99,102,241,.16);color:var(--accent-ink);font-size:12.5px;font-weight:600;cursor:pointer">▶ Запустить в тред</button>`;
+      <button id="drRun" style="padding:11px;border:none;border-radius:11px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:12.5px;font-weight:600;cursor:pointer">▶ Запустить агента в тред</button>
+      <details><summary style="cursor:pointer;font-size:12px;color:var(--ink-3)">Быстрые роли (импровизация без данных)</summary><div style="margin-top:6px">${roles.map((r) => `<label style="display:flex;gap:8px;align-items:flex-start;padding:5px 0;font-size:12.5px"><input type="checkbox" class="rl" value="${r.id}"/><span><b>${esc(r.name)}</b> <span style="color:var(--ink-3)">${esc(r.brief)}</span></span></label>`).join("")}</div>
+        <button id="drRunRoles" style="margin-top:6px;padding:9px;border:1px solid var(--line);border-radius:10px;background:var(--hover);color:var(--ink-2);font-size:12px;font-weight:600;cursor:pointer">Запустить роли</button></details>`;
     if ($("inp").value.trim()) b.querySelector("#drTask").value = $("inp").value.trim();
     b.querySelector("#drRun").onclick = () => {
       const task = b.querySelector("#drTask").value.trim();
-      const ids = [...b.querySelectorAll(".da:checked")].map((x) => +x.value);
+      const sel = b.querySelector(".da:checked");
+      if (!sel) { alert("Выберите агента ABOP"); return; }
+      const name = (cat.find((a) => a.id === sel.value) || {}).name || sel.value;
+      runAbopAgent(sel.value, name, task);
+    };
+    const rr = b.querySelector("#drRunRoles");
+    if (rr) rr.onclick = () => {
+      const task = b.querySelector("#drTask").value.trim();
       const rl = [...b.querySelectorAll(".rl:checked")].map((x) => x.value);
-      if (!task || (!ids.length && !rl.length)) { alert("Укажи задачу и агента/роль"); return; }
-      runAgentsInThread(ids, rl, task);
+      if (!task || !rl.length) { alert("Укажи задачу и роль(и)"); return; }
+      runRolesInThread(rl, task);
     };
   }
 
@@ -339,6 +420,16 @@ export async function mount(root, ctx) {
   }
 
   $("newTh").onclick = async () => { const t = await api(M + "/threads", { method: "POST", body: JSON.stringify({ title: "Новый тред", profile: "standard", skills: [] }) }); await loadThreads(); openThread(t); };
+
+  // приём выделенного текста из Word/Excel/браузера по глобальному хоткею (Ctrl+Shift+A):
+  // создаём тред, кладём текст в поле ввода и фокусируемся — пользователь жмёт Enter или выбирает агента
+  window.__apeAnalyze = async (text) => {
+    text = (text || "").trim(); if (!text) { $("inp").focus(); return; }
+    const clip = text.length > 4000 ? text.slice(0, 4000) + "…" : text;
+    if (!cur) { const t = await api(M + "/threads", { method: "POST", body: JSON.stringify({ title: "Анализ выделенного", profile: "standard", skills: [] }) }); await loadThreads(); await openThread(t); }
+    $("inp").value = "Проанализируй этот фрагмент:\n\n" + clip;
+    $("inp").focus(); $("inp").scrollTop = $("inp").scrollHeight;
+  };
   $("inp").onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendFromInput(); } };
   setBusy(false);
   await loadThreads();

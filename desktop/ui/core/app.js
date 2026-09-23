@@ -256,6 +256,12 @@ async function boot() {
   initTheme();
   try { const h = await api("/api/health"); const v = document.getElementById("verChip"); if (v) v.textContent = "v" + (h.version || "?"); } catch {}
   if (window.ape && window.ape.updater) window.ape.updater.onStatus(renderUpdate);
+  // глобальный хоткей: выделенный текст из Word/Excel/браузера → открыть чат и отправить на анализ
+  if (window.ape && window.ape.onAnalyze) window.ape.onAnalyze(async (text) => {
+    if (active !== "chat") await loadModule("chat");
+    // ждём монтирование чата, затем прокидываем текст
+    setTimeout(() => { if (window.__apeAnalyze) window.__apeAnalyze(text); }, active === "chat" ? 0 : 260);
+  });
   await renderAuth();
   refreshCost();
   try { MODULES = await api("/api/modules"); } catch { MODULES = []; }

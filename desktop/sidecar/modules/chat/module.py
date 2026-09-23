@@ -72,6 +72,12 @@ class AgentsIn(BaseModel):
     agent_ids: list[int] = []   # id из каталога (модуль agents) — приоритетнее roles
 
 
+class RunAgentIn(BaseModel):
+    agent_id: str               # реальный ABOP-агент (mailtasks/invest1c/bft/authored…)
+    context: str = ""           # подсказка из треда (задача / выделенный текст / ссылка)
+    no_cache: bool = False
+
+
 class ExportIn(BaseModel):
     format: str = "md"      # md | docx | xlsx (pdf делает Electron через printToPDF)
 
@@ -99,6 +105,62 @@ def _history(thread_id: int, limit: int = 6) -> str:
                 (thread_id, limit))
     rows = list(reversed(rows))
     return "\n".join(f"{'Ты' if r['role']=='user' else 'Ассистент'}: {r['content']}" for r in rows)
+
+
+# ── каталог реальных ABOP-агентов для запуска из чата (чат = среда управления пользователя) ──
+@router.get("/abop-agents")
+def abop_agents() -> list[dict]:
+    """Агенты ABOP, доступные пользователю (ABAC). Их можно запустить прямо из треда чата."""
+    try:
+        out = []
+        for a in abop.agents():
+            out.append({"id": a.get("id"), "name": a.get("name"), "family": a.get("family"),
+                        "role": a.get("role"), "autonomy_max": a.get("autonomy_max"),
+                        "outward": bool(a.get("outward"))})
+        return out
+    except abop.AbopError:
+        return []
+
+
+@router.post("/threads/{thread_id}/run-agent")
+def run_agent(thread_id: int, body: RunAgentIn) -> dict:
+    """Запуск реального ABOP-агента из чата. Контекст треда (последняя задача/выделенный текст/ссылка)
+    прокидывается как подсказка. Возвращает находки/доставку/HITL — рендерятся карточкой в треде.
+    Инженерная логика (Data Plane/governance/HITL/трасса) — на стороне ABOP; чат лишь запускает и показывает."""
+    ctx = (body.context or "").strip()
+    if not ctx:
+        # берём последнюю реплику пользователя как контекст запуска
+        rows = db.q("SELECT content FROM messages WHERE thread_id=? AND role='user' ORDER BY id DESC LIMIT 1",
+                    (thread_id,))
+        ctx = rows[0]["content"] if rows else ""
+    # добавляем текст вложений треда (модель/агент видит приложенные документы)
+    att = _attach_context(thread_id, ctx)
+    full_ctx = (att + ctx).strip()
+    try:
+        run = abop.run(agent_id=body.agent_id, context=full_ctx, no_cache=body.no_cache)
+    except abop.AbopError as e:
+        return {"ok": False, "error": str(e)}
+    run = run.get("run", run) if isinstance(run, dict) else run
+    # компактная сводка находок/доставки для карточки в чате
+    findings = [ (b.get("text") or "") for b in (run.get("board") or []) if b.get("kind") == "finding" ]
+    delivery = [ {"channel": d.get("channel"), "to": d.get("to"), "mode": d.get("mode")}
+                 for d in (run.get("delivery") or []) ]
+    summary = {
+        "agent_id": body.agent_id,
+        "trace_id": run.get("trace_id"),
+        "cached": run.get("cached"),
+        "findings": findings[:8],
+        "findings_total": (run.get("findings_summary") or {}).get("total") or len(findings),
+        "investigations_total": (run.get("investigations_summary") or {}).get("total"),
+        "delivery": delivery,
+        "verdict": run.get("verdict") if isinstance(run.get("verdict"), dict) else None,
+    }
+    # сохраняем краткий след в тред (история)
+    line = f"[агент {body.agent_id}] находок: {summary['findings_total']}"
+    db.run("INSERT INTO messages(thread_id,role,content,meta,created_at) VALUES(?,?,?,?,?)",
+           (thread_id, "assistant", line, json.dumps({"run_agent": summary}, ensure_ascii=False), db.now()))
+    db.run("UPDATE threads SET updated_at=? WHERE id=?", (db.now(), thread_id))
+    return {"ok": True, "run": summary}
 
 
 # ── скиллы для UI: тянем из ABOP (единый каталог навыков), локальные — как fallback ──

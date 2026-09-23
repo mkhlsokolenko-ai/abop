@@ -17,9 +17,9 @@
     "electron-builder": "^24.13.3"
   },
   "build": {
-    "appId": "pro.engineer-ai.ape-desktop",
-    "productName": "APE Desktop",
-    "files": ["electron/**", "ui/**"],
+    "appId": "pro.abop.desktop",
+    "productName": "ABOP Desktop",
+    "files": ["electron/**", "ui/**", "build/icon.ico", "build/icon.png"],
     "extraResources": [
       { "from": "dist/ape-sidecar", "to": "ape-sidecar" }
     ],
@@ -28,11 +28,15 @@
     ],
     "win": {
       "target": ["nsis"],
+      "icon": "build/icon.ico",
       "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "shortcutName": "ABOP Desktop"
     }
   }
 }

@@ -1,6 +1,6 @@
 // Electron main: спавнит Python-сайдкар (движок) и рендерит модульный UI поверх него.
 // Оболочка тонкая — вся логика в сайдкаре; окно можно заменить, не трогая движок.
-const { app, BrowserWindow, shell, ipcMain } = require("electron");
+const { app, BrowserWindow, shell, ipcMain, globalShortcut, clipboard } = require("electron");
 const { spawn } = require("child_process");
 const path = require("path");
 const net = require("net");
@@ -85,6 +85,8 @@ async function createWindow() {
     height: 820,
     minWidth: 900,
     backgroundColor: "#0B0F14",
+    icon: path.join(__dirname, "..", "build", "icon.ico"),
+    title: "ABOP Desktop",
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -154,7 +156,39 @@ ipcMain.handle("export:pdf", async (_e, { html, filename }) => {
   }
 });
 
-app.whenReady().then(createWindow);
+// Глобальный хоткей Ctrl+Shift+A: берём выделенный текст (через буфер обмена) из ЛЮБОГО
+// приложения — Word/Excel/браузер/PDF — и отправляем в чат ABOP на анализ. Один шаг для пользователя.
+function registerHotkey() {
+  const grab = () => {
+    // читаем текущее выделение: сохраняем буфер, шлём Ctrl+C активному окну, читаем, восстанавливаем
+    const saved = clipboard.readText();
+    try {
+      const { execSync } = require("child_process");
+      if (process.platform === "win32") {
+        // SendKeys ^c активному окну (без нативных модулей)
+        execSync('powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait(\'^c\')"', { timeout: 2500 });
+      }
+    } catch (e) { /* нет прав на SendKeys — используем то, что уже в буфере */ }
+    // небольшая задержка, чтобы копирование успело
+    return new Promise((resolve) => setTimeout(() => {
+      const text = clipboard.readText();
+      // если выделения не было — вернём то, что было в буфере (не затираем)
+      resolve((text && text !== saved) ? text : (text || saved));
+    }, 180));
+  };
+  try {
+    globalShortcut.register("CommandOrControl+Shift+A", async () => {
+      const text = (await grab()).trim();
+      if (!win || win.isDestroyed()) return;
+      if (win.isMinimized()) win.restore();
+      win.show(); win.focus();
+      win.webContents.send("ape:analyze", text);
+    });
+  } catch (e) { console.error("[hotkey] не зарегистрирован:", e && e.message); }
+}
+
+app.whenReady().then(() => { createWindow(); registerHotkey(); });
+app.on("will-quit", () => { try { globalShortcut.unregisterAll(); } catch (e) { /* noop */ } });
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
