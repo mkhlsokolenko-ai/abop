@@ -35,6 +35,15 @@ class HitlIn(BaseModel):
     reason: str = ""
 
 
+class TriggerIn(BaseModel):
+    agent_id: str
+    cron: str                    # 'HH:MM' (ежедневно) | '*/N' (каждые N минут)
+    title: str = ""
+    deliver: str = "chat"        # chat | system
+    enabled: bool = True
+    hitl: bool = False
+
+
 class AuthorIn(BaseModel):
     family: str
     skills: list[str] = []
@@ -130,5 +139,34 @@ def hitl_approve(item_id: str, body: HitlIn):
     """Подтвердить/отклонить HITL-заявку → реальная доставка (approve)."""
     try:
         return {"ok": True, "result": abop.hitl_approve(item_id, body.decision, body.reason)}
+    except abop.AbopError as e:
+        return _err(e)
+
+
+# ── Расписания: сделать задачу регулярной (крон) + перечень своих расписаний ──
+@router.post("/trigger")
+def add_trigger(body: TriggerIn):
+    """Сделать задачу агента регулярной — добавить триггер-расписание (новая версия агента на «Строю»)."""
+    try:
+        return {"ok": True, "result": abop.add_trigger(body.agent_id, body.cron, body.title,
+                                                        body.deliver, body.enabled, body.hitl)}
+    except abop.AbopError as e:
+        return _err(e)
+
+
+@router.get("/schedules")
+def schedules():
+    """Мои расписания (агент/cron/вкл/доставка/последний прогон) — для раздела и уведомлений."""
+    try:
+        return abop.my_schedules()
+    except abop.AbopError as e:
+        return _err(e)
+
+
+@router.delete("/trigger/{agent_id}/{trigger_id}")
+def del_trigger(agent_id: str, trigger_id: str):
+    """Убрать расписание (новая версия агента без триггера)."""
+    try:
+        return {"ok": True, "result": abop.del_trigger(agent_id, trigger_id)}
     except abop.AbopError as e:
         return _err(e)

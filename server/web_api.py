@@ -1787,6 +1787,117 @@ async def agent_get(agent_id: str, u: dict = Depends(user)) -> dict:
     return a
 
 
+@app.post("/api/agents/{agent_id}/triggers")
+async def agent_add_trigger(agent_id: str, body: dict, u: dict = Depends(user)) -> dict:
+    """Сделать задачу агента РЕГУЛЯРНОЙ: добавить триггер-узел «расписание» в граф агента и сохранить
+    НОВОЙ версией (версия меняется). Узел виден на канве «Строю», планировщик (scheduler_loop) фаерит
+    его по cron. Тело: {cron, title?, enabled?, hitl?}. cron: 'HH:MM' (ежедневно) | '*/N' (каждые N мин).
+    Внешняя доставка всё равно под HITL узлов агента. manager+ (создание триггера = мутация среды)."""
+    require_level(u, "manager")
+    import uuid as _uuid
+    import re as _re
+    a = await agent_store.get(agent_id)
+    if not a:
+        raise HTTPException(404, "нет такого AgentVersion")
+    cron = str((body or {}).get("cron") or "").strip()
+    if not (_re.match(r"^\d{1,2}:\d{2}$", cron) or _re.match(r"^\*/\d+$", cron)
+            or len(cron.split()) == 5):
+        raise HTTPException(422, "cron: ожидается 'HH:MM' (ежедневно) или '*/N' (каждые N минут)")
+    graph = dict(a.get("graph") or {})
+    nodes = list(graph.get("nodes") or [])
+    tid = "trg-" + _uuid.uuid4().hex[:8]
+    title = str((body or {}).get("title") or f"Расписание {cron}").strip()
+    deliver = str((body or {}).get("deliver") or "chat").strip()  # chat | system
+    node = {"id": tid, "kind": "trigger", "title": title,
+            "trig": {"type": "schedule", "cron": cron,
+                     "enabled": bool((body or {}).get("enabled", True)),
+                     "source": "chat.recurring", "deliver": deliver if deliver in ("chat", "system") else "chat",
+                     "owner": (u.get("name") or u.get("sub") or "dev"),
+                     "spawn": {"autonomy_max": a.get("autonomy_max") or "A1",
+                               "hitl": bool((body or {}).get("hitl", False))}}}
+    nodes.append(node)
+    graph["nodes"] = nodes
+    audit_id = a.get("contract_audit_id") or agent_id.split(".v")[0]
+    version = await agent_store.next_version(audit_id)
+    saved = await agent_store.save(
+        name=a.get("name") or "Агент", audit_id=audit_id, version=version, graph=graph,
+        autonomy_max=a.get("autonomy_max") or "A1", created_by=(u.get("name") or u.get("sub") or "dev"),
+        family=a.get("family") or "", role=a.get("role") or "",
+        transitions=a.get("transitions") or [], source=a.get("source") or "contract")
+    await audit_store.record(u.get("name") or u.get("sub") or "dev", "agent.trigger.add", saved["id"],
+                             {"cron": cron, "from_version": a.get("version"), "trigger_id": tid})
+    return {"ok": True, "agent_id": saved["id"], "version": saved.get("version"),
+            "trigger_id": tid, "cron": cron, "title": title}
+
+
+@app.get("/api/triggers/mine")
+async def triggers_mine(u: dict = Depends(user)) -> dict:
+    """Расписания, заведённые ТЕКУЩИМ пользователем (created_by агента = я, или trig.owner = я): агент,
+    cron, вкл/выкл, куда доставка (чат/система), последний фаер + краткий итог последнего прогона.
+    Для раздела «Мои расписания» и уведомлений о завершении."""
+    me = _uid_of(u)
+    admin = u.get("department") in ("*", None)
+    out = []
+    for t in await triggers.list_triggers():
+        if (t.get("source") or "") != "chat.recurring":
+            continue
+        agent = await agent_store.get(t["agent_id"])
+        owner = ((_node_trig(agent, t.get("trigger_id")) or {}).get("owner")) or (agent or {}).get("created_by")
+        if not admin and owner != me:
+            continue
+        last_run = None
+        fires = [f for f in await trigger_store.list_fires(limit=200)
+                 if f.get("agent_id") == t["agent_id"] and f.get("trigger_id") == t.get("trigger_id")]
+        if fires:
+            rid = fires[0].get("run_id")
+            at = fires[0].get("fired_at")
+            if rid:
+                r = await run_store.get(rid)
+                if r:
+                    last_run = {"run_id": rid, "at": at,
+                                "findings": (r.get("findings_summary") or {}).get("total"),
+                                "status": fires[0].get("status")}
+                else:
+                    last_run = {"run_id": rid, "at": at, "status": fires[0].get("status")}
+            else:
+                last_run = {"at": at, "status": fires[0].get("status"), "note": fires[0].get("note")}
+        node = _node_trig(agent, t.get("trigger_id")) or {}
+        out.append({"agent_id": t["agent_id"], "agent": t.get("agent"), "trigger_id": t.get("trigger_id"),
+                    "title": t.get("title"), "cron": t.get("cron"), "enabled": t.get("enabled"),
+                    "deliver": node.get("deliver") or "chat", "last_fire": t.get("last_fire"),
+                    "last_run": last_run})
+    return {"schedules": out, "count": len(out)}
+
+
+def _node_trig(agent: dict, trigger_id: str) -> dict | None:
+    for n in ((agent or {}).get("graph") or {}).get("nodes") or []:
+        if n.get("kind") == "trigger" and n.get("id") == trigger_id:
+            return n.get("trig") or {}
+    return None
+
+
+@app.delete("/api/agents/{agent_id}/triggers/{trigger_id}")
+async def agent_del_trigger(agent_id: str, trigger_id: str, u: dict = Depends(user)) -> dict:
+    """Убрать расписание: сохранить НОВУЮ версию агента без этого триггер-узла (версия меняется)."""
+    require_level(u, "manager")
+    a = await agent_store.get(agent_id)
+    if not a:
+        raise HTTPException(404, "нет такого AgentVersion")
+    graph = dict(a.get("graph") or {})
+    nodes = [n for n in (graph.get("nodes") or []) if not (n.get("kind") == "trigger" and n.get("id") == trigger_id)]
+    graph["nodes"] = nodes
+    audit_id = a.get("contract_audit_id") or agent_id.split(".v")[0]
+    version = await agent_store.next_version(audit_id)
+    saved = await agent_store.save(
+        name=a.get("name") or "Агент", audit_id=audit_id, version=version, graph=graph,
+        autonomy_max=a.get("autonomy_max") or "A1", created_by=(u.get("name") or u.get("sub") or "dev"),
+        family=a.get("family") or "", role=a.get("role") or "",
+        transitions=a.get("transitions") or [], source=a.get("source") or "contract")
+    await audit_store.record(u.get("name") or u.get("sub") or "dev", "agent.trigger.del", saved["id"],
+                             {"trigger_id": trigger_id})
+    return {"ok": True, "agent_id": saved["id"], "version": saved.get("version")}
+
+
 # ═══════════════ RUN / STREAM / HITL: контракт (исполнение — следующий инкремент) ═══════════════
 
 _NOT_IMPL = ("Прогон через API требует выноса cmd_agents в фон + SSE-стрим (следующий инкремент). "

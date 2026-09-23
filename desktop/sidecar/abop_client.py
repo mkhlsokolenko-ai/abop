@@ -159,6 +159,26 @@ def runs(agent_id: str = "") -> list:
     return (r or {}).get("runs", []) if isinstance(r, dict) else (r or [])
 
 
+def add_trigger(agent_id: str, cron: str, title: str = "", deliver: str = "chat",
+                enabled: bool = True, hitl: bool = False) -> dict:
+    """Сделать задачу агента регулярной: добавить триггер-расписание (новая версия агента)."""
+    body = {"cron": cron, "deliver": deliver, "enabled": enabled, "hitl": hitl}
+    if title:
+        body["title"] = title
+    return _req("POST", "/api/agents/" + urllib.request.quote(agent_id) + "/triggers", body, timeout=60)
+
+
+def my_schedules() -> list:
+    """Расписания текущего пользователя (агент/cron/вкл/доставка/последний прогон)."""
+    r = _req("GET", "/api/triggers/mine", timeout=30)
+    return (r or {}).get("schedules", []) if isinstance(r, dict) else (r or [])
+
+
+def del_trigger(agent_id: str, trigger_id: str) -> dict:
+    return _req("DELETE", "/api/agents/" + urllib.request.quote(agent_id) + "/triggers/"
+                + urllib.request.quote(trigger_id), timeout=60)
+
+
 def hitl_queue() -> list:
     r = _req("GET", "/api/hitl/queue", timeout=20)
     return (r or {}).get("queue", []) if isinstance(r, dict) else (r or [])
