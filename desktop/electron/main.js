@@ -8,11 +8,12 @@ const http = require("http");
 const fs = require("fs");
 const os = require("os");
 
-// Удалённый UI (путь А): по умолчанию грузим фронт десктопа с сервера ABOP — правки чат-панели/UI
-// прилетают через git-deploy БЕЗ пересборки .exe. Фолбэк на локальную копию из asar (офлайн/сбой сети).
-// Переопределить/выключить: APE_UI_URL="" → всегда локально; APE_UI_URL=<url> → свой хост.
-const ABOP_BASE = process.env.ABOP_BASE_URL || "http://5.129.192.63:8091";
-const REMOTE_UI = ("APE_UI_URL" in process.env) ? process.env.APE_UI_URL : (ABOP_BASE.replace(/\/$/, "") + "/desktop-ui/");
+// UI по умолчанию — ЛОКАЛЬНЫЙ (из asar): надёжно, без ограничений Chromium Private Network Access
+// (публичная http-страница НЕ вправе fetch'ить loopback 127.0.0.1 → «Модули не найдены»). Локальный UI
+// собирается из desktop/ui при сборке .exe, т.е. содержит все изменения. Авто-обновление UI без
+// пересборки — через сайдкар-прокси (следующий шаг): сайдкар тянет свежий UI с ABOP server-side (без PNA)
+// и отдаёт с 127.0.0.1 (same-origin). Включить удалённый UI вручную: APE_UI_URL=<url>.
+const REMOTE_UI = process.env.APE_UI_URL || "";
 
 let sidecar = null;
 let win = null;
@@ -176,14 +177,16 @@ function registerHotkey() {
         execSync('powershell -NoProfile -WindowStyle Hidden -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait(\'^c\')"', { timeout: 2500, windowsHide: true });
       }
     } catch (e) { /* SendKeys недоступен — поллинг ниже вернёт пусто */ }
-    let out = "";
-    for (let i = 0; i < 18; i++) {            // до ~900мс: 18 × 50мс
+    let fresh = "";
+    for (let i = 0; i < 16; i++) {            // до ~800мс: ждём свежую копию
       await sleep(50);
       const t = clipboard.readText();
-      if (t && t !== marker) { out = t; break; }
+      if (t && t !== marker) { fresh = t; break; }
     }
-    // восстанавливаем прежнее содержимое буфера, если ничего не скопировалось
-    if (!out) { try { clipboard.writeText(saved); } catch (e) { /* noop */ } }
+    // приоритет: свежескопированное (SendKeys сработал); иначе — фолбэк на прежний буфер
+    // (сценарий «скопировал Ctrl+C → Ctrl+Shift+A» работает всегда). Никогда не отдаём пусто зря.
+    const out = fresh || saved || "";
+    if (out !== clipboard.readText()) { try { clipboard.writeText(out); } catch (e) { /* noop */ } }
     return out;
   };
   try {

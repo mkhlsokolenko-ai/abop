@@ -137,9 +137,23 @@ export async function mount(root, ctx) {
   async function loadThreads() { threads = await api(M + "/threads"); renderThreads(); }
   async function openThread(t) { cur = { ...t, skills: t.skills || [] }; renderThreads(); renderTools(); messages = await api(M + "/threads/" + t.id + "/messages"); render(); renderKb(); }
 
+  // очистка текста находки: если пришёл сырой JSON ({"находки":[...]}) — вынимаем наблюдения читаемо
+  function cleanFinding(t) {
+    t = (t || "").trim();
+    if (t[0] === "{" || t[0] === "[") {
+      try {
+        const o = JSON.parse(t);
+        const arr = Array.isArray(o) ? o : (o["находки"] || o.findings || []);
+        if (Array.isArray(arr) && arr.length) {
+          return arr.map((x) => (typeof x === "string" ? x : (x["наблюдение"] || x.observation || x["запись"] || JSON.stringify(x)))).join("; ");
+        }
+      } catch (e) { /* не JSON — вернём как есть */ }
+    }
+    return t.replace(/^[•\s]+/, "");
+  }
   // карточка прогона реального ABOP-агента (находки/доставка/HITL) — чат как среда управления
   function runCard(s) {
-    const fnd = (s.findings || []).map((t) => `<div style="font-size:12px;color:var(--ink);border-left:2px solid var(--accent);padding-left:10px;margin:4px 0">${esc((t || "").replace(/^[•\s]+/, "").slice(0, 400))}</div>`).join("");
+    const fnd = (s.findings || []).map((t) => `<div style="font-size:12px;color:var(--ink);border-left:2px solid var(--accent);padding-left:10px;margin:4px 0">${esc(cleanFinding(t).slice(0, 400))}</div>`).join("");
     const dl = (s.delivery || []).map((d) => { const wait = d.mode === "awaiting_hitl"; return `<div style="font-size:11.5px;color:${wait ? "#fbbf24" : "var(--ink-2)"}">${esc(d.channel)}${d.to ? " → " + esc(d.to) : ""} · ${wait ? "ожидает подтверждения (HITL)" : esc(d.mode)}</div>`; }).join("");
     const hasWait = (s.delivery || []).some((d) => d.mode === "awaiting_hitl");
     const verd = s.verdict && s.verdict.within_envelope != null ? `<span style="font-family:var(--mono);font-size:10px;color:${s.verdict.within_envelope ? "#6ee7b7" : "#fca5a5"}">конверт: ${s.verdict.within_envelope ? "в рамках" : "превышен"}${s.verdict.autonomy_used ? " · " + esc(s.verdict.autonomy_used) : ""}</span>` : "";
