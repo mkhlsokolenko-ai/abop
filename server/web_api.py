@@ -1060,6 +1060,11 @@ def _overlay_skill(card: dict, ov: dict | None) -> dict:
             if k in patch:
                 saf[k] = patch[k]
         card["safety"] = saf
+        # привязка навыка к семьям из UI (тег семьи): PG-список перекрывает вычисленный из ростера.
+        # Влияет на ABAC-видимость (_skill_visible) и фильтр по семьям на экране навыков.
+        if isinstance(patch.get("families"), list):
+            card["families"] = sorted(set(patch["families"]))
+            card["families_edited"] = True
         card["version"] = ov.get("version")
         card["editor"] = ov.get("editor")
         card["edited_at"] = ov.get("updated_at")
@@ -1115,11 +1120,18 @@ async def skill_save(sid: str, body: dict, u: dict = Depends(user)) -> dict:
         raise HTTPException(404, "нет навыка")
     allowed = set(_SKILL_TEXT_FIELDS) | set(_SKILL_SAFETY_FIELDS)
     patch = {k: v for k, v in (body or {}).items() if k in allowed}
+    # тег семьи навыка: список привязок к существующим семьям (валидируем по каталогу семей)
+    if isinstance((body or {}).get("families"), list):
+        fams = [str(f).strip() for f in body["families"] if str(f).strip()]
+        bad = [f for f in fams if f not in ape.AGENT_FAMILIES]
+        if bad:
+            raise HTTPException(422, f"нет таких семей: {', '.join(bad)}")
+        patch["families"] = sorted(set(fams))
     if not patch:
         raise HTTPException(422, "нет полей для сохранения")
     editor = u.get("name") or u.get("sub") or "dev"
     ov = await skill_store.save_patch(sid, patch, editor=editor)
-    if "output" in patch:                       # флаг формата вывода → в ape + на другие реплики
+    if "output" in patch or "families" in patch:  # формат вывода / привязка семьи → на другие реплики
         await _refresh_skill_ds_cache()
         await cachebus.notify("skills")
     await audit_store.record(editor, "skill.save", sid,
