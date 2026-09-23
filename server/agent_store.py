@@ -33,6 +33,7 @@ ALTER TABLE agent_versions ADD COLUMN IF NOT EXISTS family TEXT;
 ALTER TABLE agent_versions ADD COLUMN IF NOT EXISTS role TEXT;
 ALTER TABLE agent_versions ADD COLUMN IF NOT EXISTS transitions JSONB;
 ALTER TABLE agent_versions ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'contract';
+ALTER TABLE agent_versions ADD COLUMN IF NOT EXISTS verification JSONB;
 """
 
 _MEM: dict[str, dict] = {}
@@ -63,11 +64,13 @@ async def next_version(audit_id: str) -> int:
 
 async def save(*, name: str, audit_id: str, version: int, graph: dict,
                autonomy_max: str, created_by: str = "dev",
-               family: str = "", role: str = "", transitions=None, source: str = "contract") -> dict:
+               family: str = "", role: str = "", transitions=None, source: str = "contract",
+               verification: dict | None = None) -> dict:
     aid = f"{audit_id}.v{version}"
     row = {"id": aid, "name": name, "contract_audit_id": audit_id, "version": version,
            "status": "draft", "autonomy_max": autonomy_max, "graph": graph, "created_by": created_by,
-           "family": family, "role": role, "transitions": transitions or [], "source": source}
+           "family": family, "role": role, "transitions": transitions or [], "source": source,
+           "verification": verification}
     if not _has_pg():
         import datetime as _dt
         row["created_at"] = _dt.datetime.now(_dt.timezone.utc).isoformat()
@@ -76,10 +79,11 @@ async def save(*, name: str, audit_id: str, version: int, graph: dict,
     from .db import _conn
     async with _conn() as conn:
         await conn.execute(
-            "INSERT INTO agent_versions (id,name,contract_audit_id,version,status,autonomy_max,graph,family,role,transitions,source,created_by) "
-            "VALUES (%s,%s,%s,%s,'draft',%s,%s,%s,%s,%s,%s,%s)",
+            "INSERT INTO agent_versions (id,name,contract_audit_id,version,status,autonomy_max,graph,family,role,transitions,source,created_by,verification) "
+            "VALUES (%s,%s,%s,%s,'draft',%s,%s,%s,%s,%s,%s,%s,%s)",
             (aid, name, audit_id, version, autonomy_max, json.dumps(graph),
-             family, role, json.dumps(transitions or []), source, created_by))
+             family, role, json.dumps(transitions or []), source, created_by,
+             json.dumps(verification) if verification is not None else None))
     return await get(aid) or row
 
 
@@ -130,14 +134,15 @@ async def get(agent_id: str) -> dict | None:
     async with _conn() as conn:
         cur = await conn.execute(
             "SELECT id,name,contract_audit_id,version,status,autonomy_max,graph,created_by,created_at,"
-            "family,role,transitions,source FROM agent_versions WHERE id=%s", (agent_id,))
+            "family,role,transitions,source,verification FROM agent_versions WHERE id=%s", (agent_id,))
         r = await cur.fetchone()
     if not r:
         return None
     return {"id": r[0], "name": r[1], "contract_audit_id": r[2], "version": r[3], "status": r[4],
             "autonomy_max": r[5], "graph": r[6], "created_by": r[7],
             "created_at": r[8].isoformat() if r[8] else None,
-            "family": r[9], "role": r[10], "transitions": r[11] or [], "source": r[12] or "contract"}
+            "family": r[9], "role": r[10], "transitions": r[11] or [], "source": r[12] or "contract",
+            "verification": r[13]}
 
 
 async def list_for(audit_id: str | None = None, limit: int = 100, archived: bool = False) -> list[dict]:
@@ -155,12 +160,12 @@ async def list_for(audit_id: str | None = None, limit: int = 100, archived: bool
     where = "WHERE " + " AND ".join(conds)
     async with _conn() as conn:
         cur = await conn.execute(
-            "SELECT id,name,contract_audit_id,version,status,autonomy_max,created_at,family,role,source "
+            "SELECT id,name,contract_audit_id,version,status,autonomy_max,created_at,family,role,source,verification "
             f"FROM agent_versions {where} ORDER BY created_at DESC LIMIT %s", (*args, limit))
         rows = await cur.fetchall()
     return [{"id": r[0], "name": r[1], "contract_audit_id": r[2], "version": r[3], "status": r[4],
              "autonomy_max": r[5], "created_at": r[6].isoformat() if r[6] else None,
-             "family": r[7], "role": r[8], "source": r[9] or "contract"} for r in rows]
+             "family": r[7], "role": r[8], "source": r[9] or "contract", "verification": r[10]} for r in rows]
 
 
 async def set_status(agent_id: str, status: str) -> dict | None:
@@ -190,4 +195,4 @@ def _brief(a: dict) -> dict:
     return {"id": a["id"], "name": a["name"], "contract_audit_id": a["contract_audit_id"],
             "version": a["version"], "status": a["status"], "autonomy_max": a.get("autonomy_max"),
             "created_at": a.get("created_at"), "family": a.get("family"), "role": a.get("role"),
-            "source": a.get("source", "contract")}
+            "source": a.get("source", "contract"), "verification": a.get("verification")}

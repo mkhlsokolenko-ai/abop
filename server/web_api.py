@@ -1742,6 +1742,25 @@ async def agent_check(body: dict, u: dict = Depends(user)) -> dict:
             "autonomy_max": check["autonomy_max"], "hitl_count": check["hitl_count"]}
 
 
+def _verify_envelope(graph: dict, autonomy_max: str) -> dict:
+    """Авто-верификация authored-агента против ПРОИЗВОДНОГО конверта (не контракт LUDA): та же
+    governance-проверка, что и `/api/agents/check`, но интейк выводится из графа (потолок = автономия
+    агента, требуемые навыки = навыки графа). Ловит нарушения ADR-013/014 (автономия>потолок,
+    внешнее действие без HITL). verified=true → конверт соблюдён; для прод-деплоя всё равно нужен контракт."""
+    import datetime as _datetime
+    skills = [n.get("skill") for n in (graph or {}).get("nodes") or [] if n.get("kind") == "skill" and n.get("skill")]
+    intake = {"autonomy_ceiling": autonomy_max or "A2", "skills": skills}
+    try:
+        res = assembly.check_graph(graph, intake, ape.skill_safety)
+    except Exception as ex:  # noqa: BLE001 — верификация опциональна, не валим сборку
+        return {"verified": False, "mode": "auto-envelope", "error": str(ex)}
+    errs = res.get("errors") or []
+    return {"verified": not errs, "mode": "auto-envelope", "against": "производный конверт (не контракт LUDA)",
+            "autonomy_max": res.get("autonomy_max"), "hitl_count": res.get("hitl_count"),
+            "errors": errs, "warnings": res.get("warnings") or [],
+            "checked_at": _datetime.datetime.now(_datetime.timezone.utc).isoformat()}
+
+
 @app.post("/api/agents/author")
 async def agent_author(body: dict, u: dict = Depends(user)) -> JSONResponse:
     """Сохранить агента, собранного авторингом БЕЗ контракта (ADR-024 draft, ADR-032):
@@ -1766,14 +1785,17 @@ async def agent_author(body: dict, u: dict = Depends(user)) -> JSONResponse:
     name = str((body or {}).get("name", "")).strip() or f"{spec['family_title']} · {spec['role_title']}"
     audit_id = "authored"
     version = await agent_store.next_version(audit_id)
+    verdict = _verify_envelope(graph, env["autonomy_max"])   # авто-верификация против производного конверта
     saved = await agent_store.save(name=name, audit_id=audit_id, version=version, graph=graph,
                                    autonomy_max=env["autonomy_max"], created_by=u.get("name") or "dev",
                                    family=family, role=spec["role"], transitions=spec["transitions"],
-                                   source="authored")
+                                   source="authored", verification=verdict)
     await audit_store.record(u.get("name") or "dev", "agent.author", saved["id"],
-                             {"family": family, "role": spec["role"], "autonomy_max": env["autonomy_max"]})
+                             {"family": family, "role": spec["role"], "autonomy_max": env["autonomy_max"],
+                              "verified": verdict.get("verified")})
     return JSONResponse({"saved": True, "id": saved["id"], "version": version, "status": "draft",
                          "family": family, "role": spec["role"], "autonomy_max": env["autonomy_max"],
+                         "verification": verdict,
                          "skills": [s["id"] for s in spec["skills"]], "data_scope": spec["data_scope"]},
                         status_code=201)
 
@@ -1819,11 +1841,13 @@ async def agent_add_trigger(agent_id: str, body: dict, u: dict = Depends(user)) 
     graph["nodes"] = nodes
     audit_id = a.get("contract_audit_id") or agent_id.split(".v")[0]
     version = await agent_store.next_version(audit_id)
+    _verif = a.get("verification") if a.get("verification") is not None else \
+        (_verify_envelope(graph, a.get("autonomy_max") or "A1") if a.get("source") == "authored" else None)
     saved = await agent_store.save(
         name=a.get("name") or "Агент", audit_id=audit_id, version=version, graph=graph,
         autonomy_max=a.get("autonomy_max") or "A1", created_by=(u.get("name") or u.get("sub") or "dev"),
         family=a.get("family") or "", role=a.get("role") or "",
-        transitions=a.get("transitions") or [], source=a.get("source") or "contract")
+        transitions=a.get("transitions") or [], source=a.get("source") or "contract", verification=_verif)
     await audit_store.record(u.get("name") or u.get("sub") or "dev", "agent.trigger.add", saved["id"],
                              {"cron": cron, "from_version": a.get("version"), "trigger_id": tid})
     return {"ok": True, "agent_id": saved["id"], "version": saved.get("version"),
@@ -1892,7 +1916,8 @@ async def agent_del_trigger(agent_id: str, trigger_id: str, u: dict = Depends(us
         name=a.get("name") or "Агент", audit_id=audit_id, version=version, graph=graph,
         autonomy_max=a.get("autonomy_max") or "A1", created_by=(u.get("name") or u.get("sub") or "dev"),
         family=a.get("family") or "", role=a.get("role") or "",
-        transitions=a.get("transitions") or [], source=a.get("source") or "contract")
+        transitions=a.get("transitions") or [], source=a.get("source") or "contract",
+        verification=a.get("verification"))
     await audit_store.record(u.get("name") or u.get("sub") or "dev", "agent.trigger.del", saved["id"],
                              {"trigger_id": trigger_id})
     return {"ok": True, "agent_id": saved["id"], "version": saved.get("version")}
