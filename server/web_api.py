@@ -28,7 +28,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, assembly, audit_store, cachebus, clients, contract_store, dataplane_store, hitl_store, ingress, langfuse_trace, layout_store, observability as obs, reglament_store, run_cache_store, run_store, runner, skill_store, slava, systems_store, trigger_store, triggers, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, assembly, audit_store, cachebus, clients, contract_store, dataplane_store, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, reglament_store, run_cache_store, run_store, runner, skill_store, slava, systems_store, trigger_store, triggers, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
@@ -291,6 +291,52 @@ def observability_snapshot(u: dict = Depends(user)) -> dict:
 @app.get("/api/me")
 def me(u: dict = Depends(user)) -> dict:
     return {"user": u}
+
+
+def _uid_of(u: dict) -> str:
+    """Мастер-UID пользователя для сквозного ID: preferred_username/name/sub из JWT."""
+    return str(u.get("name") or u.get("preferred_username") or u.get("sub") or "").strip()
+
+
+@app.get("/api/identity/me")
+async def identity_me(u: dict = Depends(user)) -> dict:
+    """Сквозной профиль ТЕКУЩЕГО пользователя: мастер-UID + department/roles (ABAC/RBAC из JWT) +
+    карта его аккаунтов во внешних системах (почта/Redmine/CRM/1С). Это адресный контекст, который
+    наследует агент, запущенный от имени пользователя."""
+    return await identity_store.bundle(_uid_of(u), department=u.get("department"), roles=u.get("roles"))
+
+
+@app.get("/api/identity/{uid}")
+async def identity_get(uid: str, u: dict = Depends(user)) -> dict:
+    """Сквозной профиль пользователя по UID. Свой профиль — всем; чужой — только admin/support (*)."""
+    if uid != _uid_of(u) and u.get("department") not in ("*", None):
+        raise HTTPException(403, "нет доступа к чужой идентичности")
+    return await identity_store.bundle(uid)
+
+
+@app.post("/api/identity/{uid}")
+async def identity_link(uid: str, body: dict, u: dict = Depends(user)) -> dict:
+    """Привязать/обновить внешний аккаунт пользователя (account-linking). Admin-уровень.
+    Тело: {system, external_id?, display?, attrs?}. Пример: {"system":"redmine","external_id":"pm.manager","attrs":{"assignee_id":4}}."""
+    require_level(u, "admin")
+    system = str((body or {}).get("system") or "").strip()
+    if not system:
+        raise HTTPException(422, "нужен system")
+    editor = _uid_of(u) or "dev"
+    row = await identity_store.link(uid, system, str((body or {}).get("external_id") or ""),
+                                    str((body or {}).get("display") or ""),
+                                    (body or {}).get("attrs") or {}, editor=editor)
+    await audit_store.record(editor, "identity.link", f"{uid}:{system}", {"external_id": row.get("external_id")})
+    return row
+
+
+@app.delete("/api/identity/{uid}/{system}")
+async def identity_unlink(uid: str, system: str, u: dict = Depends(user)) -> dict:
+    """Отвязать аккаунт пользователя в системе. Admin-уровень."""
+    require_level(u, "admin")
+    await identity_store.unlink(uid, system)
+    await audit_store.record(_uid_of(u) or "dev", "identity.unlink", f"{uid}:{system}", {})
+    return {"ok": True}
 
 
 @app.post("/api/chat")
@@ -1434,6 +1480,8 @@ async def _startup() -> None:
     await userdata_store.init()
     await systems_store.init()
     await systems_store.seed_if_empty()  # одноразовый сид реестра из server-inventory (демо-стенд)
+    await identity_store.init()
+    await identity_store.seed_if_empty()  # сквозной ID: связка мастер-UID → аккаунты в системах (демо)
     await trigger_store.init()
     await reglament_store.init()
     await run_cache_store.init()
@@ -2316,6 +2364,20 @@ async def run_start(body: dict, u: dict = Depends(user)) -> JSONResponse:
         obs.inc("abop_rate_limited_total")
         raise HTTPException(429, f"слишком много прогонов: лимит {_USER_RATE_MAX} за {_USER_RATE_WINDOW}с — подождите")
     user_context = str((body or {}).get("context") or "").strip()[:20000]  # задача/файл/ссылка из чата
+    # Сквозной ID: агент адресен под пользователя — подмешиваем его профиль (кто он, отдел, аккаунты
+    # в системах: какой ящик/Redmine-исполнитель/CRM-владелец). Наследует RBAC/ABAC (department из JWT).
+    try:
+        _idb = await identity_store.bundle(_uid_of(u), department=u.get("department"), roles=u.get("roles"))
+        _sys = _idb.get("systems") or {}
+        if _sys or _idb.get("department"):
+            _who = [f"Пользователь: {_idb.get('uid')}", f"отдел (ABAC): {_idb.get('department')}",
+                    f"роли: {', '.join(_idb.get('roles') or []) or '—'}"]
+            for s, info in _sys.items():
+                _who.append(f"  · {s}: {info.get('external_id') or ''} {info.get('display') or ''}".rstrip())
+            user_context = ("=== АДРЕСНОСТЬ (от имени кого работаем) ===\n" + "\n".join(_who)
+                            + "\n\n" + user_context).strip()
+    except Exception:  # noqa: BLE001 — identity опционален, не валим прогон
+        pass
     use_cache = not bool((body or {}).get("no_cache"))  # {no_cache:true} → форс свежий прогон
     if user_context:
         use_cache = False   # контекст пользователя влияет на прогон → кэш (по агенту+данным) обходим
