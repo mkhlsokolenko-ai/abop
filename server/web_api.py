@@ -28,7 +28,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, assembly, audit_store, cachebus, clients, contract_store, dataplane_store, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, reglament_store, run_cache_store, run_store, runner, skill_store, slava, systems_store, trigger_store, triggers, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, assembly, audit_store, cachebus, clients, contract_store, dataplane_store, families_store, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, reglament_store, run_cache_store, run_store, runner, skill_store, slava, systems_store, trigger_store, triggers, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
@@ -1066,16 +1066,58 @@ async def memory_save(scope: str, body: dict, u: dict = Depends(user)) -> dict:
 
 
 @app.get("/api/families")
-def families(u: dict = Depends(user)) -> dict:
-    """Ростер Семья→Роль→Навык (для палитры канвы и каталога). §4/§6 ABOP_SCREENS."""
+async def families(u: dict = Depends(user)) -> dict:
+    """Ростер Семья→Роль→Навык из ЕДИНОГО реестра families_store (сид из кода, правки/кастомные в БД).
+    §4/§6 ABOP_SCREENS. Единый источник семей/отделов (ABAC department==family)."""
+    reg = await families_store.all()
+    if not reg:                          # реестр ещё не засеян (первый старт до seed) → отдаём код
+        reg = [{"id": fid, "title": fam["title"], "profile": fam["profile"], "mission": fam["mission"],
+                "kind": "business" if fid in BIZ_FAMILIES else "engineering",
+                "members": {mk: [mt, sk] for mk, (mt, sk) in fam["members"].items()}}
+               for fid, fam in ape.AGENT_FAMILIES.items()]
     out = []
-    for fid, fam in ape.AGENT_FAMILIES.items():
-        out.append({
-            "id": fid, "title": fam["title"], "profile": fam["profile"],
-            "mission": fam["mission"], "kind": "business" if fid in BIZ_FAMILIES else "engineering",
-            "members": [{"key": mk, "title": mt, "skills": sk} for mk, (mt, sk) in fam["members"].items()],
-        })
+    for f in reg:
+        mem = f.get("members") or {}
+        members = [{"key": mk, "title": (v[0] if isinstance(v, (list, tuple)) else mk),
+                    "skills": (v[1] if isinstance(v, (list, tuple)) and len(v) > 1 else [])}
+                   for mk, v in mem.items()]
+        out.append({"id": f["id"], "title": f.get("title") or f["id"], "profile": f.get("profile") or "research",
+                    "mission": f.get("mission") or "", "kind": f.get("kind") or "custom",
+                    "builtin": bool(f.get("builtin")), "members": members})
     return {"families": out}
+
+
+@app.post("/api/families")
+async def family_save(body: dict, u: dict = Depends(user)) -> dict:
+    """Создать/править семью (в т.ч. СВОЮ кастомную) в едином реестре. Кастомная семья = валидный
+    отдел для ABAC (department==family) и тег навыка. Тело: {id, title?, mission?, profile?, members?}.
+    id — slug [a-z0-9_-]. Admin-уровень (реестр семей = чувствительно к доступу)."""
+    require_level(u, "admin")
+    import re as _re
+    fid = _re.sub(r"[^a-z0-9_-]", "", str((body or {}).get("id") or "").strip().lower())
+    if not fid:
+        raise HTTPException(422, "нужен id семьи (slug a-z0-9_-)")
+    existing = await families_store.get(fid)
+    kind = "custom" if not existing else (existing.get("kind") or "custom")
+    editor = u.get("name") or u.get("sub") or "dev"
+    card = await families_store.save(fid, {"title": (body or {}).get("title") or fid,
+                                           "mission": (body or {}).get("mission") or "",
+                                           "profile": (body or {}).get("profile") or "research",
+                                           "kind": kind, "members": (body or {}).get("members") or (existing or {}).get("members") or {}},
+                                     editor=editor, builtin=bool(existing and existing.get("builtin")))
+    await audit_store.record(editor, "family.save", fid, {"title": card.get("title")})
+    return card
+
+
+@app.delete("/api/families/{fid}")
+async def family_delete(fid: str, u: dict = Depends(user)) -> dict:
+    """Удалить кастомную семью (встроенные защищены). Admin-уровень."""
+    require_level(u, "admin")
+    ok = await families_store.delete(fid)
+    if not ok:
+        raise HTTPException(400, "нельзя удалить (нет такой или встроенная семья)")
+    await audit_store.record(u.get("name") or u.get("sub") or "dev", "family.delete", fid, {})
+    return {"ok": True}
 
 
 @app.get("/api/agents/spec")
@@ -1198,17 +1240,18 @@ async def skill_save(sid: str, body: dict, u: dict = Depends(user)) -> dict:
         raise HTTPException(404, "нет навыка")
     allowed = set(_SKILL_TEXT_FIELDS) | set(_SKILL_SAFETY_FIELDS)
     patch = {k: v for k, v in (body or {}).items() if k in allowed}
-    # тег семьи навыка: привязка к семьям (известным ИЛИ своей кастомной через «＋»). Кастомные —
-    # slug [a-z0-9_-] (для корректного ABAC: department==family). Известные оставляем как есть.
+    # тег семьи навыка: привязка к семьям из ЕДИНОГО реестра (известным ИЛИ своей кастомной через «＋»).
+    # Кастомные — slug [a-z0-9_-] (для корректного ABAC: department==family).
     if isinstance((body or {}).get("families"), list):
         import re as _re
+        known = await families_store.ids() or set(ape.AGENT_FAMILIES.keys())
         fams = []
         for f in body["families"]:
             f = str(f).strip()
             if not f:
                 continue
-            if f in ape.AGENT_FAMILIES:
-                fams.append(f)                       # известная семья
+            if f in known:
+                fams.append(f)                       # семья из реестра
             else:
                 slug = _re.sub(r"[^a-z0-9_-]", "", f.lower())  # кастомная — санитизируем в slug
                 if slug:
@@ -1491,6 +1534,8 @@ async def _startup() -> None:
     await systems_store.seed_if_empty()  # одноразовый сид реестра из server-inventory (демо-стенд)
     await identity_store.init()
     await identity_store.seed_if_empty()  # сквозной ID: связка мастер-UID → аккаунты в системах (демо)
+    await families_store.init()
+    await families_store.seed_from_code(ape.AGENT_FAMILIES, BIZ_FAMILIES)  # единый реестр семей (сид из кода)
     await trigger_store.init()
     await reglament_store.init()
     await run_cache_store.init()
