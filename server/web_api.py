@@ -1070,13 +1070,27 @@ def _overlay_skill(card: dict, ov: dict | None) -> dict:
     return card
 
 
+def _skill_visible(u: dict, card: dict) -> bool:
+    """ABAC для навыков: admin/support (область *) видят все; общий навык (вне семей) виден всем;
+    иначе — только если ХОТЯ БЫ одна семья навыка совпадает с отделом пользователя (department == family).
+    Так менеджер видит менеджерские навыки, финансист — финансовые (изоляция периметра по данным)."""
+    fams = card.get("families") or []
+    if not fams:                      # навык вне семей — общий инструмент, доступен всем ролям
+        return True
+    return any(can_see_family(u, f) for f in fams)
+
+
 @app.get("/api/skills")
-async def skills(u: dict = Depends(user)) -> dict:
-    """Каталог навыков (.md) + сохранённые в Postgres правки (общие для всех, переживают перенакат). §4."""
+async def skills(u: dict = Depends(user), all: bool = False) -> dict:
+    """Каталог навыков (.md) + PG-правки. По умолчанию ФИЛЬТРУЕТСЯ по ABAC (навыки своей семьи +
+    общие); `?all=1` — полный каталог (инженерная платформа/сборка агентов). §4."""
     fam = _skill_families()
     overrides = await skill_store.all()
-    out = [_overlay_skill(_skill_base_card(sid, fam), overrides.get(sid)) for sid in ape.SKILLS]
-    return {"skills": out, "count": len(out)}
+    cards = [_overlay_skill(_skill_base_card(sid, fam), overrides.get(sid)) for sid in ape.SKILLS]
+    total = len(cards)
+    if not all:
+        cards = [c for c in cards if _skill_visible(u, c)]
+    return {"skills": cards, "count": len(cards), "total": total}
 
 
 @app.get("/api/skills/{sid}")
