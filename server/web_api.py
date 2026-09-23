@@ -1787,6 +1787,85 @@ async def agent_check(body: dict, u: dict = Depends(user)) -> dict:
             "autonomy_max": check["autonomy_max"], "hitl_count": check["hitl_count"]}
 
 
+def _agent_match_doc(a: dict) -> str:
+    """Текст-документ агента для матча: имя + семья + роль + названия/описания его навыков."""
+    parts = [a.get("name") or "", a.get("family") or "", a.get("role") or ""]
+    for n in (a.get("graph") or {}).get("nodes") or []:
+        sid = n.get("skill")
+        if sid and sid in ape.SKILLS:
+            t = ape.SKILLS[sid]
+            parts.append(f"{t[0]} {t[1]}")   # заголовок + краткое
+    return " · ".join(p for p in parts if p)
+
+
+_AGENT_EMB_CACHE: dict = {}   # id → (doc_hash, embedding), чтобы не эмбедить агентов каждый раз
+
+
+@app.post("/api/agents/match")
+async def agents_match(body: dict, u: dict = Depends(user)) -> dict:
+    """Подбор агента под задачу пользователя: ЛЕКСИКА (пересечение слов, надёжно/мгновенно) + СЕМАНТИКА
+    (эмбеддинги BGE-M3, best-effort). Возвращает ранжированный топ агентов (ABAC по отделу) + их каналы
+    доставки (из OUT-узлов графа). Питает дерево решений чата: «это задача для агента X, куда результат?»."""
+    q = str((body or {}).get("q") or "").strip()
+    if not q:
+        return {"matches": []}
+    briefs = await agent_store.list_for(None)
+    agents = []
+    for b in briefs:
+        if not can_see_family(u, b.get("family")):
+            continue
+        full = await agent_store.get(b["id"])
+        if full:
+            agents.append(full)
+    if not agents:
+        return {"matches": []}
+    ql = q.lower()
+    qtokens = set(t for t in re.split(r"[^\wа-яё]+", ql) if len(t) > 2)
+    docs = {a["id"]: _agent_match_doc(a) for a in agents}
+    # лексика: доля слов агента, встреченных в запросе + бонус за вхождение имени
+    lex = {}
+    for a in agents:
+        dl = docs[a["id"]].lower()
+        dtokens = set(t for t in re.split(r"[^\wа-яё]+", dl) if len(t) > 2)
+        inter = len(qtokens & dtokens)
+        name_hit = 2 if (a.get("name") or "").lower() in ql else 0
+        lex[a["id"]] = inter + name_hit
+    # семантика (best-effort): эмбеддим запрос + документы агентов (кэш по документу)
+    sem = {a["id"]: 0.0 for a in agents}
+    try:
+        import hashlib as _h
+        need_emb, need_ids = [], []
+        for a in agents:
+            dh = _h.md5(docs[a["id"]].encode()).hexdigest()
+            cached = _AGENT_EMB_CACHE.get(a["id"])
+            if not cached or cached[0] != dh:
+                need_emb.append(docs[a["id"]]); need_ids.append((a["id"], dh))
+        if need_emb:
+            embs = await clients.embed(need_emb)
+            for (aid, dh), e in zip(need_ids, embs):
+                _AGENT_EMB_CACHE[aid] = (dh, e)
+        qemb = (await clients.embed([q]))[0]
+        for a in agents:
+            c = _AGENT_EMB_CACHE.get(a["id"])
+            if c:
+                sem[a["id"]] = _cosine(qemb, c[1])
+    except Exception:  # noqa: BLE001 — семантика опциональна, лексики достаточно
+        pass
+    # итоговый скор: лексика (норм.) + семантика
+    maxlex = max(lex.values()) or 1
+    scored = []
+    for a in agents:
+        score = 0.55 * (lex[a["id"]] / maxlex) + 0.45 * sem[a["id"]]
+        channels = [n.get("channel") or (n.get("out") or {}).get("channel")
+                    for n in (a.get("graph") or {}).get("nodes") or [] if n.get("kind") in ("output", "out")]
+        channels = [c for c in channels if c]
+        scored.append({"id": a["id"], "name": a.get("name"), "family": a.get("family"),
+                       "role": a.get("role"), "score": round(score, 3),
+                       "lex": lex[a["id"]], "sem": round(sem[a["id"]], 3), "channels": channels})
+    scored.sort(key=lambda x: x["score"], reverse=True)
+    return {"matches": scored[:5], "query": q}
+
+
 def _verify_envelope(graph: dict, autonomy_max: str) -> dict:
     """Авто-верификация authored-агента против ПРОИЗВОДНОГО конверта (не контракт LUDA): та же
     governance-проверка, что и `/api/agents/check`, но интейк выводится из графа (потолок = автономия
