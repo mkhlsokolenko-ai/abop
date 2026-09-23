@@ -9,7 +9,8 @@ import json
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from ... import db, gateway
+from ... import db
+from ... import abop_client as abop
 
 MANIFEST = {"id": "graphlens", "title": "Граф", "icon": "graphlens", "ui": "graphlens", "order": 30}
 router = APIRouter()
@@ -159,17 +160,21 @@ def run(body: RunGraphIn) -> dict:
         for n in agent_nodes:
             name = n.get("label") or "Агент"
             system = f"Ты — узел графа «{name}»."
+            # спека узла-агента берётся из ABOP (единый каталог), fallback — локальная метка
             if n.get("agent_id"):
-                a = db.q("SELECT name,description,steps,dod,antipatterns FROM agents WHERE id=?", (n["agent_id"],))
-                if a:
-                    system = f"Ты — {a[0]['name']}. {a[0].get('description','')}\nШаги:\n{a[0].get('steps','')}"
+                try:
+                    a = abop.agent(str(n["agent_id"]))
+                    if a:
+                        steps = a.get("steps") or a.get("skills") or ""
+                        if isinstance(steps, list):
+                            steps = "\n".join(str(s) for s in steps)
+                        system = f"Ты — {a.get('name', name)}. {a.get('description', '') or a.get('role', '')}\nШаги:\n{steps}"
+                except abop.AbopError:
+                    pass
             prefix = ("Наработки предыдущих узлов:\n" + prior) if prior else ""
-            r = gateway.call("chat", {"prompt": f"Задача: {body.task}\n\n{prefix}", "session_id": "graph-run",
-                                      "profile": "standard", "system": system, "max_tokens": 1000})
+            r = abop.chat(prompt=f"Задача: {body.task}\n\n{prefix}", system=system, max_tokens=1000)
             t = r.get("text", "")
             outputs.append({"name": name, "text": t}); prior += f"[{name}]: {t}\n"
-    except gateway.AuthRequired:
-        return {"ok": False, "error": "auth_required"}
-    except gateway.GatewayError as e:
+    except abop.AbopError as e:
         return {"ok": False, "error": str(e)}
     return {"ok": True, "steps": outputs}

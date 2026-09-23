@@ -1,25 +1,24 @@
 """Модуль «Чат» — тред №1 оболочки.
 
 Возможности MVP: треды/темы + история (локальный SQLite), выбор профиля (code/ask/standard),
-скиллы из UI (подмешиваются в system), вложения → RAG (rag_index/rag_search через шлюз),
+скиллы из ABOP (подмешиваются в system), вложения (полный текст в контекст диалога),
 память треда (последние реплики в контексте), мультиагенты (передача задачи по ролям).
 
-Всё в модели — только через gateway (единый JWT/квота). Добавление фич = правка ЭТОГО модуля,
-не ядра. Позже методики скиллов можно грузить из skills/*/SKILL.md (сейчас — краткие подсказки).
+LLM — через ABOP `/api/chat` (тот же self-host каскад, что и у агентов) под JWT пользователя.
+ОТВЯЗАНО от курсового шлюза (MCP/portal). Добавление фич = правка ЭТОГО модуля, не ядра.
 """
 from __future__ import annotations
 
 import json
 import re
-import urllib.error
-import urllib.request
 from pathlib import Path
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from ... import auth, config, db, gateway
+from ... import auth, db
+from ... import abop_client as abop
 
 MANIFEST = {"id": "chat", "title": "Чат", "icon": "chat", "ui": "chat", "order": 10}
 
@@ -102,9 +101,22 @@ def _history(thread_id: int, limit: int = 6) -> str:
     return "\n".join(f"{'Ты' if r['role']=='user' else 'Ассистент'}: {r['content']}" for r in rows)
 
 
-# ── скиллы для UI ──
+# ── скиллы для UI: тянем из ABOP (единый каталог навыков), локальные — как fallback ──
 @router.get("/skills")
 def skills() -> list[dict]:
+    try:
+        items = abop.skills()
+        out = []
+        for s in items:
+            sid = s.get("id") or s.get("slug") or s.get("name")
+            if not sid:
+                continue
+            hint = s.get("summary") or s.get("description") or s.get("title") or ""
+            out.append({"id": sid, "hint": hint})
+        if out:
+            return out
+    except abop.AbopError:
+        pass
     return [{"id": k, "hint": v} for k, v in SKILLS.items()]
 
 
@@ -158,36 +170,26 @@ def autotitle(thread_id: int) -> dict:
         return {"ok": False, "error": "empty"}
     seed = "\n".join(m["content"] for m in msgs)[:800]
     try:
-        r = gateway.call("chat", {
-            "prompt": f"Придумай короткое название темы чата (3-5 слов, без кавычек и точки) по началу диалога:\n{seed}",
-            "session_id": _sid(thread_id) + "-title", "profile": "standard",
-            "system": "Верни ТОЛЬКО название, без пояснений.", "max_tokens": 30})
-    except (gateway.AuthRequired, gateway.GatewayError):
-        return {"ok": False, "error": "gateway"}
+        r = abop.chat(
+            prompt=f"Придумай короткое название темы чата (3-5 слов, без кавычек и точки) по началу диалога:\n{seed}",
+            system="Верни ТОЛЬКО название, без пояснений.", max_tokens=30)
+    except abop.AbopError:
+        return {"ok": False, "error": "abop"}
     title = (r.get("text", "") or "").strip().strip('"').splitlines()[0][:60] or "Новый чат"
     db.run("UPDATE threads SET title=?,updated_at=? WHERE id=?", (title, db.now(), thread_id))
     return {"ok": True, "title": title}
 
 
-# ── вложения → RAG (S3/Qdrant через шлюз) ──
+# ── вложения → полный текст в контекст диалога (локально, без курсового RAG-шлюза) ──
 @router.post("/threads/{thread_id}/attach")
 def attach(thread_id: int, body: AttachIn) -> dict:
     """Прикрепить документ к треду. Полный текст СОХРАНЯЕТСЯ и идёт в контекст диалога (как в обычных
-    чатах — модель «видит» файл сразу). RAG-индексация — ДОПОЛНИТЕЛЬНО (для больших доков/семантики),
-    best-effort: если шлюз недоступен, файл всё равно доступен модели через контекст."""
+    чатах — модель «видит» файл сразу). Хранение локальное (SQLite сайдкара)."""
     full = "\n\n".join(body.documents)
     chars = len(full)
-    indexed = 0
-    try:
-        res = gateway.call("rag_index", {"documents": body.documents, "session_id": _sid(thread_id)})
-        indexed = res.get("indexed", len(body.documents))
-    except gateway.AuthRequired:
-        return {"ok": False, "error": "auth_required"}
-    except (gateway.GatewayError, Exception):  # noqa: BLE001 — RAG опционален, файл уже в контексте
-        indexed = 0
     aid = db.run("INSERT INTO attachments(thread_id,name,chars,chunks,content,created_at) VALUES(?,?,?,?,?,?)",
-                 (thread_id, body.name, chars, indexed, full, db.now()))
-    return {"ok": True, "id": aid, "indexed": indexed, "name": body.name, "chars": chars}
+                 (thread_id, body.name, chars, 0, full, db.now()))
+    return {"ok": True, "id": aid, "indexed": 0, "name": body.name, "chars": chars}
 
 
 def _extract_text(name: str, raw: bytes) -> str:
@@ -234,15 +236,9 @@ def attach_file(thread_id: int, body: AttachFileIn) -> dict:
         return {"ok": False, "error": f"не удалось извлечь текст: {type(e).__name__}: {e}"}
     if not text:
         return {"ok": False, "error": "в файле не найден текстовый слой (возможно скан — нужен OCR)"}
-    indexed = 0
-    try:
-        res = gateway.call("rag_index", {"documents": [text], "session_id": _sid(thread_id)})
-        indexed = res.get("indexed", 1)
-    except (gateway.AuthRequired, gateway.GatewayError, Exception):  # noqa: BLE001 — RAG опционален
-        indexed = 0
     aid = db.run("INSERT INTO attachments(thread_id,name,chars,chunks,content,created_at) VALUES(?,?,?,?,?,?)",
-                 (thread_id, body.name, len(text), indexed, text, db.now()))
-    return {"ok": True, "id": aid, "indexed": indexed, "name": body.name, "chars": len(text)}
+                 (thread_id, body.name, len(text), 0, text, db.now()))
+    return {"ok": True, "id": aid, "indexed": 0, "name": body.name, "chars": len(text)}
 
 
 @router.get("/threads/{thread_id}/files")
@@ -323,15 +319,12 @@ def send(thread_id: int, body: SendIn) -> dict:
     # контекст из вложений: полный текст файла (модель ВИДИТ файл) + история + вопрос
     prompt = _build_prompt(thread_id, body.prompt)
     try:
-        res = gateway.call("chat", {"prompt": prompt, "session_id": _sid(thread_id),
-                                    "profile": profile, "system": _system_for(skills), "max_tokens": 1500})
-    except gateway.AuthRequired:
-        return {"ok": False, "error": "auth_required"}
-    except gateway.GatewayError as e:
+        res = abop.chat(prompt=prompt, profile=profile, system=_system_for(skills), max_tokens=1500)
+    except abop.AbopError as e:
         return {"ok": False, "error": str(e)}
 
     text = res.get("text", "")
-    meta = {"model": res.get("model"), "cost_rub": res.get("cost_rub"),
+    meta = {"model": res.get("model"),
             "input_tokens": res.get("input_tokens"), "output_tokens": res.get("output_tokens")}
     mid = db.run("INSERT INTO messages(thread_id,role,content,meta,created_at) VALUES(?,?,?,?,?)",
                  (thread_id, "assistant", text, json.dumps(meta, ensure_ascii=False), db.now()))
@@ -360,19 +353,13 @@ def _attach_context(thread_id: int, user_prompt: str) -> str:
             if a["content"]:
                 parts.append(f"=== ФАЙЛ: {a['name']} ===\n{a['content']}")
     else:
-        # не влезает — начало каждого файла + релевантные чанки из RAG по вопросу
+        # не влезает — начало каждого файла (бюджет символов). Семантический RAG вынесен в ABOP
+        # Data Plane для агентных прогонов; в свободном чате кладём голову документов.
         per = max(1500, _ATTACH_BUDGET // (len(atts) + 1))
         for a in atts:
             if a["content"]:
                 head = a["content"][:per]
                 parts.append(f"=== ФАЙЛ: {a['name']} (фрагмент) ===\n{head}")
-        try:
-            found = gateway.call("rag_search", {"query": user_prompt, "session_id": _sid(thread_id), "top_k": 4})
-            chunks = [r.get("text", "") for r in (found.get("results") or []) if r.get("text")]
-            if chunks:
-                parts.append("=== РЕЛЕВАНТНЫЕ ФРАГМЕНТЫ (RAG) ===\n- " + "\n- ".join(chunks))
-        except Exception:  # noqa: BLE001 — RAG опционален
-            pass
     return ("ПРИЛОЖЕННЫЕ ДОКУМЕНТЫ (используй их при ответе):\n" + "\n\n".join(parts) + "\n\n") if parts else ""
 
 
@@ -383,7 +370,8 @@ def _build_prompt(thread_id: int, user_prompt: str) -> str:
     return ctx + (f"История:\n{hist}\n\n" if hist else "") + f"Ты: {user_prompt}"
 
 
-# ── стриминг: ответ появляется постепенно (SSE от portal_api → UI) ──
+# ── «стриминг»: ABOP /api/chat пока не стримит, поэтому берём полный ответ и режем на куски,
+#    отдавая их как delta — для UI это выглядит как постепенная печать (эффект тот же). ──
 @router.post("/threads/{thread_id}/send-stream")
 def send_stream(thread_id: int, body: SendIn) -> StreamingResponse:
     th = db.q("SELECT profile,skills FROM threads WHERE id=?", (thread_id,))
@@ -391,40 +379,23 @@ def send_stream(thread_id: int, body: SendIn) -> StreamingResponse:
     def gen():
         if not th:
             yield _sse({"error": "no_thread"}); return
-        tok = auth.token()
-        if not tok:
+        if not auth.token():
             yield _sse({"error": "auth_required"}); return
         profile = th[0]["profile"] or "standard"
         skills = [s for s in (th[0]["skills"] or "").split(",") if s]
         db.run("INSERT INTO messages(thread_id,role,content,meta,created_at) VALUES(?,?,?,?,?)",
                (thread_id, "user", body.prompt, "{}", db.now()))
-        payload = {"prompt": _build_prompt(thread_id, body.prompt), "session_id": _sid(thread_id),
-                   "profile": profile, "system": _system_for(skills), "max_tokens": 1500}
-        req = urllib.request.Request(
-            config.PORTAL + "/api/chat/stream", data=json.dumps(payload).encode(),
-            headers={"Authorization": "Bearer " + tok, "Content-Type": "application/json"})
+        prompt = _build_prompt(thread_id, body.prompt)
         full, meta = "", {}
         try:
-            r = urllib.request.urlopen(req, timeout=300)
-            for raw in r:
-                line = raw.decode("utf-8", "replace").strip()
-                if not line.startswith("data:"):
-                    continue
-                try:
-                    d = json.loads(line[5:].strip())
-                except Exception:  # noqa: BLE001
-                    continue
-                if d.get("delta"):
-                    full += d["delta"]
-                    yield _sse({"delta": d["delta"]})
-                elif d.get("done"):
-                    meta = {"model": d.get("model"), "cost_rub": d.get("cost_rub"),
-                            "input_tokens": d.get("input_tokens"), "output_tokens": d.get("output_tokens")}
-                elif d.get("error"):
-                    yield _sse({"error": d["error"]})
-        except urllib.error.HTTPError as e:
-            yield _sse({"error": f"HTTP {e.code}"})
-        except Exception as e:  # noqa: BLE001
+            r = abop.chat(prompt=prompt, profile=profile, system=_system_for(skills), max_tokens=1500)
+            full = r.get("text", "") or ""
+            meta = {"model": r.get("model"), "input_tokens": r.get("input_tokens"),
+                    "output_tokens": r.get("output_tokens")}
+            # нарезка на «дельты» ~48 символов — псевдо-стрим для плавной печати в UI
+            for i in range(0, len(full), 48):
+                yield _sse({"delta": full[i:i + 48]})
+        except abop.AbopError as e:
             yield _sse({"error": str(e)})
         if full:
             db.run("INSERT INTO messages(thread_id,role,content,meta,created_at) VALUES(?,?,?,?,?)",
@@ -473,15 +444,11 @@ def agents(thread_id: int, body: AgentsIn) -> dict:
     try:
         for name, system in specs:
             prefix = ("Наработки предыдущих ролей:\n" + prior) if prior else ""
-            r = gateway.call("chat", {"prompt": f"Задача: {body.task}\n\n{prefix}",
-                                      "session_id": _sid(thread_id) + "-agents", "profile": "standard",
-                                      "system": system, "max_tokens": 1200})
+            r = abop.chat(prompt=f"Задача: {body.task}\n\n{prefix}", system=system, max_tokens=1200)
             t = r.get("text", "")
             outputs.append(f"### {name}\n{t}")
             prior += f"\n[{name}]: {t}\n"
-    except gateway.AuthRequired:
-        return {"ok": False, "error": "auth_required"}
-    except gateway.GatewayError as e:
+    except abop.AbopError as e:
         return {"ok": False, "error": str(e)}
     combined = "\n\n".join(outputs)
     mid = db.run("INSERT INTO messages(thread_id,role,content,meta,created_at) VALUES(?,?,?,?,?)",

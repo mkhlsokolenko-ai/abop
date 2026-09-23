@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from ... import gateway
+from ... import abop_client as abop
 
 MANIFEST = {"id": "security", "title": "Безопасность", "icon": "security", "ui": "security", "order": 80}
 router = APIRouter()
@@ -14,12 +14,13 @@ router = APIRouter()
 
 @router.get("/me")
 def me() -> dict:
-    """Реальные права текущего пользователя со шлюза (RBAC по ролям Keycloak)."""
+    """Реальные права текущего пользователя из ABOP (RBAC/ABAC по ролям и отделу Keycloak realm abop)."""
     try:
-        return {"ok": True, **gateway.portal_get("/api/my/permissions")}
-    except gateway.AuthRequired:
-        return {"ok": False, "error": "auth_required"}
-    except gateway.GatewayError as e:
+        r = abop.me()
+        usr = (r or {}).get("user", r) or {}
+        return {"ok": True, "user": usr, "department": usr.get("department"),
+                "roles": usr.get("roles") or [], "level": usr.get("level")}
+    except abop.AbopError as e:
         return {"ok": False, "error": str(e)}
 
 

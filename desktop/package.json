@@ -1,7 +1,7 @@
 {
-  "name": "ape-desktop",
-  "version": "0.2.9",
-  "description": "APE Desktop — модульная оболочка курса (Electron + Python sidecar)",
+  "name": "abop-desktop",
+  "version": "1.0.0",
+  "description": "ABOP Desktop — тонкий клиент-рантайм ABOP (Electron + Python sidecar)",
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",

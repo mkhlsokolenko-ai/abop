@@ -293,6 +293,34 @@ def me(u: dict = Depends(user)) -> dict:
     return {"user": u}
 
 
+@app.post("/api/chat")
+async def chat_freeform(body: dict, u: dict = Depends(user)) -> dict:
+    """Свободный LLM-ответ под JWT пользователя — единый рантайм-канал для desktop-чата,
+    цепочек графа и распознавания (тот же self-host каскад, что и у агентов). Отвязка от
+    курсового шлюза: desktop больше НЕ ходит в MCP/portal курса. Rate-limit по пользователю."""
+    prompt = str((body or {}).get("prompt") or "").strip()
+    if not prompt:
+        raise HTTPException(422, "нужен prompt")
+    actor = u.get("name") or u.get("sub") or "dev"
+    if not _rate_check(actor):
+        raise HTTPException(429, "слишком часто — попробуйте чуть позже")
+    system = str((body or {}).get("system") or "").strip()
+    context = str((body or {}).get("context") or "").strip()
+    profile = str((body or {}).get("profile") or "standard").strip() or "standard"
+    max_tokens = min(int((body or {}).get("max_tokens") or 1200), 4096)
+    messages: list[dict] = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    user_content = (f"Контекст:\n{context}\n\n" if context else "") + prompt
+    messages.append({"role": "user", "content": user_content})
+    try:
+        resp = await clients.chat(messages=messages, profile=profile, max_tokens=max_tokens)
+    except Exception as ex:  # noqa: BLE001
+        raise HTTPException(502, f"LLM недоступен: {ex}")
+    return {"text": resp.get("text") or "", "model": resp.get("model"),
+            "input_tokens": resp.get("input_tokens"), "output_tokens": resp.get("output_tokens")}
+
+
 @app.post("/api/auth/login")
 async def auth_login(body: dict) -> dict:
     """Прокси-логин к Keycloak (realm abop) — Keycloak не публичный, поэтому вход идёт через ABOP.

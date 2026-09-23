@@ -1,6 +1,6 @@
 """Модуль «Распознавание» (OCR) — локально, под правами пользователя, без внешних бинарей.
-Движок: RapidOCR (onnxruntime), rus+eng. Картинка/скан → текст → знания треда (RAG через шлюз).
-RapidOCR грузится лениво (тяжёлый импорт) — только при первом вызове.
+Движок: RapidOCR (onnxruntime), rus+eng. Картинка/скан → текст → знания треда (локально, модуль chat).
+RapidOCR грузится лениво (тяжёлый импорт) — только при первом вызове. Отвязано от курсового шлюза.
 """
 from __future__ import annotations
 
@@ -10,8 +10,6 @@ import tempfile
 
 from fastapi import APIRouter
 from pydantic import BaseModel
-
-from ... import gateway
 
 MANIFEST = {"id": "ocr", "title": "Распознать", "icon": "ocr", "ui": "ocr", "order": 60}
 router = APIRouter()
@@ -80,14 +78,6 @@ def recognize(body: OcrIn) -> dict:
             except OSError:
                 pass
     if not text.strip():
-        return {"ok": True, "text": "", "chars": 0, "indexed": 0, "note": "текст не найден"}
-    indexed = 0
-    if body.to_knowledge:
-        try:
-            r = gateway.call("rag_index", {"documents": [text], "session_id": body.session_id})
-            indexed = r.get("indexed", 1)
-        except gateway.AuthRequired:
-            return {"ok": True, "text": text, "chars": len(text), "indexed": 0, "note": "нужен вход для сохранения в знания"}
-        except gateway.GatewayError as e:
-            return {"ok": True, "text": text, "chars": len(text), "indexed": 0, "note": str(e)}
-    return {"ok": True, "text": text, "chars": len(text), "indexed": indexed}
+        return {"ok": True, "text": "", "chars": 0, "note": "текст не найден"}
+    # Распознанный текст возвращаем — его прикладывают в знания треда через чат (📎), локально.
+    return {"ok": True, "text": text, "chars": len(text)}

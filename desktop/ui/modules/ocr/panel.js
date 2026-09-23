@@ -1,5 +1,5 @@
 // Модуль «Распознать» (OCR) — локально (RapidOCR), под правами пользователя.
-// Перетащи/выбери картинку или скан → текст → опционально в знания треда (RAG). Вёрстка по ДС.
+// Перетащи/выбери картинку или скан → текст → копируй и приложи в чат через 📎. Вёрстка по ДС.
 const O = "/api/modules/ocr";
 const esc = (s) => (s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 const LBL = "font-family:var(--mono);font-size:9.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--ink-3)";
@@ -17,7 +17,6 @@ export async function mount(root, ctx) {
           <h1 style="margin:0;font-size:26px;font-weight:800;letter-spacing:-.7px">Распознать текст</h1>
           <p style="margin:0;font-size:13px;color:var(--ink-2)">Картинка или скан → текст. Локально, ${eng}. Ничего не уходит наружу.</p>
         </div>
-        <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-2)"><input type="checkbox" id="toKb" checked/> добавить в знания треда</label>
       </div>
 
       <div id="drop" style="${CARD};align-items:center;justify-content:center;gap:12px;min-height:200px;border:2px dashed var(--line-2);cursor:pointer;text-align:center">
@@ -35,9 +34,9 @@ export async function mount(root, ctx) {
   async function recognizeDataUrl(dataUrl, previewSrc) {
     $("preview").innerHTML = `<div style="${CARD};gap:10px"><span style="${LBL}">исходное изображение</span><img src="${previewSrc}" style="max-width:100%;max-height:260px;border-radius:11px;border:1px solid var(--line)"/></div>`;
     $("result").innerHTML = `<div style="${CARD}"><span style="display:inline-flex;gap:12px;align-items:center">${mascot("thinking", 26)}<span style="color:var(--ink-2)">распознаю…</span></span></div>`;
-    const r = await api(O + "/recognize", { method: "POST", body: JSON.stringify({ data_url: dataUrl, to_knowledge: $("toKb").checked }) });
+    const r = await api(O + "/recognize", { method: "POST", body: JSON.stringify({ data_url: dataUrl }) });
     if (!r.ok) { $("result").innerHTML = `<div style="${CARD};color:var(--danger-ink)">Ошибка: ${esc(r.error)}</div>`; return; }
-    const note = r.indexed ? `<span class="chip on">✓ в знаниях (${r.indexed} фр.)</span>` : (r.note ? `<span class="chip">${esc(r.note)}</span>` : "");
+    const note = r.note ? `<span class="chip">${esc(r.note)}</span>` : `<span class="chip on">готово · приложите в чат 📎</span>`;
     $("result").innerHTML = `<div style="${CARD};gap:10px">
       <div style="display:flex;align-items:center;gap:10px"><span style="${LBL};flex:1">распознанный текст · ${r.chars} симв.</span>${note}
         <button id="copyTxt" class="btn sm">⧉ копировать</button></div>

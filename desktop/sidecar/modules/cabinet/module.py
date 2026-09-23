@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from ... import gateway
+from ... import abop_client as abop
 
 MANIFEST = {"id": "cabinet", "title": "Кабинет", "icon": "cabinet", "ui": "cabinet", "order": 90}
 
@@ -16,20 +16,29 @@ router = APIRouter()
 
 @router.get("/usage")
 def usage() -> dict:
+    """Профиль пользователя из ABOP (отдел/роли/уровень). Детальный расход токенов/стоимость —
+    в наблюдаемости ABOP (Grafana/метрики), а не в курсовом шлюзе."""
     try:
-        rep = gateway.call("my_usage", {})
-    except gateway.AuthRequired:
-        return {"ok": False, "error": "auth_required"}
-    except gateway.GatewayError as e:
+        r = abop.me()
+        usr = (r or {}).get("user", r) or {}
+        h = {}
+        try:
+            h = abop.health()
+        except abop.AbopError:
+            h = {}
+        return {"ok": True, "user": usr, "department": usr.get("department"),
+                "roles": usr.get("roles") or [], "level": usr.get("level"),
+                "runtime": {"llm": h.get("llm"), "status": h.get("status") or h.get("ok")}}
+    except abop.AbopError as e:
         return {"ok": False, "error": str(e)}
-    return {"ok": True, "report": rep}
 
 
 @router.get("/sources")
 def sources() -> dict:
-    """Рабочие источники (Word/Excel/ИС) — пока каркас (см. roadmap коннекторов/ABOP Data Plane)."""
+    """Рабочие источники: подключены в ABOP Data Plane (см. модуль «Источники»); локальные файлы —
+    под правами ОС. RBAC/ABAC — на стороне ABOP (realm abop)."""
     return {"connectors": [
-        {"id": "local-office", "title": "Локальные файлы Office (Word/Excel)", "status": "planned"},
-        {"id": "recent-files", "title": "Последние рабочие файлы", "status": "planned"},
-        {"id": "abop-data", "title": "ABOP Data Plane (источники→canonical)", "status": "planned"},
-    ], "rbac": {"status": "planned", "note": "роли/доступ к инструментам и источникам — на этапе смычки с ABOP"}}
+        {"id": "abop-data", "title": "ABOP Data Plane (коннекторы + рецепты)", "status": "ready"},
+        {"id": "local-office", "title": "Локальные файлы Office (Word/Excel)", "status": "ready"},
+        {"id": "recent-files", "title": "Последние рабочие файлы", "status": "ready"},
+    ], "rbac": {"status": "enforced", "note": "роли/доступ к инструментам и источникам — RBAC/ABAC ABOP (realm abop)"}}

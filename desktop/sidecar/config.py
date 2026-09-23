@@ -18,11 +18,12 @@ CLIENT = "portal"
 # Один источник истины по агентам/прогонам/HITL/данным (см. docs/ADR_DESKTOP_ABOP_SMYCHKA.md).
 ABOP = os.environ.get("ABOP_BASE_URL", "http://5.129.192.63:8091")
 
-APP_NAME = "APE Desktop"
-APP_VERSION = "0.2.9"
+APP_NAME = "ABOP Desktop"
+APP_VERSION = "1.0.0"
 
-# ── локальные данные приложения (конфиг, токены, треды/сообщения, кэш модулей) ──
-DATA_DIR = Path(os.environ.get("APE_DESKTOP_HOME") or (Path.home() / ".ape-desktop"))
+# ── локальные данные приложения — ОТДЕЛЬНЫЙ каталог от курсовой версии (~/.ape-desktop),
+#    чтобы БД/токены/состояние не пересекались (две версии ставятся и работают независимо). ──
+DATA_DIR = Path(os.environ.get("ABOP_DESKTOP_HOME") or (Path.home() / ".abop-desktop"))
 CONFIG_FILE = DATA_DIR / "config.json"
 DB_FILE = DATA_DIR / "app.db"
 

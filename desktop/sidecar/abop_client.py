@@ -45,6 +45,18 @@ def _req(method: str, path: str, body: dict | None = None, timeout: int = 120) -
 
 
 # ── операции, которые нужны desktop-модулю agents ──
+def chat(prompt: str, system: str = "", context: str = "", profile: str = "standard",
+         max_tokens: int = 1200) -> dict:
+    """Свободный LLM-ответ ABOP (тот же self-host каскад, что и у агентов) под JWT пользователя.
+    Единый рантайм-канал для desktop-чата/цепочек графа/распознавания вместо курсового шлюза."""
+    body = {"prompt": prompt, "profile": profile, "max_tokens": max_tokens}
+    if system:
+        body["system"] = system
+    if context:
+        body["context"] = context
+    return _req("POST", "/api/chat", body, timeout=120)
+
+
 def me() -> dict:
     return _req("GET", "/api/me", timeout=20)
 
@@ -74,6 +86,12 @@ def recipes() -> list:
     """Рецепты Data Plane (источник→entity) — какие данные доступны агенту."""
     r = _req("GET", "/api/data/recipes", timeout=30)
     return (r or {}).get("recipes", []) if isinstance(r, dict) else (r or [])
+
+
+def connectors() -> list:
+    """Коннекторы Data Plane ABOP (источники + резолв эндпоинта из реестра систем, флаг allowed по ABAC)."""
+    r = _req("GET", "/api/data/connectors", timeout=30)
+    return (r or {}).get("connectors", []) if isinstance(r, dict) else (r or [])
 
 
 def author(family: str, skills: list, name: str = "", member: str = "") -> dict:
