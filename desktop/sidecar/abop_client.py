@@ -44,6 +44,35 @@ def _req(method: str, path: str, body: dict | None = None, timeout: int = 120) -
         raise AbopError(0, f"{type(e).__name__}: {e}") from None
 
 
+def chat_stream(prompt: str, system: str = "", profile: str = "standard", max_tokens: int = 1500):
+    """Проксирует SSE-стрим ABOP /api/chat/stream: генератор yield-ит строки SSE как есть
+    (`data: {...}`). Настоящий стрим токенов (не псевдо-нарезка). Bearer из auth.token()."""
+    url = config.ABOP.rstrip("/") + "/api/chat/stream"
+    headers = {"Content-Type": "application/json"}
+    tok = auth.token()
+    if tok:
+        headers["Authorization"] = "Bearer " + tok
+    payload = {"prompt": prompt, "profile": profile, "max_tokens": max_tokens}
+    if system:
+        payload["system"] = system
+    req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
+    try:
+        r = urllib.request.urlopen(req, timeout=300)
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", "replace")
+        raise AbopError(e.code, str(detail)[:400]) from None
+    except Exception as e:  # noqa: BLE001
+        raise AbopError(0, f"{type(e).__name__}: {e}") from None
+    for raw in r:
+        line = raw.decode("utf-8", "replace").strip()
+        if line.startswith("data:"):
+            chunk = line[5:].strip()
+            try:
+                yield json.loads(chunk)
+            except Exception:  # noqa: BLE001
+                continue
+
+
 # ── операции, которые нужны desktop-модулю agents ──
 def chat(prompt: str, system: str = "", context: str = "", profile: str = "standard",
          max_tokens: int = 1200) -> dict:

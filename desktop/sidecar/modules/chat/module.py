@@ -432,8 +432,8 @@ def _build_prompt(thread_id: int, user_prompt: str) -> str:
     return ctx + (f"История:\n{hist}\n\n" if hist else "") + f"Ты: {user_prompt}"
 
 
-# ── «стриминг»: ABOP /api/chat пока не стримит, поэтому берём полный ответ и режем на куски,
-#    отдавая их как delta — для UI это выглядит как постепенная печать (эффект тот же). ──
+# ── НАСТОЯЩИЙ стриминг: проксируем SSE-дельты от ABOP /api/chat/stream (токены по мере генерации).
+#    Пользователь видит ответ как в обычных чатах — печать в реальном времени. ──
 @router.post("/threads/{thread_id}/send-stream")
 def send_stream(thread_id: int, body: SendIn) -> StreamingResponse:
     th = db.q("SELECT profile,skills FROM threads WHERE id=?", (thread_id,))
@@ -450,13 +450,14 @@ def send_stream(thread_id: int, body: SendIn) -> StreamingResponse:
         prompt = _build_prompt(thread_id, body.prompt)
         full, meta = "", {}
         try:
-            r = abop.chat(prompt=prompt, profile=profile, system=_system_for(skills), max_tokens=1500)
-            full = r.get("text", "") or ""
-            meta = {"model": r.get("model"), "input_tokens": r.get("input_tokens"),
-                    "output_tokens": r.get("output_tokens")}
-            # нарезка на «дельты» ~48 символов — псевдо-стрим для плавной печати в UI
-            for i in range(0, len(full), 48):
-                yield _sse({"delta": full[i:i + 48]})
+            for ev in abop.chat_stream(prompt=prompt, profile=profile, system=_system_for(skills), max_tokens=1500):
+                if ev.get("delta"):
+                    full += ev["delta"]
+                    yield _sse({"delta": ev["delta"]})
+                elif ev.get("done"):
+                    meta = {"model": ev.get("model")}
+                elif ev.get("error"):
+                    yield _sse({"error": ev["error"]})
         except abop.AbopError as e:
             yield _sse({"error": str(e)})
         if full:

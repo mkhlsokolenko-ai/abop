@@ -140,6 +140,59 @@ async def chat(
     raise RuntimeError(f"Все модели каскада {cascade} недоступны: {last_err}")
 
 
+async def chat_stream(
+    messages: list[dict],
+    *,
+    profile: str = "standard",
+    model: str | None = None,
+    temperature: float = 0.2,
+    max_tokens: int = 1500,
+):
+    """Стриминг chat completion (SSE от OpenAI-совместимого бэкенда, stream=true). Отдаёт токены-дельты
+    по мере генерации. Каскад: первая модель с доступным base_url. yield {delta} по кускам, в конце —
+    {done, model, ...}. Для десктоп-чата (настоящий стрим ответа, не псевдо-нарезка)."""
+    import json as _json
+    cascade = [model] if model else settings.cascade_for(profile)
+    for m in cascade:
+        base_url, api_key, real_model = _route(m)
+        if not base_url:
+            continue
+        payload: dict = {
+            "model": real_model, "messages": messages, "temperature": temperature,
+            "max_tokens": max_tokens, "stream": True,
+        }
+        if base_url == settings.local_llm_base_url and settings.local_llm_base_url:
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
+        try:
+            async with _admission():
+                async with httpx.AsyncClient(timeout=120) as cli:
+                    async with cli.stream("POST", f"{base_url}/chat/completions",
+                                          headers={"Authorization": f"Bearer {api_key}"},
+                                          json=payload) as r:
+                        r.raise_for_status()
+                        any_text = False
+                        async for line in r.aiter_lines():
+                            if not line or not line.startswith("data:"):
+                                continue
+                            chunk = line[5:].strip()
+                            if chunk == "[DONE]":
+                                break
+                            try:
+                                d = _json.loads(chunk)
+                                delta = (d.get("choices") or [{}])[0].get("delta", {}).get("content") or ""
+                            except Exception:  # noqa: BLE001
+                                continue
+                            if delta:
+                                any_text = True
+                                yield {"delta": delta}
+            if any_text:
+                yield {"done": True, "model": m}
+                return
+        except Exception:  # noqa: BLE001 — каскад: к следующей модели
+            continue
+    yield {"error": "LLM недоступен (все модели каскада)"}
+
+
 # ─────────────────────────── Embeddings ───────────────────────────
 
 async def embed(texts: list[str]) -> list[list[float]]:
