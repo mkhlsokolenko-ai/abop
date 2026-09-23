@@ -194,7 +194,7 @@ def run_agent(agent: dict, contract: dict, safety_of) -> dict:
 
 async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_sources,
                    load_body, chat_fn, blocked_entities=None, knowledge_fn=None,
-                   findings_context=None) -> dict:
+                   findings_context=None, user_context="") -> dict:
     """НАСТОЯЩИЙ прогон: governance-каркас (run_agent) + для каждого навыка с data-scope
     собирает РЕАЛЬНЫЕ данные из canonical store (data_query) и прогоняет их через LLM
     (тело навыка = методика) → находки на доску. Числа — только из данных (анти-галлюцинация).
@@ -249,8 +249,15 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
             if chunks:
                 know_block = ("=== НОРМЫ/ЗНАНИЕ (RAG из корпуса семьи, sLAVA) ===\n"
                               + "\n---\n".join(c[:800] for c in chunks[:4]) + "\n\n")
+        # Пользовательский контекст из десктоп-чата (задача своими словами + текст приложенного файла/ссылка).
+        # Помечен явно как ЗАДАЧА/ДОКУМЕНТ — НЕ путать с истинными находками детерминир. движка (explain).
+        uc_block = ""
+        if user_context:
+            uc_block = ("=== ЗАДАЧА ПОЛЬЗОВАТЕЛЯ И ПРИЛОЖЕННЫЙ КОНТЕКСТ (учитывай при анализе) ===\n"
+                        + str(user_context)[:6000] + "\n\n")
         _head = ("Ты — навык агента ABOP. Ниже методика навыка и РЕАЛЬНЫЕ данные из Data Plane (canonical, с provenance).\n\n"
                  "=== МЕТОДИКА ===\n" + body + "\n\n"
+                 + uc_block
                  + know_block
                  + "=== ДАННЫЕ (дайджест: всего+по_типам = полный scope, сэмпл = примеры записей) ===\n"
                  + _json.dumps(digest, ensure_ascii=False)[:_LIM["data"]] + "\n\n")

@@ -2071,7 +2071,7 @@ def _run_cache_key(agent: dict) -> str:
 
 
 async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, trigger: dict | None = None,
-                            use_cache: bool = True) -> dict:
+                            use_cache: bool = True, user_context: str = "") -> dict:
     """Ядро прогона (LLM-раскладка + находки audit1c + сохранение + аудит). Переиспользуется
     POST /api/runs и планировщиком триггеров (server/triggers.py). Возвращает {saved, result}.
     Кэш результатов (multi-user): при попадании возвращает сохранённый вывод без LLM/доставки."""
@@ -2134,7 +2134,7 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
                                    load_body=ape.load_skill_body,
                                    chat_fn=clients.chat, blocked_entities=blocked,
                                    knowledge_fn=_agent_knowledge_fn(agent, started_by),
-                                   findings_context=_ctx)
+                                   findings_context=_ctx, user_context=user_context)
     # Петля прогон→канва: прикрепляем детерминированные находки (истина, не LLM).
     if "audit1c-checks" in _skills:
         if _det_findings_err:
@@ -2283,13 +2283,16 @@ async def run_start(body: dict, u: dict = Depends(user)) -> JSONResponse:
     if not _rate_check(actor):
         obs.inc("abop_rate_limited_total")
         raise HTTPException(429, f"слишком много прогонов: лимит {_USER_RATE_MAX} за {_USER_RATE_WINDOW}с — подождите")
+    user_context = str((body or {}).get("context") or "").strip()[:20000]  # задача/файл/ссылка из чата
     use_cache = not bool((body or {}).get("no_cache"))  # {no_cache:true} → форс свежий прогон
+    if user_context:
+        use_cache = False   # контекст пользователя влияет на прогон → кэш (по агенту+данным) обходим
     # идемпотентность: одинаковые сабмиты (юзер+агент[+idempotency_key]) сериализуются per-key lock →
     # второй дождётся первого и заберёт результат из кэша (двойной клик не запускает двойной прогон)
     idem = str((body or {}).get("idempotency_key", "")).strip()
     lock_key = f"{actor}:{agent_id}:{idem}"
     async with _run_lock(lock_key):
-        out = await execute_agent_run(agent, contract, actor, use_cache=use_cache)
+        out = await execute_agent_run(agent, contract, actor, use_cache=use_cache, user_context=user_context)
     return JSONResponse({"run_id": out["saved"]["id"], **out["result"]}, status_code=201)
 
 
