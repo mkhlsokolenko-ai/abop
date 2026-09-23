@@ -162,7 +162,8 @@ export async function mount(root, ctx) {
     const bg = mine ? "rgba(99,102,241,.16)" : "var(--panel)";
     const bd = mine ? "rgba(129,140,248,.3)" : "var(--line)";
     const inner = mine ? `<span style="font-size:13.5px;line-height:1.6;white-space:pre-wrap">${esc(m.content)}</span>`
-      : (m.meta && m.meta.run_agent ? runCard(m.meta.run_agent) : md(m.content));
+      : (m.meta && m.meta.run_agent ? runCard(m.meta.run_agent)
+        : (m.meta && m.meta.decision ? decisionHTML(m.meta.decision) : md(m.content)));
     const cost = m.meta && m.meta.model ? `<span style="margin-left:4px;font-family:var(--mono);font-size:10.5px;color:var(--ink-3)">${m.meta.model} · ${m.meta.cost_rub ?? 0} ₽</span>` : "";
     const acts = mine
       ? `<button data-edit="${idx}" style="padding:4px 9px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--ink-3);font-size:11px;cursor:pointer">✎ изменить</button>`
@@ -197,6 +198,10 @@ export async function mount(root, ctx) {
     $("col").querySelectorAll(".hitlOk").forEach((b) => b.onclick = () => decideDelivery(b, "approve"));
     $("col").querySelectorAll(".hitlNo").forEach((b) => b.onclick = () => decideDelivery(b, "reject"));
     $("col").querySelectorAll(".mkRecurring").forEach((b) => b.onclick = () => recurringModal(b.dataset.agent, b.dataset.name));
+    // дерево решений: запуск подобранного агента с выбранной доставкой / другой агент / просто ответить
+    $("col").querySelectorAll(".dcRun").forEach((b) => b.onclick = () => { const dc = _lastDecision(); runAbopAgentDeliver(b.dataset.id, b.dataset.name, dc ? dc.text : "", b.dataset.deliver || ""); });
+    $("col").querySelectorAll(".dcAlt").forEach((b) => b.onclick = () => { const dc = _lastDecision(); runAbopAgentDeliver(b.dataset.id, b.dataset.name, dc ? dc.text : "", ""); });
+    $("col").querySelectorAll(".dcChat").forEach((b) => b.onclick = () => { const dc = _lastDecision(); if (dc) sendPrompt(dc.text); });
     $("scroll").scrollTop = $("scroll").scrollHeight;
   }
 
@@ -369,7 +374,59 @@ export async function mount(root, ctx) {
     if (on) { b.textContent = "⏹"; b.title = "Остановить"; b.style.background = "rgba(239,68,68,.14)"; b.style.color = "var(--danger-ink)"; b.style.border = "1px solid rgba(239,68,68,.35)"; b.onclick = () => curAbort && curAbort.abort(); }
     else { b.textContent = "↑"; b.title = "Отправить · Enter"; b.style.background = "linear-gradient(135deg,#6366f1,#8b5cf6)"; b.style.color = "#fff"; b.style.border = "none"; b.onclick = sendFromInput; }
   }
-  function sendFromInput() { const v = $("inp").value; $("inp").value = ""; sendPrompt(v); }
+  // Дерево решений чата: перед свободным ответом подбираем агента (лексика+семантика). Сильный матч →
+  // карточка «это задача для агента X, куда результат?» вместо галлюцинации LLM.
+  async function sendFromInput() {
+    const v = ($("inp") ? $("inp").value : "").trim(); if (!v || !cur) return;
+    $("inp").value = "";
+    let matches = [];
+    try { const r = await api(M + "/match", { method: "POST", body: JSON.stringify({ q: v }) }); matches = (r && r.matches) || []; } catch {}
+    const top = matches[0];
+    if (top && top.score >= 0.45) { decisionCard(v, matches); return; }
+    sendPrompt(v);
+  }
+
+  // карточка выбора: агент + куда положить результат (чат / Redmine / почта / просто ответить)
+  function decisionCard(text, matches) {
+    const top = matches[0];
+    const alt = matches.slice(1, 3).filter((m) => m.score >= 0.25);
+    const msg = { role: "assistant", content: "", meta: { decision: { text, top, alt } } };
+    messages.push({ role: "user", content: text, meta: {} });
+    messages.push(msg); render();
+  }
+  function decisionHTML(dc) {
+    const t = dc.top;
+    const ch = (t.channels || []);
+    const chLine = ch.length ? `<div style="font-size:11px;color:var(--ink-3)">каналы агента: ${ch.map(esc).join(", ")}</div>` : "";
+    const altBtns = (dc.alt || []).map((a) => `<button class="dcAlt" data-id="${esc(a.id)}" data-name="${esc(a.name)}" style="padding:5px 10px;border:1px solid var(--line);border-radius:9px;background:var(--field);color:var(--ink-2);font-size:11px;cursor:pointer">${esc(a.name)}</button>`).join("");
+    return `<div style="display:flex;flex-direction:column;gap:10px">
+      <div style="font-size:13px;color:var(--ink)">🎯 Похоже, это задача для агента <b>${esc(t.name)}</b> <span style="font-family:var(--mono);font-size:10px;color:var(--ink-3)">${esc(t.family || "")}</span></div>
+      ${chLine}
+      <div style="font-size:11.5px;color:var(--ink-2)">Куда положить результат?</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="dcRun" data-id="${esc(t.id)}" data-name="${esc(t.name)}" data-deliver="" style="padding:8px 13px;border:none;border-radius:10px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:12px;font-weight:600;cursor:pointer">▶ Запустить (как настроено)</button>
+        <button class="dcRun" data-id="${esc(t.id)}" data-name="${esc(t.name)}" data-deliver="chat" style="padding:8px 13px;border:1px solid var(--line);border-radius:10px;background:var(--field);color:var(--ink);font-size:12px;font-weight:600;cursor:pointer">💬 Только в чат</button>
+        ${ch.includes("redmine") ? `<button class="dcRun" data-id="${esc(t.id)}" data-name="${esc(t.name)}" data-deliver="redmine" style="padding:8px 13px;border:1px solid var(--line);border-radius:10px;background:var(--field);color:var(--ink);font-size:12px;font-weight:600;cursor:pointer">🎫 В Redmine</button>` : ""}
+        ${ch.includes("email") ? `<button class="dcRun" data-id="${esc(t.id)}" data-name="${esc(t.name)}" data-deliver="email" style="padding:8px 13px;border:1px solid var(--line);border-radius:10px;background:var(--field);color:var(--ink);font-size:12px;font-weight:600;cursor:pointer">✉ На почту</button>` : ""}
+        <button class="dcChat" style="padding:8px 13px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--ink-3);font-size:12px;cursor:pointer">Просто ответить</button>
+      </div>
+      ${altBtns ? `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span style="font-size:10.5px;color:var(--ink-3)">другой агент:</span>${altBtns}</div>` : ""}</div>`;
+  }
+  function _lastDecision() { for (let i = messages.length - 1; i >= 0; i--) { if (messages[i].meta && messages[i].meta.decision) return messages[i].meta.decision; } return null; }
+
+  // запуск подобранного агента с выбранной доставкой (deliver: '' как настроено | chat | redmine | email)
+  async function runAbopAgentDeliver(agentId, agentName, task, deliver) {
+    const run = { role: "assistant", content: "", meta: {} }; messages.push(run); render();
+    const el = $("col").querySelector("div:last-child .bub");
+    if (el) el.innerHTML = `<span style="display:inline-flex;gap:12px;align-items:center">${mascot("thinking", 26)}<span style="color:var(--ink-2)">агент «${esc(agentName)}» работает…</span></span>`;
+    try {
+      const r = await api(M + "/threads/" + cur.id + "/run-agent", { method: "POST", body: JSON.stringify({ agent_id: agentId, context: task || "", deliver: deliver || "" }) });
+      if (r.ok) { run.content = "[агент " + agentId + "]"; run.meta = { run_agent: r.run }; }
+      else { run.content = "Ошибка запуска: " + (r.error || "не удалось"); }
+    } catch (e) { run.content = "Сбой: " + (e && e.message || e); }
+    render(); loadThreads();
+  }
+
   async function sendPrompt(text) {
     text = (text || "").trim(); if (!text || !cur) return;
     const wasNew = messages.length === 0;

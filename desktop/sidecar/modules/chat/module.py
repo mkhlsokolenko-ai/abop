@@ -76,6 +76,7 @@ class RunAgentIn(BaseModel):
     agent_id: str               # реальный ABOP-агент (mailtasks/invest1c/bft/authored…)
     context: str = ""           # подсказка из треда (задача / выделенный текст / ссылка)
     no_cache: bool = False
+    deliver: str = ""           # дерево решений: '' все каналы | 'chat' только в чат | канал (redmine/email)
 
 
 class ExportIn(BaseModel):
@@ -105,6 +106,19 @@ def _history(thread_id: int, limit: int = 6) -> str:
                 (thread_id, limit))
     rows = list(reversed(rows))
     return "\n".join(f"{'Ты' if r['role']=='user' else 'Ассистент'}: {r['content']}" for r in rows)
+
+
+class MatchIn(BaseModel):
+    q: str
+
+
+@router.post("/match")
+def match(body: MatchIn) -> dict:
+    """Подбор агента под задачу (дерево решений чата): лексика+семантика на стороне ABOP."""
+    try:
+        return {"matches": abop.match_agents(body.q)}
+    except abop.AbopError:
+        return {"matches": []}
 
 
 # ── каталог реальных ABOP-агентов для запуска из чата (чат = среда управления пользователя) ──
@@ -137,7 +151,7 @@ def run_agent(thread_id: int, body: RunAgentIn) -> dict:
     att = _attach_context(thread_id, ctx)
     full_ctx = (att + ctx).strip()
     try:
-        run = abop.run(agent_id=body.agent_id, context=full_ctx, no_cache=body.no_cache)
+        run = abop.run(agent_id=body.agent_id, context=full_ctx, no_cache=body.no_cache, deliver=body.deliver)
     except abop.AbopError as e:
         return {"ok": False, "error": str(e)}
     run = run.get("run", run) if isinstance(run, dict) else run

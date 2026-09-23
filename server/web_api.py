@@ -2226,12 +2226,19 @@ async def _send_channel(cfg: dict, agent_name: str, html_report: str, real: bool
         return f"ошибка доставки: {type(ex).__name__}: {ex}"
 
 
-async def _deliver_out_nodes(agent: dict, result: dict, actor: str) -> None:
+async def _deliver_out_nodes(agent: dict, result: dict, actor: str, deliver_filter: str = "") -> None:
     """Проброс OUT-узла в доставку. Три режима на узел:
     - hitl=true → создаём ЗАЯВКУ в очередь HITL (pending), наружу НЕ шлём (подтвердит человек);
     - run=true, без hitl → РЕАЛЬНАЯ отправка;
-    - иначе → dry_run (превью). (ADR-014: наружу — под подтверждением/явным флагом.)"""
+    - иначе → dry_run (превью). (ADR-014: наружу — под подтверждением/явным флагом.)
+    deliver_filter (дерево решений чата, «куда результат»): '' — все каналы; 'chat' — НИ одного
+    (результат только в чат); имя канала (redmine/email/bookstack) — только этот канал."""
     nodes = _out_nodes(agent)
+    if deliver_filter == "chat":
+        result["delivery"] = []       # пользователь выбрал «только в чат» — наружу ничего
+        return
+    if deliver_filter:                # выбран конкретный канал — фильтруем OUT-узлы
+        nodes = [n for n in nodes if (n.get("out") or {}).get("channel") == deliver_filter]
     if not nodes:
         return
     html_report = _build_report_html(agent, result)
@@ -2421,7 +2428,7 @@ def _run_cache_key(agent: dict) -> str:
 
 
 async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, trigger: dict | None = None,
-                            use_cache: bool = True, user_context: str = "") -> dict:
+                            use_cache: bool = True, user_context: str = "", deliver_filter: str = "") -> dict:
     """Ядро прогона (LLM-раскладка + находки audit1c + сохранение + аудит). Переиспользуется
     POST /api/runs и планировщиком триггеров (server/triggers.py). Возвращает {saved, result}.
     Кэш результатов (multi-user): при попадании возвращает сохранённый вывод без LLM/доставки."""
@@ -2546,7 +2553,7 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
         result["norms_enriched"] = enriched
     # Проброс OUT-узла в реальную доставку (почта/BookStack/PDF) — dry_run по умолчанию.
     try:
-        await _deliver_out_nodes(agent, result, started_by)
+        await _deliver_out_nodes(agent, result, started_by, deliver_filter=deliver_filter)
     except Exception as ex:  # noqa: BLE001 — доставка опциональна, прогон не падает
         result["delivery_error"] = f"{type(ex).__name__}: {ex}"
     result["started_by"] = started_by
@@ -2648,15 +2655,17 @@ async def run_start(body: dict, u: dict = Depends(user)) -> JSONResponse:
                             + "\n\n" + user_context).strip()
     except Exception:  # noqa: BLE001 — identity опционален, не валим прогон
         pass
+    deliver_filter = str((body or {}).get("deliver") or "").strip()  # дерево решений: '', chat, redmine, email…
     use_cache = not bool((body or {}).get("no_cache"))  # {no_cache:true} → форс свежий прогон
-    if user_context:
-        use_cache = False   # контекст пользователя влияет на прогон → кэш (по агенту+данным) обходим
+    if user_context or deliver_filter:
+        use_cache = False   # контекст/выбор доставки влияют на прогон → кэш обходим
     # идемпотентность: одинаковые сабмиты (юзер+агент[+idempotency_key]) сериализуются per-key lock →
     # второй дождётся первого и заберёт результат из кэша (двойной клик не запускает двойной прогон)
     idem = str((body or {}).get("idempotency_key", "")).strip()
     lock_key = f"{actor}:{agent_id}:{idem}"
     async with _run_lock(lock_key):
-        out = await execute_agent_run(agent, contract, actor, use_cache=use_cache, user_context=user_context)
+        out = await execute_agent_run(agent, contract, actor, use_cache=use_cache,
+                                      user_context=user_context, deliver_filter=deliver_filter)
     return JSONResponse({"run_id": out["saved"]["id"], **out["result"]}, status_code=201)
 
 

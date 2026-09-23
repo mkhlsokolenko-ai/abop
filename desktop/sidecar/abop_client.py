@@ -138,9 +138,11 @@ def prepare(scenario: str) -> dict:
     return _req("POST", "/api/demo/prepare", {"scenario": scenario}, timeout=60)
 
 
-def run(agent_id: str = "", scenario: str = "", context: str = "", no_cache: bool = False) -> dict:
+def run(agent_id: str = "", scenario: str = "", context: str = "", no_cache: bool = False,
+        deliver: str = "") -> dict:
     """Запуск прогона. Если задан scenario — сначала demo/prepare (идемпотентно). context (выделенный
-    текст/файл из host-системы) прокидывается в тело как подсказка (ABOP решит, как использовать)."""
+    текст/файл из host-системы) прокидывается в тело как подсказка. deliver (дерево решений чата):
+    '' — все каналы; 'chat' — только в чат; имя канала — только он."""
     aid = agent_id
     if not aid and scenario:
         prep = prepare(scenario)
@@ -150,6 +152,8 @@ def run(agent_id: str = "", scenario: str = "", context: str = "", no_cache: boo
         body["context"] = context[:20000]
     if no_cache:
         body["no_cache"] = True
+    if deliver:
+        body["deliver"] = deliver
     return _req("POST", "/api/runs", body, timeout=300)
 
 
@@ -166,6 +170,12 @@ def add_trigger(agent_id: str, cron: str, title: str = "", deliver: str = "chat"
     if title:
         body["title"] = title
     return _req("POST", "/api/agents/" + urllib.request.quote(agent_id) + "/triggers", body, timeout=60)
+
+
+def match_agents(q: str) -> list:
+    """Подбор агента под задачу (лексика+семантика). Топ-агенты со score/каналами."""
+    r = _req("POST", "/api/agents/match", {"q": q}, timeout=30)
+    return (r or {}).get("matches", []) if isinstance(r, dict) else (r or [])
 
 
 def my_schedules() -> list:
