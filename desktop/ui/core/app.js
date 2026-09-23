@@ -93,8 +93,11 @@ function railBtn(glyph, label, on) {
     .replace(/^/, `<button data-rb style="width:100%;padding:10px 4px;display:flex;flex-direction:column;align-items:center;gap:5px;border:1px solid ${bd};border-radius:12px;background:${bg};color:${fg}">`) + `</button>`;
 }
 // Рейл эталона APE Desktop = 3 раздела: Чат / Агент / Кабинет. Остальное — через палитру (Ctrl+K).
-const RAIL = ["chat", "agents", "cabinet"];
-const RAIL_TITLE = { agents: "Агент" };
+// Рейл: Чат / Кабинет. «Агенты» убраны — агенты вызываются прямо из чата (⭑ на панели),
+// конструктор цепочек не нужен (в новом подходе решают подключённые системы + доступы). Модуль
+// agents остаётся доступен через палитру (Ctrl+K) — его /hitl использует чат.
+const RAIL = ["chat", "cabinet"];
+const RAIL_TITLE = {};
 function railModules() { return RAIL.map((id) => MODULES.find((m) => m.id === id)).filter((m) => m && canSee(m.id)); }
 function renderNav() {
   $("railNav").innerHTML = railModules().map((m) =>
@@ -146,16 +149,18 @@ async function loadModule(id) {
   const m = MODULES.find((x) => x.id === id);
   const panel = $("panel");
   panel.innerHTML = `<div class="faint" style="padding:24px">Загрузка модуля «${m ? m.title : id}»…</div>`;
+  // root объявлен ДО try — иначе в catch он вне области видимости и сам кидает ReferenceError,
+  // маскируя настоящую ошибку загрузки (экран навсегда застревал на «Загрузка модуля…»).
+  const root = document.createElement("div");
+  root.style.cssText = "flex:1;min-width:0;min-height:0;display:flex";
   try {
     const mod = await import(`../modules/${m.ui}/panel.js`);
     panel.innerHTML = "";
     // единый flex-контейнер: чат кладёт aside+section, прочие — одну панель (flex:1)
-    const root = document.createElement("div");
-    root.style.cssText = "flex:1;min-width:0;min-height:0;display:flex";
     panel.appendChild(root);
     await mod.mount(root, ctx);
   } catch (e) {
-    root.innerHTML = `<div style="padding:24px;color:var(--crit)">Модуль не загрузился: ${e.message}</div>`;
+    panel.innerHTML = `<div style="padding:24px;color:var(--crit)">Модуль «${m ? m.title : id}» не загрузился: ${esc(String(e && e.message || e))}</div>`;
     console.error(e);
   }
 }

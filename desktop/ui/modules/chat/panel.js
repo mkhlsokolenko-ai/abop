@@ -45,9 +45,10 @@ const ONBOARD = [["1", "войдите через GitHub"], ["2", "выбери�
 
 export async function mount(root, ctx) {
   const { api, mascot } = ctx;
-  let threads = [], cur = null, messages = [], skills = [], roles = [], search = "", curAbort = null;
-  try { skills = await api(M + "/skills"); } catch {}
+  let threads = [], cur = null, messages = [], skills = [], roles = [], search = "", curAbort = null, abopAgents = [];
+  try { skills = await api(M + "/skills"); if (!Array.isArray(skills)) skills = []; } catch {}
   try { roles = await api(M + "/agent-roles"); } catch {}
+  try { abopAgents = await api(M + "/abop-agents"); if (!Array.isArray(abopAgents)) abopAgents = []; } catch {}
 
   root.innerHTML = `
     <aside style="flex:none;width:252px;display:flex;flex-direction:column;gap:10px;padding:14px 12px;border-right:1px solid var(--line);background:var(--rail);min-height:0">
@@ -144,7 +145,10 @@ export async function mount(root, ctx) {
       <div style="font-size:12.5px;color:var(--ink-2)">находок: <b>${esc(String(s.findings_total ?? 0))}</b>${s.investigations_total != null ? ` · расследований: <b>${esc(String(s.investigations_total))}</b>` : ""} ${verd}</div>
       ${fnd || '<div style="font-size:12px;color:var(--ink-3)">Находок не выявлено.</div>'}
       ${dl ? `<div style="font-family:var(--mono);font-size:9.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--ink-3);margin-top:4px">доставка</div>${dl}` : ""}
-      ${hasWait ? `<button class="hitlApprove" style="align-self:flex-start;margin-top:4px;padding:8px 13px;border:none;border-radius:10px;background:rgba(16,185,129,.16);color:#6ee7b7;font-size:12px;font-weight:600;cursor:pointer">✓ Подтвердить доставку</button>` : ""}</div>`;
+      ${hasWait ? `<div data-agent="${esc(s.agent_id || "")}" style="margin-top:6px;padding:11px 12px;border-radius:11px;border:1px solid rgba(245,158,11,.45);background:rgba(245,158,11,.12);display:flex;flex-direction:column;gap:8px">
+        <span style="font-size:12px;color:#fbbf24;font-weight:600">🛡 Конверт агента требует вашего подтверждения внешнего действия</span>
+        <span style="display:flex;gap:8px"><button class="hitlOk" style="padding:8px 14px;border:none;border-radius:10px;background:rgba(16,185,129,.18);color:#6ee7b7;font-size:12px;font-weight:600;cursor:pointer">✓ Подтвердить действие</button>
+          <button class="hitlNo" style="padding:8px 14px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--ink-2);font-size:12px;font-weight:600;cursor:pointer">Отклонить</button></span></div>` : ""}</div>`;
   }
 
   // ── сообщения ──
@@ -186,20 +190,24 @@ export async function mount(root, ctx) {
     $("col").querySelectorAll("[data-regen]").forEach((e) => e.onclick = () => { const p = messages[+e.dataset.regen - 1]; if (p && p.role === "user") sendPrompt(p.content); });
     $("col").querySelectorAll("[data-edit]").forEach((e) => e.onclick = () => { $("inp").value = messages[+e.dataset.edit].content; $("inp").focus(); });
     $("col").querySelectorAll(".codecopy").forEach((b) => b.onclick = () => { const code = b.closest("span").parentElement.querySelector("span:last-child"); navigator.clipboard.writeText(code ? code.textContent : ""); const o = b.textContent; b.textContent = "✓"; setTimeout(() => b.textContent = o, 1200); });
-    $("col").querySelectorAll(".hitlApprove").forEach((b) => b.onclick = () => approveDelivery(b));
+    $("col").querySelectorAll(".hitlOk").forEach((b) => b.onclick = () => decideDelivery(b, "approve"));
+    $("col").querySelectorAll(".hitlNo").forEach((b) => b.onclick = () => decideDelivery(b, "reject"));
     $("scroll").scrollTop = $("scroll").scrollHeight;
   }
 
-  // подтвердить всю ожидающую доставку (HITL) — через модуль agents ABOP
-  async function approveDelivery(btn) {
-    btn.textContent = "Подтверждаю…"; btn.disabled = true;
+  // HITL прямо в основном окне чата: подтвердить/отклонить внешнее действие ЭТОГО прогона.
+  // Точечно — по agent_id прогона (не подтверждаем чужую очередь скопом).
+  async function decideDelivery(btn, decision) {
+    const wrap = btn.closest("[data-agent]");
+    const agentId = wrap ? wrap.getAttribute("data-agent") : "";
+    btn.textContent = decision === "approve" ? "Подтверждаю…" : "Отклоняю…"; btn.disabled = true;
     try {
       let q = []; try { q = await api("/api/modules/agents/hitl"); } catch {}
       if (!Array.isArray(q)) q = [];
+      const mine = q.filter((it) => !agentId || it.agent_id === agentId || !it.agent_id);
       let n = 0;
-      for (const it of q) { try { await api("/api/modules/agents/hitl/" + encodeURIComponent(it.id) + "/approve", { method: "POST", body: JSON.stringify({ decision: "approve" }) }); n++; } catch {} }
-      btn.textContent = n ? `✓ Подтверждено (${n})` : "✓ Очередь пуста";
-      btn.style.background = "rgba(16,185,129,.24)";
+      for (const it of mine) { try { await api("/api/modules/agents/hitl/" + encodeURIComponent(it.id) + "/approve", { method: "POST", body: JSON.stringify({ decision }) }); n++; } catch {} }
+      if (wrap) wrap.innerHTML = `<span style="font-size:12px;color:${decision === "approve" ? "#6ee7b7" : "var(--ink-3)"};font-weight:600">${decision === "approve" ? "✓ Действие подтверждено" : "⃠ Действие отклонено"}${n ? " (" + n + ")" : ""}</span>`;
     } catch (e) { btn.textContent = "Ошибка"; btn.disabled = false; }
   }
 
@@ -219,15 +227,59 @@ export async function mount(root, ctx) {
       <option value="standard"${cur.profile === "standard" ? " selected" : ""}>standard · 30B</option>
       <option value="code"${cur.profile === "code" ? " selected" : ""}>code</option>
       <option value="research"${cur.profile === "research" ? " selected" : ""}>ask</option></select>`;
-    const chips = skills.map((s) => { const on = cur.skills.includes(s.id); return `<button class="skc" data-id="${s.id}" title="${esc(s.hint)}" style="padding:6px 12px;border:1px solid ${on ? "var(--accent)" : "var(--line)"};border-radius:9999px;background:${on ? "var(--accent-bg)" : "var(--panel)"};color:${on ? "var(--accent-ink)" : "var(--ink-2)"};font-size:11.5px;font-weight:600;cursor:pointer">${s.id}</button>`; }).join("");
+    // компактно: только ВКЛЮЧЁННЫЕ навыки чипами (снять кликом) + кнопка «＋ навыки» (модалка каталога).
+    // Раньше рендерился весь каталог (десятки тегов простынёй) — убрано.
+    const onChips = cur.skills.map((sid) => { const s = skills.find((x) => x.id === sid) || { id: sid }; return `<button class="skc" data-id="${esc(sid)}" title="${esc(s.hint || "")}" style="padding:6px 11px;border:1px solid var(--accent);border-radius:9999px;background:var(--accent-bg);color:var(--accent-ink);font-size:11.5px;font-weight:600;cursor:pointer">${esc(sid)} ✕</button>`; }).join("");
+    const moreBtn = `<button id="skMore" title="Каталог навыков" style="padding:6px 11px;border:1px dashed var(--line-2);border-radius:9999px;background:transparent;color:var(--ink-2);font-size:11.5px;font-weight:600;cursor:pointer">＋ навыки${cur.skills.length ? "" : ""}</button>`;
     const ic = (id, gl, ti) => `<button id="${id}" title="${ti}" style="width:30px;height:30px;border:1px solid var(--line);border-radius:9px;background:transparent;color:var(--ink-2);font-size:13px;cursor:pointer">${gl}</button>`;
-    $("tools").innerHTML = prof + chips + `<span style="margin-left:auto;display:flex;align-items:center;gap:6px">${ic("tRag", "📎", "Прикрепить файл")}${ic("tAgents", "🕸", "Каталог агентов")}${ic("tExport", "📥", "Экспорт")}</span><input type="file" id="fileIn" accept=".txt,.md,.csv,.json,.pdf,.docx,.xlsx" style="display:none"/>`;
+    $("tools").innerHTML = prof + onChips + moreBtn + `<span id="agentSug" style="display:flex;gap:6px;flex-wrap:wrap"></span>` + `<span style="margin-left:auto;display:flex;align-items:center;gap:6px">${ic("tRag", "📎", "Прикрепить файл")}${ic("tAgents", "🕸", "Агенты ABOP")}${ic("tExport", "📥", "Экспорт")}</span><input type="file" id="fileIn" accept=".txt,.md,.csv,.json,.pdf,.docx,.xlsx" style="display:none"/>`;
     $("prof").onchange = async (e) => { cur.profile = e.target.value; await saveThread(cur); };
-    $("tools").querySelectorAll(".skc").forEach((c) => c.onclick = async () => { const i = cur.skills.indexOf(c.dataset.id); if (i >= 0) cur.skills.splice(i, 1); else cur.skills.push(c.dataset.id); await saveThread(cur); renderTools(); });
+    $("tools").querySelectorAll(".skc").forEach((c) => c.onclick = async () => { const i = cur.skills.indexOf(c.dataset.id); if (i >= 0) cur.skills.splice(i, 1); await saveThread(cur); renderTools(); });
+    const skMore = $("skMore"); if (skMore) skMore.onclick = openSkillPicker;
     $("tRag").onclick = () => $("fileIn").click();
     $("fileIn").onchange = async (e) => { const f = e.target.files[0]; await attachFile(f); e.target.value = ""; };
     $("tAgents").onclick = openAgents;
     $("tExport").onclick = openExport;
+    renderAgentSuggest($("inp") ? $("inp").value : "");
+  }
+
+  // каталог навыков — модалка (чекбоксы), чтобы не забивать композер простынёй тегов
+  function openSkillPicker() {
+    const rows = skills.map((s) => { const on = cur.skills.includes(s.id); return `<label style="display:flex;align-items:flex-start;gap:9px;padding:7px 9px;border-radius:9px;border:1px solid ${on ? "rgba(99,102,241,.4)" : "var(--line)"};background:${on ? "rgba(99,102,241,.1)" : "var(--field)"};cursor:pointer;margin:4px 0">
+      <input type="checkbox" class="skp" value="${esc(s.id)}" ${on ? "checked" : ""} style="accent-color:#6366f1;margin-top:2px"/>
+      <span style="display:flex;flex-direction:column;gap:2px;min-width:0"><span style="font-size:12.5px;font-weight:600">${esc(s.id)}</span><span style="font-size:11px;color:var(--ink-3)">${esc(s.hint || "")}</span></span></label>`; }).join("");
+    const ov = modal(`Каталог навыков · ${skills.length}`, `<input id="skSearch" placeholder="Поиск навыка…" style="width:100%;margin-bottom:8px"/><div id="skList" style="max-height:52vh;overflow:auto">${rows}</div>`,
+      async (b) => { cur.skills = [...b.querySelectorAll(".skp:checked")].map((x) => x.value); await saveThread(cur); renderTools(); }, "Применить");
+    const srch = ov.querySelector("#skSearch");
+    if (srch) srch.oninput = () => { const q = srch.value.toLowerCase(); ov.querySelectorAll("#skList label").forEach((l) => { l.style.display = l.textContent.toLowerCase().includes(q) ? "" : "none"; }); };
+  }
+
+  // авто-подсказка агентов по тексту задачи: матчим по ключевым словам семьи/имени/роли → зелёные
+  // хештеги; клик — запуск агента с текущим запросом как контекстом (цепочка активируется по контексту).
+  const FAM_KW = {
+    management: ["почт", "письм", "задач", "тикет", "джир", "jira", "трекер", "редмайн", "redmine", "статус", "совещ", "митинг", "переписк", "ветк", "напоминан", "отчёт", "дайджест"],
+    finance: ["оплат", "счёт", "счет", "платёж", "ндс", "сверк", "дебитор", "финанс", "бюджет", "деньг", "проводк"],
+    audit: ["аудит", "1с", "1c", "расхожд", "первичк", "фактур", "контрагент", "следовател"],
+    analytics: ["аналит", "метрик", "дашборд", "показател", "динамик", "прогноз"],
+    research: ["ресёрч", "рынок", "исслед", "конкурент", "клиент", "icp"],
+  };
+  function matchAgents(text) {
+    const t = (text || "").toLowerCase().trim();
+    if (t.length < 5 || !abopAgents.length) return [];
+    const scored = abopAgents.map((a) => {
+      let s = 0;
+      for (const k of (FAM_KW[a.family] || [])) if (t.includes(k)) s += 1;
+      for (const w of ((a.name || "") + " " + (a.role || "")).toLowerCase().split(/[^a-zа-яё0-9]+/)) if (w.length > 3 && t.includes(w)) s += 2;
+      return { a, s };
+    }).filter((x) => x.s > 0).sort((x, y) => y.s - x.s);
+    return scored.slice(0, 3).map((x) => x.a);
+  }
+  let _sugTimer = null;
+  function renderAgentSuggest(text) {
+    const box = $("agentSug"); if (!box) return;
+    const matched = matchAgents(text);
+    box.innerHTML = matched.map((a) => `<button class="agSug" data-id="${esc(a.id)}" title="Запустить агента «${esc(a.name)}» по этой задаче" style="padding:6px 11px;border:1px solid rgba(16,185,129,.5);border-radius:9999px;background:rgba(16,185,129,.16);color:#6ee7b7;font-size:11.5px;font-weight:600;cursor:pointer">▶ #${esc(a.name)}</button>`).join("");
+    box.querySelectorAll(".agSug").forEach((b) => b.onclick = () => { const a = abopAgents.find((x) => x.id === b.dataset.id) || {}; runAbopAgent(b.dataset.id, a.name || b.dataset.id, $("inp").value.trim()); });
   }
 
   const BINARY_RE = /\.(pdf|docx|xlsx)$/i;   // извлечение текста на стороне сайдкара
@@ -245,9 +297,10 @@ export async function mount(root, ctx) {
       r = await api(M + "/threads/" + cur.id + "/attach", { method: "POST", body: JSON.stringify({ name: f.name, documents: [text] }) });
     }
     messages.pop();
-    const kb = r.indexed ? ` (+${r.indexed} фр. в RAG)` : "";
     const sz = r.chars ? ` · ${r.chars} симв.` : "";
-    messages.push({ role: "assistant", content: r.ok ? `📎 Файл «${f.name}» прикреплён — модель видит его в этом диалоге${sz}${kb}. Спросите по нему.` : "Не удалось: " + r.error, meta: {} });
+    const okMsg = (r.chars ? `📎 Файл «${f.name}» распознан${sz} и добавлен в контекст диалога — задайте вопрос по нему.`
+      : `📎 Файл «${f.name}» приложен, но текст не извлечён (возможно скан — используйте «Распознать»).`);
+    messages.push({ role: "assistant", content: r.ok ? okMsg : "Не удалось: " + r.error, meta: {} });
     render(); renderKb();
   }
 
@@ -305,32 +358,12 @@ export async function mount(root, ctx) {
       const r = await api(M + "/threads/" + cur.id + "/run-agent", { method: "POST", body: JSON.stringify({ agent_id: agentId, context: task || "" }) });
       if (r.ok) {
         run.content = "[агент " + agentId + "]"; run.meta = { run_agent: r.run };
-        render(); loadThreads();
-        // конверт требует подтверждения внешнего действия → всплывающее окно HITL в чате
-        const waits = (r.run.delivery || []).filter((d) => d.mode === "awaiting_hitl");
-        if (waits.length) hitlModal(agentName, waits);
-        return;
+        // HITL рендерится прямо в карточке прогона в основном окне чата (runCard) — без отдельной модалки.
+      } else {
+        run.content = "Ошибка запуска: " + (r.error || "не удалось");
       }
-      run.content = "Ошибка запуска: " + (r.error || "не удалось");
     } catch (e) { run.content = "Сбой: " + (e && e.message || e); }
     render(); loadThreads();
-  }
-
-  // всплывающее окно подтверждения внешнего действия (HITL из конверта агента)
-  function hitlModal(agentName, waits) {
-    const list = waits.map((d) => `<div style="display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:10px;background:var(--hover);border:1px solid var(--line);margin:6px 0">
-      <span style="font-size:15px">${d.channel === "email" ? "✉" : d.channel === "redmine" ? "🎫" : d.channel === "bookstack" ? "📄" : "↗"}</span>
-      <span style="flex:1;font-size:12.5px;color:var(--ink)">${esc(d.channel)}${d.to ? " → " + esc(d.to) : ""}</span></div>`).join("");
-    const ov = modal(`🛡 Подтвердите действие агента «${agentName}»`,
-      `<p style="margin:0 0 8px;font-size:12.5px;line-height:1.5;color:var(--ink-2)">Конверт агента требует вашего согласия на внешние действия. Ничего не уйдёт наружу без подтверждения:</p>${list}`,
-      async (bodyEl) => {
-        const ok = bodyEl.closest("div").querySelector("#mOk"); if (ok) { ok.textContent = "Подтверждаю…"; ok.disabled = true; }
-        let q = []; try { q = await api("/api/modules/agents/hitl"); } catch {}
-        if (!Array.isArray(q)) q = [];
-        for (const it of q) { try { await api("/api/modules/agents/hitl/" + encodeURIComponent(it.id) + "/approve", { method: "POST", body: JSON.stringify({ decision: "approve" }) }); } catch {} }
-      }, "✓ Подтвердить действие");
-    // кнопка «Отклонить» вместо простой отмены
-    const cancel = ov.querySelector("#mCancel"); if (cancel) cancel.textContent = "Отклонить";
   }
 
   // быстрые роли (импровизация LLM без Data Plane) — остаётся как лёгкий режим
@@ -424,13 +457,17 @@ export async function mount(root, ctx) {
   // приём выделенного текста из Word/Excel/браузера по глобальному хоткею (Ctrl+Shift+A):
   // создаём тред, кладём текст в поле ввода и фокусируемся — пользователь жмёт Enter или выбирает агента
   window.__apeAnalyze = async (text) => {
-    text = (text || "").trim(); if (!text) { $("inp").focus(); return; }
+    const inp = $("inp"); if (!inp) return;
+    text = (text || "").trim();
+    if (!text) { inp.focus(); inp.placeholder = "Выделите текст в Word/Excel/браузере и снова нажмите Ctrl+Shift+A"; return; }
     const clip = text.length > 4000 ? text.slice(0, 4000) + "…" : text;
     if (!cur) { const t = await api(M + "/threads", { method: "POST", body: JSON.stringify({ title: "Анализ выделенного", profile: "standard", skills: [] }) }); await loadThreads(); await openThread(t); }
     $("inp").value = "Проанализируй этот фрагмент:\n\n" + clip;
     $("inp").focus(); $("inp").scrollTop = $("inp").scrollHeight;
+    renderAgentSuggest($("inp").value);   // сразу подсветим подходящих агентов по вставленному тексту
   };
   $("inp").onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendFromInput(); } };
+  $("inp").oninput = () => { clearTimeout(_sugTimer); _sugTimer = setTimeout(() => renderAgentSuggest($("inp").value), 280); };
   setBusy(false);
   await loadThreads();
   if (threads.length) openThread(threads[0]); else { render(); renderTools(); }

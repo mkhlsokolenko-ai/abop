@@ -2,6 +2,7 @@
   "name": "abop-desktop",
   "version": "1.0.0",
   "description": "ABOP Desktop — тонкий клиент-рантайм ABOP (Electron + Python sidecar)",
+  "author": { "name": "ABOP", "email": "mkhlsokolenko@gmail.com" },
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",
