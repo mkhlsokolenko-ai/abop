@@ -1,6 +1,7 @@
 // Модуль «Чат» — вёрстка 1:1 из макета APE Desktop.dc.html (структура/рецепты из ДС),
 // логика привязана к сайдкару: треды, стриминг, вложения→RAG, агенты (шторка), экспорт, скиллы.
 const M = "/api/modules/chat";
+const A_AG = "/api/modules/agents";   // роуты агентов/расписаний ABOP через сайдкар
 const esc = (s) => (s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 
 function md(t) {
@@ -46,6 +47,7 @@ const ONBOARD = [["1", "войдите через GitHub"], ["2", "выбери�
 export async function mount(root, ctx) {
   const { api, mascot } = ctx;
   let threads = [], cur = null, messages = [], skills = [], roles = [], search = "", curAbort = null, abopAgents = [];
+  let schedules = [], _schedSeen = {}, _schedTimer = null;   // расписания + отметки последних прогонов (уведомления)
   try { skills = await api(M + "/skills"); if (!Array.isArray(skills)) skills = []; } catch {}
   try { roles = await api(M + "/agent-roles"); } catch {}
   try { abopAgents = await api(M + "/abop-agents"); if (!Array.isArray(abopAgents)) abopAgents = []; } catch {}
@@ -65,6 +67,7 @@ export async function mount(root, ctx) {
       </div>
       <div style="flex:none;padding:10px 26px 18px">
         <div style="max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:10px">
+          <div id="schedBar"></div>
           <div id="kb"></div>
           <div style="padding:12px 14px;border-radius:16px;background:var(--panel);border:1px solid var(--line-2);backdrop-filter:blur(16px);display:flex;flex-direction:column;gap:11px">
             <div id="tools" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"></div>
@@ -148,7 +151,8 @@ export async function mount(root, ctx) {
       ${hasWait ? `<div data-agent="${esc(s.agent_id || "")}" style="margin-top:6px;padding:11px 12px;border-radius:11px;border:1px solid rgba(245,158,11,.45);background:rgba(245,158,11,.12);display:flex;flex-direction:column;gap:8px">
         <span style="font-size:12px;color:#fbbf24;font-weight:600">🛡 Конверт агента требует вашего подтверждения внешнего действия</span>
         <span style="display:flex;gap:8px"><button class="hitlOk" style="padding:8px 14px;border:none;border-radius:10px;background:rgba(16,185,129,.18);color:#6ee7b7;font-size:12px;font-weight:600;cursor:pointer">✓ Подтвердить действие</button>
-          <button class="hitlNo" style="padding:8px 14px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--ink-2);font-size:12px;font-weight:600;cursor:pointer">Отклонить</button></span></div>` : ""}</div>`;
+          <button class="hitlNo" style="padding:8px 14px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--ink-2);font-size:12px;font-weight:600;cursor:pointer">Отклонить</button></span></div>` : ""}
+      <button class="mkRecurring" data-agent="${esc(s.agent_id || "")}" data-name="${esc(s.agent_name || s.agent_id || "")}" style="align-self:flex-start;margin-top:4px;padding:7px 12px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--ink-2);font-size:11.5px;font-weight:600;cursor:pointer">🔁 Сделать регулярной</button></div>`;
   }
 
   // ── сообщения ──
@@ -192,7 +196,62 @@ export async function mount(root, ctx) {
     $("col").querySelectorAll(".codecopy").forEach((b) => b.onclick = () => { const code = b.closest("span").parentElement.querySelector("span:last-child"); navigator.clipboard.writeText(code ? code.textContent : ""); const o = b.textContent; b.textContent = "✓"; setTimeout(() => b.textContent = o, 1200); });
     $("col").querySelectorAll(".hitlOk").forEach((b) => b.onclick = () => decideDelivery(b, "approve"));
     $("col").querySelectorAll(".hitlNo").forEach((b) => b.onclick = () => decideDelivery(b, "reject"));
+    $("col").querySelectorAll(".mkRecurring").forEach((b) => b.onclick = () => recurringModal(b.dataset.agent, b.dataset.name));
     $("scroll").scrollTop = $("scroll").scrollHeight;
+  }
+
+  // «Сделать регулярной»: выбор периодичности + куда доставлять (в чат / в систему) → крон-триггер
+  function recurringModal(agentId, agentName) {
+    const body = `<div style="display:flex;flex-direction:column;gap:12px">
+      <div><label style="font-size:11.5px;color:var(--ink-3)">Когда запускать</label>
+        <select id="rcCron" style="width:100%;margin-top:4px;padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-size:12.5px">
+          <option value="09:00">Ежедневно в 09:00</option><option value="18:00">Ежедневно в 18:00</option>
+          <option value="*/60">Каждый час</option><option value="*/30">Каждые 30 минут</option>
+          <option value="*/15">Каждые 15 минут (тест)</option></select></div>
+      <div><label style="font-size:11.5px;color:var(--ink-3)">Куда результат</label>
+        <div id="rcDeliver" style="display:flex;gap:8px;margin-top:4px">
+          <button data-d="chat" class="rcd" style="flex:1;padding:8px;border:1px solid var(--accent);border-radius:9px;background:var(--accent-bg);color:var(--accent-ink);font-size:12px;font-weight:600;cursor:pointer">💬 В чат (уведомить)</button>
+          <button data-d="system" class="rcd" style="flex:1;padding:8px;border:1px solid var(--line);border-radius:9px;background:var(--field);color:var(--ink-2);font-size:12px;font-weight:600;cursor:pointer">↗ В систему (почта/трекер)</button></div></div>
+      <div style="font-size:11px;color:var(--ink-3);line-height:1.5">Задача станет узлом-расписанием в графе агента (виден на «Строю»), запуск на сервере ABOP. Внешняя доставка — под HITL узлов агента.</div></div>`;
+    let deliver = "chat";
+    const ov = modal(`🔁 Регулярный запуск «${agentName}»`, body, async () => {
+      const cron = ov.querySelector("#rcCron").value;
+      const r = await api(A_AG + "/trigger", { method: "POST", body: JSON.stringify({ agent_id: agentId, cron, deliver, title: agentName }) });
+      const res = (r && r.result) || {};
+      messages.push({ role: "assistant", content: r && r.ok ? `🔁 Расписание создано: «${agentName}» — ${cron}, результат ${deliver === "chat" ? "в чат" : "в систему"}. Новая версия ${res.agent_id || ""} на «Строю».` : "Не удалось создать расписание: " + ((r && r.error) || ""), meta: {} });
+      render(); loadSchedules();
+    }, "Создать расписание");
+    ov.querySelectorAll(".rcd").forEach((b) => b.onclick = () => { deliver = b.dataset.d; ov.querySelectorAll(".rcd").forEach((x) => { const on = x.dataset.d === deliver; x.style.border = "1px solid " + (on ? "var(--accent)" : "var(--line)"); x.style.background = on ? "var(--accent-bg)" : "var(--field)"; x.style.color = on ? "var(--accent-ink)" : "var(--ink-2)"; }); });
+  }
+
+  // ── Мои расписания: загрузка + уведомления о завершении регулярных задач ──
+  async function loadSchedules(notify) {
+    let prev = _schedSeen;
+    try { schedules = await api(A_AG + "/schedules"); if (!Array.isArray(schedules)) schedules = []; } catch { schedules = []; }
+    // уведомление: если у расписания появился НОВЫЙ последний прогон (сравниваем время) — сообщаем в чат
+    schedules.forEach((s) => {
+      const key = s.agent_id + "/" + s.trigger_id;
+      const at = s.last_run && s.last_run.at;
+      if (notify && at && prev[key] && prev[key] !== at) {
+        const f = (s.last_run && s.last_run.findings);
+        messages.push({ role: "assistant", content: `🔔 Регулярная задача «${s.agent}» (${s.cron}) выполнена${f != null ? ` — находок: ${f}` : ""}.`, meta: {} });
+        if (cur) render();
+      }
+      _schedSeen[key] = at || prev[key];
+    });
+    renderSchedBar();
+  }
+  function renderSchedBar() {
+    const bar = $("schedBar"); if (!bar) return;
+    if (!schedules.length) { bar.innerHTML = ""; return; }
+    bar.innerHTML = `<details style="border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:8px 12px">
+      <summary style="cursor:pointer;font-size:12px;color:var(--ink-2);font-weight:600">🔁 Мои расписания · ${schedules.length}</summary>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
+      ${schedules.map((s) => `<div style="display:flex;align-items:center;gap:8px;font-size:11.5px">
+        <span style="flex:1;min-width:0;color:var(--ink)">${esc(s.agent)} <span style="color:var(--ink-3)">· ${esc(s.cron)} · ${s.deliver === "chat" ? "в чат" : "в систему"}${s.enabled ? "" : " · выкл"}</span>${s.last_run && s.last_run.at ? `<span style="color:var(--ink-3)"> · посл.: ${esc(String(s.last_run.at).slice(11, 16))}${s.last_run.findings != null ? " (" + s.last_run.findings + " нах.)" : ""}</span>` : ""}</span>
+        <button class="schDel" data-a="${esc(s.agent_id)}" data-t="${esc(s.trigger_id)}" title="Убрать расписание" style="width:20px;height:20px;border:none;border-radius:6px;background:var(--hover);color:var(--ink-3);font-size:10px;cursor:pointer">✕</button></div>`).join("")}
+      </div></details>`;
+    bar.querySelectorAll(".schDel").forEach((b) => b.onclick = async () => { await api(A_AG + "/trigger/" + encodeURIComponent(b.dataset.a) + "/" + encodeURIComponent(b.dataset.t), { method: "DELETE" }); loadSchedules(); });
   }
 
   // HITL прямо в основном окне чата: подтвердить/отклонить внешнее действие ЭТОГО прогона.
@@ -471,4 +530,9 @@ export async function mount(root, ctx) {
   setBusy(false);
   await loadThreads();
   if (threads.length) openThread(threads[0]); else { render(); renderTools(); }
+
+  // расписания: первичная загрузка + поллинг каждые 60с (уведомления о завершении регулярных задач)
+  loadSchedules(false);
+  if (window.__apeSchedTimer) clearInterval(window.__apeSchedTimer);
+  window.__apeSchedTimer = setInterval(() => { if (root.isConnected) loadSchedules(true); else clearInterval(window.__apeSchedTimer); }, 60000);
 }
