@@ -1198,12 +1198,21 @@ async def skill_save(sid: str, body: dict, u: dict = Depends(user)) -> dict:
         raise HTTPException(404, "нет навыка")
     allowed = set(_SKILL_TEXT_FIELDS) | set(_SKILL_SAFETY_FIELDS)
     patch = {k: v for k, v in (body or {}).items() if k in allowed}
-    # тег семьи навыка: список привязок к существующим семьям (валидируем по каталогу семей)
+    # тег семьи навыка: привязка к семьям (известным ИЛИ своей кастомной через «＋»). Кастомные —
+    # slug [a-z0-9_-] (для корректного ABAC: department==family). Известные оставляем как есть.
     if isinstance((body or {}).get("families"), list):
-        fams = [str(f).strip() for f in body["families"] if str(f).strip()]
-        bad = [f for f in fams if f not in ape.AGENT_FAMILIES]
-        if bad:
-            raise HTTPException(422, f"нет таких семей: {', '.join(bad)}")
+        import re as _re
+        fams = []
+        for f in body["families"]:
+            f = str(f).strip()
+            if not f:
+                continue
+            if f in ape.AGENT_FAMILIES:
+                fams.append(f)                       # известная семья
+            else:
+                slug = _re.sub(r"[^a-z0-9_-]", "", f.lower())  # кастомная — санитизируем в slug
+                if slug:
+                    fams.append(slug)
         patch["families"] = sorted(set(fams))
     if not patch:
         raise HTTPException(422, "нет полей для сохранения")
