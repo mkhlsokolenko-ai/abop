@@ -146,10 +146,23 @@ async def fire_manual(agent_id: str, trigger_id: str, run_executor) -> dict:
     return await fire(agent, tn, "ручной запуск", run_executor)
 
 
-async def list_triggers() -> list[dict]:
-    """Все триггеры по всем агентам + последний фаер (для наблюдаемости/UI)."""
-    out = []
+async def _latest_versions() -> list[dict]:
+    """Только ПОСЛЕДНЯЯ версия каждого агента (по contract_audit_id). Триггеры живут в графе, а
+    add/del триггера плодит версии — старые версии НЕ должны фаерить и НЕ должны показывать расписания
+    (иначе дубли писем и «удаление не работает»: расписание всплывает из старой версии)."""
+    latest: dict = {}
     for a in await agent_store.list_for(None):
+        aid = a.get("contract_audit_id") or a.get("id")
+        cur = latest.get(aid)
+        if not cur or (a.get("version") or 0) > (cur.get("version") or 0):
+            latest[aid] = a
+    return list(latest.values())
+
+
+async def list_triggers() -> list[dict]:
+    """Триггеры по ПОСЛЕДНИМ версиям агентов + последний фаер (для наблюдаемости/UI)."""
+    out = []
+    for a in await _latest_versions():
         full = await agent_store.get(a["id"])
         if not full:
             continue
@@ -165,7 +178,7 @@ async def list_triggers() -> list[dict]:
 
 async def _tick(run_executor) -> None:
     fired = 0
-    for a in await agent_store.list_for(None):
+    for a in await _latest_versions():   # только последние версии — старые не фаерят (нет дублей)
         if fired >= MAX_FIRES_PER_TICK:
             break
         full = await agent_store.get(a["id"])
