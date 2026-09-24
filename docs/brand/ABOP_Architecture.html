@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>ABOP — Архитектура платформы</title>
+<style>
+  :root{
+    --bg:#080b12; --panel:#0d131d; --panel2:#0a0f18; --line:#1b2637;
+    --blue:#3b82f6; --blueBg:#0c1728; --blueLine:#26517e;
+    --green:#22c55e; --greenBg:#0a1c12; --greenLine:#1e6d3b;
+    --violet:#8b5cf6; --violetBg:#150e26; --violetLine:#59379e;
+    --amber:#f59e0b; --cyan:#22d3ee; --ink:#e7eef8; --ink2:#9db1c6; --ink3:#5c6f82;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:'Segoe UI','Inter',system-ui,sans-serif;font-size:12px;padding:22px}
+  .wrap{max-width:1520px;margin:0 auto}
+  h1{font-size:26px;font-weight:800;letter-spacing:-.4px;margin:0}
+  .sub{color:var(--ink2);font-size:12.5px;margin:2px 0 16px}
+  .cols{display:flex;gap:14px;align-items:flex-start}
+  .side{flex:0 0 176px;display:flex;flex-direction:column;gap:12px}
+  .main{flex:1;display:flex;flex-direction:column;gap:14px}
+  .card{border-radius:12px;background:var(--panel);border:1px solid var(--line);padding:11px}
+  .tgt{border-width:2px;border-radius:14px;padding:12px}
+  .tgt.blue{border-color:var(--blueLine);background:linear-gradient(180deg,var(--blueBg),var(--panel2))}
+  .tgt.green{border-color:var(--greenLine);background:linear-gradient(180deg,var(--greenBg),var(--panel2))}
+  .tgt.violet{border-color:var(--violetLine);background:linear-gradient(180deg,var(--violetBg),var(--panel2))}
+  .hd{display:flex;align-items:baseline;gap:9px;margin:0 0 10px}
+  .hd .t{font-size:17px;font-weight:800}
+  .hd .m{font-size:11px;color:var(--ink3);font-family:'Consolas',monospace}
+  .blue .t{color:#79b0f4}.green .t{color:#63d78a}.violet .t{color:#b199ef}
+  .sec{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink3);margin:0 0 6px}
+  .grid{display:grid;gap:7px}
+  .g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:repeat(3,1fr)}.g4{grid-template-columns:repeat(4,1fr)}.g5{grid-template-columns:repeat(5,1fr)}
+  .box{border:1px solid var(--line);border-radius:8px;background:#0a0f18;padding:7px 8px}
+  .box .bt{font-weight:700;font-size:11.5px;line-height:1.2}
+  .box .bd{color:var(--ink3);font-size:9.5px;line-height:1.3;margin-top:2px}
+  .box.hl{border-color:#2a3f5c}
+  .row{display:flex;gap:10px}
+  .chips{display:flex;flex-wrap:wrap;gap:4px}
+  .chip{font-size:9.5px;padding:2px 7px;border-radius:999px;border:1px solid var(--line);background:#0a0f18;color:var(--ink2);font-family:'Consolas',monospace}
+  .chip.b{border-color:var(--blueLine);color:#8cc0f7}.chip.g{border-color:var(--greenLine);color:#77dd9a}.chip.v{border-color:var(--violetLine);color:#bfaef2}
+  .li{font-size:11px;color:var(--ink2);line-height:1.65}.li b{color:var(--ink)}
+  .side .st{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink3);margin:0 0 6px}
+  .dom{font-size:10.5px;color:#79b0f4;font-family:'Consolas',monospace;line-height:1.7}
+  .leg-row{display:flex;align-items:center;gap:7px;font-size:10.5px;color:var(--ink2);margin:3px 0}
+  .ln{width:26px;height:0;border-top:2px solid;flex:none}
+  .dot{display:inline-block;width:10px;height:10px;border-radius:3px;flex:none}
+  .commbox{border:1px solid var(--line);border-radius:9px;background:#0a0f18;padding:8px;margin-top:6px}
+  .commbox .ct{font-size:10.5px;font-weight:700;color:var(--ink)}
+  .commbox .cd{font-size:9.5px;color:var(--ink3);line-height:1.35;margin-top:2px}
+  .bridge{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;flex:0 0 128px;text-align:center}
+  .arw{color:var(--green);font-weight:800;font-size:12px}
+  .arw.up{color:var(--violet)}.arw.dn{color:var(--amber)}
+  .tag{font-size:9px;padding:2px 6px;border-radius:5px;background:#0a0f18;border:1px solid var(--line);color:var(--ink3);font-family:'Consolas',monospace}
+  .flows{margin-top:14px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
+  .flows .ft-h{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink3);margin-bottom:9px}
+  .flowgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .flow{display:flex;gap:9px;align-items:flex-start}
+  .num{flex:none;width:20px;height:20px;border-radius:6px;background:#0a0f18;border:1px solid var(--line);color:#8cc0f7;font-weight:800;font-size:10px;display:flex;align-items:center;justify-content:center}
+  .flow .ft{font-size:10.5px;color:var(--ink2);line-height:1.4}.flow .ft b{color:var(--ink)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>ABOP — Архитектура платформы</h1>
+  <p class="sub">Инженерная платформа для сборки и управления ИИ-агентами · десктоп-чат как рабочая среда пользователя · self-host LLM (данные не выходят наружу)</p>
+
+  <div class="cols">
+    <!-- ЛЕВАЯ КОЛОНКА: легенда / домены / коммуникация -->
+    <div class="side">
+      <div class="card">
+        <div class="st">Легенда</div>
+        <div class="leg-row"><span class="ln" style="border-color:var(--green)"></span>REST / SSE (JWT)</div>
+        <div class="leg-row"><span class="ln" style="border-color:var(--violet)"></span>LLM-инференс</div>
+        <div class="leg-row"><span class="ln" style="border-color:var(--ink3)"></span>внутр. сеть</div>
+        <div class="leg-row"><span class="ln" style="border-color:var(--amber);border-top-style:dashed"></span>управление</div>
+      </div>
+      <div class="card">
+        <div class="st">Эндпоинты</div>
+        <div class="dom">:8091 /api/*<br>/api/chat · /runs<br>/agents · /match<br>/skills · /families<br>/data/* · /identity/*<br>/report-templates<br>/schema-templates<br>/triggers · /admin/*<br>/desktop-ui-bundle</div>
+      </div>
+      <div class="card">
+        <div class="st">Коммуникация между таргетами</div>
+        <div class="commbox"><div class="ct">Desktop → ABOP</div><div class="cd">REST/SSE под JWT пользователя (RBAC/ABAC). Сайдкар — прокси к /api/*</div></div>
+        <div class="commbox"><div class="ct">Sidecar → ABOP (UI)</div><div class="cd">/desktop-ui-bundle при старте (server-side, без PNA) → отдаёт UI с 127.0.0.1/ui</div></div>
+        <div class="commbox"><div class="ct">ABOP → Self-host LLM</div><div class="cd">chat/embed по OpenAI-совместимому API, admission-control</div></div>
+        <div class="commbox"><div class="ct">ABOP → системы</div><div class="cd">доставка результата OUT-узлами ТОЛЬКО под HITL</div></div>
+      </div>
+      <div class="card">
+        <div class="st">Деплой-таргеты</div>
+        <div class="leg-row"><span class="dot" style="background:var(--blue)"></span>ABOP Web API · сервер</div>
+        <div class="leg-row"><span class="dot" style="background:var(--green)"></span>ABOP Desktop · юзер</div>
+        <div class="leg-row"><span class="dot" style="background:var(--violet)"></span>Self-host LLM · GPU</div>
+      </div>
+    </div>
+
+    <!-- ГЛАВНАЯ ОБЛАСТЬ -->
+    <div class="main">
+      <div class="row">
+        <!-- ABOP DESKTOP -->
+        <div class="tgt green" style="flex:0 0 330px">
+          <div class="hd green"><span class="t">ABOP Desktop</span><span class="m">Electron + Python-сайдкар · 127.0.0.1</span></div>
+
+          <div class="sec">Оболочка Electron</div>
+          <div class="grid g2" style="margin-bottom:8px">
+            <div class="box"><div class="bt">main.js</div><div class="bd">спавн сайдкара · окно · апдейтер</div></div>
+            <div class="box"><div class="bt">⌨ globalShortcut</div><div class="bd">Ctrl+Shift+A → в чат</div></div>
+            <div class="box"><div class="bt">preload · IPC</div><div class="bd">printToPDF · analyze</div></div>
+            <div class="box hl"><div class="bt">🔄 UI-прокси</div><div class="bd">грузит UI с 127.0.0.1/ui</div></div>
+          </div>
+
+          <div class="sec">Сайдкар (FastAPI 127.0.0.1)</div>
+          <div class="box hl" style="margin-bottom:6px"><div class="bt">UI с ABOP → кэш → /ui</div><div class="bd">один origin с /api/* (без PNA) · фолбэк вшит · правки UI git-деплоем без пересборки .exe</div></div>
+          <div class="sec">Модули (прокси к ABOP /api/*)</div>
+          <div class="chips" style="margin-bottom:8px">
+            <span class="chip g">chat</span><span class="chip g">agents</span><span class="chip g">connectors</span>
+            <span class="chip g">graphlens</span><span class="chip g">opslens</span><span class="chip g">security</span>
+            <span class="chip g">cabinet</span><span class="chip g">ocr</span>
+          </div>
+
+          <div class="sec">Чат — среда управления</div>
+          <div class="box hl" style="margin-bottom:6px"><div class="bt">🧭 Дерево решений</div><div class="bd">запрос → подбор агента (лексика+семантика) → «куда результат: чат/Redmine/почта» → запуск</div></div>
+          <div class="grid g2">
+            <div class="box"><div class="bt">▶ Прогон в треде</div><div class="bd">находки · доставка · HITL-карточка</div></div>
+            <div class="box"><div class="bt">🔁 Расписания</div><div class="bd">крон + уведомления</div></div>
+            <div class="box"><div class="bt">🖇 Файлы · OCR</div><div class="bd">pdf/docx/xlsx · RapidOCR</div></div>
+            <div class="box"><div class="bt">🗄 SQLite</div><div class="bd">треды · вложения</div></div>
+          </div>
+        </div>
+
+        <!-- МОСТ -->
+        <div class="bridge">
+          <div class="arw">Desktop → ABOP</div>
+          <div class="tag">JWT · REST/SSE</div>
+          <div class="arw" style="color:var(--ink3)">⇄</div>
+          <div class="tag">/api/chat</div>
+          <div class="tag">/runs · /match</div>
+          <div class="tag">/desktop-ui-bundle</div>
+        </div>
+
+        <!-- ABOP WEB API -->
+        <div class="tgt blue" style="flex:1">
+          <div class="hd blue"><span class="t">ABOP Web API — инженерное ядро</span><span class="m">FastAPI · uvicorn :8091 · Docker net=host</span></div>
+
+          <div class="row" style="gap:10px">
+            <div style="flex:1;display:flex;flex-direction:column;gap:9px">
+              <div class="card">
+                <div class="sec">Рантайм агентов</div>
+                <div class="grid g2">
+                  <div class="box hl"><div class="bt">runner (grounded)</div><div class="bd">находки считает КОД, LLM объясняет · волны</div></div>
+                  <div class="box hl"><div class="bt">Конверт A0–A4</div><div class="bd">автономия ≤ потолок · verdict</div></div>
+                  <div class="box"><div class="bt">HITL-гейты</div><div class="bd">внешнее — под человека</div></div>
+                  <div class="box"><div class="bt">admission · кэш</div><div class="bd">rate-limit · идемпотентность</div></div>
+                  <div class="box"><div class="bt">Верификация</div><div class="bd">авто-конверт · бейдж</div></div>
+                  <div class="box"><div class="bt">Provenance</div><div class="bd">откуда данные · трасса</div></div>
+                </div>
+              </div>
+              <div class="card">
+                <div class="sec">Data Plane</div>
+                <div class="chips"><span class="chip b">canonical store · jsonl (том abop_ape)</span><span class="chip b">recipes: источник→entity</span><span class="chip b">connectors</span><span class="chip b">реестр систем</span></div>
+              </div>
+              <div class="card">
+                <div class="sec">Schema-driven (шаблоны в БД)</div>
+                <div class="chips"><span class="chip b">report_templates · вид отчёта</span><span class="chip b">schema_templates · структура данных</span></div>
+                <div class="bd" style="color:var(--ink3);font-size:9.5px;margin-top:5px">меняешь шаблон в БД → меняется вывод/отчёт без передеплоя</div>
+              </div>
+              <div class="card">
+                <div class="sec">Планировщик</div>
+                <div class="box"><div class="bt">scheduler_loop</div><div class="bd">leader-election · cron · только последняя версия агента (без дублей)</div></div>
+              </div>
+            </div>
+
+            <div style="flex:1;display:flex;flex-direction:column;gap:9px">
+              <div class="card">
+                <div class="sec">Governance / доступ</div>
+                <div class="grid g2">
+                  <div class="box hl"><div class="bt">Keycloak JWT</div><div class="bd">realm abop · multi-issuer</div></div>
+                  <div class="box hl"><div class="bt">RBAC / ABAC</div><div class="bd">department == family</div></div>
+                  <div class="box"><div class="bt">Реестр семей</div><div class="bd">= отделы · кастомные</div></div>
+                  <div class="box"><div class="bt">ABAC-навыки</div><div class="bd">видны по отделу</div></div>
+                  <div class="box"><div class="bt">edit_scope</div><div class="bd">user · methodologist</div></div>
+                  <div class="box hl"><div class="bt">Сквозной ID</div><div class="bd">UID → аккаунты в системах</div></div>
+                </div>
+              </div>
+              <div class="card">
+                <div class="sec">Stores (Postgres · svod-analytics-pg)</div>
+                <div class="chips">
+                  <span class="chip">agent</span><span class="chip">contract</span><span class="chip">skill</span><span class="chip">families</span>
+                  <span class="chip">identity</span><span class="chip">systems</span><span class="chip">dataplane</span><span class="chip">report</span>
+                  <span class="chip">schema</span><span class="chip">run</span><span class="chip">run_cache</span><span class="chip">hitl</span>
+                  <span class="chip">trigger</span><span class="chip">reglament</span><span class="chip">audit</span><span class="chip">admin</span>
+                </div>
+              </div>
+              <div class="card">
+                <div class="sec">LLM-клиенты (каскад)</div>
+                <div class="chips"><span class="chip">chat · chat_stream</span><span class="chip">embed (BGE-M3)</span><span class="chip">rerank</span><span class="chip">qdrant</span><span class="chip">admission-семафор</span></div>
+              </div>
+              <div class="card">
+                <div class="sec">Фронт + наблюдаемость</div>
+                <div class="chips"><span class="chip b">webapp buildless-React</span><span class="chip b">/desktop-ui</span><span class="chip">Prometheus</span><span class="chip">Grafana</span><span class="chip">langfuse</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- НИЖНЯЯ ПОЛОСА: LLM + системы + SSO -->
+      <div class="row" style="gap:14px">
+        <div class="tgt violet" style="flex:0 0 268px">
+          <div class="hd violet"><span class="t">Self-host LLM</span><span class="m">Vast · GPU</span></div>
+          <div class="grid" style="gap:6px">
+            <div class="box hl"><div class="bt">Qwen3-30B-A3B FP8</div><div class="bd">chat · chat_stream (генерация)</div></div>
+            <div class="box"><div class="bt">BGE-M3</div><div class="bd">эмбеддинги · семантич. подбор</div></div>
+            <div class="box"><div class="bt">reranker · Qdrant</div><div class="bd">RAG / нормы (sLAVA)</div></div>
+          </div>
+          <div class="chip v" style="margin-top:7px">≈ 0 ₽/вызов · данные не наружу</div>
+        </div>
+        <div class="card" style="flex:1">
+          <div class="sec">Рабочие системы — доставка результата (под HITL) + входные данные (Data Plane)</div>
+          <div class="grid g5">
+            <div class="box"><div class="bt">🎫 Redmine</div><div class="bd">issue · задачи</div></div>
+            <div class="box"><div class="bt">✉ Mailpit/SMTP</div><div class="bd">email · почта</div></div>
+            <div class="box"><div class="bt">📄 BookStack</div><div class="bd">document · вики</div></div>
+            <div class="box"><div class="bt">🗄 Twenty CRM</div><div class="bd">customer · сделки</div></div>
+            <div class="box"><div class="bt">🧾 1С / MinIO</div><div class="bd">выгрузки · S3</div></div>
+            <div class="box"><div class="bt">📊 NocoDB</div><div class="bd">таблицы</div></div>
+            <div class="box"><div class="bt">🔐 Keycloak</div><div class="bd">SSO · RBAC</div></div>
+            <div class="box"><div class="bt">🧠 Qdrant</div><div class="bd">вектор · нормы</div></div>
+            <div class="box"><div class="bt">🗃 Postgres</div><div class="bd">persist</div></div>
+            <div class="box hl"><div class="bt">🧩 Identity Map</div><div class="bd">агент адресен</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ПОТОКИ -->
+      <div class="flows">
+        <div class="ft-h">Потоки и связи (ключевые)</div>
+        <div class="flowgrid">
+          <div class="flow"><span class="num">1</span><span class="ft"><b>Вход:</b> Desktop-чат → сайдкар (127.0.0.1) → ABOP /api/* под JWT (RBAC/ABAC)</span></div>
+          <div class="flow"><span class="num">2</span><span class="ft"><b>Подбор:</b> текст → /api/agents/match (лексика+семантика) → «куда результат?»</span></div>
+          <div class="flow"><span class="num">3</span><span class="ft"><b>Прогон:</b> Data Plane → runner (grounded, self-host Qwen) → находки по схеме из БД</span></div>
+          <div class="flow"><span class="num">4</span><span class="ft"><b>Governance:</b> конверт автономии + HITL → внешнее действие только после подтверждения</span></div>
+          <div class="flow"><span class="num">5</span><span class="ft"><b>Доставка:</b> OUT-узлы → Redmine/почта/BookStack по шаблону отчёта; агент адресен (Identity Map)</span></div>
+          <div class="flow"><span class="num">6</span><span class="ft"><b>Аудит:</b> provenance-трасса + метрики/логи в Grafana/langfuse; расписания через планировщик</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

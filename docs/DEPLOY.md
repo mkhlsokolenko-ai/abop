@@ -49,10 +49,11 @@ curl -sf http://127.0.0.1:8091/api/health   # → {"ok":true,...}
 
 ### Деплой с локальной машины (как в разработке)
 ```bash
-git archive HEAD cli server skills webapp demo Dockerfile.webapi ops -o _deploy.tar
+git archive HEAD cli server skills webapp demo Dockerfile.webapi ops desktop/ui -o _deploy.tar
 scp _deploy.tar root@5.129.192.63:/opt/abop/
 ssh root@5.129.192.63 'cd /opt/abop && tar -xf _deploy.tar && bash ops/deploy-webapi.sh'
 ```
+> `desktop/ui` в архиве нужен для **сайдкар-UI-прокси** (см. §6): ABOP отдаёт свежий UI десктопа через `/desktop-ui-bundle`, сайдкар подтягивает его на `127.0.0.1/ui` — правки UI прилетают без пересборки `.exe`.
 
 ---
 
@@ -189,3 +190,31 @@ curl -s -XPOST http://127.0.0.1:8091/api/runs -H "Authorization: Bearer $TOKEN" 
 ## 9. Что дальше (см. `CONCEPT_SCALING_OBSERVABILITY.md`)
 
 Async-исполнение (`202`+Notification) и чат-оркестратор — **на холде** (точка входа простого пользователя = внешний менеджерский интерфейс, смычка позже). Observability Фаза 0 — сделана. Следующий инфра-шаг — по готовности внешнего UI.
+
+---
+
+## 10. ABOP Desktop: сайдкар-UI-прокси и schema-driven вывод
+
+### 10.1 Сайдкар-UI-прокси («путь А», сделан правильно)
+Проблема: правки UI десктопа требовали пересборки `.exe`. Наивный «путь А» (грузить UI прямо с публичного ABOP) ломается о **Chromium Private Network Access (PNA)** — публичная страница не может делать fetch на `127.0.0.1`.
+
+Решение: сайдкар отдаёт UI **с того же origin, что и API** (`127.0.0.1/ui`), а свежую версию берёт с сервера:
+- ABOP: `GET /desktop-ui-bundle` → `{version, files:{relpath:text}}` по всем файлам `desktop/ui/`.
+- Сайдкар (`desktop/sidecar/app.py`): `_sync_ui()` на старте тянет бандл в `DATA_DIR/ui-cache` (атомарно `.new`→rename), фолбэк `_bundled_ui()` (копия `ui_fallback`, вшитая PyInstaller). Монтирует `/ui` как StaticFiles.
+- Electron (`main.js`): грузит `apiBase + "/ui/index.html?api=…"`; при сбое — локальный фолбэк.
+
+**Итог:** правки UI выкатываются обычным git-деплоем (`desktop/ui` в архиве, §2) — `.exe` пересобирать не нужно. Пересборка нужна только при изменении Python-сайдкара/Electron-оболочки.
+
+### 10.2 Schema-driven вывод (вид без передеплоя)
+Вид отчёта и структура извлечения — в БД, правятся без пересборки образа:
+- `report_templates` (`server/report_store.py`) — HTML/CSS/PDF-опции отчёта. `render()` — безопасная подстановка `{{key}}` (без exec/Jinja). API `GET/POST/DELETE /api/report-templates`, `/preview`. OUT-узел ссылается по `report_template_id`.
+- `schema_templates` (`server/schema_store.py`) — JSON Schema извлечения + инструкция. `response_format()` → OpenAI `json_schema` strict (self-host Qwen поддерживает). Навык ссылается по `schema_template_id`. API `GET/POST/DELETE /api/schema-templates`.
+- LLM только **форматирует** по схеме, не «сочиняет» поля (лечит галлюцинации вида «норма» в почтовом триаже: `cite=False` + схема `tasks`).
+
+### 10.3 Единые реестры и адресность
+- `families_store` — единый реестр семей (сид из `ape.AGENT_FAMILIES` + кастомные из UI); семья=отдел (ABAC). API `/api/families`.
+- `identity_store` — **сквозной ID**: `identity{uid,system,external_id,display,attrs}`, `bundle(uid)` → карта систем. Агент адресен: доставка идёт под аккаунтом юзера (Redmine `assigned_to`, email `to`). API `/api/identity/*`.
+- `edit_scope` агента: `family∈{management}` или `source=authored` → правит **пользователь**; специализированные (Аудитор 1С, Финаналитик, Следователь) → только **методолог**. Отдаётся в `agents_list`/`agent_get` как `can_edit`.
+
+### 10.4 Планировщик — только последняя версия
+`triggers._latest_versions()` дедуплицирует по `contract_audit_id`, оставляя max-версию. Чинит две баги: дубли писем (агент срабатывал по расписанию во всех старых версиях) и «удаление расписания не работает» (крестик).

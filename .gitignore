@@ -17,6 +17,9 @@ venv/
 *.egg-info/
 dist/
 build/
+# Артефакты сборки PyInstaller-сайдкара (desktop)
+desktop/build-sidecar/
+desktop/dist/
 
 # Editors / OS
 .vscode/
