@@ -2259,28 +2259,105 @@ def _agent_knowledge_fn(agent: dict, actor: str):
     return _kfn
 
 
+def _auto_template_id(result: dict) -> str:
+    """Кейс-шаблон отчёта по форме результата (когда OUT-узел не задал report_template_id явно):
+    расследования → invest; аудит-находки A/B/C/D → audit1c; structured-вывод навыка → digest; иначе default."""
+    if result.get("investigations"):
+        return "invest"
+    if (result.get("findings_summary") or {}).get("by_class"):
+        return "audit1c"
+    for f in result.get("findings") or []:
+        if isinstance(f, dict) and f.get("skill") and f.get("structured"):
+            return "digest"
+    return "default"
+
+
 def _report_context(agent: dict, result: dict) -> dict:
-    """Контекст для шаблона отчёта (report_store.render): готовые данные+HTML-блоки, шаблон задаёт вид.
-    Плейсхолдеры: title, agent, date, findings_total, investigations_total, findings (HTML), deliveries (HTML)."""
+    """Контекст для шаблона отчёта (report_store.render): готовые HTML-блоки под ВСЕ формы результата
+    (аудит-находки A/B/C/D, расследования-цепочки, structured-вывод навыков вроде «Дайджест задач»).
+    Плейсхолдеры: title, agent, date, verdict, findings_total, investigations_total,
+    by_class (HTML), findings (HTML), investigations (HTML), skills (HTML), deliveries (HTML).
+    Раньше блок findings делал json.dumps по skill-словарям и терял расследования/структуру →
+    кастом-шаблоны выглядели «пустыми». Теперь каждый вид рендерится по-человечески."""
     import html as _html
     import datetime as _dtm
     esc = lambda x: _html.escape(str(x if x is not None else ""))  # noqa: E731
     fnds = result.get("findings") or []
-    rows = []
-    for f in fnds[:40]:
-        if isinstance(f, dict):
-            txt = f.get("проверка") or f.get("описание") or f.get("наблюдение") or json.dumps(f, ensure_ascii=False)
-            norm = (f.get("нормы_rag") or [""])[0]
-            rows.append(f"<div class='fnd'>{esc(str(txt)[:400])}" + (f"<br><i>§ {esc(norm[:200])}</i>" if norm else "") + "</div>")
+
+    # 1) Находки: структурные (аудит) — с бейджем класса и нормой; скилл-словари уходят в блок skills.
+    struct = [f for f in fnds if isinstance(f, dict) and (f.get("проверка") or f.get("наблюдение"))]
+    frows = []
+    for f in struct[:60]:
+        cls = f.get("класс") or f.get("class") or ""
+        txt = f.get("проверка") or f.get("наблюдение") or ""
+        desc = f.get("описание") or ""
+        norm = (f.get("нормы_rag") or [""])[0]
+        frows.append("<div class='fnd'>" + (f"<span class='cls'>{esc(cls)}</span>" if cls else "")
+                     + f"<b>{esc(str(txt)[:300])}</b>" + (f" — {esc(str(desc)[:400])}" if desc else "")
+                     + (f"<span class='norm'>§ {esc(str(norm)[:220])}</span>" if norm else "") + "</div>")
+    findings_html = "".join(frows)
+
+    # 2) Расследования от симптома: цепочка звеньев + расхождение ₽ + норма.
+    inv_rows = []
+    for iv in (result.get("investigations") or [])[:40]:
+        if not isinstance(iv, dict):
+            continue
+        chain = " → ".join(f"{esc(l.get('звено'))}: {esc(l.get('статус') or ('✓' if l.get('есть') else '✗'))}"
+                           for l in (iv.get("цепочка") or []))
+        delta = (iv.get("сверка") or {}).get("разница_₽")
+        norm = (iv.get("нормы_rag") or [""])[0]
+        inv_rows.append("<div class='inv'>"
+                        f"<span class='sev'>{esc(iv.get('серьёзность'))}</span> "
+                        f"<span class='sym'>{esc(iv.get('id'))} — {esc(iv.get('симптом'))}</span>"
+                        + (f"<div class='chain'>{chain}</div>" if chain else "")
+                        + (f"<span class='delta'>расхождение Δ {esc(delta)} ₽</span>" if delta is not None else "")
+                        + (f"<span class='norm'>§ {esc(str(norm)[:220])}</span>" if norm else "") + "</div>")
+    investigations_html = "".join(inv_rows)
+
+    # 3) Вывод навыков (LLM): структурный список (задачи/пункты) рендерим по-человечески, иначе — текст.
+    sk_rows = []
+    for f in fnds:
+        if not (isinstance(f, dict) and f.get("skill") and (f.get("text") or f.get("structured"))):
+            continue
+        st = f.get("structured")
+        items = None
+        if isinstance(st, dict):
+            for v in st.values():                        # первый список в структуре = задачи/находки/пункты
+                if isinstance(v, list) and v:
+                    items = v
+                    break
+        elif isinstance(st, list):
+            items = st
+        if items:
+            body = "".join("<div class='task'>" + esc(
+                " · ".join(f"{k}: {vv}" for k, vv in it.items()) if isinstance(it, dict) else str(it)
+            )[:400] + "</div>" for it in items[:40])
         else:
-            rows.append(f"<div class='fnd'>{esc(str(f)[:400])}</div>")
-    dls = "".join(f"<div class='dl'>{esc(d.get('channel'))} → {esc(d.get('to') or '')} · {esc(d.get('mode'))}</div>"
+            body = f"<pre>{esc((f.get('text') or '')[:2500])}</pre>"
+        sk_rows.append(f"<div class='sk'><h3>{esc(f.get('skill'))}</h3>{body}</div>")
+    skills_html = "".join(sk_rows)
+
+    # by_class бейджи (аудит)
+    bc = (result.get("findings_summary") or {}).get("by_class") or {}
+    by_class_html = ""
+    if bc:
+        by_class_html = "<div class='badges'>" + "".join(
+            f"<span class='b {k}'>{k}: {esc(bc.get(k, 0))}</span>" for k in ("A", "B", "C", "D")) + "</div>"
+
+    v = result.get("verdict") or {}
+    verdict = (("✓ пройден" if v.get("ok") else "⚠ есть замечания")
+               + (f" · автономия {esc(v.get('autonomy_used'))}" if v.get("autonomy_used") else "")
+               + (f" · волн {len(result.get('waves') or [])}" if result.get("waves") else ""))
+    dls = "".join(f"<div class='dl'>{esc(d.get('channel'))} → {esc(d.get('to') or '—')} · {esc(d.get('mode'))}</div>"
                   for d in (result.get("delivery") or []))
     return {"title": esc(agent.get("name") or "Отчёт агента ABOP"), "agent": esc(agent.get("name") or ""),
-            "date": _dtm.datetime.now().strftime("%d.%m.%Y %H:%M"),
-            "findings_total": (result.get("findings_summary") or {}).get("total") or len(fnds),
+            "date": _dtm.datetime.now().strftime("%d.%m.%Y %H:%M"), "verdict": verdict,
+            "findings_total": (result.get("findings_summary") or {}).get("total") or len(struct),
             "investigations_total": (result.get("investigations_summary") or {}).get("total") or len(result.get("investigations") or []),
-            "findings": "".join(rows) or "<div class='fnd'>Находок не выявлено.</div>",
+            "by_class": by_class_html,
+            "findings": findings_html,
+            "investigations": investigations_html,
+            "skills": skills_html,
             "deliveries": dls or "<div class='dl'>—</div>"}
 
 
@@ -2407,10 +2484,10 @@ async def _deliver_out_nodes(agent: dict, result: dict, actor: str, deliver_filt
     # Шаблон отчёта из БД (Schema-driven: вид задаётся шаблоном, не кодом). Если OUT-узел ссылается на
     # report_template_id — рендерим по нему; иначе — прежний захардкоженный HTML. Контент готовит ABOP.
     async def _report_for(cfg: dict) -> str:
-        tid = (cfg or {}).get("report_template_id")
-        if not tid:
-            return html_report
-        tpl = await report_store.get(tid)
+        # Явно заданный шаблон приоритетен; иначе авто-выбор по форме результата (кейс-шаблон), чтобы
+        # демо-агенты давали красивый отчёт без правки графа. Фолбэк — прежний детерминированный HTML.
+        tid = (cfg or {}).get("report_template_id") or _auto_template_id(result)
+        tpl = await report_store.get(tid) or await report_store.get("default")
         if not tpl:
             return html_report
         return report_store.render(tpl, _report_context(agent, result))
