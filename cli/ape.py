@@ -2562,6 +2562,8 @@ def _adapter_mailpit(src: dict) -> list:
             body += (f"\n\n--- Вложение: {a['FileName']} ---\n{a['Text']}" if a["Text"]
                      else f"\n\n[вложение {a['FileName']} — {a['ContentType'] or 'бинарное'}, текст не извлечён]")
         row = dict(m)
+        frm = m.get("From") or {}
+        row["FromDisplay"] = (frm.get("Name") or frm.get("Address") or "").strip() if isinstance(frm, dict) else str(frm)
         row["Text"], row["Body"], row["Attachments"] = text, body.strip(), atts
         row["AttachmentsText"] = "\n\n".join(f"{a['FileName']}:\n{a['Text']}" for a in atts if a["Text"])
         row["AttachmentsCount"] = len(atts)
