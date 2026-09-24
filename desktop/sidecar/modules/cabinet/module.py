@@ -33,6 +33,15 @@ def usage() -> dict:
         return {"ok": False, "error": str(e)}
 
 
+@router.get("/billing")
+def billing() -> dict:
+    """Счётчик токенов/квота: реальные токены из RunMetrics + остаток (токен-квота ABOP)."""
+    try:
+        return abop.billing()
+    except abop.AbopError as e:
+        return {"error": str(e)}
+
+
 @router.get("/sources")
 def sources() -> dict:
     """Рабочие источники: подключены в ABOP Data Plane (см. модуль «Источники»); локальные файлы —

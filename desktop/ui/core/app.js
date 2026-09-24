@@ -58,12 +58,20 @@ async function renderAuth() {
   try { me = await api("/api/auth/me"); } catch {}
   ctx.user = me.user || null;
   ctx.roles = me.roles || [];
+  ctx.email = me.email || null;
   if (me.authed) {
-    box.innerHTML = `<span class="sub" style="font-size:12.5px">${me.user || ""}</span>
-      <button class="btn sm" id="logoutBtn" style="margin-left:10px">Выйти</button>`;
+    // Показываем, ПОД КАКИМ аккаунтом и ПОЧТОЙ работают агенты (адресность/Identity Map).
+    const mail = me.email ? `<span title="почта, под которой действуют агенты" style="font-size:11px;color:var(--ink-3)">✉ ${me.email}</span>` : "";
+    const dept = me.department ? `<span style="font-size:10.5px;color:var(--accent-ink-2,#a5b4fc)">· ${me.department}</span>` : "";
+    box.innerHTML = `<span style="display:flex;flex-direction:column;line-height:1.25;margin-right:10px">
+        <span style="font-size:12.5px;font-weight:600">🔑 ${me.name || me.user || ""}${dept}</span>${mail}</span>
+      <button class="btn sm" id="logoutBtn">Выйти</button>`;
     $("logoutBtn").onclick = async () => { await api("/api/auth/logout", { method: "POST" }); renderAuth(); };
   } else {
-    box.innerHTML = `<button class="btn primary sm" id="loginBtn">Войти через GitHub</button>`;
+    // Единый вход: шлюз ABOP (Keycloak) — из него подтягиваются почта и доступы в системы (RBAC/ABAC).
+    box.innerHTML = `<span style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+        <button class="btn primary sm" id="loginBtn">🔑 Войти в ABOP</button>
+        <span style="font-size:10px;color:var(--ink-3)">шлюз входа + почта и доступы</span></span>`;
     $("loginBtn").onclick = async () => {
       $("loginBtn").textContent = "Открываю браузер…";
       try {

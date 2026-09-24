@@ -2,6 +2,7 @@
 // логика привязана к сайдкару: треды, стриминг, вложения→RAG, агенты (шторка), экспорт, скиллы.
 const M = "/api/modules/chat";
 const A_AG = "/api/modules/agents";   // роуты агентов/расписаний ABOP через сайдкар
+const A_CAB = "/api/modules/cabinet"; // кабинет: счётчик токенов/квота
 const esc = (s) => (s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 
 function md(t) {
@@ -76,6 +77,7 @@ export async function mount(root, ctx) {
         <div style="max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:10px">
           <div id="schedBar"></div>
           <div id="pipeBar"></div>
+          <div id="quotaBar"></div>
           <div id="kb"></div>
           <div style="padding:12px 14px;border-radius:16px;background:var(--panel);border:1px solid var(--line-2);backdrop-filter:blur(16px);display:flex;flex-direction:column;gap:11px">
             <div id="tools" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"></div>
@@ -282,6 +284,21 @@ export async function mount(root, ctx) {
     bar.querySelectorAll(".schDel").forEach((b) => b.onclick = async () => { await api(A_AG + "/trigger/" + encodeURIComponent(b.dataset.a) + "/" + encodeURIComponent(b.dataset.t), { method: "DELETE" }); loadSchedules(); });
   }
 
+  // ── Счётчик токенов / квота (реальные токены из RunMetrics; стоимость≈0 на self-host) ──
+  async function loadQuota() {
+    const bar = $("quotaBar"); if (!bar) return;
+    let b = null; try { b = await api(A_CAB + "/billing"); } catch { b = null; }
+    if (!b || b.error || b.tokens == null) { bar.innerHTML = ""; return; }
+    const fmt = (n) => (n >= 1e6 ? (n / 1e6).toFixed(2) + "M" : n >= 1e3 ? Math.round(n / 1e3) + "k" : String(n));
+    const pct = b.tokens_pct || 0;
+    const col = pct >= 90 ? "#f87171" : pct >= 70 ? "#fbbf24" : "#34d399";
+    const rub = b.spent_rub ? ` · ${b.spent_rub} ₽` : " · ≈0 ₽ (self-host)";
+    bar.innerHTML = `<div title="Реальные токены из прогонов. На self-host стоимость≈0, но токены списываются с квоты — виден остаток." style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--ink-3);padding:2px 4px">
+      <span>🎫 токены: <b style="color:var(--ink-2)">${fmt(b.tokens)}</b> / ${fmt(b.token_quota)}</span>
+      <span style="flex:1;height:5px;border-radius:4px;background:var(--hover);overflow:hidden;max-width:180px"><span style="display:block;height:100%;width:${pct}%;background:${col}"></span></span>
+      <span style="color:${col}">остаток ${fmt(b.tokens_remaining)}</span><span>${rub}</span></div>`;
+  }
+
   // ── Цепочки агентов: выход одного агента → контекст следующего (линейный конвейер) ──
   async function loadPipelines() {
     try { const r = await api(A_AG + "/pipelines"); pipelines = (r && r.pipelines) || []; } catch { pipelines = []; }
@@ -335,7 +352,7 @@ export async function mount(root, ctx) {
       run.content = `цепочка «${p.name || pid}» выполнена`;
       run.meta = { pipeline_result: `<div style="font-weight:600;margin-bottom:4px">🔗 Цепочка «${esc(p.name || pid)}» — ${steps.length} шаг(ов)</div>${html}` };
     } catch (e) { run.content = "Сбой цепочки: " + (e && e.message || e); }
-    render();
+    render(); loadQuota();
   }
 
   // HITL прямо в основном окне чата: подтвердить/отклонить внешнее действие ЭТОГО прогона.
@@ -522,7 +539,7 @@ export async function mount(root, ctx) {
       if (r.ok) { run.content = "[агент " + agentId + "]"; run.meta = { run_agent: r.run }; }
       else { run.content = "Ошибка запуска: " + (r.error || "не удалось"); }
     } catch (e) { run.content = "Сбой: " + (e && e.message || e); }
-    render(); loadThreads();
+    render(); loadThreads(); loadQuota();
   }
 
   async function sendPrompt(text) {
@@ -577,7 +594,7 @@ export async function mount(root, ctx) {
         run.content = "Ошибка запуска: " + (r.error || "не удалось");
       }
     } catch (e) { run.content = "Сбой: " + (e && e.message || e); }
-    render(); loadThreads();
+    render(); loadThreads(); loadQuota();
   }
 
   // быстрые роли (импровизация LLM без Data Plane) — остаётся как лёгкий режим
@@ -589,7 +606,7 @@ export async function mount(root, ctx) {
     if (el) el.innerHTML = `<span style="display:inline-flex;gap:12px;align-items:center">${mascot("thinking", 26)}<span style="color:var(--ink-2)">роли работают…</span></span>`;
     const r = await api(M + "/threads/" + cur.id + "/agents", { method: "POST", body: JSON.stringify({ task, roles: rl }) });
     run.content = r.ok ? r.content : ("Ошибка: " + (r.error === "auth_required" ? "нужен вход через GitHub" : r.error));
-    render(); loadThreads();
+    render(); loadThreads(); loadQuota();
   }
   async function renderDrawer() {
     $("drTabTools").style.cssText += ";" + drTabStyle(drTab === "tools");
@@ -691,6 +708,7 @@ export async function mount(root, ctx) {
   // расписания: первичная загрузка + поллинг каждые 60с (уведомления о завершении регулярных задач)
   loadSchedules(false);
   loadPipelines();
+  loadQuota();
   if (window.__apeSchedTimer) clearInterval(window.__apeSchedTimer);
   window.__apeSchedTimer = setInterval(() => { if (root.isConnected) loadSchedules(true); else clearInterval(window.__apeSchedTimer); }, 60000);
 }

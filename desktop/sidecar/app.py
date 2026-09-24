@@ -111,7 +111,9 @@ def me() -> dict:
     # оставляем только осмысленные для RBAC (без служебных keycloak-ролей)
     roles = [r for r in roles if not r.startswith("default-roles") and r not in
              ("offline_access", "uma_authorization")]
-    return {"authed": True, "user": cl.get("preferred_username"), "roles": roles}
+    return {"authed": True, "user": cl.get("preferred_username"),
+            "email": cl.get("email") or "", "name": cl.get("name") or "",
+            "department": cl.get("department") or cl.get("family") or "", "roles": roles}
 
 
 @app.post("/api/auth/login")

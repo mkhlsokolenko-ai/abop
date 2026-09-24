@@ -194,6 +194,13 @@ def hitl_queue() -> list:
     return (r or {}).get("queue", []) if isinstance(r, dict) else (r or [])
 
 
+def billing() -> dict:
+    """Расход/квота: реальные токены из RunMetrics + остаток (токен-квота). cost≈0 на self-host,
+    но токены списываются с квоты — пользователь видит, сколько ещё может отработать."""
+    r = _req("GET", "/api/billing", timeout=30)
+    return r if isinstance(r, dict) else {}
+
+
 # ── Цепочки агентов (pipelines): линейный конвейер выход→контекст ──
 def pipelines() -> list:
     r = _req("GET", "/api/pipelines", timeout=30)
