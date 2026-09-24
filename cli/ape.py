@@ -2507,6 +2507,68 @@ def _adapter_http(src: dict) -> list:
     return _extract_rows(data, src.get("root", ""))
 
 
+_MAILPIT_TEXT_EXT = (".txt", ".csv", ".json", ".md", ".log", ".xml", ".yaml", ".yml", ".ini", ".tsv")
+
+
+def _mailpit_base(url: str) -> str:
+    """База Mailpit (scheme://host:port) из URL списка сообщений — для дозапросов message/{id}/part/{pid}."""
+    from urllib.parse import urlparse
+    u = urlparse(url)
+    return f"{u.scheme}://{u.netloc}" if u.scheme and u.netloc else "http://127.0.0.1:8025"
+
+
+def _mailpit_get(url: str, as_bytes: bool = False):
+    with urllib.request.urlopen(urllib.request.Request(_guard_url(url)), timeout=30) as r:
+        raw = r.read()
+    return raw if as_bytes else json.loads(raw.decode("utf-8", "replace"))
+
+
+def _adapter_mailpit(src: dict) -> list:
+    """pull-адаптер Mailpit: список писем + ПОЛНОЕ тело + ТЕКСТ текстовых вложений (txt/csv/json/md/…).
+    Список /api/v1/messages даёт только тему/сниппет; тело и файлы берём дозапросом /api/v1/message/{id}
+    и /api/v1/message/{id}/part/{pid}. Так агент реально «читает вложения», а не только тему.
+    Обогащает каждую строку полями: Text (тело), Body (тело + текст вложений), Attachments[], AttachmentsText.
+    egress=external, read-only (только GET). src: url (список), limit (по умолчанию 50)."""
+    list_url = _guard_url(src.get("url") or "http://127.0.0.1:8025/api/v1/messages?limit=50")
+    base = _mailpit_base(list_url)
+    limit = int(src.get("limit", 50) or 50)
+    msgs = _extract_rows(_mailpit_get(list_url), src.get("root", "messages"))[:limit]
+    out = []
+    for m in msgs:
+        mid = m.get("ID") or m.get("Id") or m.get("id") or ""
+        full = {}
+        if mid:
+            try:
+                full = _mailpit_get(f"{base}/api/v1/message/{mid}")
+            except Exception:  # noqa: BLE001 — недоступное письмо не валит весь рецепт
+                full = {}
+        text = (full.get("Text") or m.get("Snippet") or "").strip()
+        atts = []
+        for a in (full.get("Attachments") or []):
+            pid = a.get("PartID") or a.get("PartId") or ""
+            fn = a.get("FileName") or a.get("Filename") or pid or "attachment"
+            ctype = (a.get("ContentType") or "").lower()
+            atext = ""
+            texty = (fn.lower().endswith(_MAILPIT_TEXT_EXT) or ctype.startswith("text/")
+                     or "json" in ctype or "csv" in ctype or "xml" in ctype)
+            if pid and texty:
+                try:
+                    atext = _mailpit_get(f"{base}/api/v1/message/{mid}/part/{pid}", as_bytes=True).decode("utf-8", "replace")[:20000]
+                except Exception:  # noqa: BLE001
+                    atext = ""
+            atts.append({"FileName": fn, "ContentType": ctype, "Text": atext})
+        body = text
+        for a in atts:
+            body += (f"\n\n--- Вложение: {a['FileName']} ---\n{a['Text']}" if a["Text"]
+                     else f"\n\n[вложение {a['FileName']} — {a['ContentType'] or 'бинарное'}, текст не извлечён]")
+        row = dict(m)
+        row["Text"], row["Body"], row["Attachments"] = text, body.strip(), atts
+        row["AttachmentsText"] = "\n\n".join(f"{a['FileName']}:\n{a['Text']}" for a in atts if a["Text"])
+        row["AttachmentsCount"] = len(atts)
+        out.append(row)
+    return out
+
+
 def _extract_rows(data, root: str) -> list:
     """Достаёт массив записей из ответа API. Если root задан — по нему (dotted-path).
     Если root пуст/не дал список — АВТОПОИСК массива (частые ключи, затем любой список,
@@ -2694,6 +2756,11 @@ register_adapter("http", _adapter_http, {
     "badge": "egress → анти-SSRF", "requires": [],
     "src_fields": [{"key": "url", "label": "URL источника", "placeholder": "https://erp.internal/api/v2/tx"},
                    {"key": "root", "label": "ключ массива (опц.)", "placeholder": "items"}]})
+register_adapter("mailpit", _adapter_mailpit, {
+    "label": "Почта Mailpit (с вложениями)", "category": "api", "egress": "external", "read_only": True,
+    "badge": "тело + текст вложений", "requires": [],
+    "src_fields": [{"key": "url", "label": "URL списка писем", "placeholder": "http://127.0.0.1:8025/api/v1/messages?limit=50"},
+                   {"key": "limit", "label": "сколько писем (опц.)", "placeholder": "50"}]})
 register_adapter("sqlite", _adapter_sqlite, {
     "label": "SQLite", "category": "db", "egress": "internal", "read_only": True,
     "badge": "read-only", "requires": [],
