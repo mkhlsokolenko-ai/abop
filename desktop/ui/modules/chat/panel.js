@@ -434,7 +434,21 @@ export async function mount(root, ctx) {
   function _lastDecision() { for (let i = messages.length - 1; i >= 0; i--) { if (messages[i].meta && messages[i].meta.decision) return messages[i].meta.decision; } return null; }
 
   // запуск подобранного агента с выбранной доставкой (deliver: '' как настроено | chat | redmine | email)
-  async function runAbopAgentDeliver(agentId, agentName, task, deliver) {
+  // Если у агента УЖЕ стоит активное расписание — он и так выполнит задачу сам, ручной запуск засорит
+  // почту/системы дублем → предупреждаем и просим подтвердить (Tier 0 #4).
+  function runAbopAgentDeliver(agentId, agentName, task, deliver) {
+    const sch = schedules.find((s) => String(s.agent_id) === String(agentId) && s.enabled !== false);
+    if (sch) {
+      const last = sch.last_run && sch.last_run.at ? ` · последний прогон ${esc(String(sch.last_run.at).slice(0, 16).replace("T", " "))}` : "";
+      modal("Задача уже стоит по расписанию",
+        `<div style="font-size:13px;line-height:1.6;color:var(--ink-2)">У агента <b>${esc(agentName)}</b> настроено расписание <b>${esc(sch.cron)}</b>${last} — он выполнит задачу автоматически.<br><br>Ручной запуск сейчас создаст ещё один прогон (и, возможно, дубль письма/задачи). Всё равно запустить сейчас?</div>`,
+        () => { _doRunAbopAgent(agentId, agentName, task, deliver); },
+        "Да, запустить сейчас");
+      return;
+    }
+    _doRunAbopAgent(agentId, agentName, task, deliver);
+  }
+  async function _doRunAbopAgent(agentId, agentName, task, deliver) {
     const run = { role: "assistant", content: "", meta: {} }; messages.push(run); render();
     const el = $("col").querySelector("div:last-child .bub");
     if (el) el.innerHTML = `<span style="display:inline-flex;gap:12px;align-items:center">${mascot("thinking", 26)}<span style="color:var(--ink-2)">агент «${esc(agentName)}» работает…</span></span>`;
