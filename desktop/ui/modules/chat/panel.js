@@ -48,6 +48,13 @@ export async function mount(root, ctx) {
   const { api, mascot } = ctx;
   let threads = [], cur = null, messages = [], skills = [], roles = [], search = "", curAbort = null, abopAgents = [];
   let schedules = [], _schedSeen = {}, _schedTimer = null;   // расписания + отметки последних прогонов (уведомления)
+  let pipelines = [];                                        // цепочки агентов (линейный конвейер выход→контекст)
+  function showToast(msg) {                                   // лёгкий транзиентный тост
+    const t = document.createElement("div");
+    t.textContent = msg;
+    t.style = "position:fixed;bottom:28px;left:50%;transform:translateX(-50%);z-index:60;padding:10px 16px;border-radius:11px;background:rgba(15,23,42,.94);color:#fff;font-size:12.5px;box-shadow:0 12px 40px rgba(0,0,0,.4);max-width:80vw";
+    document.body.appendChild(t); setTimeout(() => t.remove(), 3200);
+  }
   try { skills = await api(M + "/skills"); if (!Array.isArray(skills)) skills = []; } catch {}
   try { roles = await api(M + "/agent-roles"); } catch {}
   try { abopAgents = await api(M + "/abop-agents"); if (!Array.isArray(abopAgents)) abopAgents = []; } catch {}
@@ -68,6 +75,7 @@ export async function mount(root, ctx) {
       <div style="flex:none;padding:10px 26px 18px">
         <div style="max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:10px">
           <div id="schedBar"></div>
+          <div id="pipeBar"></div>
           <div id="kb"></div>
           <div style="padding:12px 14px;border-radius:16px;background:var(--panel);border:1px solid var(--line-2);backdrop-filter:blur(16px);display:flex;flex-direction:column;gap:11px">
             <div id="tools" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"></div>
@@ -177,7 +185,8 @@ export async function mount(root, ctx) {
     const bd = mine ? "rgba(129,140,248,.3)" : "var(--line)";
     const inner = mine ? `<span style="font-size:13.5px;line-height:1.6;white-space:pre-wrap">${esc(m.content)}</span>`
       : (m.meta && m.meta.run_agent ? runCard(m.meta.run_agent)
-        : (m.meta && m.meta.decision ? decisionHTML(m.meta.decision) : md(m.content)));
+        : (m.meta && m.meta.pipeline_result ? m.meta.pipeline_result
+          : (m.meta && m.meta.decision ? decisionHTML(m.meta.decision) : md(m.content))));
     const cost = m.meta && m.meta.model ? `<span style="margin-left:4px;font-family:var(--mono);font-size:10.5px;color:var(--ink-3)">${m.meta.model} · ${m.meta.cost_rub ?? 0} ₽</span>` : "";
     const acts = mine
       ? `<button data-edit="${idx}" style="padding:4px 9px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--ink-3);font-size:11px;cursor:pointer">✎ изменить</button>`
@@ -271,6 +280,62 @@ export async function mount(root, ctx) {
         <button class="schDel" data-a="${esc(s.agent_id)}" data-t="${esc(s.trigger_id)}" title="Убрать расписание" style="width:20px;height:20px;border:none;border-radius:6px;background:var(--hover);color:var(--ink-3);font-size:10px;cursor:pointer">✕</button></div>`).join("")}
       </div></details>`;
     bar.querySelectorAll(".schDel").forEach((b) => b.onclick = async () => { await api(A_AG + "/trigger/" + encodeURIComponent(b.dataset.a) + "/" + encodeURIComponent(b.dataset.t), { method: "DELETE" }); loadSchedules(); });
+  }
+
+  // ── Цепочки агентов: выход одного агента → контекст следующего (линейный конвейер) ──
+  async function loadPipelines() {
+    try { const r = await api(A_AG + "/pipelines"); pipelines = (r && r.pipelines) || []; } catch { pipelines = []; }
+    renderPipeBar();
+  }
+  function renderPipeBar() {
+    const bar = $("pipeBar"); if (!bar) return;
+    const rows = pipelines.map((p) => `<div style="display:flex;align-items:center;gap:8px;font-size:11.5px">
+      <span style="flex:1;min-width:0;color:var(--ink)">🔗 ${esc(p.name)} <span style="color:var(--ink-3)">· ${(p.steps || []).map((s) => esc(s.agent_name || s.agent_id)).join(" → ")}</span></span>
+      <button class="plRun" data-id="${esc(p.id)}" title="Запустить цепочку" style="padding:3px 9px;border:1px solid var(--line);border-radius:8px;background:var(--field);color:var(--ink);font-size:11px;font-weight:600;cursor:pointer">▶</button>
+      <button class="plDel" data-id="${esc(p.id)}" title="Удалить цепочку" style="width:20px;height:20px;border:none;border-radius:6px;background:var(--hover);color:var(--ink-3);font-size:10px;cursor:pointer">✕</button></div>`).join("");
+    bar.innerHTML = `<details style="border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:8px 12px">
+      <summary style="cursor:pointer;font-size:12px;color:var(--ink-2);font-weight:600;display:flex;align-items:center;gap:8px">🔗 Цепочки агентов · ${pipelines.length}
+        <button id="plNew" style="margin-left:auto;padding:3px 10px;border:1px solid var(--line);border-radius:8px;background:var(--field);color:var(--ink-2);font-size:11px;cursor:pointer">＋ Собрать</button></summary>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">${rows || `<span style="font-size:11.5px;color:var(--ink-3)">Пока нет цепочек. «＋ Собрать» — соедините 2+ агентов.</span>`}</div></details>`;
+    const nb = bar.querySelector("#plNew"); if (nb) nb.onclick = (e) => { e.preventDefault(); openPipeBuilder(); };
+    bar.querySelectorAll(".plRun").forEach((b) => b.onclick = () => runPipeline(b.dataset.id));
+    bar.querySelectorAll(".plDel").forEach((b) => b.onclick = async () => { await api(A_AG + "/pipelines/" + encodeURIComponent(b.dataset.id), { method: "DELETE" }); loadPipelines(); });
+  }
+  function openPipeBuilder() {
+    let chosen = [];   // [agentId,...] по порядку
+    const opts = abopAgents.map((a) => `<option value="${esc(a.id)}">${esc(a.name)}${a.family ? " · " + esc(a.family) : ""}</option>`).join("");
+    const body = `<input id="plName" placeholder="Название цепочки (напр. Почта → Менеджер)" style="width:100%;margin-bottom:10px"/>
+      <div style="font-size:12px;color:var(--ink-2);margin-bottom:6px">Шаги по порядку — выход агента идёт в контекст следующего:</div>
+      <div id="plSteps" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px"></div>
+      <div style="display:flex;gap:8px"><select id="plPick" style="flex:1">${opts}</select>
+        <button id="plAdd" class="btn">＋ Шаг</button></div>`;
+    const ov = modal("Собрать цепочку агентов", body, async (b) => {
+      const name = (b.querySelector("#plName").value || "").trim();
+      if (!name || chosen.length < 2) { showToast("Нужно имя и минимум 2 шага"); return false; }
+      const steps = chosen.map((id, i) => ({ agent_id: id, deliver: i < chosen.length - 1 ? "chat" : "" }));
+      try { await api(A_AG + "/pipelines", { method: "POST", body: JSON.stringify({ name, steps }) }); await loadPipelines(); }
+      catch (e) { showToast("Не удалось сохранить: " + (e && e.message || e)); return false; }
+    }, "Сохранить цепочку");
+    const stepsEl = ov.querySelector("#plSteps");
+    const drawSteps = () => { stepsEl.innerHTML = chosen.map((id, i) => { const a = abopAgents.find((x) => x.id === id) || {}; return `<div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:6px 9px;border-radius:9px;background:var(--field);border:1px solid var(--line)"><span style="color:var(--ink-3)">${i + 1}.</span><span style="flex:1">${esc(a.name || id)}</span><button data-i="${i}" class="plX" style="border:none;background:transparent;color:var(--ink-3);cursor:pointer">✕</button></div>`; }).join("") || `<span style="font-size:11.5px;color:var(--ink-3)">Добавьте шаги ниже.</span>`; stepsEl.querySelectorAll(".plX").forEach((x) => x.onclick = () => { chosen.splice(+x.dataset.i, 1); drawSteps(); }); };
+    ov.querySelector("#plAdd").onclick = (e) => { e.preventDefault(); const v = ov.querySelector("#plPick").value; if (v) { chosen.push(v); drawSteps(); } };
+    drawSteps();
+  }
+  async function runPipeline(pid) {
+    const p = pipelines.find((x) => x.id === pid) || {};
+    const run = { role: "assistant", content: "", meta: {} }; messages.push(run); render();
+    const bubs = $("col").querySelectorAll(".bub"); const el = bubs[bubs.length - 1];
+    if (el) el.innerHTML = `<span style="display:inline-flex;gap:12px;align-items:center">${mascot("thinking", 26)}<span style="color:var(--ink-2)">цепочка «${esc(p.name || pid)}» работает…</span></span>`;
+    try {
+      const r = await api(A_AG + "/pipelines/" + encodeURIComponent(pid) + "/run", { method: "POST", body: JSON.stringify({ context: "" }) });
+      const steps = (r && r.steps) || [];
+      const html = steps.map((s, i) => `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:13px">
+        <span style="color:var(--ink-3)">${i + 1}.</span><b>${esc(s.agent_name || s.agent_id)}</b>
+        ${s.error ? `<span style="color:#f87171">— ошибка: ${esc(s.error)}</span>` : `<span style="color:var(--ink-2)">— находок: ${s.findings_total != null ? s.findings_total : "—"}${s.investigations_total ? ", расследований: " + s.investigations_total : ""}</span>`}</div>`).join("");
+      run.content = `цепочка «${p.name || pid}» выполнена`;
+      run.meta = { pipeline_result: `<div style="font-weight:600;margin-bottom:4px">🔗 Цепочка «${esc(p.name || pid)}» — ${steps.length} шаг(ов)</div>${html}` };
+    } catch (e) { run.content = "Сбой цепочки: " + (e && e.message || e); }
+    render();
   }
 
   // HITL прямо в основном окне чата: подтвердить/отклонить внешнее действие ЭТОГО прогона.
@@ -625,6 +690,7 @@ export async function mount(root, ctx) {
 
   // расписания: первичная загрузка + поллинг каждые 60с (уведомления о завершении регулярных задач)
   loadSchedules(false);
+  loadPipelines();
   if (window.__apeSchedTimer) clearInterval(window.__apeSchedTimer);
   window.__apeSchedTimer = setInterval(() => { if (root.isConnected) loadSchedules(true); else clearInterval(window.__apeSchedTimer); }, 60000);
 }

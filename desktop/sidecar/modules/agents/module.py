@@ -51,6 +51,21 @@ class AuthorIn(BaseModel):
     member: str = ""
 
 
+class PipelineStep(BaseModel):
+    agent_id: str
+    deliver: str = ""
+
+
+class PipelineIn(BaseModel):
+    name: str
+    steps: list[PipelineStep] = []
+    id: str = ""
+
+
+class PipelineRunIn(BaseModel):
+    context: str = ""
+
+
 @router.get("/catalog")
 def catalog():
     """Каталог агентов ABOP (ABAC по семье пользователя — сервер отдаёт только доступное)."""
@@ -168,5 +183,38 @@ def del_trigger(agent_id: str, trigger_id: str):
     """Убрать расписание (новая версия агента без триггера)."""
     try:
         return {"ok": True, "result": abop.del_trigger(agent_id, trigger_id)}
+    except abop.AbopError as e:
+        return _err(e)
+
+
+# ── Цепочки агентов (pipelines) — тонкий прокси к ABOP ──
+@router.get("/pipelines")
+def pipelines():
+    try:
+        return {"pipelines": abop.pipelines()}
+    except abop.AbopError as e:
+        return _err(e)
+
+
+@router.post("/pipelines")
+def save_pipeline(body: PipelineIn):
+    try:
+        return abop.save_pipeline(body.name, [s.dict() for s in body.steps], body.id)
+    except abop.AbopError as e:
+        return _err(e)
+
+
+@router.delete("/pipelines/{pid}")
+def del_pipeline(pid: str):
+    try:
+        return {"ok": True, "result": abop.del_pipeline(pid)}
+    except abop.AbopError as e:
+        return _err(e)
+
+
+@router.post("/pipelines/{pid}/run")
+def run_pipeline(pid: str, body: PipelineRunIn):
+    try:
+        return abop.run_pipeline(pid, body.context)
     except abop.AbopError as e:
         return _err(e)

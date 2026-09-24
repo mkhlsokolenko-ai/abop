@@ -194,6 +194,25 @@ def hitl_queue() -> list:
     return (r or {}).get("queue", []) if isinstance(r, dict) else (r or [])
 
 
+# ── Цепочки агентов (pipelines): линейный конвейер выход→контекст ──
+def pipelines() -> list:
+    r = _req("GET", "/api/pipelines", timeout=30)
+    return (r or {}).get("pipelines", []) if isinstance(r, dict) else (r or [])
+
+
+def save_pipeline(name: str, steps: list, pid: str = "") -> dict:
+    return _req("POST", "/api/pipelines", {"name": name, "steps": steps, "id": pid})
+
+
+def del_pipeline(pid: str) -> dict:
+    return _req("DELETE", "/api/pipelines/" + urllib.request.quote(pid), timeout=30)
+
+
+def run_pipeline(pid: str, context: str = "") -> dict:
+    return _req("POST", "/api/pipelines/" + urllib.request.quote(pid) + "/run",
+                {"context": context}, timeout=600)
+
+
 def hitl_approve(item_id: str, decision: str = "approve", reason: str = "") -> dict:
     return _req("POST", "/api/hitl/" + urllib.request.quote(item_id) + "/approve",
                 {"decision": decision, "reason": reason}, timeout=60)
