@@ -325,7 +325,7 @@ export async function mount(root, ctx) {
   function openSkillPicker() {
     const rows = skills.map((s) => { const on = cur.skills.includes(s.id); return `<label style="display:flex;align-items:flex-start;gap:9px;padding:7px 9px;border-radius:9px;border:1px solid ${on ? "rgba(99,102,241,.4)" : "var(--line)"};background:${on ? "rgba(99,102,241,.1)" : "var(--field)"};cursor:pointer;margin:4px 0">
       <input type="checkbox" class="skp" value="${esc(s.id)}" ${on ? "checked" : ""} style="accent-color:#6366f1;margin-top:2px"/>
-      <span style="display:flex;flex-direction:column;gap:2px;min-width:0"><span style="font-size:12.5px;font-weight:600">${esc(s.id)}</span><span style="font-size:11px;color:var(--ink-3)">${esc(s.hint || "")}</span></span></label>`; }).join("");
+      <span style="display:flex;flex-direction:column;gap:2px;min-width:0"><span style="font-size:12.5px;font-weight:600">${esc(s.title || s.id)}</span><span style="font-size:11px;color:var(--ink-3)">${esc(s.hint || "")}</span><span style="font-family:var(--mono);font-size:9.5px;color:var(--ink-3)">${esc(s.id)}</span></span></label>`; }).join("");
     const ov = modal(`Каталог навыков · ${skills.length}`, `<input id="skSearch" placeholder="Поиск навыка…" style="width:100%;margin-bottom:8px"/><div id="skList" style="max-height:52vh;overflow:auto">${rows}</div>`,
       async (b) => { cur.skills = [...b.querySelectorAll(".skp:checked")].map((x) => x.value); await saveThread(cur); renderTools(); }, "Применить");
     const srch = ov.querySelector("#skSearch");
@@ -393,10 +393,15 @@ export async function mount(root, ctx) {
   async function sendFromInput() {
     const v = ($("inp") ? $("inp").value : "").trim(); if (!v || !cur) return;
     $("inp").value = "";
-    let matches = [];
-    try { const r = await api(M + "/match", { method: "POST", body: JSON.stringify({ q: v }) }); matches = (r && r.matches) || []; } catch {}
-    const top = matches[0];
-    if (top && top.score >= 0.45) { decisionCard(v, matches); return; }
+    // Вставленный по хоткею текст («Проанализируй этот фрагмент…») или длинный кусок — это работа в чате,
+    // НЕ команда агенту → не предлагаем агента. Только короткие запросы-команды матчим на агента.
+    const isPasted = /^Проанализируй этот фрагмент/i.test(v);
+    if (!isPasted && v.length <= 240) {
+      let matches = [];
+      try { const r = await api(M + "/match", { method: "POST", body: JSON.stringify({ q: v }) }); matches = (r && r.matches) || []; } catch {}
+      const top = matches[0];
+      if (top && top.score >= 0.6) { decisionCard(v, matches); return; }   // порог выше — только уверенный матч
+    }
     sendPrompt(v);
   }
 
@@ -422,9 +427,9 @@ export async function mount(root, ctx) {
         <button class="dcRun" data-id="${esc(t.id)}" data-name="${esc(t.name)}" data-deliver="chat" style="padding:8px 13px;border:1px solid var(--line);border-radius:10px;background:var(--field);color:var(--ink);font-size:12px;font-weight:600;cursor:pointer">💬 Только в чат</button>
         ${ch.includes("redmine") ? `<button class="dcRun" data-id="${esc(t.id)}" data-name="${esc(t.name)}" data-deliver="redmine" style="padding:8px 13px;border:1px solid var(--line);border-radius:10px;background:var(--field);color:var(--ink);font-size:12px;font-weight:600;cursor:pointer">🎫 В Redmine</button>` : ""}
         ${ch.includes("email") ? `<button class="dcRun" data-id="${esc(t.id)}" data-name="${esc(t.name)}" data-deliver="email" style="padding:8px 13px;border:1px solid var(--line);border-radius:10px;background:var(--field);color:var(--ink);font-size:12px;font-weight:600;cursor:pointer">✉ На почту</button>` : ""}
-        <button class="dcChat" style="padding:8px 13px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--ink-3);font-size:12px;cursor:pointer">Просто ответить</button>
       </div>
-      ${altBtns ? `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span style="font-size:10.5px;color:var(--ink-3)">другой агент:</span>${altBtns}</div>` : ""}</div>`;
+      ${altBtns ? `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span style="font-size:10.5px;color:var(--ink-3)">другой агент:</span>${altBtns}</div>` : ""}
+      <button class="dcChat" style="align-self:flex-start;margin-top:2px;padding:7px 12px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--ink-2);font-size:12px;font-weight:600;cursor:pointer">✖ Не нужен агент — продолжить в чате</button></div>`;
   }
   function _lastDecision() { for (let i = messages.length - 1; i >= 0; i--) { if (messages[i].meta && messages[i].meta.decision) return messages[i].meta.decision; } return null; }
 
@@ -535,9 +540,11 @@ export async function mount(root, ctx) {
     const roleTxt = (ctx.roles && ctx.roles[0]) || "manager";
     const catHTML = cat.map((a) => `<label style="padding:13px;border-radius:13px;background:var(--panel);border:1px solid var(--line);display:flex;align-items:flex-start;gap:9px;cursor:pointer">
       <input type="radio" name="abopAgent" class="da" value="${esc(a.id)}" style="accent-color:#6366f1;margin-top:2px"/>
-      <span style="display:flex;flex-direction:column;gap:2px;min-width:0">
+      <span style="display:flex;flex-direction:column;gap:3px;min-width:0">
         <span style="font-size:13px;font-weight:600">${esc(a.name)}${a.outward ? " 🛡" : ""}</span>
         <span style="font-size:11px;line-height:1.4;color:var(--ink-3)">${esc(a.family || "")}${a.role ? " · " + esc(a.role) : ""}${a.autonomy_max ? " · автономия " + esc(a.autonomy_max) : ""}</span>
+        ${a.description ? `<span style="font-size:11px;line-height:1.4;color:var(--ink-2)">${esc(a.description)}</span>` : ""}
+        ${(a.systems && a.systems.length) ? `<span style="font-size:10.5px;color:var(--accent-ink-2,#a5b4fc)">🔌 ${esc(a.systems.join(", "))}</span>` : ""}
       </span></label>`).join("")
       || `<div style="font-size:12.5px;color:var(--ink-3)">Нет доступных агентов ABOP (проверьте вход/роль). Соберите агента во вкладке 🤖 Агенты.</div>`;
     b.innerHTML = `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:11px;background:var(--hover);border:1px solid var(--line)">
