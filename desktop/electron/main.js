@@ -103,13 +103,12 @@ async function createWindow() {
   });
   const apiBase = `http://127.0.0.1:${port}`;
   const localIndex = path.join(__dirname, "..", "ui", "index.html");
-  if (REMOTE_UI) {
-    // грузим удалённый UI; при сбое сети — откат на локальную копию
-    win.webContents.once("did-fail-load", () => win.loadFile(localIndex, { query: { api: apiBase } }));
-    win.loadURL(REMOTE_UI + (REMOTE_UI.includes("?") ? "&" : "?") + "api=" + encodeURIComponent(apiBase));
-  } else {
-    win.loadFile(localIndex, { query: { api: apiBase } });
-  }
+  // Правильный путь А: грузим UI С САЙДКАРА (127.0.0.1/ui) — один origin с /api/* (без PNA), UI свежий
+  // (сайдкар синхронит с ABOP при старте). При сбое — откат на локальную копию из asar.
+  // APE_UI_URL по-прежнему может переопределить (свой хост).
+  const uiUrl = REMOTE_UI || (apiBase + "/ui/index.html");
+  win.webContents.once("did-fail-load", () => win.loadFile(localIndex, { query: { api: apiBase } }));
+  win.loadURL(uiUrl + (uiUrl.includes("?") ? "&" : "?") + "api=" + encodeURIComponent(apiBase));
   win.webContents.once("did-finish-load", setupUpdater); // UI уже слушает события апдейтера
 }
 

@@ -3002,6 +3002,28 @@ async def hitl_approve(item_id: str, body: dict = None, u: dict = Depends(user))
 # UI ДЕСКТОПА (desktop/ui) раздаём по /desktop-ui/ — Electron грузит его по сети (APE_UI_URL),
 # правки чат-панели прилетают через git-deploy БЕЗ пересборки .exe (см. ADR смычки, путь А).
 _DESKTOP_UI = Path(__file__).resolve().parents[1] / "desktop" / "ui"
+
+
+@app.get("/desktop-ui-bundle")
+def desktop_ui_bundle() -> dict:
+    """Весь UI десктопа одним ответом {version, files:{relpath:text}} — сайдкар тянет его при старте
+    (server-side, без Chromium PNA), кэширует и отдаёт с 127.0.0.1. Так UI обновляется git-деплоем
+    БЕЗ пересборки .exe (правильный путь А: UI и сайдкар-API в одном origin)."""
+    import hashlib as _hl
+    if not _DESKTOP_UI.is_dir():
+        return {"version": "", "files": {}}
+    files = {}
+    for p in sorted(_DESKTOP_UI.rglob("*")):
+        if p.is_file() and p.suffix.lower() in (".html", ".js", ".css", ".json", ".svg"):
+            rel = p.relative_to(_DESKTOP_UI).as_posix()
+            try:
+                files[rel] = p.read_text(encoding="utf-8")
+            except Exception:  # noqa: BLE001 — бинарь/нечитаемое пропускаем
+                continue
+    ver = _hl.md5("".join(f"{k}:{len(v)}" for k, v in sorted(files.items())).encode()).hexdigest()[:12]
+    return {"version": ver, "files": files}
+
+
 if _DESKTOP_UI.is_dir():
     app.mount("/desktop-ui", StaticFiles(directory=str(_DESKTOP_UI), html=True), name="desktop-ui")
 _WEBAPP = Path(__file__).resolve().parents[1] / "webapp"

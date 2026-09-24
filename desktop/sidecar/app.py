@@ -7,12 +7,18 @@ auth + реестр модулей. Вся функциональность (ч�
 """
 from __future__ import annotations
 
+import json
 import os
+import shutil
+import sys
 import threading
+import urllib.request
 import webbrowser
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from . import auth, config, db, registry
 
@@ -23,12 +29,59 @@ app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
 )
 
+# ── UI-прокси (правильный путь А): сайдкар отдаёт UI десктопа с 127.0.0.1/ui, тянет свежий с ABOP
+#    при старте (server-side, без Chromium PNA). UI и API — один origin → PNA не мешает; правки UI
+#    прилетают git-деплоем БЕЗ пересборки .exe. Фолбэк — UI, вшитый в сайдкар (офлайн/сбой сети). ──
+_UI_CACHE = config.DATA_DIR / "ui-cache"
+
+
+def _bundled_ui() -> Path | None:
+    """UI, вшитый в сайдкар PyInstaller'ом (ui_fallback) — для первого офлайн-запуска."""
+    base = Path(getattr(sys, "_MEIPASS", "")) if getattr(sys, "frozen", False) else Path(__file__).resolve().parents[1]
+    for cand in (base / "ui_fallback", base / "ui"):
+        if cand.is_dir() and (cand / "index.html").exists():
+            return cand
+    return None
+
+
+def _sync_ui() -> None:
+    """Тянем свежий UI с ABOP (/desktop-ui-bundle) в кэш. Если недоступно и кэш пуст — вшитый фолбэк."""
+    try:
+        req = urllib.request.Request(config.ABOP.rstrip("/") + "/desktop-ui-bundle")
+        with urllib.request.urlopen(req, timeout=15) as r:
+            data = json.loads(r.read().decode("utf-8", "replace"))
+        files = data.get("files") or {}
+        if files:
+            tmp = _UI_CACHE.with_suffix(".new")
+            if tmp.exists():
+                shutil.rmtree(tmp, ignore_errors=True)
+            for rel, txt in files.items():
+                fp = tmp / rel
+                fp.parent.mkdir(parents=True, exist_ok=True)
+                fp.write_text(txt, encoding="utf-8")
+            if _UI_CACHE.exists():
+                shutil.rmtree(_UI_CACHE, ignore_errors=True)
+            tmp.rename(_UI_CACHE)
+            print(f"[sidecar] UI обновлён с ABOP: {data.get('version')} ({len(files)} файлов)")
+            return
+    except Exception as e:  # noqa: BLE001 — офлайн/сбой → фолбэк
+        print(f"[sidecar] UI с ABOP не получен ({e}); фолбэк на вшитый/кэш")
+    if not (_UI_CACHE / "index.html").exists():
+        fb = _bundled_ui()
+        if fb:
+            _UI_CACHE.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(fb, _UI_CACHE, dirs_exist_ok=True)
+            print("[sidecar] UI из вшитого фолбэка")
+
+
 _MODULES = []
 
 
 @app.on_event("startup")
 def _startup() -> None:
     config.ensure_dirs()
+    _UI_CACHE.mkdir(parents=True, exist_ok=True)
+    _sync_ui()
     db.init()
     global _MODULES
     _MODULES = registry.discover()
@@ -89,6 +142,11 @@ def do_login() -> dict:
 def do_logout() -> dict:
     auth.logout()
     return {"ok": True}
+
+
+# UI десктопа с 127.0.0.1/ui (один origin с /api/* → без PNA). Каталог наполняется в startup (_sync_ui).
+_UI_CACHE.mkdir(parents=True, exist_ok=True)
+app.mount("/ui", StaticFiles(directory=str(_UI_CACHE), html=True, check_dir=False), name="ui")
 
 
 def main() -> None:

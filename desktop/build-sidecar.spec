@@ -13,6 +13,17 @@ for pkg in ("uvicorn", "fastapi", "starlette", "pydantic", "pydantic_core", "any
 # модули сайдкара — чтобы реестр нашёл их и в замороженной сборке
 hiddenimports += collect_submodules("sidecar.modules")
 
+# UI-фолбэк: копия ui/ внутрь сайдкара (первый офлайн-запуск, когда ABOP недоступен). В рантайме
+# сайдкар предпочитает свежий UI с ABOP (/desktop-ui-bundle) — это лишь запасной вариант.
+import os as _os
+_ui = _os.path.join(_os.getcwd(), "ui")
+if _os.path.isdir(_ui):
+    for _root, _dirs, _fs in _os.walk(_ui):
+        for _f in _fs:
+            _abs = _os.path.join(_root, _f)
+            _rel = _os.path.relpath(_root, _ui)
+            datas.append((_abs, _os.path.join("ui_fallback", _rel) if _rel != "." else "ui_fallback"))
+
 a = Analysis(
     ["run_sidecar.py"],
     pathex=["."],
