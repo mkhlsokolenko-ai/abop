@@ -28,7 +28,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, assembly, audit_store, cachebus, charts, clients, contract_store, dataplane_store, families_store, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, reglament_store, report_store, run_cache_store, run_store, runner, schema_store, skill_store, slava, systems_store, trigger_store, triggers, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, assembly, audit_store, cachebus, charts, clients, compute, contract_store, dataplane_store, families_store, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, reglament_store, report_store, run_cache_store, run_store, runner, schema_store, skill_store, slava, systems_store, trigger_store, triggers, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
@@ -1541,6 +1541,18 @@ async def recipe_save(body: dict, u: dict = Depends(user)) -> dict:
     await cachebus.notify("dataplane")
     await audit_store.record(editor, "data.recipe", r["recipe"], {"entity": r.get("entity")})
     return r
+
+
+@app.post("/api/compute")
+def compute_run(body: dict, u: dict = Depends(user)) -> dict:
+    """Whitelisted-расчёт над Data Plane (compute-tool): stats/group_by/top/reconcile. Числа считает КОД
+    (детерминированно), никакого произвольного кода. Возвращает {op, result, chart?, chart_svg?}."""
+    try:
+        return compute.run_html(body or {})
+    except ValueError as ex:
+        raise HTTPException(400, str(ex))
+    except Exception as ex:  # noqa: BLE001
+        raise HTTPException(500, f"compute: {type(ex).__name__}: {ex}")
 
 
 @app.post("/api/data/recipe/preview")
