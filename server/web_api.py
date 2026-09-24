@@ -28,7 +28,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, assembly, audit_store, cachebus, charts, clients, compute, contract_store, dataplane_store, families_store, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, reglament_store, report_store, run_cache_store, run_store, runner, schema_store, skill_store, slava, systems_store, trigger_store, triggers, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, assembly, audit_store, cachebus, charts, clients, compute, contract_store, dataplane_store, families_store, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, report_store, run_cache_store, run_store, runner, schema_store, skill_store, slava, systems_store, trigger_store, triggers, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
@@ -1668,6 +1668,7 @@ async def _startup() -> None:
     await report_store.seed_if_empty()   # шаблоны отчётов в БД (вид меняется без передеплоя)
     await schema_store.init()
     await schema_store.seed_if_empty()   # шаблоны извлечения (JSON Schema) — структура данных из БД
+    await pipeline_store.init()          # цепочки агентов (линейный конвейер, выход→контекст)
     await trigger_store.init()
     await reglament_store.init()
     await run_cache_store.init()
@@ -3004,6 +3005,102 @@ async def run_start(body: dict, u: dict = Depends(user)) -> JSONResponse:
         out = await execute_agent_run(agent, contract, actor, use_cache=use_cache,
                                       user_context=user_context, deliver_filter=deliver_filter)
     return JSONResponse({"run_id": out["saved"]["id"], **out["result"]}, status_code=201)
+
+
+# ═══════════════ ЦЕПОЧКИ АГЕНТОВ (Pipelines): линейный конвейер выход→контекст ═══════════════
+def _result_to_context(agent: dict, result: dict) -> str:
+    """Сжать результат прогона в текст для контекста СЛЕДУЮЩЕГО шага цепочки (grounded-передача)."""
+    try:
+        return _html_to_text(_build_report_html(agent, result))[:6000]
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+async def _enrich_pipeline(p: dict) -> dict:
+    """Добавить имена агентов к шагам (для UI)."""
+    steps = []
+    for s in p.get("steps") or []:
+        a = await agent_store.get(s.get("agent_id"))
+        steps.append({**s, "agent_name": (a or {}).get("name") or s.get("agent_id"),
+                      "family": (a or {}).get("family") or "", "missing": a is None})
+    return {**p, "steps": steps}
+
+
+@app.get("/api/pipelines")
+async def pipelines_list(u: dict = Depends(user)) -> dict:
+    items = await pipeline_store.all()
+    return {"pipelines": [await _enrich_pipeline(p) for p in items]}
+
+
+@app.post("/api/pipelines")
+async def pipeline_save(body: dict, u: dict = Depends(user)) -> dict:
+    name = str((body or {}).get("name") or "").strip()
+    steps = (body or {}).get("steps") or []
+    if not name or len(steps) < 2:
+        raise HTTPException(422, "нужно имя и минимум 2 шага (цепочка)")
+    import uuid as _uuid
+    pid = str((body or {}).get("id") or "").strip() or ("pl_" + _uuid.uuid4().hex[:10])
+    owner = _uid_of(u) or (u.get("name") or "dev")
+    saved = await pipeline_store.save(pid, name, steps, owner)
+    await audit_store.record(owner, "pipeline.save", pid, {"steps": len(saved.get("steps") or [])})
+    return await _enrich_pipeline(saved)
+
+
+@app.delete("/api/pipelines/{pid}")
+async def pipeline_delete(pid: str, u: dict = Depends(user)) -> dict:
+    ok = await pipeline_store.delete(pid)
+    if not ok:
+        raise HTTPException(404, "нет такой цепочки")
+    await audit_store.record(_uid_of(u) or "dev", "pipeline.delete", pid, {})
+    return {"ok": True}
+
+
+@app.post("/api/pipelines/{pid}/run")
+async def pipeline_run(pid: str, body: dict, u: dict = Depends(user)) -> JSONResponse:
+    """Исполнить цепочку по порядку: выход шага → контекст следующего. Промежуточные шаги идут в чат
+    (без внешней доставки), последний — как настроено в шаге. Возвращает результаты по шагам."""
+    p = await pipeline_store.get(pid)
+    if not p:
+        raise HTTPException(404, "нет такой цепочки")
+    steps = p.get("steps") or []
+    if len(steps) < 2:
+        raise HTTPException(422, "в цепочке меньше 2 шагов")
+    actor = u.get("name") or u.get("sub") or "dev"
+    if not _rate_check(actor):
+        raise HTTPException(429, "слишком много прогонов — подождите")
+    base_ctx = str((body or {}).get("context") or "").strip()[:20000]
+    prev_ctx = ""
+    out_steps = []
+    for i, st in enumerate(steps):
+        agent = await agent_store.get(st.get("agent_id"))
+        if not agent:
+            out_steps.append({"agent_id": st.get("agent_id"), "error": "агент не найден", "skipped": True})
+            continue
+        contract = await contract_store.get(agent.get("contract_audit_id")) or \
+            {"intake": {"autonomy_ceiling": agent.get("autonomy_max") or "A2"}, "bundle": {}}
+        last = i == len(steps) - 1
+        # выход предыдущего шага + исходная задача → контекст текущего (grounded-передача)
+        ctx_parts = []
+        if base_ctx:
+            ctx_parts.append(base_ctx)
+        if prev_ctx:
+            ctx_parts.append(f"=== РЕЗУЛЬТАТ ПРЕДЫДУЩЕГО АГЕНТА ЦЕПОЧКИ (вход для тебя) ===\n{prev_ctx}")
+        step_ctx = "\n\n".join(ctx_parts)
+        deliver = st.get("deliver") or ("" if last else "chat")   # промежуточные — только в чат
+        try:
+            res = await execute_agent_run(agent, contract, actor, use_cache=False,
+                                          user_context=step_ctx, deliver_filter=deliver)
+            result = res["result"]
+            prev_ctx = _result_to_context(agent, result)
+            out_steps.append({"agent_id": agent["id"], "agent_name": agent.get("name"),
+                              "run_id": res["saved"]["id"], "deliver": deliver,
+                              "findings_total": (result.get("findings_summary") or {}).get("total")
+                              or len(result.get("findings") or []),
+                              "investigations_total": len(result.get("investigations") or [])})
+        except Exception as ex:  # noqa: BLE001 — сбой шага не рушит всю цепочку, помечаем и продолжаем
+            out_steps.append({"agent_id": agent["id"], "agent_name": agent.get("name"), "error": str(ex)[:300]})
+    await audit_store.record(actor, "pipeline.run", pid, {"steps": len(out_steps)})
+    return JSONResponse({"pipeline": pid, "name": p.get("name"), "steps": out_steps}, status_code=201)
 
 
 @app.get("/api/runs")
