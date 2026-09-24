@@ -1840,12 +1840,29 @@ async def agent_save(body: dict, u: dict = Depends(user)) -> JSONResponse:
                          "warnings": check["warnings"]}, status_code=201)
 
 
+def _edit_scope(agent: dict) -> str:
+    """Кто вправе править агента (governance-класс):
+    - 'user' — пользовательский агент (собран из чата/authored, менеджер настраивает под себя, напр. «Дайджест задач»);
+    - 'methodologist' — методологический (по контракту LUDA, правит только методолог через ABOP, напр. «Аудитор 1С»).
+    Эвристика по источнику: authored → user; contract → methodologist. Явное поле перекрывает."""
+    ex = (agent or {}).get("edit_scope")
+    if ex in ("user", "methodologist"):
+        return ex
+    return "user" if (agent or {}).get("source") == "authored" else "methodologist"
+
+
 @app.get("/api/agents")
 async def agents_list(contract: str = "", archived: bool = False, u: dict = Depends(user)) -> dict:
     """Список AgentVersion. ABAC: пользователь видит только агентов своего отдела (family==department);
     admin/support (область *) — всех. archived=1 → Лимб (retired). §7/§8а."""
     items = await agent_store.list_for(contract or None, archived=archived)
-    return {"agents": [a for a in items if can_see_family(u, a.get("family"))]}
+    out = []
+    for a in items:
+        if can_see_family(u, a.get("family")):
+            a = dict(a)
+            a["edit_scope"] = _edit_scope(a)   # governance-класс: user | methodologist
+            out.append(a)
+    return {"agents": out}
 
 
 @app.post("/api/agents/{agent_id}/retire")
@@ -2039,6 +2056,12 @@ async def agent_get(agent_id: str, u: dict = Depends(user)) -> dict:
     a = await agent_store.get(agent_id)
     if not a:
         raise HTTPException(404, "нет такого AgentVersion")
+    a = dict(a)
+    a["edit_scope"] = _edit_scope(a)
+    # can_edit: пользователь вправе править агента? user-агента правит его владелец/manager+;
+    # methodologist-агента — только admin/support (методолог через ABOP).
+    lvl = (u or {}).get("level")
+    a["can_edit"] = True if a["edit_scope"] == "user" else (u.get("department") in ("*", None) or lvl == "admin")
     return a
 
 
