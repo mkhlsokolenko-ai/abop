@@ -1848,7 +1848,11 @@ def _edit_scope(agent: dict) -> str:
     ex = (agent or {}).get("edit_scope")
     if ex in ("user", "methodologist"):
         return ex
-    return "user" if (agent or {}).get("source") == "authored" else "methodologist"
+    # Пользовательские: собранные из чата (authored) ИЛИ менеджерская семья (management) — юзер правит под себя.
+    # Методологические: специализированные семьи (audit/finance/analytics/credit/architecture) — по контракту LUDA.
+    if (agent or {}).get("source") == "authored" or (agent or {}).get("family") == "management":
+        return "user"
+    return "methodologist"
 
 
 @app.get("/api/agents")
