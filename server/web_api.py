@@ -1407,6 +1407,98 @@ def data_lineage(u: dict = Depends(user)) -> dict:
     return ape.data_lineage()
 
 
+@app.get("/api/impact")
+async def impact_analysis(kind: str, id: str, u: dict = Depends(user)) -> dict:
+    """Анализ воздействия (#12): что затронет изменение узла (сущность/рецепт/навык/система) — вниз по
+    цепочке Data Plane до РАЗВЁРНУТЫХ агентов, с их семьёй/версией/последним прогоном (цена/находки).
+    «Что изменит, где агенты развёрнуты → цена/результат». kind ∈ entity|recipe|skill|system|family."""
+    kind = (kind or "").strip().lower()
+    tid = (id or "").strip()
+    if not tid:
+        raise HTTPException(422, "нужен id узла")
+    lin = ape.data_lineage()
+    ents = lin.get("entities") or []
+    ent_by = {e["entity"]: e for e in ents}
+
+    aff_entities: set[str] = set()
+    aff_skills: set[str] = set()
+    aff_recipes: set[str] = set()
+
+    def _from_entity(e: str) -> None:
+        ent = ent_by.get(e)
+        if not ent:
+            return
+        aff_entities.add(e)
+        for r in ent.get("recipes") or []:
+            aff_recipes.add(r.get("id"))
+        for c in ent.get("consumers") or []:
+            aff_skills.add(c.get("skill"))
+
+    if kind == "entity":
+        _from_entity(tid)
+    elif kind == "recipe":
+        for e in ents:
+            if any((r.get("id") == tid) for r in e.get("recipes") or []):
+                aff_recipes.add(tid)
+                _from_entity(e["entity"])
+    elif kind == "skill":
+        aff_skills.add(tid)
+        for e in ents:
+            if any((c.get("skill") == tid) for c in e.get("consumers") or []):
+                aff_entities.add(e["entity"])
+    elif kind == "system":
+        for c in lin.get("connectors") or []:
+            if str(c.get("system_id") or c.get("system") or "") == tid:
+                aff_recipes.add(c.get("id"))
+        for e in ents:
+            for r in e.get("recipes") or []:
+                if str(r.get("system_id") or "") == tid:
+                    aff_recipes.add(r.get("id"))
+                    _from_entity(e["entity"])
+    elif kind != "family":
+        raise HTTPException(422, "kind ∈ entity|recipe|skill|system|family")
+
+    # затронутые РАЗВЁРНУТЫЕ агенты: те, чей граф несёт затронутый навык (или семья=tid)
+    agents = await agent_store.list_for(None)
+    runs_index: dict[str, dict] = {}
+    for r in await run_store.list_runs(limit=400):
+        aid = r.get("agent_id")
+        if aid and aid not in runs_index:      # первый = самый свежий (list_runs по убыванию)
+            runs_index[aid] = r
+    aff_agents = []
+    tot_rub = 0.0
+    tot_tokens = 0
+    for a in agents:
+        if not can_see_family(u, a.get("family")):
+            continue
+        askills = {n.get("skill") for n in (a.get("graph") or {}).get("nodes") or [] if n.get("skill")}
+        hit = (kind == "family" and a.get("family") == tid) or bool(askills & aff_skills)
+        if not hit:
+            continue
+        run = runs_index.get(a["id"]) or {}
+        cost = run.get("cost") or {}
+        rub = float(cost.get("rub") or 0)
+        tokens = int(cost.get("input_tokens") or 0) + int(cost.get("output_tokens") or 0)
+        tot_rub += rub
+        tot_tokens += tokens
+        aff_agents.append({
+            "id": a["id"], "name": a.get("name"), "family": a.get("family"),
+            "version": a.get("version"), "status": a.get("status"),
+            "skills_hit": sorted(askills & aff_skills),
+            "last_run": {"id": run.get("id"), "when": (run.get("created_at") or "").replace("T", " ")[:16],
+                         "rub": round(rub, 4), "tokens": tokens,
+                         "findings": (run.get("findings_summary") or {}).get("total")} if run else None})
+
+    return {"target": {"kind": kind, "id": tid},
+            "affected": {"entities": sorted(x for x in aff_entities if x),
+                         "recipes": sorted(x for x in aff_recipes if x),
+                         "skills": sorted(x for x in aff_skills if x),
+                         "agents": aff_agents},
+            "summary": {"agents": len(aff_agents), "entities": len(aff_entities),
+                        "skills": len(aff_skills), "recipes": len(aff_recipes),
+                        "est_rub_per_cycle": round(tot_rub, 4), "est_tokens_per_cycle": tot_tokens}}
+
+
 @app.get("/api/data/adapters")
 def adapters(u: dict = Depends(user)) -> dict:
     """Каталог адаптеров с дескрипторами (label/category/src_fields/egress/badge/available)
