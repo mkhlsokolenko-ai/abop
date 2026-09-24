@@ -3829,13 +3829,20 @@ def _t_redmine_create_issue(a):
     subject = str(a.get("subject") or a.get("title") or "Задача от агента ABOP")
     desc = str(a.get("description") or "")
     project = str(a.get("project") or REDMINE_PROJECT or "")
+    assignee = a.get("assigned_to")   # id исполнителя из Identity Map (агент действует «от имени» юзера)
     if not (str(a.get("run")).lower() == "true"):
-        return f"[dry_run] Redmine: создать задачу «{subject}» в проекте {project or '—'} ({len(desc)} симв.). Реально — run=true (HITL)."
+        return f"[dry_run] Redmine: создать задачу «{subject}» в проекте {project or '—'}{' → исполнитель #'+str(assignee) if assignee else ''} ({len(desc)} симв.). Реально — run=true (HITL)."
     if not REDMINE_API_KEY:
         return "нет REDMINE_API_KEY в env контейнера abop-webapi — реальная отправка недоступна (каркас готов)"
     if not project:
         return "не задан проект (project или env REDMINE_PROJECT) — некуда класть задачу"
-    payload = {"issue": {"project_id": project, "subject": subject[:255], "description": desc[:8000]}}
+    issue = {"project_id": project, "subject": subject[:255], "description": desc[:8000]}
+    if assignee:
+        try:
+            issue["assigned_to_id"] = int(assignee)
+        except (ValueError, TypeError):
+            pass
+    payload = {"issue": issue}
     url = _guard_url(REDMINE_BASE.rstrip("/") + "/issues.json")
     req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"),
                                  headers={"Content-Type": "application/json", "X-Redmine-API-Key": REDMINE_API_KEY})

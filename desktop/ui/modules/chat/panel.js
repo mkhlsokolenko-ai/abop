@@ -446,7 +446,7 @@ export async function mount(root, ctx) {
     const wasNew = messages.length === 0;
     messages.push({ role: "user", content: text, meta: {} });
     const asst = { role: "assistant", content: "", meta: {} }; messages.push(asst); render();
-    const el = $("col").querySelector("div:last-child .bub");
+    const _bubs = $("col").querySelectorAll(".bub"); const el = _bubs[_bubs.length - 1];  // последний пузырь — надёжнее div:last-child
     if (el) el.innerHTML = `<span style="display:inline-flex;gap:12px;align-items:center">${mascot("thinking", 26)}<span style="color:var(--ink-2)">думает…</span></span>`;
     curAbort = new AbortController(); setBusy(true);
     try {

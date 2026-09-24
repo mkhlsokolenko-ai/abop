@@ -2244,9 +2244,30 @@ async def _deliver_out_nodes(agent: dict, result: dict, actor: str, deliver_filt
     html_report = _build_report_html(agent, result)
     fam = agent.get("family") or ""
     run_id = result.get("run_id") or (result.get("verdict") or {}).get("run_id") or ""
+    # Сквозной ID: агент действует «от имени» пользователя — подмешиваем его аккаунты в системах
+    # (Redmine assignee, почта). Так задача назначается на него, письмо адресно. Best-effort.
+    idsys = {}
+    try:
+        idsys = (await identity_store.bundle(actor)).get("systems") or {}
+    except Exception:  # noqa: BLE001
+        idsys = {}
+    def _enrich(cfg: dict, channel: str) -> dict:
+        c = dict(cfg)
+        if channel == "redmine":
+            rm = idsys.get("redmine") or {}
+            attrs = rm.get("attrs") or {}
+            if attrs.get("assignee_id") and not c.get("assigned_to"):
+                c["assigned_to"] = attrs.get("assignee_id")
+            if attrs.get("project") and not c.get("project"):
+                c["project"] = attrs.get("project")
+        elif channel in ("email", "yandex"):
+            em = idsys.get("email") or {}
+            if em.get("external_id") and not c.get("to"):
+                c["to"] = em.get("external_id")   # по умолчанию — себе (свой ящик)
+        return c
     deliveries = []
     for n in nodes:
-        cfg = n.get("out") or {}
+        cfg = _enrich(n.get("out") or {}, (n.get("out") or {}).get("channel"))
         channel = cfg.get("channel")
         if cfg.get("hitl"):
             # заявка в очередь HITL — оператор подтвердит, тогда отправим реально
