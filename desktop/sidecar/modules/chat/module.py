@@ -121,16 +121,36 @@ def match(body: MatchIn) -> dict:
         return {"matches": []}
 
 
+_CH_RU = {"redmine": "Redmine", "email": "почта", "yandex": "почта", "bookstack": "BookStack (вики)",
+          "yougile": "YouGile", "pdf": "PDF", "file": "файл"}
+
+
 # ── каталог реальных ABOP-агентов для запуска из чата (чат = среда управления пользователя) ──
 @router.get("/abop-agents")
 def abop_agents() -> list[dict]:
-    """Агенты ABOP, доступные пользователю (ABAC). Их можно запустить прямо из треда чата."""
+    """Агенты ABOP, доступные пользователю (ABAC), с кратким описанием (что делает) и системами
+    (входные данные + каналы доставки) — для карточки агента в сайдбаре чата."""
     try:
         out = []
         for a in abop.agents():
+            desc, systems = "", []
+            try:
+                full = abop.agent(a.get("id") or "")
+                nodes = (full.get("graph") or {}).get("nodes") or []
+                # что делает: краткое по навыкам (title навыка)
+                sk = [n.get("skill") for n in nodes if n.get("kind") == "skill" and n.get("skill")]
+                desc = "Навыки: " + ", ".join(sk[:4]) if sk else ""
+                # системы: входные сущности + каналы доставки
+                ents = sorted({str(n.get("entity")) for n in nodes if n.get("entity")})
+                chans = [_CH_RU.get((n.get("out") or {}).get("channel"), (n.get("out") or {}).get("channel"))
+                         for n in nodes if n.get("kind") in ("output", "out")]
+                systems = [c for c in chans if c] + [e for e in ents if e]
+            except abop.AbopError:
+                pass
             out.append({"id": a.get("id"), "name": a.get("name"), "family": a.get("family"),
                         "role": a.get("role"), "autonomy_max": a.get("autonomy_max"),
-                        "outward": bool(a.get("outward"))})
+                        "outward": bool(a.get("outward")), "description": desc,
+                        "systems": sorted(set(systems))})
         return out
     except abop.AbopError:
         return []
@@ -187,8 +207,9 @@ def skills() -> list[dict]:
             sid = s.get("id") or s.get("slug") or s.get("name")
             if not sid:
                 continue
-            hint = s.get("summary") or s.get("description") or s.get("title") or ""
-            out.append({"id": sid, "hint": hint})
+            title = s.get("title") or sid                      # русское название навыка
+            hint = s.get("short") or s.get("summary") or s.get("description") or ""
+            out.append({"id": sid, "title": title, "hint": hint})
         if out:
             return out
     except abop.AbopError:
