@@ -1458,8 +1458,14 @@ async def impact_analysis(kind: str, id: str, u: dict = Depends(user)) -> dict:
     elif kind != "family":
         raise HTTPException(422, "kind ∈ entity|recipe|skill|system|family")
 
-    # затронутые РАЗВЁРНУТЫЕ агенты: те, чей граф несёт затронутый навык (или семья=tid)
-    agents = await agent_store.list_for(None)
+    # затронутые РАЗВЁРНУТЫЕ агенты: те, чей граф несёт затронутый навык (или семья=tid).
+    # list_for отдаёт brief без графа → дедуплицируем до ПОСЛЕДНЕЙ версии на контракт и тянем полный агент.
+    briefs = await agent_store.list_for(None)
+    latest: dict[str, dict] = {}
+    for b in briefs:
+        cid = b.get("contract_audit_id") or b.get("id")
+        if cid not in latest or (b.get("version") or 0) > (latest[cid].get("version") or 0):
+            latest[cid] = b
     runs_index: dict[str, dict] = {}
     for r in await run_store.list_runs(limit=400):
         aid = r.get("agent_id")
@@ -1468,9 +1474,10 @@ async def impact_analysis(kind: str, id: str, u: dict = Depends(user)) -> dict:
     aff_agents = []
     tot_rub = 0.0
     tot_tokens = 0
-    for a in agents:
-        if not can_see_family(u, a.get("family")):
+    for b in latest.values():
+        if not can_see_family(u, b.get("family")):
             continue
+        a = await agent_store.get(b["id"]) or b
         askills = {n.get("skill") for n in (a.get("graph") or {}).get("nodes") or [] if n.get("skill")}
         hit = (kind == "family" and a.get("family") == tid) or bool(askills & aff_skills)
         if not hit:
