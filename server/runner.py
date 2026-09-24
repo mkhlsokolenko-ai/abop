@@ -194,7 +194,7 @@ def run_agent(agent: dict, contract: dict, safety_of) -> dict:
 
 async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_sources,
                    load_body, chat_fn, blocked_entities=None, knowledge_fn=None,
-                   findings_context=None, user_context="") -> dict:
+                   findings_context=None, user_context="", skill_schemas=None) -> dict:
     """НАСТОЯЩИЙ прогон: governance-каркас (run_agent) + для каждого навыка с data-scope
     собирает РЕАЛЬНЫЕ данные из canonical store (data_query) и прогоняет их через LLM
     (тело навыка = методика) → находки на доску. Числа — только из данных (анти-галлюцинация).
@@ -202,6 +202,7 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
     import json as _json
     import asyncio
     blocked = set(blocked_entities or [])
+    skill_schemas = skill_schemas or {}
     base = run_agent(agent, contract, safety_of)
     graph = agent.get("graph") or {}
     skills = [n.get("skill") or n["id"] for n in (graph.get("nodes") or []) if n.get("kind") == "skill"]
@@ -293,6 +294,14 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
                       "каждая со ссылкой на id записи и суммой"
                       + (", и на норму из блока ЗНАНИЕ, если применимо" if know_block else "")
                       + ". Только из " + _src + ", ничего не выдумывай.")
+        # Schema-driven: навык ссылается на шаблон извлечения (JSON Schema из БД) → его инструкция +
+        # response_format перекрывают дефолт. ЛЛМ раскладывает данные строго по схеме из БД.
+        _custom = skill_schemas.get(sid)
+        _resp_fmt = _RESPONSE_FORMAT if _STRUCTURED else None
+        if _custom and use_struct:
+            prompt = _head + "ЗАДАЧА (парсер): " + (_custom.get("instruction") or _task_verb) + \
+                     " Верни СТРОГО JSON по заданной схеме. Только из " + _src + ", ничего не выдумывай."
+            _resp_fmt = _custom.get("response_format") or _resp_fmt
         _t = time.perf_counter()
         async with sem:  # батчинг: семафор пускает по _LLM_CONCURRENCY вызовов за раз
             # backoff-ретрай (429/таймаут): рост параллелизма не должен портить вывод скилла —
@@ -303,7 +312,7 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
                 try:
                     resp = await chat_fn(messages=[{"role": "user", "content": prompt}], profile="standard",
                                          max_tokens=_LIM["max_tokens"],
-                                         response_format=(_RESPONSE_FORMAT if _STRUCTURED else None))
+                                         response_format=_resp_fmt)
                     err = None
                     break
                 except Exception as ex:  # noqa: BLE001

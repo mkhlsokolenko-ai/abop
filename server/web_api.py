@@ -28,7 +28,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, assembly, audit_store, cachebus, clients, contract_store, dataplane_store, families_store, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, reglament_store, report_store, run_cache_store, run_store, runner, skill_store, slava, systems_store, trigger_store, triggers, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, assembly, audit_store, cachebus, clients, contract_store, dataplane_store, families_store, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, reglament_store, report_store, run_cache_store, run_store, runner, schema_store, skill_store, slava, systems_store, trigger_store, triggers, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
@@ -1178,6 +1178,52 @@ async def report_template_delete(tid: str, u: dict = Depends(user)) -> dict:
     return {"ok": True}
 
 
+# ── Шаблоны извлечения (JSON Schema): структура данных навыка из БД (Schema-driven extraction) ──
+@app.get("/api/schema-templates")
+async def schema_templates_list(u: dict = Depends(user)) -> dict:
+    return {"templates": await schema_store.all()}
+
+
+@app.get("/api/schema-templates/{tid}")
+async def schema_template_get(tid: str, u: dict = Depends(user)) -> dict:
+    t = await schema_store.get(tid)
+    if not t:
+        raise HTTPException(404, "нет такого шаблона извлечения")
+    return t
+
+
+@app.post("/api/schema-templates/{tid}")
+async def schema_template_save(tid: str, body: dict, u: dict = Depends(user)) -> dict:
+    """Создать/править шаблон извлечения (JSON Schema + инструкция-парсер). Навык ссылается на него
+    полем schema_template_id → ЛЛМ раскладывает данные строго по схеме. Admin-уровень."""
+    require_level(u, "admin")
+    import re as _re
+    tid = _re.sub(r"[^a-z0-9_-]", "", str(tid).strip().lower())
+    if not tid:
+        raise HTTPException(422, "нужен id шаблона (slug a-z0-9_-)")
+    sch = (body or {}).get("json_schema")
+    if sch is not None and not isinstance(sch, dict):
+        raise HTTPException(422, "json_schema должен быть объектом JSON Schema")
+    existing = await schema_store.get(tid)
+    editor = u.get("name") or u.get("sub") or "dev"
+    card = await schema_store.save(tid, {"name": (body or {}).get("name") or tid,
+                                         "json_schema": sch if sch is not None else (existing or {}).get("json_schema") or {},
+                                         "instruction": (body or {}).get("instruction") if (body or {}).get("instruction") is not None else (existing or {}).get("instruction") or ""},
+                                   editor=editor, builtin=bool(existing and existing.get("builtin")))
+    await audit_store.record(editor, "schema_template.save", tid, {"name": card.get("name")})
+    return card
+
+
+@app.delete("/api/schema-templates/{tid}")
+async def schema_template_delete(tid: str, u: dict = Depends(user)) -> dict:
+    require_level(u, "admin")
+    ok = await schema_store.delete(tid)
+    if not ok:
+        raise HTTPException(400, "нельзя удалить (нет такого или встроенный шаблон)")
+    await audit_store.record(u.get("name") or u.get("sub") or "dev", "schema_template.delete", tid, {})
+    return {"ok": True}
+
+
 @app.get("/api/agents/spec")
 def agent_spec(family: str, member: str = "", u: dict = Depends(user)) -> dict:
     """Спека агента (ADR-032): роль семьи + навыки + become-переходы + конверт + data-scope
@@ -1210,7 +1256,7 @@ def _skill_families() -> dict:
 _SKILL_TEXT_FIELDS = ("title", "short", "flow", "when", "method", "dod", "anti")
 # output — формат вывода навыка (structured|freeform), редактируется в UI. mode/egress/cite —
 # отображаются, но governance-безопасность узла берётся авторитетно из каталога (assembly), не из правок.
-_SKILL_SAFETY_FIELDS = ("mode", "egress", "cite", "output")
+_SKILL_SAFETY_FIELDS = ("mode", "egress", "cite", "output", "schema_template_id")
 
 
 def _skill_base_card(sid: str, fam: dict) -> dict:
@@ -1596,6 +1642,8 @@ async def _startup() -> None:
     await families_store.seed_from_code(ape.AGENT_FAMILIES, BIZ_FAMILIES)  # единый реестр семей (сид из кода)
     await report_store.init()
     await report_store.seed_if_empty()   # шаблоны отчётов в БД (вид меняется без передеплоя)
+    await schema_store.init()
+    await schema_store.seed_if_empty()   # шаблоны извлечения (JSON Schema) — структура данных из БД
     await trigger_store.init()
     await reglament_store.init()
     await run_cache_store.init()
@@ -2602,12 +2650,27 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
         except Exception as ex:  # noqa: BLE001
             _det_invs_err = f"{type(ex).__name__}: {ex}"
     _ctx = _findings_context_text(_det_findings, _det_invs) or None
+    # Schema-driven: карта навык→кастомная JSON Schema (если навык ссылается на schema_template_id).
+    # ЛЛМ раскладывает данные строго по схеме из БД. Пусто → рантайм использует дефолтную схему находок.
+    _skill_schemas: dict = {}
+    try:
+        _ov = await skill_store.all()
+        for _sid in set(s for s in _skills if s):
+            _stid = ((_ov.get(_sid) or {}).get("patch") or {}).get("schema_template_id")
+            if _stid:
+                _tpl = await schema_store.get(_stid)
+                if _tpl and (_tpl.get("json_schema") or {}).get("properties"):
+                    _skill_schemas[_sid] = {"response_format": schema_store.response_format(_tpl),
+                                            "instruction": _tpl.get("instruction") or ""}
+    except Exception:  # noqa: BLE001 — схемы опциональны, не валим прогон
+        _skill_schemas = {}
     result = await runner.run_live(agent, contract, ape.skill_safety,
                                    data_query=ape.data_query,
                                    skill_sources=ape.skill_datasources_resolved,
                                    load_body=ape.load_skill_body,
                                    chat_fn=clients.chat, blocked_entities=blocked,
                                    knowledge_fn=_agent_knowledge_fn(agent, started_by),
+                                   skill_schemas=_skill_schemas,
                                    findings_context=_ctx, user_context=user_context)
     # Петля прогон→канва: прикрепляем детерминированные находки (истина, не LLM).
     if "audit1c-checks" in _skills:
