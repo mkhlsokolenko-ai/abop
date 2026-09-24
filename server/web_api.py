@@ -28,7 +28,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, assembly, audit_store, cachebus, clients, contract_store, dataplane_store, families_store, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, reglament_store, run_cache_store, run_store, runner, skill_store, slava, systems_store, trigger_store, triggers, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, assembly, audit_store, cachebus, clients, contract_store, dataplane_store, families_store, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, reglament_store, report_store, run_cache_store, run_store, runner, skill_store, slava, systems_store, trigger_store, triggers, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
@@ -1120,6 +1120,64 @@ async def family_delete(fid: str, u: dict = Depends(user)) -> dict:
     return {"ok": True}
 
 
+# ── Шаблоны отчётов (Schema-driven: вид отчёта в БД, меняется без передеплоя) ──
+@app.get("/api/report-templates")
+async def report_templates_list(u: dict = Depends(user)) -> dict:
+    return {"templates": await report_store.all()}
+
+
+@app.get("/api/report-templates/{tid}")
+async def report_template_get(tid: str, u: dict = Depends(user)) -> dict:
+    t = await report_store.get(tid)
+    if not t:
+        raise HTTPException(404, "нет такого шаблона отчёта")
+    return t
+
+
+@app.post("/api/report-templates/{tid}")
+async def report_template_save(tid: str, body: dict, u: dict = Depends(user)) -> dict:
+    """Создать/править шаблон отчёта (HTML+CSS+pdf_options). Плейсхолдеры {{title}}/{{findings}}/…
+    заполняет ABOP; шаблон задаёт вёрстку. Admin-уровень."""
+    require_level(u, "admin")
+    import re as _re
+    tid = _re.sub(r"[^a-z0-9_-]", "", str(tid).strip().lower())
+    if not tid:
+        raise HTTPException(422, "нужен id шаблона (slug a-z0-9_-)")
+    existing = await report_store.get(tid)
+    editor = u.get("name") or u.get("sub") or "dev"
+    card = await report_store.save(tid, {"name": (body or {}).get("name") or tid,
+                                         "html": (body or {}).get("html") or (existing or {}).get("html") or "",
+                                         "css": (body or {}).get("css") if (body or {}).get("css") is not None else (existing or {}).get("css") or "",
+                                         "pdf_options": (body or {}).get("pdf_options") or (existing or {}).get("pdf_options") or {}},
+                                   editor=editor, builtin=bool(existing and existing.get("builtin")))
+    await audit_store.record(editor, "report_template.save", tid, {"name": card.get("name")})
+    return card
+
+
+@app.post("/api/report-templates/{tid}/preview")
+async def report_template_preview(tid: str, body: dict, u: dict = Depends(user)) -> dict:
+    """Превью рендера шаблона на демо-данных (или переданных). Возвращает готовый HTML."""
+    tpl = await report_store.get(tid)
+    if not tpl:
+        raise HTTPException(404, "нет такого шаблона")
+    demo = {"title": "Демо-отчёт", "agent": "Пример агента", "date": "01.01.2026",
+            "findings_total": 2, "investigations_total": 1,
+            "findings": "<div class='fnd'>Пример находки 1</div><div class='fnd'>Пример находки 2</div>",
+            "deliveries": "<div class='dl'>redmine → #— · awaiting_hitl</div>"}
+    ctx = {**demo, **((body or {}).get("context") or {})}
+    return {"html": report_store.render(tpl, ctx)}
+
+
+@app.delete("/api/report-templates/{tid}")
+async def report_template_delete(tid: str, u: dict = Depends(user)) -> dict:
+    require_level(u, "admin")
+    ok = await report_store.delete(tid)
+    if not ok:
+        raise HTTPException(400, "нельзя удалить (нет такого или встроенный шаблон)")
+    await audit_store.record(u.get("name") or u.get("sub") or "dev", "report_template.delete", tid, {})
+    return {"ok": True}
+
+
 @app.get("/api/agents/spec")
 def agent_spec(family: str, member: str = "", u: dict = Depends(user)) -> dict:
     """Спека агента (ADR-032): роль семьи + навыки + become-переходы + конверт + data-scope
@@ -1536,6 +1594,8 @@ async def _startup() -> None:
     await identity_store.seed_if_empty()  # сквозной ID: связка мастер-UID → аккаунты в системах (демо)
     await families_store.init()
     await families_store.seed_from_code(ape.AGENT_FAMILIES, BIZ_FAMILIES)  # единый реестр семей (сид из кода)
+    await report_store.init()
+    await report_store.seed_if_empty()   # шаблоны отчётов в БД (вид меняется без передеплоя)
     await trigger_store.init()
     await reglament_store.init()
     await run_cache_store.init()
@@ -2124,6 +2184,31 @@ def _agent_knowledge_fn(agent: dict, actor: str):
     return _kfn
 
 
+def _report_context(agent: dict, result: dict) -> dict:
+    """Контекст для шаблона отчёта (report_store.render): готовые данные+HTML-блоки, шаблон задаёт вид.
+    Плейсхолдеры: title, agent, date, findings_total, investigations_total, findings (HTML), deliveries (HTML)."""
+    import html as _html
+    import datetime as _dtm
+    esc = lambda x: _html.escape(str(x if x is not None else ""))  # noqa: E731
+    fnds = result.get("findings") or []
+    rows = []
+    for f in fnds[:40]:
+        if isinstance(f, dict):
+            txt = f.get("проверка") or f.get("описание") or f.get("наблюдение") or json.dumps(f, ensure_ascii=False)
+            norm = (f.get("нормы_rag") or [""])[0]
+            rows.append(f"<div class='fnd'>{esc(str(txt)[:400])}" + (f"<br><i>§ {esc(norm[:200])}</i>" if norm else "") + "</div>")
+        else:
+            rows.append(f"<div class='fnd'>{esc(str(f)[:400])}</div>")
+    dls = "".join(f"<div class='dl'>{esc(d.get('channel'))} → {esc(d.get('to') or '')} · {esc(d.get('mode'))}</div>"
+                  for d in (result.get("delivery") or []))
+    return {"title": esc(agent.get("name") or "Отчёт агента ABOP"), "agent": esc(agent.get("name") or ""),
+            "date": _dtm.datetime.now().strftime("%d.%m.%Y %H:%M"),
+            "findings_total": (result.get("findings_summary") or {}).get("total") or len(fnds),
+            "investigations_total": (result.get("investigations_summary") or {}).get("total") or len(result.get("investigations") or []),
+            "findings": "".join(rows) or "<div class='fnd'>Находок не выявлено.</div>",
+            "deliveries": dls or "<div class='dl'>—</div>"}
+
+
 def _build_report_html(agent: dict, result: dict) -> str:
     """Детерминированный HTML-отчёт из результата прогона (находки A/B/C/D, цепочки-расследования,
     результаты навыков). Используется OUT-узлом для доставки (PDF/BookStack/почта)."""
@@ -2244,6 +2329,16 @@ async def _deliver_out_nodes(agent: dict, result: dict, actor: str, deliver_filt
     html_report = _build_report_html(agent, result)
     fam = agent.get("family") or ""
     run_id = result.get("run_id") or (result.get("verdict") or {}).get("run_id") or ""
+    # Шаблон отчёта из БД (Schema-driven: вид задаётся шаблоном, не кодом). Если OUT-узел ссылается на
+    # report_template_id — рендерим по нему; иначе — прежний захардкоженный HTML. Контент готовит ABOP.
+    async def _report_for(cfg: dict) -> str:
+        tid = (cfg or {}).get("report_template_id")
+        if not tid:
+            return html_report
+        tpl = await report_store.get(tid)
+        if not tpl:
+            return html_report
+        return report_store.render(tpl, _report_context(agent, result))
     # Сквозной ID: агент действует «от имени» пользователя — подмешиваем его аккаунты в системах
     # (Redmine assignee, почта). Так задача назначается на него, письмо адресно. Best-effort.
     idsys = {}
@@ -2269,13 +2364,14 @@ async def _deliver_out_nodes(agent: dict, result: dict, actor: str, deliver_filt
     for n in nodes:
         cfg = _enrich(n.get("out") or {}, (n.get("out") or {}).get("channel"))
         channel = cfg.get("channel")
+        node_html = await _report_for(cfg)   # отчёт по шаблону узла (или дефолтный)
         if cfg.get("hitl"):
             # заявка в очередь HITL — оператор подтвердит, тогда отправим реально
             item = await hitl_store.create(
                 run_id=str(run_id), agent_id=agent.get("id") or "", family=fam,
                 node=n.get("id") or "", title=n.get("title") or channel,
                 channel=channel or "", to_addr=str(cfg.get("to") or cfg.get("book_id") or ""),
-                payload={"cfg": cfg, "html": html_report, "agent_name": agent.get("name")},
+                payload={"cfg": cfg, "html": node_html, "agent_name": agent.get("name")},
                 requested_by=actor)
             deliveries.append({"node": n.get("id"), "title": n.get("title"), "channel": channel,
                                "to": cfg.get("to"), "format": cfg.get("format"),
@@ -2286,7 +2382,7 @@ async def _deliver_out_nodes(agent: dict, result: dict, actor: str, deliver_filt
                                      severity="info")
             continue
         real = str(cfg.get("run")).lower() == "true"
-        out = await _send_channel(cfg, agent.get("name"), html_report, real)
+        out = await _send_channel(cfg, agent.get("name"), node_html, real)
         deliveries.append({"node": n.get("id"), "title": n.get("title"), "channel": channel,
                            "to": cfg.get("to"), "format": cfg.get("format"),
                            "mode": "real" if real else "dry_run", "result": str(out)[:400]})
