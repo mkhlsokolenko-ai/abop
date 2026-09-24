@@ -1161,8 +1161,18 @@ async def report_template_preview(tid: str, body: dict, u: dict = Depends(user))
     if not tpl:
         raise HTTPException(404, "нет такого шаблона")
     demo = {"title": "Демо-отчёт", "agent": "Пример агента", "date": "01.01.2026",
+            "verdict": "✓ пройден · автономия A1 · волн 3",
             "findings_total": 2, "investigations_total": 1,
-            "findings": "<div class='fnd'>Пример находки 1</div><div class='fnd'>Пример находки 2</div>",
+            "by_class": "<div class='badges'><span class='b A'>A: 1</span><span class='b B'>B: 0</span>"
+                        "<span class='b C'>C: 1</span><span class='b D'>D: 0</span></div>",
+            "findings": "<div class='fnd'><span class='cls'>A</span><b>НДС не сходится с декларацией</b> — "
+                        "расхождение 110 000 ₽<span class='norm'>§ НК РФ ст.171</span></div>"
+                        "<div class='fnd'><span class='cls'>C</span><b>Нет счёта-фактуры</b></div>",
+            "investigations": "<div class='inv'><span class='sev'>высокая</span> <span class='sym'>INV-1 — "
+                              "выручка без реализации</span><div class='chain'>реализация: ✓ → взаиморасчёты: ✗</div>"
+                              "<span class='delta'>расхождение Δ 110000 ₽</span></div>",
+            "skills": "<div class='sk'><h3>mail-triage</h3><div class='task'>тема: Согласовать счёт СК-902 · "
+                      "срок: 25.09 · приоритет: высокий</div><div class='task'>тема: Проверить БФТ</div></div>",
             "deliveries": "<div class='dl'>redmine → #— · awaiting_hitl</div>"}
     ctx = {**demo, **((body or {}).get("context") or {})}
     return {"html": report_store.render(tpl, ctx)}
