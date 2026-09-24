@@ -2885,7 +2885,8 @@ def data_recipes_cards() -> list:
         target = src.get("path") or src.get("url") or src.get("query") or src.get("from_entity") or src.get("target") or ""
         out.append({"id": name, "title": r.get("recipe", name), "adapter": src.get("kind", "?"),
                     "entity": r.get("entity", "?"), "target": target,
-                    "status": r.get("status", "черновик"), "ok": bool(r.get("ok", r.get("status") == "опубликован"))})
+                    "status": r.get("status", "черновик"), "ok": bool(r.get("ok", r.get("status") == "опубликован")),
+                    "system_id": r.get("system_id") or ""})
     return out
 
 
