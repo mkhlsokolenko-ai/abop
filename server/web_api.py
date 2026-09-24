@@ -2706,6 +2706,31 @@ def _run_cache_key(agent: dict) -> str:
     return f"{agent.get('id')}::{_data_fingerprint(agent)}::{hashlib.sha256(cfg.encode()).hexdigest()[:8]}"
 
 
+_EPHEMERAL_ADAPTERS = ("mailpit", "http", "vector")   # сетевые источники — свежесть важна, гоним перед прогоном
+
+
+async def _refresh_source_data(agent: dict) -> None:
+    """Авто-прогон рецептов ЭФЕМЕРНЫХ источников (почта/REST/knowledge) перед прогоном агента — чтобы
+    canonical store был свежим без ручного data_run. Тяжёлые БД/файл-рецепты (audit1c: postgres/csv,
+    наполняются бэкфиллом) НЕ трогаем. Best-effort: недоступный источник не валит прогон (работаем на store)."""
+    ents = {n.get("entity") for n in (agent.get("graph") or {}).get("nodes") or []
+            if n.get("kind") in ("source", "doc") and n.get("entity")}
+    if not ents:
+        return
+    try:
+        cards = ape.data_recipes_cards()
+    except Exception:  # noqa: BLE001
+        return
+    import asyncio
+    loop = asyncio.get_event_loop()
+    for c in cards:
+        if c.get("entity") in ents and c.get("adapter") in _EPHEMERAL_ADAPTERS:
+            try:
+                await loop.run_in_executor(None, ape.data_run, c["id"])
+            except Exception as ex:  # noqa: BLE001
+                obs.log_event("warn", "run.source_refresh_failed", recipe=c.get("id"), error=str(ex)[:200])
+
+
 async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, trigger: dict | None = None,
                             use_cache: bool = True, user_context: str = "", deliver_filter: str = "") -> dict:
     """Ядро прогона (LLM-раскладка + находки audit1c + сохранение + аудит). Переиспользуется
@@ -2748,6 +2773,9 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
                                       "findings": (result.get("findings_summary") or {}).get("total")},
                                      severity="info")
             return {"saved": saved, "result": result}
+    # Свежесть эфемерных источников: перед прогоном сами гоним рецепты почты/REST, чтобы агент читал
+    # актуальные письма/вложения без ручного data_run (владелец 2026-09-24: «надо гонять рецепт»). Best-effort.
+    await _refresh_source_data(agent)
     # Детерминированные находки/расследования считаем ДО прогона (истина, считает КОД) — чтобы навыки в LLM
     # их ОБЪЯСНЯЛИ (grounded), а не искали заново на сэмпле-дайджесте (иначе LLM ложно пишет «расхождений нет»).
     _skills = [n.get("skill") for n in (agent.get("graph") or {}).get("nodes", [])]
