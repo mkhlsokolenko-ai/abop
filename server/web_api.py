@@ -549,7 +549,7 @@ async def admin_rbac(u: dict = Depends(user)) -> dict:
 # persistence-localstorage-hole. Отсутствующие ключи ⇒ клиент берёт свой дефолт (сид в state).
 # tree/assignments — карта процессов (области ответственности агентов), авторится в RBAC-редакторе.
 _ADMIN_CONFIG_KEYS = {"modelCfg", "defaultProfile", "tenantMode", "quotaLimit", "quotaPolicy",
-                      "escThresholds", "tree", "assignments"}
+                      "escThresholds", "tree", "assignments", "tokenQuota"}
 
 
 @app.get("/api/admin/config")
@@ -3193,9 +3193,15 @@ async def billing(u: dict = Depends(user)) -> dict:
     cfg = await admin_store.all()
     quota = _parse_rub(cfg.get("quotaLimit"), 4000.0)
     total_rub = round(total_rub, 4)
+    # Токен-квота (6): на self-host стоимость≈0, но токены списываем с квоты — чтобы пользователь видел
+    # ОСТАТОК (сколько ещё может отработать). Лимит из admin_config.tokenQuota (по умолчанию 5M).
+    tok_quota = int(_parse_rub(cfg.get("tokenQuota"), 5_000_000.0))
+    tokens = tin + tout
     return {"spent_rub": total_rub, "quota_limit_rub": quota,
             "quota_pct": min(100, round(total_rub / quota * 100)) if quota else 0,
-            "input_tokens": tin, "output_tokens": tout, "tokens": tin + tout,
+            "input_tokens": tin, "output_tokens": tout, "tokens": tokens,
+            "token_quota": tok_quota, "tokens_remaining": max(0, tok_quota - tokens),
+            "tokens_pct": min(100, round(tokens / tok_quota * 100)) if tok_quota else 0,
             "calls": calls, "avg_call_rub": round(total_rub / calls, 4) if calls else 0.0,
             "by_model": by_model, "by_run": by_run[:12], "source": "run_metrics"}
 
