@@ -28,7 +28,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, assembly, audit_store, cachebus, clients, contract_store, dataplane_store, families_store, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, reglament_store, report_store, run_cache_store, run_store, runner, schema_store, skill_store, slava, systems_store, trigger_store, triggers, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, assembly, audit_store, cachebus, charts, clients, contract_store, dataplane_store, families_store, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, reglament_store, report_store, run_cache_store, run_store, runner, schema_store, skill_store, slava, systems_store, trigger_store, triggers, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
@@ -1165,6 +1165,8 @@ async def report_template_preview(tid: str, body: dict, u: dict = Depends(user))
             "findings_total": 2, "investigations_total": 1,
             "by_class": "<div class='badges'><span class='b A'>A: 1</span><span class='b B'>B: 0</span>"
                         "<span class='b C'>C: 1</span><span class='b D'>D: 0</span></div>",
+            "charts": charts.render_spec({"type": "bar", "title": "Находки по классам критичности",
+                                          "x": ["A", "B", "C", "D"], "series": [{"name": "шт", "data": [1, 6, 1, 2]}]}),
             "findings": "<div class='fnd'><span class='cls'>A</span><b>НДС не сходится с декларацией</b> — "
                         "расхождение 110 000 ₽<span class='norm'>§ НК РФ ст.171</span></div>"
                         "<div class='fnd'><span class='cls'>C</span><b>Нет счёта-фактуры</b></div>",
@@ -2365,6 +2367,7 @@ def _report_context(agent: dict, result: dict) -> dict:
             "findings_total": (result.get("findings_summary") or {}).get("total") or len(struct),
             "investigations_total": (result.get("investigations_summary") or {}).get("total") or len(result.get("investigations") or []),
             "by_class": by_class_html,
+            "charts": charts.charts_html(result),
             "findings": findings_html,
             "investigations": investigations_html,
             "skills": skills_html,

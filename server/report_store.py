@@ -153,27 +153,29 @@ _FOOT = "<div class='ft'>Сформировано ABOP · {{agent}} · {{date}}<
 _DEFAULT_HTML = (_HEAD +
     "<div class='sum'><div class='card'><h3>Находок</h3><div class='num'>{{findings_total}}</div></div>"
     "<div class='card'><h3>Расследований</h3><div class='num'>{{investigations_total}}</div></div></div>"
-    "{{by_class}}"
+    "{{by_class}}{{charts}}"
     "{{findings}}{{investigations}}{{skills}}"
     "<h2>Доставка</h2>{{deliveries}}" + _FOOT)
 
-# Аудитор 1С: акцент на находках A/B/C/D + нормы.
+# Аудитор 1С: акцент на находках A/B/C/D + нормы + график по классам.
 _AUDIT_HTML = (_HEAD +
     "<div class='sum'><div class='card'><h3>Находок аудита</h3><div class='num'>{{findings_total}}</div></div></div>"
-    "{{by_class}}"
+    "{{by_class}}{{charts}}"
     "<h2>Находки аудита</h2>{{findings}}"
     "{{skills}}"
     "<h2>Доставка</h2>{{deliveries}}" + _FOOT)
 
-# Расследование от симптома: акцент на цепочках реализация→взаиморасчёты→НДС.
+# Расследование от симптома: акцент на цепочках реализация→взаиморасчёты→НДС + график расхождений.
 _INVEST_HTML = (_HEAD +
     "<div class='sum'><div class='card'><h3>Расследований</h3><div class='num'>{{investigations_total}}</div></div></div>"
+    "{{charts}}"
     "<h2>Расследования от симптома</h2>{{investigations}}"
     "{{findings}}"
     "<h2>Доставка</h2>{{deliveries}}" + _FOOT)
 
-# Дайджест задач: акцент на списке задач (structured-вывод навыка).
+# Дайджест задач: акцент на списке задач (structured-вывод навыка) + график по приоритетам.
 _DIGEST_HTML = (_HEAD +
+    "{{charts}}"
     "<h2>Задачи и сводка</h2>{{skills}}{{findings}}"
     "<h2>Доставка</h2>{{deliveries}}" + _FOOT)
 
