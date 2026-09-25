@@ -500,12 +500,20 @@ export async function mount(root, ctx) {
   }
   async function previewAndDecide(ids, btn) {
     const id = ids[0];
-    let it = null; try { it = await api(A_AG + "/hitl/" + encodeURIComponent(id)); } catch (e) { toast(humanError(e), "danger"); return; }
+    let it = null, legacy = false;
+    try { it = await api(A_AG + "/hitl/" + encodeURIComponent(id)); }
+    catch (e) {
+      // старый сайдкар (≤ 1.0.5) не умеет превью — подтверждаем по данным очереди, честно предупредив
+      const q = hitlQueue.find((h) => h.id === id);
+      if ((e.status === 404 || e.status === 405) && q) { it = { ...q, to: q.to_addr }; legacy = true; }
+      else { toast(humanError(e), "danger"); return; }
+    }
     if (!it || it.ok === false) { toast("Заявка уже обработана или недоступна", "warn"); loadHitlQueue(); return; }
+    if (legacy) it.body = "Предпросмотр содержимого недоступен в этой версии ABOP Desktop — обновите приложение. Подтверждение отправит отчёт агента в указанный канал.";
     const fields = [["Агент", it.agent_name || agentName(it.agent_id, it.agent_id)], ["Канал", (CH_ICON(it.channel) + " " + (it.channel || ""))], ["Адресат", it.to || "—"]];
     if (it.subject) fields.push(["Тема", it.subject]);
     if (it.format) fields.push(["Формат", it.format]);
-    const ok = await ctx.gate({ title: it.title || "Внешнее действие", kicker: "подтверждение · governance", fields, html: it.html ? sanitize(it.html) : "", body: it.html ? "" : "Содержимое не приложено.", allowLabel: "Подтвердить и отправить", denyLabel: "Отклонить", note: "Отправится только после вашего подтверждения. Персональные данные замаскированы." });
+    const ok = await ctx.gate({ title: it.title || "Внешнее действие", kicker: "подтверждение · governance", fields, html: it.html ? sanitize(it.html) : "", body: it.html ? "" : (it.body || "Содержимое не приложено."), allowLabel: "Подтвердить и отправить", denyLabel: "Отклонить", note: "Отправится только после вашего подтверждения. Персональные данные замаскированы." });
     await decideHitl(ids, ok ? "approve" : "reject", btn);
   }
   function sanitize(html) {   // превью отчёта: убираем скрипты/обработчики, остальное показываем как есть
