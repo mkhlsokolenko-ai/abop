@@ -1,6 +1,6 @@
 {
   "name": "abop-desktop",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "ABOP Desktop — тонкий клиент-рантайм ABOP (Electron + Python sidecar)",
   "author": { "name": "ABOP", "email": "mkhlsokolenko@gmail.com" },
   "main": "electron/main.js",
@@ -25,7 +25,7 @@
       { "from": "dist/ape-sidecar", "to": "ape-sidecar" }
     ],
     "publish": [
-      { "provider": "github", "owner": "mkhlsokolenko-ai", "repo": "ai-product-engineer", "releaseType": "release" }
+      { "provider": "github", "owner": "mkhlsokolenko-ai", "repo": "abop", "releaseType": "release" }
     ],
     "win": {
       "target": ["nsis"],

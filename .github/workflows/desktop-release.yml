@@ -1,0 +1,50 @@
+# Релиз ABOP Desktop в СОБСТВЕННЫЙ GitHub Releases репозитория abop (отдельно от ai-product-engineer,
+# чтобы каналы обновлений двух десктопов не смешивались). Триггер — пуш тега desktop-vX.Y.Z.
+# Windows-раннер собирает сайдкар (PyInstaller) + инсталлятор (electron-builder) и публикует релиз;
+# electron-updater у клиентов подхватывает его сам (баннер «Найдено обновление» → «Установить и перезапустить»).
+name: desktop-release
+
+on:
+  push:
+    tags:
+      - "desktop-v*"
+
+permissions:
+  contents: write        # electron-builder создаёт GitHub Release в этом же репо
+
+jobs:
+  build-and-publish:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python (сайдкар)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Установить зависимости сайдкара + PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r sidecar/requirements.txt
+          python -m pip install pyinstaller
+
+      - name: Собрать сайдкар (PyInstaller → dist/ape-sidecar)
+        run: python -m PyInstaller --noconfirm --clean build-sidecar.spec
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Установить npm-зависимости
+        run: npm ci
+
+      - name: Собрать и опубликовать инсталлятор (electron-builder → GitHub Releases)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"   # не подписываем: без winCodeSign/симлинков (см. desktop/README.md)
+        run: npm run publish
