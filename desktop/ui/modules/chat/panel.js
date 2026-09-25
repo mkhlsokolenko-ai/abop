@@ -202,7 +202,7 @@ export async function mount(root, ctx) {
       ? `<button data-edit="${idx}" style="padding:4px 9px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--ink-3);font-size:11px;cursor:pointer">✎ изменить</button>`
       : `<button data-copy="${idx}" style="padding:4px 9px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--ink-3);font-size:11px;cursor:pointer">⧉ копировать</button><button data-regen="${idx}" style="padding:4px 9px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--ink-3);font-size:11px;cursor:pointer">↻ ещё раз</button>${cost}`;
     return `<div style="display:flex;flex-direction:column;align-items:${mine ? "flex-end" : "flex-start"};gap:7px;animation:ape-in .3s ease-out">
-      <div class="bub" style="max-width:88%;padding:13px 16px;border-radius:${radius};background:${bg};border:1px solid ${bd};backdrop-filter:blur(16px);white-space:pre-wrap;font-size:13.5px;line-height:1.6">${inner}</div>
+      <div class="bub" style="max-width:88%;padding:13px 16px;border-radius:${radius};background:${bg};border:1px solid ${bd};backdrop-filter:blur(16px);box-shadow:${mine ? "0 2px 10px rgba(99,102,241,.14)" : "var(--shadow-1)"};white-space:pre-wrap;font-size:13.5px;line-height:1.6">${inner}</div>
       <div style="display:flex;align-items:center;gap:6px">${acts}</div></div>`;
   }
   function emptyState() {
