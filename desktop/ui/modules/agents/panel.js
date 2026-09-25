@@ -4,7 +4,7 @@
 const A = "/api/modules/agents";
 const esc = (s) => (s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 const LBL = "font-family:var(--mono);font-size:9.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--ink-3)";
-const CARD = "padding:18px;border-radius:16px;background:var(--panel);border:1px solid var(--line);display:flex;flex-direction:column;gap:12px";
+const CARD = "padding:18px;border-radius:16px;background:var(--panel);border:1px solid var(--line);display:flex;flex-direction:column;gap:12px;box-shadow:var(--shadow-1);backdrop-filter:var(--blur)";
 const BTN = "padding:9px 14px;border-radius:11px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-size:12px;font-weight:600;cursor:pointer";
 
 export async function mount(root, ctx) {

@@ -5,7 +5,7 @@ const SEC = "/api/modules/security";   // сайдкар-роуты остали
 const AG = "/api/modules/agents";
 const esc = (s) => (s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 const LBL = "font-family:var(--mono);font-size:9.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--ink-3)";
-const CARD = "padding:20px;border-radius:16px;background:var(--panel);border:1px solid var(--line);display:flex;flex-direction:column;gap:14px";
+const CARD = "padding:20px;border-radius:16px;background:var(--panel);border:1px solid var(--line);display:flex;flex-direction:column;gap:14px;box-shadow:var(--shadow-1);backdrop-filter:var(--blur)";
 const SHORTCUTS = [["Ctrl K", "командная палитра"], ["Ctrl N", "новый тред"], ["Enter", "отправить"], ["Esc", "стоп / закрыть шторку"]];
 
 export async function mount(root, ctx) {

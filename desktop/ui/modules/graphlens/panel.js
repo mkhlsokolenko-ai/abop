@@ -64,15 +64,24 @@ export async function mount(root, ctx) {
     const acc = n.kind === "agent" ? "rgba(129,140,248,.4)" : "var(--line)";
     return `<div class="gn" data-id="${n.id}" style="position:absolute;left:${n.x}px;top:${n.y}px;width:${NW}px;height:${NH}px;border:1px solid ${sel === n.id ? "#818cf8" : acc};border-radius:12px;background:var(--panel);backdrop-filter:blur(16px);display:flex;align-items:center;gap:8px;padding:0 12px;cursor:grab;user-select:none;box-shadow:0 8px 24px rgba(0,0,0,.25)">
       <span class="gport gl" data-id="${n.id}" title="вход ▸" style="position:absolute;left:-7px;top:50%;transform:translateY(-50%);width:14px;height:14px;border-radius:9999px;background:var(--rail);border:1px solid var(--line-2);cursor:crosshair"></span>
-      <span style="font-size:15px">${n.glyph || "▦"}</span>
+      <span style="font-size:15px;color:${edgeColor(n.kind)}">${n.glyph || "▦"}</span>
       <span style="flex:1;min-width:0;font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(n.label)}</span>
       <span class="gport gr" data-id="${n.id}" title="выход → (клик, затем вход другого)" style="position:absolute;right:-7px;top:50%;transform:translateY(-50%);width:14px;height:14px;border-radius:9999px;background:${linkFrom === n.id ? "#6366f1" : "var(--rail)"};border:1px solid var(--line-2);cursor:crosshair"></span>
     </div>`;
   }
+  // Семантика рёбер (перенос из webapp): цвет + пунктир-поток по КИНДУ узла-источника —
+  // видно, что течёт по графу (триггер→, данные→, навык→, агент→, решение→, выход→).
+  const KIND_COL = { trigger: "#f59e0b", source: "#22d3ee", data: "#22d3ee", skill: "#818cf8", agent: "#a855f7", decision: "#fbbf24", output: "#34d399" };
+  function edgeColor(kind) { return KIND_COL[kind] || "var(--accent-2)"; }
   function paintWires() {
     const svg = $("gWires");
     const center = (id, side) => { const n = nodes.find((x) => x.id === id); if (!n) return null; return { x: n.x + (side === "r" ? NW : 0), y: n.y + NH / 2 }; };
-    svg.innerHTML = edges.map(([a, b]) => { const p = center(a, "r"), q = center(b, "l"); if (!p || !q) return ""; const mx = (p.x + q.x) / 2; return `<path d="M${p.x} ${p.y} C ${mx} ${p.y} ${mx} ${q.y} ${q.x} ${q.y}" stroke="#818cf8" stroke-width="2" fill="none" opacity=".7"/>`; }).join("");
+    svg.innerHTML = edges.map(([a, b]) => {
+      const p = center(a, "r"), q = center(b, "l"); if (!p || !q) return "";
+      const src = nodes.find((n) => n.id === a) || {}; const col = edgeColor(src.kind);
+      const mx = (p.x + q.x) / 2;
+      return `<path d="M${p.x} ${p.y} C ${mx} ${p.y} ${mx} ${q.y} ${q.x} ${q.y}" stroke="${col}" stroke-width="2" fill="none" opacity=".8" stroke-dasharray="7 6" style="animation:gwire-flow 1.1s linear infinite"/>`;
+    }).join("");
   }
   function paint() {
     const cv = $("gCanvas");
