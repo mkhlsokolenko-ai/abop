@@ -1,8 +1,8 @@
 // Модуль «Источники» — тонкий клиент ABOP: каталог коннекторов и рецептов Data Plane из ABOP
 // (что реально видит агент, ABAC по отделу) + локальные файлы под правами пользователя ОС.
 const K = "/api/modules/connectors";
-const esc = (s) => (s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
-const LBL = "font-family:var(--mono);font-size:9.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--ink-3)";
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const LBL = "font-family:var(--mono);font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:var(--ink-3)";
 const CARD = "padding:20px;border-radius:16px;background:var(--panel);border:1px solid var(--line);display:flex;flex-direction:column;gap:14px;box-shadow:var(--shadow-1);backdrop-filter:var(--blur)";
 
 function row(icon, title, note, right) {
@@ -13,8 +13,8 @@ function row(icon, title, note, right) {
 }
 
 export async function mount(root, ctx) {
-  const { api } = ctx;
-  let cat = {}; try { cat = await api(K + "/list"); } catch {}
+  const { api, toast, humanError } = ctx;
+  let cat = {}; try { cat = await api(K + "/list"); } catch (e) { cat = { abop_error: humanError(e) }; }
 
   const abopConns = (cat.connectors || []).map((c) => {
     const ok = c.status !== "blocked";
@@ -47,7 +47,7 @@ export async function mount(root, ctx) {
 
       <div style="${CARD};gap:12px">
         <span style="${LBL}">добавить локальный файл</span>
-        <p style="margin:0;font-size:12.5px;color:var(--ink-2)">docx · xlsx · csv · txt · json · md → распознаём и кладём в знания треда.</p>
+        <p style="margin:0;font-size:12.5px;color:var(--ink-2)">docx · xlsx · csv · txt · json · md → распознаём и одной кнопкой кладём в контекст чата.</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn primary" id="pickFile">Выбрать файл…</button>
           <input type="file" id="fileIn" accept=".txt,.md,.csv,.json,.docx,.xlsx" style="display:none"/>
@@ -64,12 +64,17 @@ export async function mount(root, ctx) {
     </div></div>`;
   const $ = (id) => root.querySelector("#" + id);
 
+  function showIngested(name, text) {
+    $("ingRes").innerHTML = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="ok-ink">✓ «${esc(name)}» распознан (${text.length} симв.)</span>
+      <button class="btn primary sm" id="toChat">💬 Добавить в чат</button><button class="btn sm" id="copyTxt">⧉ копировать</button></div>`;
+    $("toChat").onclick = () => ctx.open("chat", { attach: { name, text } });
+    $("copyTxt").onclick = () => { navigator.clipboard.writeText(text); toast("Скопировано", "ok"); };
+  }
   async function ingestPath(path) {
     $("ingRes").textContent = "Читаю…";
-    const r = await api(K + "/ingest", { method: "POST", body: JSON.stringify({ path }) });
-    $("ingRes").innerHTML = r.ok
-      ? `<span style="color:var(--ok-ink)">✓ «${esc(r.name)}» распознан (${r.chars} симв.) — откройте чат и приложите через 📎, текст попадёт в контекст.</span>`
-      : `<span style="color:var(--danger-ink)">Не удалось: ${esc(r.error === "not_found" ? "файл не найден" : r.error)}</span>`;
+    let r; try { r = await api(K + "/ingest", { method: "POST", body: JSON.stringify({ path }) }); } catch (e) { r = { ok: false, error: humanError(e) }; }
+    if (r.ok) showIngested(r.name, r.text || "");
+    else $("ingRes").innerHTML = `<span class="danger-ink">Не удалось: ${esc(r.error === "not_found" ? "файл не найден" : r.error === "empty" ? "в файле нет текста" : r.error)}</span>`;
   }
 
   // выбор файла: Electron file input даёт .path (полный путь) — читаем под правами ОС
@@ -77,7 +82,7 @@ export async function mount(root, ctx) {
   $("fileIn").onchange = async (e) => {
     const f = e.target.files[0]; if (!f) return;
     if (f.path) { await ingestPath(f.path); }
-    else { const text = await f.text(); $("ingRes").textContent = "Файл прочитан локально (" + text.length + " симв.) — откройте чат и приложите через 📎."; }
+    else { const text = await f.text(); showIngested(f.name, text); }
     e.target.value = "";
   };
 
@@ -86,7 +91,7 @@ export async function mount(root, ctx) {
     $("recent").innerHTML = (rec.files || []).length
       ? rec.files.map((f) => `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)">
           <span style="flex:1;min-width:0;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.name)}</span>
-          <button class="rec" data-p="${esc(f.path)}" style="padding:5px 11px;border:1px solid var(--line);border-radius:9px;background:transparent;color:var(--ink-2);font-size:11.5px;cursor:pointer">Распознать</button></div>`).join("")
+          <button class="rec btn sm" data-p="${esc(f.path)}">Прочитать</button></div>`).join("")
       : `<span>Нет недавних файлов в Documents/Downloads/Desktop.</span>`;
     $("recent").querySelectorAll(".rec").forEach((b) => b.onclick = () => ingestPath(b.dataset.p));
   } catch { $("recent").textContent = "Не удалось получить список."; }

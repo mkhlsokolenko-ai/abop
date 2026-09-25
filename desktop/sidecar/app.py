@@ -7,6 +7,7 @@ auth + реестр модулей. Вся функциональность (ч�
 """
 from __future__ import annotations
 
+import base64
 import json
 import os
 import shutil
@@ -24,9 +25,12 @@ from . import auth, config, db, registry
 
 app = FastAPI(title=config.APP_NAME, version=config.APP_VERSION)
 
-# Оболочка ходит с localhost — разрешаем локальные origin'ы (file:// и 127.0.0.1).
+# Оболочка ходит с того же origin (127.0.0.1/ui) либо с file:// (origin "null" — офлайн-фолбэк).
+# Сайдкар прикладывает JWT пользователя к каждому запросу в ABOP, поэтому «*» недопустим
+# (UX-аудит 25.09 D-C4): только loopback и file://.
 app.add_middleware(
-    CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
+    CORSMiddleware, allow_origins=["null"], allow_origin_regex=r"^https?://(127\.0\.0\.1|localhost)(:\d+)?$",
+    allow_methods=["*"], allow_headers=["*"],
 )
 
 # ── UI-прокси (правильный путь А): сайдкар отдаёт UI десктопа с 127.0.0.1/ui, тянет свежий с ABOP
@@ -51,6 +55,7 @@ def _sync_ui() -> None:
         with urllib.request.urlopen(req, timeout=15) as r:
             data = json.loads(r.read().decode("utf-8", "replace"))
         files = data.get("files") or {}
+        binary = data.get("binary") or {}
         if files:
             tmp = _UI_CACHE.with_suffix(".new")
             if tmp.exists():
@@ -59,10 +64,20 @@ def _sync_ui() -> None:
                 fp = tmp / rel
                 fp.parent.mkdir(parents=True, exist_ok=True)
                 fp.write_text(txt, encoding="utf-8")
+            # шрифты/иконки: base64 → байты (D-C6). Старый ABOP без «binary» → берём из вшитого UI,
+            # чтобы кэш никогда не оставался без шрифтов (иначе UI рендерился в Segoe UI).
+            for rel, b64 in binary.items():
+                fp = tmp / rel
+                fp.parent.mkdir(parents=True, exist_ok=True)
+                fp.write_bytes(base64.b64decode(b64))
+            if not binary:
+                fb = _bundled_ui()
+                if fb and (fb / "fonts").is_dir():
+                    shutil.copytree(fb / "fonts", tmp / "fonts", dirs_exist_ok=True)
             if _UI_CACHE.exists():
                 shutil.rmtree(_UI_CACHE, ignore_errors=True)
             tmp.rename(_UI_CACHE)
-            print(f"[sidecar] UI обновлён с ABOP: {data.get('version')} ({len(files)} файлов)")
+            print(f"[sidecar] UI обновлён с ABOP: {data.get('version')} ({len(files)} файлов, {len(binary)} бинарных)")
             return
     except Exception as e:  # noqa: BLE001 — офлайн/сбой → фолбэк
         print(f"[sidecar] UI с ABOP не получен ({e}); фолбэк на вшитый/кэш")

@@ -18,12 +18,12 @@
         <span id="apeLogo"></span>
         <span style="display:flex;flex-direction:column;line-height:1.15">
           <span style="font-family:var(--mono);font-size:15px;font-weight:700;letter-spacing:-.3px">ABOP</span>
-          <span id="verChip" style="font-size:10px;color:var(--ink-3)"></span>
+          <span id="verChip" style="font-size:11px;color:var(--ink-3)"></span>
         </span>
       </div>
-      <button id="cmdBtn" title="Командная палитра · Ctrl+K" style="display:flex;align-items:center;gap:10px;min-width:240px;padding:7px 12px;border:1px solid var(--line);border-radius:9999px;background:var(--panel);color:var(--ink-3);font-size:12.5px;text-align:left">
+      <button id="cmdBtn" title="Командная палитра · Ctrl+K" aria-label="Поиск и команды, Ctrl+K" style="display:flex;align-items:center;gap:10px;min-width:240px;padding:7px 12px;border:1px solid var(--line);border-radius:9999px;background:var(--panel);color:var(--ink-3);font-size:12.5px;text-align:left">
         <span>Поиск и команды</span>
-        <span style="margin-left:auto;font-family:var(--mono);font-size:10.5px;padding:2px 7px;border-radius:6px;background:var(--hover)">Ctrl K</span>
+        <span style="margin-left:auto;font-family:var(--mono);font-size:11px;padding:2px 7px;border-radius:6px;background:var(--hover)">Ctrl K</span>
       </button>
       <div style="margin-left:auto;display:flex;align-items:center;gap:10px;min-width:0">
         <div id="costPill" title="Реальный расход токенов (RunMetrics)" style="display:flex;align-items:center;gap:9px;padding:7px 13px;border-radius:9999px;background:var(--panel);border:1px solid var(--line);flex:none">
@@ -31,7 +31,7 @@
           <span style="width:1px;height:12px;background:var(--line-2)"></span>
           <span id="quotaVal" style="font-family:var(--mono);font-size:11.5px;color:var(--ink-2)">квота —</span>
         </div>
-        <button id="themeBtn" title="Тема" style="width:34px;height:34px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink-2);font-size:14px">🌙</button>
+        <button id="themeBtn" title="Тема" aria-label="Переключить тему" style="width:34px;height:34px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink-2);font-size:14px">🌙</button>
         <div id="authBox" style="display:flex;align-items:center;gap:8px;min-width:0"></div>
       </div>
     </header>
@@ -39,13 +39,13 @@
     <div id="updateBar" style="display:none"></div>
 
     <div style="flex:1;display:flex;min-height:0;position:relative">
-      <aside style="flex:none;width:76px;display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 8px;border-right:1px solid var(--line);background:var(--rail);backdrop-filter:blur(16px)">
+      <aside aria-label="Разделы" style="flex:none;width:86px;display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 8px;border-right:1px solid var(--line);background:var(--rail);backdrop-filter:blur(16px)">
         <div id="railNav" style="display:flex;flex-direction:column;align-items:center;gap:6px;width:100%"></div>
         <span style="width:34px;height:1px;background:var(--line);margin:10px 0 6px"></span>
-        <span style="font-family:var(--mono);font-size:8.5px;letter-spacing:.7px;text-transform:uppercase;color:var(--ink-3)">быстрые</span>
+        <span style="font-family:var(--mono);font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:var(--ink-3)">быстрые</span>
         <div id="railQuick" style="display:flex;flex-direction:column;align-items:center;gap:6px;width:100%"></div>
       </aside>
-      <div id="panel" style="flex:1;display:flex;min-width:0;min-height:0"></div>
+      <main id="panel" style="flex:1;display:flex;min-width:0;min-height:0"></main>
     </div>
   </div>
   <script type="module" src="core/app.js"></script>

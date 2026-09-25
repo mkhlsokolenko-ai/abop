@@ -54,6 +54,14 @@ class ThreadIn(BaseModel):
 
 class SendIn(BaseModel):
     prompt: str
+    persona: str = ""       # «Персона и постоянные инструкции» из Кабинета — попадает в system (D-H7)
+
+
+class NoteIn(BaseModel):
+    """Служебное сообщение ассистента с meta (результат цепочки/решение/уведомление) — чтобы карточки
+    переживали смену раздела и перезапуск (UX-аудит D-H3: раньше жили только в памяти панели)."""
+    content: str = ""
+    meta: dict = {}
 
 
 class AttachIn(BaseModel):
@@ -96,9 +104,13 @@ def _sid(thread_id: int) -> str:
     return f"desktop-thread-{thread_id}"
 
 
-def _system_for(skills: list[str]) -> str:
+def _system_for(skills: list[str], persona: str = "") -> str:
     hints = [f"[{s}] {SKILLS[s]}" for s in skills if s in SKILLS]
-    return BASE_SYSTEM + ("\n\nАктивные методики:\n" + "\n".join(hints) if hints else "")
+    out = BASE_SYSTEM + ("\n\nАктивные методики:\n" + "\n".join(hints) if hints else "")
+    persona = (persona or "").strip()[:1500]
+    if persona:
+        out += "\n\nО пользователе и его постоянные инструкции (учитывай всегда):\n" + persona
+    return out
 
 
 def _history(thread_id: int, limit: int = 6) -> str:
@@ -126,35 +138,46 @@ _CH_RU = {"redmine": "Redmine", "email": "почта", "yandex": "почта", "
 
 
 # ── каталог реальных ABOP-агентов для запуска из чата (чат = среда управления пользователя) ──
+_AG_CACHE: dict = {"at": 0.0, "tok": None, "data": []}
+_AG_TTL = 60.0   # с; шторка/дерево решений дёргают каталог часто — N+1 к ABOP не должен повторяться (D-H11)
+
+
+def _agent_card(a: dict) -> dict:
+    desc, systems = "", []
+    try:
+        full = abop.agent(a.get("id") or "")
+        nodes = (full.get("graph") or {}).get("nodes") or []
+        sk = [n.get("skill") for n in nodes if n.get("kind") == "skill" and n.get("skill")]
+        desc = "Навыки: " + ", ".join(sk[:4]) if sk else ""
+        ents = sorted({str(n.get("entity")) for n in nodes if n.get("entity")})
+        chans = [_CH_RU.get((n.get("out") or {}).get("channel"), (n.get("out") or {}).get("channel"))
+                 for n in nodes if n.get("kind") in ("output", "out")]
+        systems = [c for c in chans if c] + [e for e in ents if e]
+    except abop.AbopError:
+        pass
+    return {"id": a.get("id"), "name": a.get("name"), "family": a.get("family"), "role": a.get("role"),
+            "autonomy_max": a.get("autonomy_max"), "outward": bool(a.get("outward")),
+            "description": desc, "owner": bool(a.get("owner")), "systems": sorted(set(systems))}
+
+
 @router.get("/abop-agents")
 def abop_agents() -> list[dict]:
     """Агенты ABOP, доступные пользователю (ABAC), с кратким описанием (что делает) и системами
-    (входные данные + каналы доставки) — для карточки агента в сайдбаре чата."""
+    (входные данные + каналы доставки) — для карточки агента в сайдбаре чата.
+    Детали агентов тянем параллельно и кэшируем на минуту (было: N+1 последовательно при каждом открытии)."""
+    import time as _t
+    from concurrent.futures import ThreadPoolExecutor
+    tok = auth.token()
+    if _AG_CACHE["data"] and _AG_CACHE["tok"] == tok and _t.time() - _AG_CACHE["at"] < _AG_TTL:
+        return _AG_CACHE["data"]
     try:
-        out = []
-        for a in abop.agents():
-            desc, systems = "", []
-            try:
-                full = abop.agent(a.get("id") or "")
-                nodes = (full.get("graph") or {}).get("nodes") or []
-                # что делает: краткое по навыкам (title навыка)
-                sk = [n.get("skill") for n in nodes if n.get("kind") == "skill" and n.get("skill")]
-                desc = "Навыки: " + ", ".join(sk[:4]) if sk else ""
-                # системы: входные сущности + каналы доставки
-                ents = sorted({str(n.get("entity")) for n in nodes if n.get("entity")})
-                chans = [_CH_RU.get((n.get("out") or {}).get("channel"), (n.get("out") or {}).get("channel"))
-                         for n in nodes if n.get("kind") in ("output", "out")]
-                systems = [c for c in chans if c] + [e for e in ents if e]
-            except abop.AbopError:
-                pass
-            out.append({"id": a.get("id"), "name": a.get("name"), "family": a.get("family"),
-                        "role": a.get("role"), "autonomy_max": a.get("autonomy_max"),
-                        "outward": bool(a.get("outward")), "description": desc,
-                        "owner": bool(a.get("owner")),   # «мой» агент vs общий — для вкладок шторки (#9)
-                        "systems": sorted(set(systems))})
+        base = abop.agents()
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            out = list(ex.map(_agent_card, base))
+        _AG_CACHE.update({"at": _t.time(), "tok": tok, "data": out})
         return out
     except abop.AbopError:
-        return []
+        return _AG_CACHE["data"] or []
 
 
 @router.post("/threads/{thread_id}/run-agent")
@@ -178,10 +201,13 @@ def run_agent(thread_id: int, body: RunAgentIn) -> dict:
     run = run.get("run", run) if isinstance(run, dict) else run
     # компактная сводка находок/доставки для карточки в чате
     findings = [ (b.get("text") or "") for b in (run.get("board") or []) if b.get("kind") == "finding" ]
-    delivery = [ {"channel": d.get("channel"), "to": d.get("to"), "mode": d.get("mode")}
+    # hitl_id обязателен: подтверждение в чате идёт строго по заявке (D-C3), а не «всё pending агента»
+    delivery = [ {"channel": d.get("channel"), "to": d.get("to"), "mode": d.get("mode"),
+                  "hitl_id": d.get("hitl_id"), "title": d.get("title"), "result": (d.get("result") or "")[:200]}
                  for d in (run.get("delivery") or []) ]
     summary = {
         "agent_id": body.agent_id,
+        "agent_name": (run.get("agent") or {}).get("name") if isinstance(run.get("agent"), dict) else run.get("agent_name"),
         "trace_id": run.get("trace_id"),
         "cached": run.get("cached"),
         "findings": findings[:8],
@@ -250,6 +276,17 @@ def messages(thread_id: int) -> list[dict]:
     for r in rows:
         r["meta"] = json.loads(r["meta"] or "{}")
     return rows
+
+
+@router.post("/threads/{thread_id}/note")
+def add_note(thread_id: int, body: NoteIn) -> dict:
+    """Сохранить служебное сообщение ассистента (карточка цепочки/решения/уведомление) в историю треда."""
+    if not db.q("SELECT id FROM threads WHERE id=?", (thread_id,)):
+        return {"ok": False, "error": "no_thread"}
+    mid = db.run("INSERT INTO messages(thread_id,role,content,meta,created_at) VALUES(?,?,?,?,?)",
+                 (thread_id, "assistant", body.content or "", json.dumps(body.meta or {}, ensure_ascii=False), db.now()))
+    db.run("UPDATE threads SET updated_at=? WHERE id=?", (db.now(), thread_id))
+    return {"ok": True, "id": mid}
 
 
 @router.patch("/threads/{thread_id}")
@@ -417,7 +454,7 @@ def send(thread_id: int, body: SendIn) -> dict:
     # контекст из вложений: полный текст файла (модель ВИДИТ файл) + история + вопрос
     prompt = _build_prompt(thread_id, body.prompt)
     try:
-        res = abop.chat(prompt=prompt, profile=profile, system=_system_for(skills), max_tokens=1500)
+        res = abop.chat(prompt=prompt, profile=profile, system=_system_for(skills, body.persona), max_tokens=1500)
     except abop.AbopError as e:
         return {"ok": False, "error": str(e)}
 
@@ -486,7 +523,7 @@ def send_stream(thread_id: int, body: SendIn) -> StreamingResponse:
         prompt = _build_prompt(thread_id, body.prompt)
         full, meta = "", {}
         try:
-            for ev in abop.chat_stream(prompt=prompt, profile=profile, system=_system_for(skills), max_tokens=1500):
+            for ev in abop.chat_stream(prompt=prompt, profile=profile, system=_system_for(skills, body.persona), max_tokens=1500):
                 if ev.get("delta"):
                     full += ev["delta"]
                     yield _sse({"delta": ev["delta"]})

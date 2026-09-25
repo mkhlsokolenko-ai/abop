@@ -1,23 +1,31 @@
-// Модуль «Личный кабинет» — РЕАЛЬНЫЕ данные, без хардкода: мой доступ (JWT/RBAC), мои агенты и
-// инструменты, политика ролей (влита из «Безопасности», #11), рабочие источники, локальные настройки.
+// Модуль «Кабинет» — реальные данные: мой доступ (роли/отдел из учётной записи ABOP), мои агенты,
+// источники, настройки (персона — реально уходит в чат) и горячие клавиши.
+//
+// UX-аудит 25.09 D-H7: «Персона» раньше писалась в localStorage и нигде не читалась — теперь чат
+// передаёт её в system-подсказку каждого ответа; хардкод-политика ролей помечена честно как пример,
+// пока энфорс на шлюзе не отдаёт реальную; «источники» считаются из реального каталога коннекторов.
+// D-H13: хоткей Ctrl+Shift+A описан здесь. Терминология без JWT/realm (D-H12).
 const C = "/api/modules/cabinet";
-const SEC = "/api/modules/security";   // сайдкар-роуты остались (модуль скрыт, данные берём сюда)
+const SEC = "/api/modules/security";
 const AG = "/api/modules/agents";
-const esc = (s) => (s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
-const LBL = "font-family:var(--mono);font-size:9.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--ink-3)";
+const K = "/api/modules/connectors";
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const CARD = "padding:20px;border-radius:16px;background:var(--panel);border:1px solid var(--line);display:flex;flex-direction:column;gap:14px;box-shadow:var(--shadow-1);backdrop-filter:var(--blur)";
-const SHORTCUTS = [["Ctrl K", "командная палитра"], ["Ctrl N", "новый тред"], ["Enter", "отправить"], ["Esc", "стоп / закрыть шторку"]];
+const SHORTCUTS = [
+  ["Ctrl K", "поиск и команды"], ["Ctrl N", "новый чат"], ["Enter", "отправить · Shift+Enter — перенос строки"],
+  ["Esc", "остановить ответ · закрыть шторку или окно"],
+  ["Ctrl Shift A", "из любого приложения: выделенный текст → в чат ABOP на анализ (буфер обмена не меняется)"],
+];
 
 export async function mount(root, ctx) {
-  const { api } = ctx;
-  root.innerHTML = `<div style="padding:30px;color:var(--ink-3)">Загрузка кабинета…</div>`;
-  // всё реальное, параллельно; каждый источник — с безопасным фолбэком (идемпотентно, без обманок)
-  const [u, me, pol, agents, srcRes] = await Promise.all([
+  const { api, toast, humanError } = ctx;
+  root.innerHTML = `<div style="flex:1;padding:30px;display:flex;flex-direction:column;gap:12px;max-width:760px"><div class="skeleton" style="height:28px;width:40%"></div><div class="skeleton" style="height:14px;width:70%"></div><div class="skeleton" style="height:120px"></div></div>`;
+  const [u, me, pol, agents, conns] = await Promise.all([
     api(C + "/usage").catch(() => ({})),
     api(SEC + "/me").catch(() => ({})),
     api(SEC + "/policy").catch(() => ({})),
     api(AG + "/catalog").catch(() => []),
-    api(C + "/sources").catch(() => ({})),
+    api(K + "/list").catch(() => ({})),
   ]);
   const ok = u && u.ok;
   const myRoles = (me.roles && me.roles.length) ? me.roles : ((ok && u.roles) || (ctx.roles || []));
@@ -27,66 +35,79 @@ export async function mount(root, ctx) {
   const llm = rt.llm && (rt.llm.model || rt.llm.active || rt.llm.name) ? (rt.llm.model || rt.llm.active || rt.llm.name) : (typeof rt.llm === "string" ? rt.llm : "—");
   const catl = Array.isArray(agents) ? agents : [];
   const mine = catl.filter((a) => a.owner), common = catl.filter((a) => !a.owner);
-  const srcList = (srcRes && srcRes.connectors) || [];
+  const abopConns = (conns && conns.connectors) || [], localConns = (conns && conns.local) || [];
+  const srcOk = abopConns.filter((c) => c.status !== "blocked");
   const enforced = me.ok && me.enforced;
+  const authed = !!ctx.authed;
 
-  const kpi = (label, val, note, col) => `<div style="padding:17px;border-radius:14px;background:var(--panel);border:1px solid var(--line);display:flex;flex-direction:column;gap:6px">
-    <span style="${LBL}">${esc(label)}</span><span style="font-size:20px;font-weight:800;letter-spacing:-.6px;color:${col || "var(--ink)"};overflow:hidden;text-overflow:ellipsis">${esc(String(val))}</span>
+  const kpi = (label, val, note, col) => `<div style="padding:17px;border-radius:14px;background:var(--panel);border:1px solid var(--line);display:flex;flex-direction:column;gap:6px;min-width:0">
+    <span class="ape-label">${esc(label)}</span><span style="font-size:20px;font-weight:800;letter-spacing:-.6px;color:${col || "var(--ink)"};overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(String(val))}">${esc(String(val))}</span>
     <span style="font-size:11.5px;color:var(--ink-3)">${esc(note)}</span></div>`;
-  const chips = (arr, danger) => (arr && arr.length ? arr.map((x) => `<span class="chip ${danger ? "" : "on"}"${danger ? ' style="color:var(--danger-ink)"' : ""}>${esc(x)}</span>`).join("") : `<span style="font-size:12px;color:var(--ink-3)">—</span>`);
+  const chips = (arr, danger) => (arr && arr.length ? arr.map((x) => `<span class="chip ${danger ? "" : "on"}"${danger ? ' style="color:var(--danger-ink);border-color:var(--danger-line)"' : ""}>${esc(x)}</span>`).join("") : `<span style="font-size:12px;color:var(--ink-3)">—</span>`);
   const roleCard = (r) => `<div style="${CARD};padding:16px;gap:10px">
     <b style="font-size:14px">${esc(r.role)}</b>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span style="${LBL};width:74px">разрешено</span>${chips(r.allowed)}</div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span style="${LBL};width:74px">запрещено</span>${chips(r.denied, true)}</div></div>`;
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="ape-label" style="width:84px">разрешено</span>${chips(r.allowed)}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="ape-label" style="width:84px">запрещено</span>${chips(r.denied, true)}</div></div>`;
 
   root.innerHTML = `<div style="flex:1;min-width:0;overflow-y:auto;padding:26px 30px">
     <div style="max-width:1020px;margin:0 auto;display:flex;flex-direction:column;gap:22px;animation:ape-in .35s ease-out">
       <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap">
         <div style="flex:1 1 340px;display:flex;flex-direction:column;gap:6px">
-          <h1 style="margin:0;font-size:26px;font-weight:800;letter-spacing:-.7px">Личный кабинет</h1>
-          <p style="margin:0;font-size:13px;color:var(--ink-2)">Мой доступ, мои агенты и инструменты, права и рабочие источники.</p>
-        </div>${enforced ? '<span class="chip on">RBAC активен · энфорс на шлюзе</span>' : `<span class="chip">${me.error === "auth_required" ? "войдите — покажу ваши права" : "предпросмотр"}</span>`}
+          <h1 class="ape-h1">Личный кабинет</h1>
+          <p style="margin:0;font-size:13px;color:var(--ink-2)">Мой доступ, мои агенты и источники, настройки ответа и горячие клавиши.</p>
+        </div>${enforced ? '<span class="chip on">права проверяются на шлюзе ABOP</span>' : (authed ? '<span class="chip">права из учётной записи ABOP</span>' : `<button class="btn primary sm" id="cabLogin">🔑 Войти в ABOP</button>`)}
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px">
-        ${kpi("отдел (ABAC)", dept, "область доступа к данным")}
-        ${kpi("уровень", level, "потолок автономии", "var(--accent-ink)")}
-        ${kpi("роли (RBAC)", myRoles.join(", ") || "—", "realm abop · из JWT")}
-        ${kpi("LLM рантайм", llm, "self-host ≈ 0 ₽/вызов")}
+        ${kpi("отдел", dept, "область доступа к данным")}
+        ${kpi("уровень", level, "потолок автономии агентов", "var(--accent-ink)")}
+        ${kpi("роли", myRoles.join(", ") || "—", "из учётной записи ABOP")}
+        ${kpi("модель", llm, "собственная модель · ≈0 ₽ за вызов")}
       </div>
       <div style="display:flex;gap:16px;flex-wrap:wrap">
         <div style="flex:1 1 380px;min-width:320px;${CARD}">
-          <span style="${LBL}">мой доступ (из JWT Keycloak)</span>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span style="${LBL};width:74px">роли</span>${chips(myRoles)}</div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span style="${LBL};width:74px">можно</span>${chips(me.allowed)}</div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span style="${LBL};width:74px">нельзя</span>${chips(me.denied, true)}</div>
-          <span style="font-size:11px;color:var(--ink-3)">Роли из Keycloak (твой JWT). Энфорс — в ABOP на шлюзе (агент × инструмент × источник).</span>
+          <span class="ape-label">мой доступ</span>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="ape-label" style="width:84px">роли</span>${chips(myRoles)}</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="ape-label" style="width:84px">можно</span>${chips(me.allowed)}</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="ape-label" style="width:84px">нельзя</span>${chips(me.denied, true)}</div>
+          <span style="font-size:11.5px;color:var(--ink-3)">${authed ? "Роли и отдел приходят из вашей учётной записи ABOP; агент не получает прав больше, чем у вас." : "Войдите — покажу ваши роли, отдел и что разрешено агентам."}</span>
         </div>
         <div style="flex:1 1 380px;min-width:320px;${CARD}">
-          <span style="${LBL}">мои агенты и инструменты</span>
-          <div style="display:flex;gap:10px;flex-wrap:wrap">
-            ${kpi("мои агенты", mine.length, "созданы под моим ID")}
-            ${kpi("общие (ABAC)", common.length, "доступны по роли")}
-            ${kpi("источники", srcList.length, "рабочие подключения")}
+          <span class="ape-label">мои агенты и источники</span>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+            ${kpi("мои агенты", mine.length, "созданы мной")}
+            ${kpi("общие", common.length, "доступны по роли")}
+            ${kpi("источники", srcOk.length + localConns.length, abopConns.length ? `из ${abopConns.length} в ABOP` : "локальные файлы")}
           </div>
-          ${mine.length ? `<div style="display:flex;flex-direction:column;gap:5px">${mine.slice(0, 6).map((a) => `<span style="font-size:12px;color:var(--ink-2)">🤖 ${esc(a.name)} <span style="color:var(--ink-3)">· ${esc(a.family || "")} · v${esc(String(a.version || 1))}</span></span>`).join("")}</div>` : `<span style="font-size:12px;color:var(--ink-3)">Своих агентов пока нет — соберите во вкладке «Мои агенты».</span>`}
-          ${srcList.length ? `<div style="display:flex;flex-direction:column;gap:5px">${srcList.slice(0, 6).map((s) => `<span style="font-size:12px;color:var(--ink-2)">🔌 ${esc(s.title || s.id)} <span style="color:var(--ink-3)">· ${s.status === "ready" ? "готов" : "скоро"}</span></span>`).join("")}</div>` : `<span style="font-size:12px;color:var(--ink-3)">Нет подключённых источников.</span>`}
+          ${mine.length ? `<div style="display:flex;flex-direction:column;gap:5px">${mine.slice(0, 6).map((a) => `<span style="font-size:12px;color:var(--ink-2)">🤖 ${esc(a.name)} <span style="color:var(--ink-3)">· ${esc(a.family || "")} · v${esc(String(a.version || 1))}</span></span>`).join("")}</div>` : `<span style="font-size:12px;color:var(--ink-3)">Своих агентов пока нет — соберите в разделе «Мои агенты».</span>`}
+          ${abopConns.length ? `<div style="display:flex;flex-direction:column;gap:5px">${abopConns.slice(0, 6).map((s) => `<span style="font-size:12px;color:var(--ink-2)">🔌 ${esc(s.title || s.id)} <span style="color:${s.status === "blocked" ? "var(--danger-ink)" : "var(--ink-3)"}">· ${s.status === "blocked" ? "нет доступа" : "агент видит"}</span></span>`).join("")}</div>` : ""}
+          <div><button class="btn sm" id="goAgents">Мои агенты →</button> <button class="btn sm" id="goSrc">Источники →</button></div>
         </div>
       </div>
-      ${(pol.roles && pol.roles.length) ? `<span style="${LBL}">политика ролей · роль → разрешено / запрещено</span>
+      ${(pol.roles && pol.roles.length) ? `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="ape-label">политика ролей · роль → разрешено / запрещено</span>${enforced ? "" : '<span class="chip" title="Реальная политика применяется на шлюзе ABOP; здесь — справочный пример">пример</span>'}</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px">${pol.roles.map(roleCard).join("")}</div>` : ""}
       <div style="${CARD};gap:16px">
-        <span style="${LBL}">настройки</span>
+        <span class="ape-label">настройки</span>
         <label style="display:flex;flex-direction:column;gap:7px">
-          <span style="font-size:12.5px;font-weight:600">Персона и постоянные инструкции <span style="font-weight:400;color:var(--ink-3)">· сохраняется локально на этом устройстве</span></span>
-          <textarea id="persona" rows="3" placeholder="Кто я, как отвечать…" style="padding:11px 13px;border-radius:11px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-size:12.5px;line-height:1.55"></textarea>
+          <span style="font-size:12.5px;font-weight:600">Персона и постоянные инструкции <span style="font-weight:400;color:var(--ink-3)">· чат учитывает в каждом ответе · хранится на этом устройстве</span></span>
+          <textarea id="persona" rows="3" placeholder="Например: я руководитель отдела продаж; отвечай кратко, по пунктам, на «вы»; суммы в рублях"></textarea>
+          <span id="personaNote" style="font-size:11.5px;color:var(--ink-3)"></span>
         </label>
         <div style="display:flex;flex-direction:column;gap:9px">
           <span style="font-size:12.5px;font-weight:600">Горячие клавиши</span>
-          ${SHORTCUTS.map((s) => `<span style="display:flex;align-items:center;gap:10px;font-size:12px;color:var(--ink-2)"><span style="font-family:var(--mono);font-size:10.5px;padding:3px 8px;border-radius:7px;background:var(--hover);border:1px solid var(--line)">${esc(s[0])}</span>${esc(s[1])}</span>`).join("")}
+          ${SHORTCUTS.map((s) => `<span style="display:flex;align-items:center;gap:10px;font-size:12px;color:var(--ink-2)"><span style="font-family:var(--mono);font-size:11px;padding:3px 8px;border-radius:7px;background:var(--hover);border:1px solid var(--line);white-space:nowrap">${esc(s[0])}</span>${esc(s[1])}</span>`).join("")}
         </div>
       </div>
     </div></div>`;
 
   const p = root.querySelector("#persona");
-  if (p) { p.value = localStorage.getItem("ape_persona") || ""; p.onchange = () => localStorage.setItem("ape_persona", p.value); }
+  if (p) {
+    try { p.value = localStorage.getItem("ape_persona") || ""; } catch { /* noop */ }
+    const noteEl = root.querySelector("#personaNote");
+    const show = () => { noteEl.textContent = p.value.trim() ? "Применяется ко всем новым ответам в чате." : "Пусто — чат отвечает без персональных инструкций."; };
+    show();
+    p.onchange = () => { try { localStorage.setItem("ape_persona", p.value); toast("Персона сохранена — чат учтёт её в следующем ответе", "ok"); } catch { toast("Не удалось сохранить на этом устройстве", "danger"); } show(); };
+  }
+  const lg = root.querySelector("#cabLogin"); if (lg) lg.onclick = () => ctx.login();
+  root.querySelector("#goAgents").onclick = () => ctx.open("agents");
+  root.querySelector("#goSrc").onclick = () => ctx.open("connectors");
 }

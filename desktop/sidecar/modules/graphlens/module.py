@@ -123,7 +123,20 @@ def check(body: GraphIn) -> dict:
             dfs(n["id"])
     if cyc[0]:
         issues.append("Обнаружен цикл — поток не завершится.")
-    return {"ok": not issues, "issues": issues, "nodes": len(nodes), "edges": len(edges)}
+    # честность (UX-аудит D-H10): исполняются только узлы «агент», и только с привязкой к каталогу.
+    agent_nodes = [n for n in nodes if n.get("kind") == "agent"]
+    for n in agent_nodes:
+        if not str(n.get("agent_id") or "").strip():
+            issues.append(f"Узел «{n.get('label') or 'агент'}» не привязан к агенту из каталога — выберите его в инспекторе.")
+    if not agent_nodes:
+        issues.append("В графе нет ни одного узла «агент» — запускать нечего.")
+    other = [n for n in nodes if n.get("kind") != "agent"]
+    warnings = []
+    if other:
+        kinds = sorted({str(n.get("kind")) for n in other})
+        warnings.append(f"Узлы {', '.join(kinds)} ({len(other)}) — разметка потока: при запуске выполняются только узлы «агент».")
+    return {"ok": not issues, "issues": issues, "warnings": warnings, "nodes": len(nodes), "edges": len(edges),
+            "runnable": len(agent_nodes)}
 
 
 @router.post("/run")

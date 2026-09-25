@@ -150,6 +150,15 @@ def hitl_queue():
         return _err(e)
 
 
+@router.get("/hitl/{item_id}")
+def hitl_item(item_id: str):
+    """Превью заявки (содержимое доставки) — перед подтверждением в чате (D-C3)."""
+    try:
+        return abop.hitl_item(item_id)
+    except abop.AbopError as e:
+        return _err(e)
+
+
 @router.post("/hitl/{item_id}/approve")
 def hitl_approve(item_id: str, body: HitlIn):
     """Подтвердить/отклонить HITL-заявку → реальная доставка (approve)."""

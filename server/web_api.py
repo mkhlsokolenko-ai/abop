@@ -3431,6 +3431,24 @@ async def hitl_queue(u: dict = Depends(user)) -> dict:
     return {"queue": [i for i in items if can_see_family(u, i.get("family"))]}
 
 
+@app.get("/api/hitl/{item_id}")
+async def hitl_item(item_id: str, u: dict = Depends(user)) -> dict:
+    """Одна HITL-заявка с содержимым доставки (html/cfg) — превью перед подтверждением
+    (UX-аудит 25.09 D-C3: подтверждали письмо, не видя его текста)."""
+    item = await hitl_store.get(item_id)
+    if not item:
+        raise HTTPException(404, "нет такой HITL-заявки")
+    if not can_see_family(u, item.get("family")):
+        raise HTTPException(403, "нет доступа к семье заявки")
+    payload = item.get("payload") or {}
+    cfg = payload.get("cfg") or {}
+    return {"id": item.get("id"), "state": item.get("state"), "agent_id": item.get("agent_id"),
+            "agent_name": payload.get("agent_name"), "title": item.get("title"), "channel": item.get("channel"),
+            "to": item.get("to_addr"), "format": cfg.get("format"), "subject": cfg.get("subject") or cfg.get("title"),
+            "html": (payload.get("html") or "")[:20000], "created_at": item.get("created_at"),
+            "requested_by": item.get("requested_by")}
+
+
 @app.post("/api/hitl/{item_id}/approve")
 async def hitl_approve(item_id: str, body: dict = None, u: dict = Depends(user)) -> JSONResponse:
     """Одобрить/отклонить HITL-заявку. Тело: {decision: approve|reject, reason?}. При approve —
@@ -3480,16 +3498,24 @@ def desktop_ui_bundle() -> dict:
     import hashlib as _hl
     if not _DESKTOP_UI.is_dir():
         return {"version": "", "files": {}}
-    files = {}
+    import base64 as _b64
+    files: dict = {}
+    binary: dict = {}
     for p in sorted(_DESKTOP_UI.rglob("*")):
-        if p.is_file() and p.suffix.lower() in (".html", ".js", ".css", ".json", ".svg"):
-            rel = p.relative_to(_DESKTOP_UI).as_posix()
-            try:
+        if not p.is_file():
+            continue
+        rel = p.relative_to(_DESKTOP_UI).as_posix()
+        ext = p.suffix.lower()
+        try:
+            if ext in (".html", ".js", ".css", ".json", ".svg"):
                 files[rel] = p.read_text(encoding="utf-8")
-            except Exception:  # noqa: BLE001 — бинарь/нечитаемое пропускаем
-                continue
-    ver = _hl.md5("".join(f"{k}:{len(v)}" for k, v in sorted(files.items())).encode()).hexdigest()[:12]
-    return {"version": ver, "files": files}
+            elif ext in (".woff2", ".woff", ".ttf", ".png", ".ico"):
+                # шрифты/иконки — base64 (UX-аудит 25.09 D-C6: без них десктоп рендерился в Segoe UI)
+                binary[rel] = _b64.b64encode(p.read_bytes()).decode("ascii")
+        except Exception:  # noqa: BLE001 — нечитаемое пропускаем
+            continue
+    ver = _hl.md5("".join(f"{k}:{len(v)}" for k, v in sorted({**files, **binary}.items())).encode()).hexdigest()[:12]
+    return {"version": ver, "files": files, "binary": binary}
 
 
 if _DESKTOP_UI.is_dir():

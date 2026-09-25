@@ -232,6 +232,11 @@ def suggest_pipeline(q: str) -> dict:
     return _req("POST", "/api/pipelines/suggest", {"q": q}, timeout=90)
 
 
+def hitl_item(item_id: str) -> dict:
+    """Превью HITL-заявки: канал/адресат/тема/html письма — показать человеку ДО approve."""
+    return _req("GET", "/api/hitl/" + urllib.request.quote(item_id), timeout=20)
+
+
 def hitl_approve(item_id: str, decision: str = "approve", reason: str = "") -> dict:
     return _req("POST", "/api/hitl/" + urllib.request.quote(item_id) + "/approve",
                 {"decision": decision, "reason": reason}, timeout=60)

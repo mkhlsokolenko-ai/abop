@@ -50,6 +50,12 @@
   --warn-ink: #fbbf24;
   --ok-ink: #6ee7b7;
   --danger-ink: #fca5a5;
+  /* статусные поверхности (UX-аудит 25.09 D-H14: никаких хардкодов #fbbf24/#6ee7b7/#fca5a5 в модулях) */
+  --ok-bg: rgba(16, 185, 129, 0.16);   --ok-line: rgba(52, 211, 153, 0.42);
+  --warn-bg: rgba(245, 158, 11, 0.12); --warn-line: rgba(245, 158, 11, 0.45);
+  --danger-bg: rgba(239, 68, 68, 0.12); --danger-line: rgba(239, 68, 68, 0.38);
+  --info-bg: rgba(139, 92, 246, 0.14); --info-line: rgba(139, 92, 246, 0.5); --info-ink: #c4b5fd;
+  --user-bubble: rgba(99, 102, 241, 0.16); --user-bubble-line: rgba(129, 140, 248, 0.3);
   --ui: "Inter", "Segoe UI", system-ui, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, monospace;
   --blur: blur(16px);
@@ -82,8 +88,8 @@
   --line-2: #d1d5db;
   --hover: rgba(15, 23, 42, 0.05);
   --ink: #111827;
-  --ink-2: #6b7280;
-  --ink-3: #9ca3af;
+  --ink-2: #4b5563;   /* 7.6:1 на #f8fafc (было #6b7280) */
+  --ink-3: #6b7280;   /* 4.6:1 (было #9ca3af ≈ 2.4:1 — ниже AA) */
   --field: #ffffff;
   --code: #0f172a;
   --rail: rgba(255, 255, 255, 0.7);
@@ -95,6 +101,11 @@
   --warn-ink: #92400e;
   --ok-ink: #065f46;
   --danger-ink: #991b1b;
+  --ok-bg: rgba(16, 185, 129, 0.12);   --ok-line: rgba(5, 150, 105, 0.35);
+  --warn-bg: rgba(245, 158, 11, 0.14); --warn-line: rgba(180, 83, 9, 0.35);
+  --danger-bg: rgba(239, 68, 68, 0.10); --danger-line: rgba(185, 28, 28, 0.35);
+  --info-bg: rgba(124, 58, 237, 0.10); --info-line: rgba(109, 40, 217, 0.35); --info-ink: #5b21b6;
+  --user-bubble: rgba(99, 102, 241, 0.10); --user-bubble-line: rgba(99, 102, 241, 0.28);
   --shadow-1: 0 8px 24px rgba(15, 23, 42, 0.10);
   --shadow-2: 0 16px 44px rgba(15, 23, 42, 0.14);
   --shadow-accent: 0 10px 30px rgba(99, 102, 241, 0.18);
@@ -160,7 +171,7 @@ a { color: var(--accent-2); } a:hover { color: var(--accent); }
 
 /* ── компонент-классы ДС (рецепты 1:1) ── */
 .ape-card { padding: 20px; border-radius: 16px; background: var(--panel); border: 1px solid var(--line); backdrop-filter: var(--blur); display: flex; flex-direction: column; gap: 12px; }
-.ape-label { font-family: var(--mono); font-size: 9.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--ink-3); }
+.ape-label { font-family: var(--mono); font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--ink-3); }
 .ape-h1 { margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -.7px; }
 .ape-iconbtn { width: 30px; height: 30px; flex: none; border: 1px solid var(--line); border-radius: 9px; background: transparent; color: var(--ink-2); font-size: 13px; cursor: pointer; }
 .ape-iconbtn:hover { background: var(--hover); color: var(--ink); }
@@ -227,3 +238,57 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 .gn:hover { box-shadow: var(--shadow-2); }
 .gport { transition: transform .12s ease, background .15s ease, box-shadow .15s ease; }
 .gport.gl:hover, .gport.gr:hover { transform: translateY(-50%) scale(1.4); box-shadow: 0 0 0 4px var(--accent-bg); }
+
+
+/* ── UX-аудит 25.09: доступность и общие рецепты оверлеев/уведомлений ── */
+:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; border-radius: 8px; }
+button { cursor: pointer; }
+button:disabled { cursor: default; }
+/* оверлей + модалка (стек, Esc закрывает верхний, фокус-ловушка — core/app.js openOverlay) */
+.ape-overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(2, 6, 23, .55); backdrop-filter: blur(3px); animation: ape-fade .16s ease; }
+.ape-modal { width: min(560px, 92vw); max-height: 86vh; overflow: auto; padding: 20px; border-radius: 16px; background: var(--panel-2); backdrop-filter: var(--blur-strong); border: 1px solid var(--line-2); box-shadow: var(--shadow-2); animation: ape-drop .18s ease; display: flex; flex-direction: column; gap: 12px; }
+:root:not([data-theme="light"]) .ape-modal { background: rgba(15, 23, 42, .92); }
+.ape-modal h2 { margin: 0; font-size: 16px; font-weight: 700; letter-spacing: -.3px; }
+.ape-modal .ape-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px; }
+.btn.danger { background: var(--danger-bg); border-color: var(--danger-line); color: var(--danger-ink); }
+.btn.danger:hover { filter: brightness(1.08); }
+.btn.ok { background: var(--ok-bg); border-color: var(--ok-line); color: var(--ok-ink); }
+@keyframes ape-fade { from { opacity: 0; } to { opacity: 1; } }
+/* стек тостов (вместо одного слота) */
+#apeToasts { position: fixed; left: 50%; top: 66px; transform: translateX(-50%); z-index: 400; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; max-width: 80vw; }   /* сверху — не перекрывает композер */
+.ape-toast { pointer-events: auto; display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-radius: 12px; background: rgba(15, 23, 42, .94); color: #fff; font-size: 12.5px; line-height: 1.45; box-shadow: 0 12px 40px rgba(0, 0, 0, .4); border: 1px solid rgba(255, 255, 255, .12); animation: ape-in .2s ease-out; max-width: 80vw; }
+.ape-toast.ok { border-color: var(--ok-line); } .ape-toast.warn { border-color: var(--warn-line); } .ape-toast.danger { border-color: var(--danger-line); }
+.ape-toast button { border: 1px solid rgba(255, 255, 255, .25); background: rgba(255, 255, 255, .1); color: #fff; border-radius: 8px; padding: 5px 10px; font-size: 12px; font-weight: 600; }
+/* кнопка-иконка: цель ≥ 30px (аудит: 15–22px) */
+.ico { width: 30px; height: 30px; flex: none; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 9px; background: transparent; color: var(--ink-2); font-size: 13px; }
+.ico:hover { background: var(--hover); color: var(--ink); }
+.ico.ghost { border-color: transparent; }
+.ico.danger:hover { background: var(--danger-bg); color: var(--danger-ink); border-color: var(--danger-line); }
+/* док статуса над композером: один ряд чипов вместо пяти баров */
+.dock { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-height: 0; }
+.dock-chip { display: inline-flex; align-items: center; gap: 7px; padding: 6px 11px; border-radius: 9999px; border: 1px solid var(--line); background: var(--panel); color: var(--ink-2); font-size: 11.5px; font-weight: 600; line-height: 1; }
+.dock-chip:hover { background: var(--hover); color: var(--ink); border-color: var(--line-2); }
+.dock-chip b { color: var(--ink); font-weight: 700; }
+.dock-chip .meter { width: 54px; height: 5px; border-radius: 4px; background: var(--hover); overflow: hidden; }
+.dock-chip .meter > span { display: block; height: 100%; background: var(--grad); }
+.dock-chip.warn { border-color: var(--warn-line); background: var(--warn-bg); color: var(--warn-ink); }
+.dock-chip.danger { border-color: var(--danger-line); background: var(--danger-bg); color: var(--danger-ink); }
+/* панель HITL — единственная «громкая» поверхность над композером */
+.hitl-panel { border: 1px solid var(--warn-line); border-radius: 14px; background: var(--warn-bg); padding: 10px 12px; box-shadow: var(--shadow-1); animation: ape-in .3s ease-out; display: flex; flex-direction: column; gap: 8px; }
+.hitl-panel .hitl-head { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 700; color: var(--warn-ink); }
+.hitl-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 11px; background: var(--field); border: 1px solid var(--line); }
+/* статусный текст */
+.ok-ink { color: var(--ok-ink); } .warn-ink { color: var(--warn-ink); } .danger-ink { color: var(--danger-ink); }
+/* каркас модуля: кэшированные модули переключаются без перерисовки */
+#panel > [data-module] { flex: 1; min-width: 0; min-height: 0; display: flex; }
+#panel > [data-module][hidden] { display: none !important; }
+/* таблицы и списки из markdown в чате */
+.md-table { border-collapse: collapse; font-size: 12.5px; margin: 6px 0; display: block; overflow-x: auto; max-width: 100%; }
+.md-table th, .md-table td { border: 1px solid var(--line-2); padding: 5px 9px; text-align: left; vertical-align: top; white-space: normal; }
+.md-table th { background: var(--hover); font-weight: 600; }
+.md-list { margin: 4px 0 4px 18px; padding: 0; }
+.md-list li { margin: 2px 0; }
+/* скелет загрузки модуля */
+.skeleton { border-radius: 10px; background: linear-gradient(90deg, var(--hover), var(--panel-2), var(--hover)); background-size: 200% 100%; animation: ape-skel 1.2s ease-in-out infinite; }
+@keyframes ape-skel { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }

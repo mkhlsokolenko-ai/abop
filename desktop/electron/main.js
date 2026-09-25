@@ -89,7 +89,8 @@ async function createWindow() {
     width: 1240,
     height: 820,
     minWidth: 900,
-    backgroundColor: "#0B0F14",
+    minHeight: 600,
+    backgroundColor: "#0f172a",   // = --bg темы (без «чужой» вспышки при старте)
     icon: path.join(__dirname, "..", "build", "icon.ico"),
     title: "ABOP Desktop",
     webPreferences: {
@@ -102,6 +103,14 @@ async function createWindow() {
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: "deny" };
+  });
+  // UX-аудит 25.09 D-C5: ссылка в ответе LLM не должна уводить само окно на внешний сайт
+  // (кнопки «назад» нет) — любая навигация не на наш UI уходит в системный браузер.
+  win.webContents.on("will-navigate", (e, url) => {
+    const ours = url.startsWith("http://127.0.0.1:") || url.startsWith("file://") || (REMOTE_UI && url.startsWith(REMOTE_UI));
+    if (ours) return;
+    e.preventDefault();
+    if (/^https?:/i.test(url)) shell.openExternal(url);
   });
   const apiBase = `http://127.0.0.1:${port}`;
   const localIndex = path.join(__dirname, "..", "ui", "index.html");
@@ -187,7 +196,8 @@ function registerHotkey() {
     // приоритет: свежескопированное (SendKeys сработал); иначе — фолбэк на прежний буфер
     // (сценарий «скопировал Ctrl+C → Ctrl+Shift+A» работает всегда). Никогда не отдаём пусто зря.
     const out = fresh || saved || "";
-    if (out !== clipboard.readText()) { try { clipboard.writeText(out); } catch (e) { /* noop */ } }
+    // D-H13: буфер обмена пользователя ВСЕГДА возвращаем как был — хоткей не должен его переписывать.
+    try { clipboard.writeText(saved || ""); } catch (e) { /* noop */ }
     return out;
   };
   try {
