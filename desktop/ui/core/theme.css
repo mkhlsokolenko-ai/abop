@@ -58,6 +58,18 @@
   --ink1: var(--ink); --ink2: var(--ink-2); --ink3: var(--ink-3);
   --ok: var(--ok-ink); --warn: var(--warn-ink); --crit: var(--danger-ink);
   --radius: 16px;
+  /* ── обогащение из webapp (категорийные градиенты · шкала теней · сильное стекло · halo) ── */
+  --grad-ok: linear-gradient(135deg, #10b981, #059669);
+  --grad-warn: linear-gradient(135deg, #f59e0b, #ef4444);
+  --grad-info: linear-gradient(135deg, #0ea5e9, #6366f1);
+  --grad-violet: linear-gradient(135deg, #7c3aed, #a855f7);
+  --shadow-1: 0 10px 30px rgba(0, 0, 0, 0.45);
+  --shadow-2: 0 18px 50px rgba(0, 0, 0, 0.55);
+  --shadow-accent: 0 10px 30px rgba(99, 102, 241, 0.28);
+  --blur-strong: blur(20px);
+  --ok-glow: rgba(52, 211, 153, 0.28);
+  --warn-glow: rgba(245, 158, 11, 0.28);
+  --danger-glow: rgba(248, 113, 113, 0.28);
 }
 /* ── токены ДС (светлая) ── */
 :root[data-theme="light"] {
@@ -83,6 +95,12 @@
   --warn-ink: #92400e;
   --ok-ink: #065f46;
   --danger-ink: #991b1b;
+  --shadow-1: 0 8px 24px rgba(15, 23, 42, 0.10);
+  --shadow-2: 0 16px 44px rgba(15, 23, 42, 0.14);
+  --shadow-accent: 0 10px 30px rgba(99, 102, 241, 0.18);
+  --ok-glow: rgba(16, 185, 129, 0.22);
+  --warn-glow: rgba(245, 158, 11, 0.22);
+  --danger-glow: rgba(239, 68, 68, 0.20);
 }
 
 /* ── анимации ДС (verbatim) ── */
@@ -169,5 +187,30 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 
 /* стекло на инлайновых поверхностях модулей */
 .bcontent, #drawer, #composer, #files, #updateBar { backdrop-filter: var(--blur); }
-#drawer { box-shadow: -20px 0 50px rgba(0, 0, 0, 0.32); animation: ape-drawer .2s ease; }
+#drawer { box-shadow: var(--shadow-2); backdrop-filter: var(--blur-strong); animation: ape-drawer .2s ease; }
 .bubble { animation: ape-in .2s ease; }
+
+/* ── обогащение дизайн-языка из webapp (аудит 2026-09-25): статус-halo · sheen · прогресс · элевации ── */
+@keyframes ab-pulse { 0%, 100% { transform: scale(1); opacity: .85; } 50% { transform: scale(1.12); opacity: 1; } }
+@keyframes ab-stripe { to { background-position: 28px 0; } }
+
+/* статус-точка с живым ореолом (ok/warn/crit) — из семантики статусов webapp */
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 9999px; background: var(--ink-3); }
+.dot.ok { background: #34d399; box-shadow: 0 0 0 4px var(--ok-glow); animation: ab-pulse 2.4s ease-in-out infinite; }
+.dot.warn { background: #fbbf24; box-shadow: 0 0 0 4px var(--warn-glow); animation: ab-pulse 2.4s ease-in-out infinite; }
+.dot.crit { background: #f87171; box-shadow: 0 0 0 4px var(--danger-glow); animation: ab-pulse 1.6s ease-in-out infinite; }
+
+/* прогресс-бар: cubic-bezier + анимированные полосы (как в webapp) */
+.bar { height: 6px; border-radius: 6px; background: var(--hover); overflow: hidden; }
+.bar > .fill { height: 100%; border-radius: 6px; background: var(--grad); transition: width .26s cubic-bezier(.4, 0, .2, 1); }
+.bar.stripe > .fill { background-image: linear-gradient(90deg, var(--accent), var(--violet)); background-size: 28px 28px; animation: ab-stripe .8s linear infinite; }
+
+/* sheen/shimmer-свип для загрузки/акцентов */
+.sheen { position: relative; overflow: hidden; }
+.sheen::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .14), transparent); transform: translateX(-120%); animation: ape-sheen 1.8s ease-in-out infinite; }
+
+/* элевации: карточки/кнопки/модалки богаче (шкала теней webapp) */
+.ape-card { box-shadow: var(--shadow-1); transition: border-color .15s, box-shadow .2s; }
+.ape-card:hover { border-color: var(--line-2); }
+.btn.primary { box-shadow: var(--shadow-accent); }
+.chip.on { box-shadow: 0 0 0 3px var(--accent-bg); }
