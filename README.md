@@ -32,46 +32,9 @@ governance.
 
 ## Архитектура
 
-```mermaid
-flowchart TB
-    LUDA["LUDA — аудитор<br/>(контракты luda.*/1.0)"] -->|Contract Ingress| API
+![Архитектура платформы ABOP](docs/architecture.png)
 
-    subgraph CLIENTS["Клиенты"]
-        WEB["webapp<br/>браузерный UI"]
-        DESK["ABOP Desktop<br/>Electron + сайдкар"]
-    end
-
-    WEB --> API
-    DESK -->|"локальный сайдкар (JWT)"| API
-    DESK -.->|"UI-бандл (Путь А)"| API
-
-    subgraph SERVER["ABOP Web API — FastAPI / FastMCP"]
-        API["web_api.py<br/>агенты · прогоны · HITL"]
-        ING["ingress + contract_store"]
-        GOV["Конверт governance<br/>автономия · HITL · egress"]
-        MCP["MCP-шлюз<br/>RBAC · Identity Map"]
-        API --- ING --- GOV --- MCP
-    end
-
-    subgraph DATA["Хранилища"]
-        PG[("Postgres<br/>ape_pg")]
-        CANON[("Data Plane<br/>~/.ape/data/*.jsonl")]
-    end
-
-    subgraph EXT["Внешние системы (через MCP-шлюз, под ABAC)"]
-        MAIL["Почта / SMTP"]
-        DOCS["BookStack · YouGile"]
-        C1C["1С · Twenty · sLAVA"]
-    end
-
-    API --> PG
-    API --> CANON
-    MCP --> EXT
-
-    API -->|RunMetrics baseline| LUDA
-    API --> OBS["Observability<br/>Prometheus + Grafana"]
-    KC["Keycloak (OIDC)<br/>auth.engineer-ai.pro"] -.->|JWT| API
-```
+> Интерактивная версия (HTML): [docs/ABOP_Architecture.html](docs/ABOP_Architecture.html)
 
 Ключевые решения:
 
