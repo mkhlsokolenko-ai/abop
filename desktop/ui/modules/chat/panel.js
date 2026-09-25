@@ -79,11 +79,11 @@ export async function mount(root, ctx) {
           <div id="pipeBar"></div>
           <div id="quotaBar"></div>
           <div id="kb"></div>
-          <div style="padding:12px 14px;border-radius:16px;background:var(--panel);border:1px solid var(--line-2);backdrop-filter:blur(16px);display:flex;flex-direction:column;gap:11px">
+          <div style="padding:12px 14px;border-radius:16px;background:var(--panel);border:1px solid var(--line-2);backdrop-filter:var(--blur-strong);box-shadow:var(--shadow-2);display:flex;flex-direction:column;gap:11px">
             <div id="tools" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"></div>
             <div style="display:flex;align-items:flex-end;gap:10px">
               <textarea id="inp" rows="2" placeholder="Опишите задачу…  (Enter — отправить, Shift+Enter — перенос)" style="flex:1;min-width:0;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-size:13.5px;line-height:1.55"></textarea>
-              <button id="sendBtn" title="Отправить · Enter" style="width:44px;height:44px;flex:none;border:none;border-radius:12px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:16px;cursor:pointer">↑</button>
+              <button id="sendBtn" title="Отправить · Enter" style="width:44px;height:44px;flex:none;border:none;border-radius:12px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:16px;cursor:pointer;box-shadow:var(--shadow-accent)">↑</button>
             </div>
           </div>
         </div>
@@ -213,7 +213,7 @@ export async function mount(root, ctx) {
           <h1 style="margin:0;font-size:24px;font-weight:800;letter-spacing:-.6px">С чего начнём?</h1>
           <p style="margin:0;max-width:460px;font-size:13.5px;line-height:1.55;color:var(--ink-2)">Опишите задачу словами или возьмите готовый шаблон. Файлы можно просто перетащить в окно.</p></div></div>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(214px,1fr));gap:12px">
-        ${TEMPLATES.map((t, i) => `<button data-tpl="${i}" style="display:flex;flex-direction:column;align-items:flex-start;gap:7px;padding:15px;border:1px solid var(--line);border-radius:14px;background:var(--panel);backdrop-filter:blur(16px);text-align:left;cursor:pointer">
+        ${TEMPLATES.map((t, i) => `<button data-tpl="${i}" style="display:flex;flex-direction:column;align-items:flex-start;gap:7px;padding:15px;border:1px solid var(--line);border-radius:14px;background:var(--panel);backdrop-filter:blur(16px);box-shadow:var(--shadow-1);text-align:left;cursor:pointer;transition:border-color .15s,box-shadow .2s">
           <span style="font-size:17px">${t[0]}</span><span style="font-size:13.5px;font-weight:600;color:var(--ink)">${t[1]}</span><span style="font-size:11.5px;line-height:1.45;color:var(--ink-3)">${t[2]}</span></button>`).join("")}
       </div>
       <div style="display:flex;align-items:center;gap:16px;padding:14px 18px;border-radius:14px;background:var(--panel);border:1px solid var(--line);flex-wrap:wrap">
