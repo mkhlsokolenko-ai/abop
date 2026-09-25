@@ -173,13 +173,14 @@ export async function mount(root, ctx) {
     const fnd = (s.findings || []).map((t) => `<div style="font-size:12px;color:var(--ink);border-left:2px solid var(--accent);padding-left:10px;margin:4px 0">${esc(cleanFinding(t).slice(0, 400))}</div>`).join("");
     const dl = (s.delivery || []).map((d) => { const wait = d.mode === "awaiting_hitl"; return `<div style="font-size:11.5px;color:${wait ? "#fbbf24" : "var(--ink-2)"}">${esc(d.channel)}${d.to ? " → " + esc(d.to) : ""} · ${wait ? "ожидает подтверждения (HITL)" : esc(d.mode)}</div>`; }).join("");
     const hasWait = (s.delivery || []).some((d) => d.mode === "awaiting_hitl");
+    const hitlIds = (s.delivery || []).filter((d) => d.mode === "awaiting_hitl" && d.hitl_id).map((d) => d.hitl_id).join(",");
     const verd = s.verdict && s.verdict.within_envelope != null ? `<span style="font-family:var(--mono);font-size:10px;color:${s.verdict.within_envelope ? "#6ee7b7" : "#fca5a5"}">конверт: ${s.verdict.within_envelope ? "в рамках" : "превышен"}${s.verdict.autonomy_used ? " · " + esc(s.verdict.autonomy_used) : ""}</span>` : "";
     return `<div style="display:flex;flex-direction:column;gap:8px">
       <div style="display:flex;align-items:center;gap:8px"><span style="font-family:var(--mono);font-size:9.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--ink-3)">агент ${esc(s.agent_id || "")}</span>${s.cached ? '<span style="font-size:10px;color:var(--ink-3)">· из кэша</span>' : ""}${s.trace_id ? `<span style="font-size:10px;color:var(--ink-3)">· trace ${esc((s.trace_id || "").slice(0, 8))}</span>` : ""}</div>
       <div style="font-size:12.5px;color:var(--ink-2)">находок: <b>${esc(String(s.findings_total ?? 0))}</b>${s.investigations_total != null ? ` · расследований: <b>${esc(String(s.investigations_total))}</b>` : ""}${s.tokens ? ` · <span title="токены этого прогона — повод для оптимизации">🎫 ${s.tokens >= 1000 ? Math.round(s.tokens / 1000) + "k" : s.tokens}</span>` : ""} ${verd}</div>
       ${fnd || '<div style="font-size:12px;color:var(--ink-3)">Находок не выявлено.</div>'}
       ${dl ? `<div style="font-family:var(--mono);font-size:9.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--ink-3);margin-top:4px">доставка</div>${dl}` : ""}
-      ${hasWait ? `<div data-agent="${esc(s.agent_id || "")}" style="margin-top:6px;padding:11px 12px;border-radius:11px;border:1px solid rgba(245,158,11,.45);background:rgba(245,158,11,.12);display:flex;flex-direction:column;gap:8px">
+      ${hasWait ? `<div data-agent="${esc(s.agent_id || "")}" data-hitl="${esc(hitlIds)}" style="margin-top:6px;padding:11px 12px;border-radius:11px;border:1px solid rgba(245,158,11,.45);background:rgba(245,158,11,.12);display:flex;flex-direction:column;gap:8px">
         <span style="font-size:12px;color:#fbbf24;font-weight:600">🛡 Конверт агента требует вашего подтверждения внешнего действия</span>
         <span style="display:flex;gap:8px"><button class="hitlOk" style="padding:8px 14px;border:none;border-radius:10px;background:rgba(16,185,129,.18);color:#6ee7b7;font-size:12px;font-weight:600;cursor:pointer">✓ Подтвердить действие</button>
           <button class="hitlNo" style="padding:8px 14px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--ink-2);font-size:12px;font-weight:600;cursor:pointer">Отклонить</button></span></div>` : ""}
@@ -408,17 +409,24 @@ export async function mount(root, ctx) {
 
   // HITL прямо в основном окне чата: подтвердить/отклонить внешнее действие ЭТОГО прогона.
   // Точечно — по agent_id прогона (не подтверждаем чужую очередь скопом).
+  // Подтверждение HITL: точечно по hitl_id ЭТОГО прогона (не «вся очередь по agent_id»). Показываем
+  // реальный результат доставки (напр. «задача создана в Redmine: #14»), чтобы было видно, что упало.
   async function decideDelivery(btn, decision) {
     const wrap = btn.closest("[data-agent]");
     const agentId = wrap ? wrap.getAttribute("data-agent") : "";
+    let ids = ((wrap && wrap.getAttribute("data-hitl")) || "").split(",").filter(Boolean);
     btn.textContent = decision === "approve" ? "Подтверждаю…" : "Отклоняю…"; btn.disabled = true;
     try {
-      let q = []; try { q = await api("/api/modules/agents/hitl"); } catch {}
-      if (!Array.isArray(q)) q = [];
-      const mine = q.filter((it) => !agentId || it.agent_id === agentId || !it.agent_id);
-      let n = 0;
-      for (const it of mine) { try { await api("/api/modules/agents/hitl/" + encodeURIComponent(it.id) + "/approve", { method: "POST", body: JSON.stringify({ decision }) }); n++; } catch {} }
-      if (wrap) wrap.innerHTML = `<span style="font-size:12px;color:${decision === "approve" ? "#6ee7b7" : "var(--ink-3)"};font-weight:600">${decision === "approve" ? "✓ Действие подтверждено" : "⃠ Действие отклонено"}${n ? " (" + n + ")" : ""}</span>`;
+      if (!ids.length) {   // фолбэк для старых карточек без hitl_id — по agent_id из очереди
+        let q = []; try { q = await api("/api/modules/agents/hitl"); } catch {}
+        if (!Array.isArray(q)) q = [];
+        ids = q.filter((it) => agentId && it.agent_id === agentId).map((it) => it.id);
+      }
+      let n = 0, last = "";
+      for (const id of ids) {
+        try { const r = await api("/api/modules/agents/hitl/" + encodeURIComponent(id) + "/approve", { method: "POST", body: JSON.stringify({ decision }) }); n++; if (r && r.delivery) last = r.delivery; } catch {}
+      }
+      if (wrap) wrap.innerHTML = `<span style="font-size:12px;color:${decision === "approve" ? "#6ee7b7" : "var(--ink-3)"};font-weight:600">${decision === "approve" ? "✓ Действие подтверждено" : "⃠ Действие отклонено"}${n ? " (" + n + ")" : ""}</span>${last && decision === "approve" ? `<div style="font-size:11px;color:var(--ink-3);margin-top:3px">${esc(String(last).slice(0, 140))}</div>` : ""}`;
     } catch (e) { btn.textContent = "Ошибка"; btn.disabled = false; }
   }
 
@@ -467,30 +475,20 @@ export async function mount(root, ctx) {
 
   // авто-подсказка агентов по тексту задачи: матчим по ключевым словам семьи/имени/роли → зелёные
   // хештеги; клик — запуск агента с текущим запросом как контекстом (цепочка активируется по контексту).
-  const FAM_KW = {
-    management: ["почт", "письм", "задач", "тикет", "джир", "jira", "трекер", "редмайн", "redmine", "статус", "совещ", "митинг", "переписк", "ветк", "напоминан", "отчёт", "дайджест"],
-    finance: ["оплат", "счёт", "счет", "платёж", "ндс", "сверк", "дебитор", "финанс", "бюджет", "деньг", "проводк"],
-    audit: ["аудит", "1с", "1c", "расхожд", "первичк", "фактур", "контрагент", "следовател"],
-    analytics: ["аналит", "метрик", "дашборд", "показател", "динамик", "прогноз"],
-    research: ["ресёрч", "рынок", "исслед", "конкурент", "клиент", "icp"],
-  };
-  function matchAgents(text) {
-    const t = (text || "").toLowerCase().trim();
-    if (t.length < 5 || !abopAgents.length) return [];
-    const scored = abopAgents.map((a) => {
-      let s = 0;
-      for (const k of (FAM_KW[a.family] || [])) if (t.includes(k)) s += 1;
-      for (const w of ((a.name || "") + " " + (a.role || "")).toLowerCase().split(/[^a-zа-яё0-9]+/)) if (w.length > 3 && t.includes(w)) s += 2;
-      return { a, s };
-    }).filter((x) => x.s > 0).sort((x, y) => y.s - x.s);
-    return scored.slice(0, 3).map((x) => x.a);
-  }
-  let _sugTimer = null;
-  function renderAgentSuggest(text) {
+  // авто-подсказка агентов: СЕМАНТИКА через серверный /match (лексика + эмбеддинги BGE-M3), а не
+  // хардкод-словарь — реагирует на СМЫСЛ запроса, а не только «почта/аудит». Зелёные хештеги; клик —
+  // запуск агента с текущим запросом как контекстом. _sugSeq отбрасывает ответы на устаревший ввод.
+  let _sugTimer = null, _sugSeq = 0;
+  async function renderAgentSuggest(text) {
     const box = $("agentSug"); if (!box) return;
-    const matched = matchAgents(text);
-    box.innerHTML = matched.map((a) => `<button class="agSug" data-id="${esc(a.id)}" title="Запустить агента «${esc(a.name)}» по этой задаче" style="padding:6px 11px;border:1px solid rgba(16,185,129,.5);border-radius:9999px;background:rgba(16,185,129,.16);color:#6ee7b7;font-size:11.5px;font-weight:600;cursor:pointer">▶ #${esc(a.name)}</button>`).join("");
-    box.querySelectorAll(".agSug").forEach((b) => b.onclick = () => { const a = abopAgents.find((x) => x.id === b.dataset.id) || {}; runAbopAgent(b.dataset.id, a.name || b.dataset.id, $("inp").value.trim()); });
+    const t = (text || "").trim();
+    if (t.length < 5) { box.innerHTML = ""; return; }
+    const seq = ++_sugSeq;
+    let matched = [];
+    try { const r = await api(M + "/match", { method: "POST", body: JSON.stringify({ q: t }) }); matched = ((r && r.matches) || []).filter((m) => (m.score || 0) >= 0.3).slice(0, 3); } catch {}
+    if (seq !== _sugSeq) return;   // пришёл ответ на устаревший ввод — игнор
+    box.innerHTML = matched.map((a) => `<button class="agSug" data-id="${esc(a.id)}" data-name="${esc(a.name)}" title="Запустить агента «${esc(a.name)}» по этой задаче (совпадение ${Math.round((a.score || 0) * 100)}%)" style="padding:6px 11px;border:1px solid rgba(16,185,129,.5);border-radius:9999px;background:rgba(16,185,129,.16);color:#6ee7b7;font-size:11.5px;font-weight:600;cursor:pointer">▶ #${esc(a.name)}</button>`).join("");
+    box.querySelectorAll(".agSug").forEach((b) => b.onclick = () => runAbopAgent(b.dataset.id, b.dataset.name || b.dataset.id, $("inp").value.trim()));
   }
 
   const BINARY_RE = /\.(pdf|docx|xlsx)$/i;   // извлечение текста на стороне сайдкара
