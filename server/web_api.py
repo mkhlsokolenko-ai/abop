@@ -2548,6 +2548,11 @@ def _out_nodes(agent: dict) -> list:
             if n.get("kind") == "out" and (n.get("out") or {}).get("channel")]
 
 
+# Канал доставки → система реестра (для ABAC-гейта на действии). Локальные каналы (pdf/file) → None.
+_CHANNEL_SYSTEM = {"redmine": "redmine", "bookstack": "bookstack", "email": "mailpit",
+                   "yandex": "mailpit", "yougile": "yougile", "twenty": "twenty", "nocodb": "nocodb"}
+
+
 async def _send_channel(cfg: dict, agent_name: str, html_report: str, real: bool) -> str:
     """Отправка отчёта в канал OUT-узла (почта/BookStack/YouGile/Яндекс/PDF). real=False → dry_run
     (превью). Переиспользуется прогоном и подтверждением HITL (approve → real=True)."""
@@ -2637,10 +2642,25 @@ async def _deliver_out_nodes(agent: dict, result: dict, actor: str, deliver_filt
             if em.get("external_id") and not c.get("to"):
                 c["to"] = em.get("external_id")   # по умолчанию — себе (свой ящик)
         return c
+    fam_key = access.scope_key(family=fam)
     deliveries = []
     for n in nodes:
         cfg = _enrich(n.get("out") or {}, (n.get("out") or {}).get("channel"))
         channel = cfg.get("channel")
+        # RBAC агентов на ШЛЮЗЕ (действие): каждый outbound tool-call к системе гейтится по scope семьи
+        # (deny-by-default) — «аналитик-агент не пишет в системы архитектуры». Локальные каналы (pdf/file)
+        # без системы. Complement к read-гейту (_gate_agent_data). Отказ → пропуск узла + аудит.
+        sys_id = _CHANNEL_SYSTEM.get(channel)
+        if sys_id:
+            sysrec = await systems_store.get(sys_id)
+            if sysrec:
+                ok, reason = access.can_reach_system(fam_key, sysrec)
+                if not ok:
+                    await access.audit_denial(actor, fam_key, sys_id, "deliver:" + str(channel), reason)
+                    deliveries.append({"node": n.get("id"), "title": n.get("title"), "channel": channel,
+                                       "to": cfg.get("to"), "mode": "denied",
+                                       "result": f"⛔ доступ к системе «{sys_id}» закрыт для семьи (ABAC): {reason}"})
+                    continue
         node_html = await _report_for(cfg)   # отчёт по шаблону узла (или дефолтный)
         if cfg.get("hitl"):
             # заявка в очередь HITL — оператор подтвердит, тогда отправим реально
