@@ -194,6 +194,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 @keyframes ab-pulse { 0%, 100% { transform: scale(1); opacity: .85; } 50% { transform: scale(1.12); opacity: 1; } }
 @keyframes ab-stripe { to { background-position: 28px 0; } }
 @keyframes gwire-flow { to { stroke-dashoffset: -26; } }   /* поток данных по рёбрам графа (семантика webapp) */
+@keyframes ape-stage { 0%, 100% { fill: #fbbf24; } 33% { fill: #818cf8; } 66% { fill: #34d399; } }  /* маячок «думает»: жёлтый→синий→зелёный */
 
 /* статус-точка с живым ореолом (ok/warn/crit) — из семантики статусов webapp */
 .dot { display: inline-block; width: 9px; height: 9px; border-radius: 9999px; background: var(--ink-3); }

@@ -21,6 +21,10 @@ export function apeMascot(state = "idle", size = 32) {
   else if (state === "stop") ov = `<g stroke="#991b1b" stroke-width="3.4" stroke-linecap="round"><path d="M29 38l8 8M37 38l-8 8M43 38l8 8M51 38l-8 8"/></g>`;
   else if (state === "done") ov = `<path d="M30 43l6 6 13-13" stroke="#065f46" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>`;
   else if (state === "scan") ov = `<rect x="18" y="30" width="44" height="24" rx="12" fill="#0f172a"/><rect x="20" y="40" width="40" height="4" fill="#34d399" opacity="0.85" style="animation:ab-scan 1.7s ease-in-out infinite"/>`;
+  // Маячок: в «думает» циклит по стадиям жёлтый→синий→зелёный + пульс-ореол (живее воспринимается).
+  const beacon = state === "thinking"
+    ? `<circle cx="40" cy="6" r="8" fill="#818cf8" opacity=".28" style="animation:ab-pulse 1.4s ease-in-out infinite;transform-box:fill-box;transform-origin:center"/><circle cx="40" cy="6" r="4.5" style="animation:ape-stage 1.8s ease-in-out infinite"/>`
+    : `<circle cx="40" cy="6" r="4.5" fill="${c.beacon}"/>`;
   return `<svg width="${w}" height="${h}" viewBox="0 -6 80 106" fill="none" style="display:block;flex:none">
     <rect x="16" y="76" width="18" height="14" rx="6" fill="${c.leg}"/>
     <rect x="46" y="76" width="18" height="14" rx="6" fill="${c.leg}"/>

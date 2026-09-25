@@ -36,8 +36,10 @@ _LLM_TRUNCATE = os.getenv("ABOP_RUN_LLM_TRUNCATE", "1") != "0"
 # реально уходит в LLM-промпт (дорого по токенам); data — потолок символов дайджеста; body — методика.
 # Оптимизация (2026-09-18): в LLM идёт ДАЙДЖЕСТ (counts по типам = весь scope + маленький сэмпл),
 # а не полный дамп → в разы меньше токенов/времени. Находки audit считает КОД (детерминир.), не LLM.
-_LIM = {"rows": 5000, "sample": 6, "body": 2000, "data": 4000, "max_tokens": 1200} if _LLM_TRUNCATE \
-    else {"rows": 5000, "sample": 20, "body": 8000, "data": 20000, "max_tokens": 1600}
+# max_tokens — для СТРУКТУРНЫХ навыков (JSON-находки компактны); max_tokens_free — для FREEFORM
+# (рассуждающих: план/письмо/БФТ) им нужно БОЛЬШЕ места, иначе нарратив обрывается на полуслове.
+_LIM = {"rows": 5000, "sample": 6, "body": 2000, "data": 4000, "max_tokens": 1200, "max_tokens_free": 2600} if _LLM_TRUNCATE \
+    else {"rows": 5000, "sample": 20, "body": 8000, "data": 20000, "max_tokens": 1600, "max_tokens_free": 3600}
 # max_tokens нарратива навыка настраивается на лету (ABOP_RUN_MAX_TOKENS; прод=1600) — узкое место
 # скорости на выделенном боксе = генерация output-токенов; режем длину нарратива (детекцию считает код,
 # не LLM). Замер audit1c: 2500→77с, 1200→42с (обрыв нарратива), 1600 — баланс. Следующий рычаг против
@@ -45,6 +47,11 @@ _LIM = {"rows": 5000, "sample": 6, "body": 2000, "data": 4000, "max_tokens": 120
 _MT = os.getenv("ABOP_RUN_MAX_TOKENS")
 if _MT and _MT.isdigit():
     _LIM["max_tokens"] = int(_MT)
+_MTF = os.getenv("ABOP_RUN_MAX_TOKENS_FREE")
+if _MTF and _MTF.isdigit():
+    _LIM["max_tokens_free"] = int(_MTF)
+# freeform всегда ≥ структурного (рассуждениям нужно больше)
+_LIM["max_tokens_free"] = max(_LIM["max_tokens_free"], _LIM["max_tokens"])
 
 # ── Structured output (guided JSON) против «раздутости рассуждений» ──
 # У навыка-ДЕТЕКТОРА (аудит/список находок) чёткая задача → просим СТРОГО JSON по схеме (vLLM xgrammar
@@ -335,7 +342,7 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
             for _attempt in range(_LLM_RETRIES + 1):
                 try:
                     resp = await chat_fn(messages=[{"role": "user", "content": prompt}], profile="standard",
-                                         max_tokens=_LIM["max_tokens"],
+                                         max_tokens=(_LIM["max_tokens"] if use_struct else _LIM["max_tokens_free"]),
                                          response_format=_resp_fmt)
                     err = None
                     break
