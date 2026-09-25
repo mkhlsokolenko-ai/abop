@@ -34,7 +34,9 @@ function pyCmd() {
 }
 
 function startSidecar(port) {
-  const env = Object.assign({}, process.env, { APE_SIDECAR_PORT: String(port) });
+  // APE_APP_VERSION — реальная версия приложения (из package.json) → сайдкар отдаёт её в /api/health,
+  // шапка UI показывает актуальную версию, а не захардкоженную.
+  const env = Object.assign({}, process.env, { APE_SIDECAR_PORT: String(port), APE_APP_VERSION: app.getVersion() });
   let proc;
   if (app.isPackaged) {
     // прод: автономный бинарь сайдкара из extraResources (Python пользователю не нужен)
