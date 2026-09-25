@@ -49,6 +49,7 @@ class AuthorIn(BaseModel):
     skills: list[str] = []
     name: str = ""
     member: str = ""
+    output: str = ""   # тумблер режима: "structured" | "freeform" | "" (наследовать от навыка)
 
 
 class PipelineStep(BaseModel):
@@ -115,7 +116,7 @@ def recipes():
 def author(body: AuthorIn):
     """Собрать агента-цепочку из выбранных навыков (простой менеджерский агент, без контракта)."""
     try:
-        return {"ok": True, "agent": abop.author(body.family, body.skills, body.name, body.member)}
+        return {"ok": True, "agent": abop.author(body.family, body.skills, body.name, body.member, body.output)}
     except abop.AbopError as e:
         return _err(e)
 

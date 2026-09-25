@@ -2174,8 +2174,13 @@ async def agent_author(body: dict, u: dict = Depends(user)) -> JSONResponse:
     except ValueError as ex:
         raise HTTPException(404, str(ex))
     env = spec["envelope"]
+    # output-режим из тумблера конструктора (structured|freeform) → пишем на узлы; runner прочитает его
+    # поверх дефолта навыка и подберёт лимит токенов (freeform ⇒ больше, чтобы не резать рассуждения).
+    # Пусто = наследовать режим от самого навыка.
+    _out = str((body or {}).get("output", "")).strip()
+    _on = {"output": _out} if _out in ("structured", "freeform") else {}
     nodes = [{"id": s["id"], "kind": "skill", "skill": s["id"], "autonomy": env["autonomy_max"],
-              "hitl": s["safety"]["mode"] == "action"} for s in spec["skills"]]
+              "hitl": s["safety"]["mode"] == "action", **_on} for s in spec["skills"]]
     graph = {"nodes": nodes, "edges": []}
     name = str((body or {}).get("name", "")).strip() or f"{spec['family_title']} · {spec['role_title']}"
     # Стабильный per-agent id для «моего» агента: пересборка тем же пользователем того же агента →

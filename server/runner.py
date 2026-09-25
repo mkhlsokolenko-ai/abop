@@ -236,10 +236,14 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
     skill_schemas = skill_schemas or {}
     base = run_agent(agent, contract, safety_of)
     graph = agent.get("graph") or {}
-    skills = [n.get("skill") or n["id"] for n in (graph.get("nodes") or []) if n.get("kind") == "skill"]
+    skills = [n for n in (graph.get("nodes") or []) if n.get("kind") == "skill"]  # УЗЛЫ (несут per-node output)
     sem = asyncio.Semaphore(_LLM_CONCURRENCY)  # rate-limiter: не больше N одновременных вызовов к RouteAI
 
-    async def _analyze(sid):
+    async def _analyze(node):
+        sid = node.get("skill") or node.get("id")
+        # флаг output: узел графа ПЕРЕКРЫВАЕТ дефолт навыка (safety_of) — это тумблер «структурный/
+        # рассуждения» при заведении агента (задаёт лимит токенов: freeform ⇒ max_tokens_free).
+        _out = node.get("output") or (safety_of(sid) or {}).get("output", "structured")
         entities = []
         for ds in (skill_sources(sid) or []):
             e = ds.get("entity")
@@ -298,7 +302,7 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
         explain = bool(findings_context)
         # формат вывода навыка: structured (JSON-схема, детекторы) | freeform (документ/проза).
         # Флаг `output` в конфиге навыка (safety_of), настраивается в UI; по умолчанию structured.
-        use_struct = _STRUCTURED and (safety_of(sid) or {}).get("output", "structured") != "freeform"
+        use_struct = _STRUCTURED and _out != "freeform"
         if explain:
             _head += ("=== ВЫЯВЛЕННЫЕ НАХОДКИ (детерминированный движок — ИСТИНА, не оспаривать) ===\n"
                       + str(findings_context)[:_LIM["data"]] + "\n\n")

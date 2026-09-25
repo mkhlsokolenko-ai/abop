@@ -11,7 +11,7 @@ export async function mount(root, ctx) {
   const { api } = ctx;
   let agents = [], hitl = [], families = [], mode = "catalog", tab = "mine";
   // состояние конструктора: выбранная семья, набор навыков, имя; editingId — правка «моего» агента
-  let bFamily = "", bSkills = new Set(), bName = "", editingId = null;
+  let bFamily = "", bSkills = new Set(), bName = "", editingId = null, bOutput = "";  // bOutput: "" наследовать | structured | freeform
 
   // Правка «моего» агента: открыть конструктор пред-заполненным (семья/навыки/имя из графа агента);
   // сохранение под тем же именем → НОВАЯ ВЕРСИЯ того же агента (стабильный id, #9). Замыкаем ценность.
@@ -22,6 +22,7 @@ export async function mount(root, ctx) {
     bFamily = full.family || "";
     bSkills = new Set((g.nodes || []).filter((n) => n.kind === "skill" && n.skill).map((n) => n.skill));
     bName = full.name || "";
+    bOutput = ((g.nodes || []).find((n) => n.kind === "skill" && n.output) || {}).output || "";
     editingId = id;
     mode = "builder"; render();
   }
@@ -74,7 +75,7 @@ export async function mount(root, ctx) {
 
     root.querySelectorAll(".tabBtn").forEach((b) => (b.onclick = () => { tab = b.dataset.tab; render(); }));
     root.querySelector("#refresh").onclick = async () => { await loadAgents(); await loadHitl(); render(); };
-    const bb = root.querySelector("#build"); if (bb) bb.onclick = async () => { if (!families.length) await loadFamilies(); bFamily = ""; bSkills = new Set(); bName = ""; editingId = null; mode = "builder"; render(); };
+    const bb = root.querySelector("#build"); if (bb) bb.onclick = async () => { if (!families.length) await loadFamilies(); bFamily = ""; bSkills = new Set(); bName = ""; editingId = null; bOutput = ""; mode = "builder"; render(); };
     root.querySelectorAll(".run").forEach((b) => (b.onclick = () => runAgent(b.dataset.id, b)));
     root.querySelectorAll(".cfg").forEach((b) => (b.onclick = () => reconfig(b.dataset.id)));
     root.querySelectorAll(".del").forEach((b) => (b.onclick = () => deleteAgent(b.dataset.id, b.dataset.name)));
@@ -123,6 +124,11 @@ export async function mount(root, ctx) {
           <label style="${LBL}">3 · Цепочка и имя</label>
           <div style="font-family:var(--mono);font-size:11.5px;color:#a5b4fc">${chain.map((s, i) => esc(s) + (i < chain.length - 1 ? " → " : "")).join("")}</div>
           <input id="bname" placeholder="Имя агента (необязательно)" value="${esc(bName)}" style="${BTN};background:var(--field)"/>
+          <label style="${LBL};margin-top:2px">Режим вывода (лимит токенов)</label>
+          <div style="display:flex;gap:6px">
+            ${[["", "Наследовать"], ["structured", "Структурный"], ["freeform", "Рассуждения"]].map(([v, t]) => `<button type="button" data-o="${v}" class="bout" style="${BTN};flex:1;${bOutput === v ? "background:var(--accent-bg);color:var(--accent-ink);border-color:var(--line-2)" : ""}">${t}</button>`).join("")}
+          </div>
+          <div style="font-size:10.5px;color:var(--ink-3);line-height:1.4">Рассуждения — больше токенов на нарратив (план/письмо/анализ), не обрежет мысль; структурный — компактный JSON (цифры/находки). Пусто = как у навыка.</div>
           <button id="create" style="${BTN};background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;margin-top:4px">${editingId ? "Сохранить новую версию" : "Создать агента"} (${chain.length} навык${chain.length > 1 ? "ов" : ""})</button>
           ${editingId ? `<div style="font-size:11px;color:var(--ink-3)">Сохранение под тем же именем «${esc(bName)}» → новая версия того же агента.</div>` : ""}
           <div id="berr"></div>
@@ -133,11 +139,12 @@ export async function mount(root, ctx) {
     root.querySelector("#fam").onchange = (e) => { bFamily = e.target.value; bSkills = new Set(); render(); };
     root.querySelectorAll(".sk").forEach((c) => (c.onchange = () => { if (c.checked) bSkills.add(c.value); else bSkills.delete(c.value); render(); }));
     const nm = root.querySelector("#bname"); if (nm) nm.oninput = (e) => { bName = e.target.value; };
+    root.querySelectorAll(".bout").forEach((b) => (b.onclick = () => { bOutput = b.dataset.o; render(); }));
     const cr = root.querySelector("#create");
     if (cr) cr.onclick = async () => {
       cr.textContent = "Создаю…"; cr.disabled = true;
       try {
-        const r = await api(A + "/author", { method: "POST", body: JSON.stringify({ family: bFamily, skills: [...bSkills], name: bName }) });
+        const r = await api(A + "/author", { method: "POST", body: JSON.stringify({ family: bFamily, skills: [...bSkills], name: bName, output: bOutput }) });
         if (r && r.ok) { editingId = null; await loadAgents(); mode = "catalog"; render(); }
         else { root.querySelector("#berr").innerHTML = `<div style="color:#fca5a5;font-size:12px">Ошибка: ${esc((r && r.error) || "не удалось")}</div>`; cr.textContent = "Создать агента"; cr.disabled = false; }
       } catch (e) { root.querySelector("#berr").innerHTML = `<div style="color:#fca5a5;font-size:12px">${esc(String(e && e.message || e))}</div>`; cr.textContent = "Создать агента"; cr.disabled = false; }

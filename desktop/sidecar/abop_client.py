@@ -123,14 +123,16 @@ def connectors() -> list:
     return (r or {}).get("connectors", []) if isinstance(r, dict) else (r or [])
 
 
-def author(family: str, skills: list, name: str = "", member: str = "") -> dict:
+def author(family: str, skills: list, name: str = "", member: str = "", output: str = "") -> dict:
     """Создать агента-цепочку БЕЗ контракта из выбранных навыков (простые менеджерские агенты).
-    Конверт/автономия — консервативно из навыков. manager+."""
+    Конверт/автономия — консервативно из навыков. manager+. output — тумблер режима вывода."""
     body = {"family": family, "skills": skills}
     if name:
         body["name"] = name
     if member:
         body["member"] = member
+    if output:
+        body["output"] = output
     return _req("POST", "/api/agents/author", body, timeout=60)
 
 
