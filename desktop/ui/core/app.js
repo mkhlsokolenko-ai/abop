@@ -61,11 +61,11 @@ async function renderAuth() {
   ctx.email = me.email || null;
   if (me.authed) {
     // Показываем, ПОД КАКИМ аккаунтом и ПОЧТОЙ работают агенты (адресность/Identity Map).
-    const mail = me.email ? `<span title="почта, под которой действуют агенты" style="font-size:11px;color:var(--ink-3)">✉ ${me.email}</span>` : "";
+    const mail = me.email ? `<span title="почта, под которой действуют агенты" style="font-size:11px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px">✉ ${me.email}</span>` : "";
     const dept = me.department ? `<span style="font-size:10.5px;color:var(--accent-ink-2,#a5b4fc)">· ${me.department}</span>` : "";
-    box.innerHTML = `<span style="display:flex;flex-direction:column;line-height:1.25;margin-right:10px">
-        <span style="font-size:12.5px;font-weight:600">🔑 ${me.name || me.user || ""}${dept}</span>${mail}</span>
-      <button class="btn sm" id="logoutBtn">Выйти</button>`;
+    box.innerHTML = `<span style="display:flex;flex-direction:column;line-height:1.25;min-width:0;max-width:210px">
+        <span style="font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">🔑 ${me.name || me.user || ""}${dept}</span>${mail}</span>
+      <button class="btn sm" id="logoutBtn" style="flex:none">Выйти</button>`;
     $("logoutBtn").onclick = async () => { await api("/api/auth/logout", { method: "POST" }); renderAuth(); };
   } else {
     // Единый вход: шлюз ABOP (Keycloak) — из него подтягиваются почта и доступы в системы (RBAC/ABAC).
@@ -100,13 +100,15 @@ function railBtn(glyph, label, on) {
   return `<span style="font-size:16px;line-height:1">${glyph}</span><span style="font-size:10px;font-weight:600">${label}</span>`
     .replace(/^/, `<button data-rb style="width:100%;padding:10px 4px;display:flex;flex-direction:column;align-items:center;gap:5px;border:1px solid ${bd};border-radius:12px;background:${bg};color:${fg}">`) + `</button>`;
 }
-// Рейл эталона APE Desktop = 3 раздела: Чат / Агент / Кабинет. Остальное — через палитру (Ctrl+K).
-// Рейл: Чат / Кабинет. «Агенты» убраны — агенты вызываются прямо из чата (⭑ на панели),
-// конструктор цепочек не нужен (в новом подходе решают подключённые системы + доступы). Модуль
-// agents остаётся доступен через палитру (Ctrl+K) — его /hitl использует чат.
-const RAIL = ["chat", "cabinet"];
+// Рейл показывает ВСЕ доступные модули (раньше был жёсткий ["chat","cabinet"] → всё остальное
+// пряталось за палитрой/«+» и было «невостребовано»). Порядок — осмысленный, «Чат» первым;
+// ролевые модули (security/graphlens/opslens) сами отфильтруются canSee/visibleModules.
+const RAIL_ORDER = ["chat", "connectors", "agents", "graphlens", "opslens", "security", "cabinet"];
 const RAIL_TITLE = {};
-function railModules() { return RAIL.map((id) => MODULES.find((m) => m.id === id)).filter((m) => m && canSee(m.id)); }
+function railModules() {
+  const rank = (id) => { const i = RAIL_ORDER.indexOf(id); return i < 0 ? RAIL_ORDER.length : i; };
+  return visibleModules().slice().sort((a, b) => rank(a.id) - rank(b.id));
+}
 function renderNav() {
   $("railNav").innerHTML = railModules().map((m) =>
     railBtn(icon(m.icon), RAIL_TITLE[m.id] || m.title, m.id === active).replace("data-rb", `data-id="${m.id}"`)).join("");
@@ -114,7 +116,7 @@ function renderNav() {
 }
 
 // Быстрые функции в рейле (настраиваемые, persist localStorage) — из макета.
-const QF_DEFAULT = ["new", "palette", "theme"];
+const QF_DEFAULT = ["new"];   // палитра/тема уже в хедере — не дублируем; рейл теперь показывает все модули
 function quickActions() {
   const a = [
     { id: "new", label: "Новый чат", icon: "➕", run: async () => { await loadModule("chat"); const b = document.querySelector("#newTh"); if (b) b.click(); } },
@@ -254,12 +256,20 @@ function openPalette() {
 }
 
 async function refreshCost() {
+  // Реальный биллинг из RunMetrics (тот же источник, что нижний чип в чате), а не старая
+  // недельная usage-метрика кабинета — иначе верхняя «квота» вводила в заблуждение (#2).
   try {
-    const u = await api("/api/modules/cabinet/usage");
-    if (u.ok && u.report && u.report.week) {
-      const w = u.report.week;
-      const cv = document.getElementById("costVal"); if (cv) cv.textContent = (w.cost_rub != null ? w.cost_rub.toFixed(0) : "0") + " ₽";
-      const qv = document.getElementById("quotaVal"); if (qv) { const left = 100 - Math.round(w.used_pct || 0); qv.textContent = "квота " + left + "%"; qv.style.color = left < 15 ? "var(--danger-ink)" : "var(--ink-2)"; }
+    const b = await api("/api/modules/cabinet/billing");
+    if (b && !b.error && b.tokens != null) {
+      const fmt = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? Math.round(n / 1e3) + "k" : String(n));
+      const cv = document.getElementById("costVal"); if (cv) cv.textContent = (b.spent_rub ? b.spent_rub + " ₽" : "≈0 ₽");
+      const qv = document.getElementById("quotaVal");
+      if (qv) {
+        const pct = Math.round(b.tokens_pct || 0);
+        qv.textContent = "токены " + fmt(b.tokens) + " / " + fmt(b.token_quota);
+        qv.title = "остаток " + fmt(b.tokens_remaining) + " · " + (100 - pct) + "% квоты";
+        qv.style.color = pct >= 90 ? "var(--danger-ink)" : pct >= 70 ? "#fbbf24" : "var(--ink-2)";
+      }
     }
   } catch {}
 }

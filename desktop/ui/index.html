@@ -25,14 +25,14 @@
         <span>Поиск и команды</span>
         <span style="margin-left:auto;font-family:var(--mono);font-size:10.5px;padding:2px 7px;border-radius:6px;background:var(--hover)">Ctrl K</span>
       </button>
-      <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
-        <div id="costPill" title="Расход текущей недели" style="display:flex;align-items:center;gap:9px;padding:7px 13px;border-radius:9999px;background:var(--panel);border:1px solid var(--line)">
+      <div style="margin-left:auto;display:flex;align-items:center;gap:10px;min-width:0">
+        <div id="costPill" title="Реальный расход токенов (RunMetrics)" style="display:flex;align-items:center;gap:9px;padding:7px 13px;border-radius:9999px;background:var(--panel);border:1px solid var(--line);flex:none">
           <span id="costVal" style="font-family:var(--mono);font-size:11.5px;color:var(--ink-2)">— ₽</span>
           <span style="width:1px;height:12px;background:var(--line-2)"></span>
           <span id="quotaVal" style="font-family:var(--mono);font-size:11.5px;color:var(--ink-2)">квота —</span>
         </div>
         <button id="themeBtn" title="Тема" style="width:34px;height:34px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink-2);font-size:14px">🌙</button>
-        <div id="authBox"></div>
+        <div id="authBox" style="display:flex;align-items:center;gap:8px;min-width:0"></div>
       </div>
     </header>
 

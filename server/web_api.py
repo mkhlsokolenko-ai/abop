@@ -3211,11 +3211,20 @@ async def pipeline_run(pid: str, body: dict, u: dict = Depends(user)) -> JSONRes
                                           user_context=step_ctx, deliver_filter=deliver)
             result = res["result"]
             prev_ctx = _result_to_context(agent, result)
+            _sc = ((res.get("saved") or {}).get("run_metrics") or {}).get("cost") or {}
+            _step_tokens = int(_sc.get("input_tokens") or 0) + int(_sc.get("output_tokens") or 0)
             out_steps.append({"agent_id": agent["id"], "agent_name": agent.get("name"),
                               "run_id": res["saved"]["id"], "deliver": deliver,
+                              "tokens": _step_tokens,       # токены шага — повод для оптимизации (#3)
+                              # полный формат прогона (как одиночный запуск) → клиент рендерит runCard:
+                              # реальные находки, доставка и HITL по каждому шагу видны в чате (#4/#7)
+                              "findings": result.get("findings") or [],
                               "findings_total": (result.get("findings_summary") or {}).get("total")
                               or len(result.get("findings") or []),
-                              "investigations_total": len(result.get("investigations") or [])})
+                              "investigations_total": len(result.get("investigations") or []),
+                              "delivery": result.get("delivery") or [],
+                              "verdict": result.get("verdict") or {},
+                              "trace_id": result.get("trace_id") or (result.get("verdict") or {}).get("trace_id") or ""})
         except Exception as ex:  # noqa: BLE001 — сбой шага не рушит всю цепочку, помечаем и продолжаем
             out_steps.append({"agent_id": agent["id"], "agent_name": agent.get("name"), "error": str(ex)[:300]})
     await audit_store.record(actor, "pipeline.run", pid, {"steps": len(out_steps)})
@@ -3312,9 +3321,10 @@ async def billing(u: dict = Depends(user)) -> dict:
     cfg = await admin_store.all()
     quota = _parse_rub(cfg.get("quotaLimit"), 4000.0)
     total_rub = round(total_rub, 4)
-    # Токен-квота (6): на self-host стоимость≈0, но токены списываем с квоты — чтобы пользователь видел
-    # ОСТАТОК (сколько ещё может отработать). Лимит из admin_config.tokenQuota (по умолчанию 5M).
-    tok_quota = int(_parse_rub(cfg.get("tokenQuota"), 5_000_000.0))
+    # Токен-квота: на self-host стоимость≈0, но токены списываем с квоты — чтобы пользователь видел
+    # ОСТАТОК (сколько ещё может отработать) и это был повод для оптимизации. Лимит из
+    # admin_config.tokenQuota (по умолчанию 30M — прежние 5M быстро выжигались, #3).
+    tok_quota = int(_parse_rub(cfg.get("tokenQuota"), 30_000_000.0))
     tokens = tin + tout
     return {"spent_rub": total_rub, "quota_limit_rub": quota,
             "quota_pct": min(100, round(total_rub / quota * 100)) if quota else 0,

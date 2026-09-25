@@ -169,7 +169,7 @@ export async function mount(root, ctx) {
     const verd = s.verdict && s.verdict.within_envelope != null ? `<span style="font-family:var(--mono);font-size:10px;color:${s.verdict.within_envelope ? "#6ee7b7" : "#fca5a5"}">конверт: ${s.verdict.within_envelope ? "в рамках" : "превышен"}${s.verdict.autonomy_used ? " · " + esc(s.verdict.autonomy_used) : ""}</span>` : "";
     return `<div style="display:flex;flex-direction:column;gap:8px">
       <div style="display:flex;align-items:center;gap:8px"><span style="font-family:var(--mono);font-size:9.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--ink-3)">агент ${esc(s.agent_id || "")}</span>${s.cached ? '<span style="font-size:10px;color:var(--ink-3)">· из кэша</span>' : ""}${s.trace_id ? `<span style="font-size:10px;color:var(--ink-3)">· trace ${esc((s.trace_id || "").slice(0, 8))}</span>` : ""}</div>
-      <div style="font-size:12.5px;color:var(--ink-2)">находок: <b>${esc(String(s.findings_total ?? 0))}</b>${s.investigations_total != null ? ` · расследований: <b>${esc(String(s.investigations_total))}</b>` : ""} ${verd}</div>
+      <div style="font-size:12.5px;color:var(--ink-2)">находок: <b>${esc(String(s.findings_total ?? 0))}</b>${s.investigations_total != null ? ` · расследований: <b>${esc(String(s.investigations_total))}</b>` : ""}${s.tokens ? ` · <span title="токены этого прогона — повод для оптимизации">🎫 ${s.tokens >= 1000 ? Math.round(s.tokens / 1000) + "k" : s.tokens}</span>` : ""} ${verd}</div>
       ${fnd || '<div style="font-size:12px;color:var(--ink-3)">Находок не выявлено.</div>'}
       ${dl ? `<div style="font-family:var(--mono);font-size:9.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--ink-3);margin-top:4px">доставка</div>${dl}` : ""}
       ${hasWait ? `<div data-agent="${esc(s.agent_id || "")}" style="margin-top:6px;padding:11px 12px;border-radius:11px;border:1px solid rgba(245,158,11,.45);background:rgba(245,158,11,.12);display:flex;flex-direction:column;gap:8px">
@@ -321,38 +321,48 @@ export async function mount(root, ctx) {
   function openPipeBuilder() {
     let chosen = [];   // [agentId,...] по порядку
     const opts = abopAgents.map((a) => `<option value="${esc(a.id)}">${esc(a.name)}${a.family ? " · " + esc(a.family) : ""}</option>`).join("");
+    let finalDeliver = "chat";   // куда уходит результат последнего шага (#6)
+    const dOpt = (d, label) => `<button type="button" data-d="${d}" class="pld" style="flex:1;padding:7px;border:1px solid ${d === finalDeliver ? "var(--accent)" : "var(--line)"};border-radius:9px;background:${d === finalDeliver ? "var(--accent-bg)" : "var(--field)"};color:${d === finalDeliver ? "var(--accent-ink)" : "var(--ink-2)"};font-size:11.5px;font-weight:600;cursor:pointer">${label}</button>`;
     const body = `<input id="plName" placeholder="Название цепочки (напр. Почта → Менеджер)" style="width:100%;margin-bottom:10px"/>
       <div style="font-size:12px;color:var(--ink-2);margin-bottom:6px">Шаги по порядку — выход агента идёт в контекст следующего:</div>
       <div id="plSteps" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px"></div>
-      <div style="display:flex;gap:8px"><select id="plPick" style="flex:1">${opts}</select>
-        <button id="plAdd" class="btn">＋ Шаг</button></div>`;
+      <div style="display:flex;gap:8px;margin-bottom:12px"><select id="plPick" style="flex:1">${opts}</select>
+        <button id="plAdd" class="btn">＋ Шаг</button></div>
+      <div style="font-size:12px;color:var(--ink-2);margin-bottom:6px">Куда результат цепочки (последний шаг):</div>
+      <div id="plDeliver" style="display:flex;gap:6px">${dOpt("chat", "💬 В чат")}${dOpt("email", "✉ Почта")}${dOpt("redmine", "🎫 Redmine")}</div>`;
     const ov = modal("Собрать цепочку агентов", body, async (b) => {
       const name = (b.querySelector("#plName").value || "").trim();
       if (!name || chosen.length < 2) { showToast("Нужно имя и минимум 2 шага"); return false; }
-      const steps = chosen.map((id, i) => ({ agent_id: id, deliver: i < chosen.length - 1 ? "chat" : "" }));
+      // промежуточные шаги → в контекст следующего (chat); последний → выбранная доставка (#6)
+      const steps = chosen.map((id, i) => ({ agent_id: id, deliver: i < chosen.length - 1 ? "chat" : finalDeliver }));
       try { await api(A_AG + "/pipelines", { method: "POST", body: JSON.stringify({ name, steps }) }); await loadPipelines(); }
       catch (e) { showToast("Не удалось сохранить: " + (e && e.message || e)); return false; }
     }, "Сохранить цепочку");
+    ov.querySelectorAll(".pld").forEach((b) => b.onclick = (e) => { e.preventDefault(); finalDeliver = b.dataset.d; ov.querySelectorAll(".pld").forEach((x) => { const on = x.dataset.d === finalDeliver; x.style.border = "1px solid " + (on ? "var(--accent)" : "var(--line)"); x.style.background = on ? "var(--accent-bg)" : "var(--field)"; x.style.color = on ? "var(--accent-ink)" : "var(--ink-2)"; }); });
     const stepsEl = ov.querySelector("#plSteps");
     const drawSteps = () => { stepsEl.innerHTML = chosen.map((id, i) => { const a = abopAgents.find((x) => x.id === id) || {}; return `<div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:6px 9px;border-radius:9px;background:var(--field);border:1px solid var(--line)"><span style="color:var(--ink-3)">${i + 1}.</span><span style="flex:1">${esc(a.name || id)}</span><button data-i="${i}" class="plX" style="border:none;background:transparent;color:var(--ink-3);cursor:pointer">✕</button></div>`; }).join("") || `<span style="font-size:11.5px;color:var(--ink-3)">Добавьте шаги ниже.</span>`; stepsEl.querySelectorAll(".plX").forEach((x) => x.onclick = () => { chosen.splice(+x.dataset.i, 1); drawSteps(); }); };
     ov.querySelector("#plAdd").onclick = (e) => { e.preventDefault(); const v = ov.querySelector("#plPick").value; if (v) { chosen.push(v); drawSteps(); } };
     drawSteps();
   }
-  async function runPipeline(pid) {
+  async function runPipeline(pid, task) {
     const p = pipelines.find((x) => x.id === pid) || {};
+    if (task) messages.push({ role: "user", content: `🔗 запустить цепочку «${p.name || pid}»: ${task}`, meta: {} });
     const run = { role: "assistant", content: "", meta: {} }; messages.push(run); render();
     const bubs = $("col").querySelectorAll(".bub"); const el = bubs[bubs.length - 1];
     if (el) el.innerHTML = `<span style="display:inline-flex;gap:12px;align-items:center">${mascot("thinking", 26)}<span style="color:var(--ink-2)">цепочка «${esc(p.name || pid)}» работает…</span></span>`;
     try {
-      const r = await api(A_AG + "/pipelines/" + encodeURIComponent(pid) + "/run", { method: "POST", body: JSON.stringify({ context: "" }) });
+      const r = await api(A_AG + "/pipelines/" + encodeURIComponent(pid) + "/run", { method: "POST", body: JSON.stringify({ context: task || "" }) });
       const steps = (r && r.steps) || [];
-      const html = steps.map((s, i) => `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:13px">
-        <span style="color:var(--ink-3)">${i + 1}.</span><b>${esc(s.agent_name || s.agent_id)}</b>
-        ${s.error ? `<span style="color:#f87171">— ошибка: ${esc(s.error)}</span>` : `<span style="color:var(--ink-2)">— находок: ${s.findings_total != null ? s.findings_total : "—"}${s.investigations_total ? ", расследований: " + s.investigations_total : ""}</span>`}</div>`).join("");
+      // каждый шаг — полноценная карточка прогона (находки/доставка/HITL в чате), а не просто счётчик (#4)
+      const cards = steps.map((s, i) => `<div style="border-top:1px solid var(--line);padding-top:8px;margin-top:8px">
+        <div style="font-size:10.5px;font-family:var(--mono);letter-spacing:.5px;text-transform:uppercase;color:var(--ink-3);margin-bottom:4px">шаг ${i + 1}/${steps.length}${s.deliver ? " · доставка: " + esc(s.deliver) : " · только в чат"}</div>
+        ${s.error ? `<span style="color:#f87171;font-size:12px">ошибка: ${esc(s.error)}</span>` : runCard(s)}</div>`).join("");
+      const totTok = steps.reduce((a, s) => a + (s.tokens || 0), 0);
+      const totFnd = steps.reduce((a, s) => a + (s.findings_total || 0), 0);
       run.content = `цепочка «${p.name || pid}» выполнена`;
-      run.meta = { pipeline_result: `<div style="font-weight:600;margin-bottom:4px">🔗 Цепочка «${esc(p.name || pid)}» — ${steps.length} шаг(ов)</div>${html}` };
+      run.meta = { pipeline_result: `<div style="font-weight:600;margin-bottom:2px">🔗 Цепочка «${esc(p.name || pid)}» — ${steps.length} шаг(ов) · находок: ${totFnd}${totTok ? ` · 🎫 ${totTok >= 1000 ? Math.round(totTok / 1000) + "k" : totTok} токенов` : ""}</div>${cards}` };
     } catch (e) { run.content = "Сбой цепочки: " + (e && e.message || e); }
-    render(); loadQuota();
+    render(); loadQuota(); loadThreads();
   }
 
   // HITL прямо в основном окне чата: подтвердить/отклонить внешнее действие ЭТОГО прогона.
