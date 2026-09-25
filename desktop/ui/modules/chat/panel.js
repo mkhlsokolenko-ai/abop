@@ -149,21 +149,24 @@ export async function mount(root, ctx) {
 
   // очистка текста находки: сырой JSON ({"находки":[...]}) — в т.ч. в ```-заборе или после преамбулы —
   // вынимаем наблюдения читаемо (наблюдение + сумма/норма), мусор отбрасываем.
+  // читаемо собрать одну находку-объект (структурный формат бэка: наблюдение/сумма/норма/запись)
+  function fmtObjFinding(x) {
+    if (typeof x === "string") return x;
+    if (!x || typeof x !== "object") return String(x == null ? "" : x);
+    const obs = x["наблюдение"] || x.observation || x["запись"] || x["описание"] || "";
+    const extra = [x["сумма"] && ("— " + x["сумма"]), x["норма"] && ("· норма: " + x["норма"]), x["класс"] && ("[" + x["класс"] + "]")].filter(Boolean).join(" ");
+    return obs ? (obs + (extra ? " " + extra : "")) : JSON.stringify(x);
+  }
   function cleanFinding(t) {
-    t = (t || "").trim();
+    // находка может прийти объектом (шаги цепочки/структурный вывод) — не только строкой
+    if (t && typeof t === "object") return fmtObjFinding(t);
+    t = (t == null ? "" : String(t)).trim();
     const i = t.indexOf("{"), j = t.lastIndexOf("}");
     if (i >= 0 && j > i) {
       try {
         const o = JSON.parse(t.slice(i, j + 1));
         const arr = Array.isArray(o) ? o : (o["находки"] || o.findings || []);
-        if (Array.isArray(arr) && arr.length) {
-          return arr.map((x) => {
-            if (typeof x === "string") return x;
-            const obs = x["наблюдение"] || x.observation || x["запись"] || "";
-            const extra = [x["сумма"] && ("— " + x["сумма"]), x["норма"] && ("· норма: " + x["норма"])].filter(Boolean).join(" ");
-            return obs ? (obs + (extra ? " " + extra : "")) : JSON.stringify(x);
-          }).join("; ");
-        }
+        if (Array.isArray(arr) && arr.length) return arr.map(fmtObjFinding).join("; ");
       } catch (e) { /* не JSON — вернём как есть */ }
     }
     return t.replace(/^[•\s]+/, "");
@@ -226,7 +229,11 @@ export async function mount(root, ctx) {
     $("col").innerHTML = messages.length ? messages.map(bubble).join("") : emptyState();
     $("col").querySelectorAll("[data-tpl]").forEach((e) => e.onclick = async () => { const [, , , prompt, skill] = TEMPLATES[+e.dataset.tpl]; if (skill && !cur.skills.includes(skill)) { cur.skills.push(skill); await saveThread(cur); renderTools(); } $("inp").value = prompt; $("inp").focus(); });
     $("col").querySelectorAll("[data-copy]").forEach((e) => e.onclick = () => { navigator.clipboard.writeText(messages[+e.dataset.copy].content); const o = e.textContent; e.textContent = "✓"; setTimeout(() => e.textContent = o, 1200); });
-    $("col").querySelectorAll("[data-regen]").forEach((e) => e.onclick = () => { const p = messages[+e.dataset.regen - 1]; if (p && p.role === "user") sendPrompt(p.content); });
+    $("col").querySelectorAll("[data-regen]").forEach((e) => e.onclick = () => {
+      const idx = +e.dataset.regen; const m = messages[idx];
+      if (m && m.meta && m.meta._rerun && m.meta._rerun.pid) { runPipeline(m.meta._rerun.pid, m.meta._rerun.task); return; } // цепочка — перезапускаем пайплайн
+      const p = messages[idx - 1]; if (p && p.role === "user") sendPrompt(p.content);
+    });
     $("col").querySelectorAll("[data-edit]").forEach((e) => e.onclick = () => { $("inp").value = messages[+e.dataset.edit].content; $("inp").focus(); });
     $("col").querySelectorAll(".codecopy").forEach((b) => b.onclick = () => { const code = b.closest("span").parentElement.querySelector("span:last-child"); navigator.clipboard.writeText(code ? code.textContent : ""); const o = b.textContent; b.textContent = "✓"; setTimeout(() => b.textContent = o, 1200); });
     $("col").querySelectorAll(".hitlOk").forEach((b) => b.onclick = () => decideDelivery(b, "approve"));
@@ -358,7 +365,8 @@ export async function mount(root, ctx) {
   async function runPipeline(pid, task) {
     const p = pipelines.find((x) => x.id === pid) || {};
     if (task) messages.push({ role: "user", content: `🔗 запустить цепочку «${p.name || pid}»: ${task}`, meta: {} });
-    const run = { role: "assistant", content: "", meta: {} }; messages.push(run); render();
+    // _rerun — чтобы кнопка «↻ ещё раз» перезапускала пайплайн, а не слала текст в чат
+    const run = { role: "assistant", content: "", meta: { _rerun: { pid, task: task || "" } } }; messages.push(run); render();
     const bubs = $("col").querySelectorAll(".bub"); const el = bubs[bubs.length - 1];
     if (el) el.innerHTML = `<span style="display:inline-flex;gap:12px;align-items:center">${mascot("thinking", 26)}<span style="color:var(--ink-2)">цепочка «${esc(p.name || pid)}» работает…</span></span>`;
     try {
@@ -371,8 +379,8 @@ export async function mount(root, ctx) {
       const totTok = steps.reduce((a, s) => a + (s.tokens || 0), 0);
       const totFnd = steps.reduce((a, s) => a + (s.findings_total || 0), 0);
       run.content = `цепочка «${p.name || pid}» выполнена`;
-      run.meta = { pipeline_result: `<div style="font-weight:600;margin-bottom:2px">🔗 Цепочка «${esc(p.name || pid)}» — ${steps.length} шаг(ов) · находок: ${totFnd}${totTok ? ` · 🎫 ${totTok >= 1000 ? Math.round(totTok / 1000) + "k" : totTok} токенов` : ""}</div>${cards}` };
-    } catch (e) { run.content = "Сбой цепочки: " + (e && e.message || e); }
+      run.meta = { _rerun: { pid, task: task || "" }, pipeline_result: `<div style="font-weight:600;margin-bottom:2px">🔗 Цепочка «${esc(p.name || pid)}» — ${steps.length} шаг(ов) · находок: ${totFnd}${totTok ? ` · 🎫 ${totTok >= 1000 ? Math.round(totTok / 1000) + "k" : totTok} токенов` : ""}</div>${cards}` };
+    } catch (e) { run.content = "Сбой цепочки: " + (e && e.message || e); run.meta = { _rerun: { pid, task: task || "" } }; }
     render(); loadQuota(); loadThreads();
   }
 
