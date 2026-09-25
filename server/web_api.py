@@ -1984,12 +1984,21 @@ async def agents_list(contract: str = "", archived: bool = False, u: dict = Depe
     """Список AgentVersion. ABAC: пользователь видит только агентов своего отдела (family==department);
     admin/support (область *) — всех. archived=1 → Лимб (retired). §7/§8а."""
     items = await agent_store.list_for(contract or None, archived=archived)
-    out = []
+    # Схлопываем до ПОСЛЕДНЕЙ версии на агента (contract_audit_id) — 1 агент = 1 запись, без визуальных
+    # дублей версий (#8). У authored теперь стабильный per-agent id, поэтому ключ работает и для них.
+    latest: dict = {}
     for a in items:
+        cid = a.get("contract_audit_id") or a.get("id")
+        if cid not in latest or (a.get("version") or 0) > (latest[cid].get("version") or 0):
+            latest[cid] = a
+    out = []
+    for a in latest.values():
         if can_see_family(u, a.get("family")):
             a = dict(a)
-            a["edit_scope"] = _edit_scope(a)   # governance-класс: user | methodologist
+            a["edit_scope"] = _edit_scope(a)          # governance-класс: user | methodologist
+            a["owner"] = a.get("source") == "authored"  # «мой» агент (создан пользователем) vs общий (#9)
             out.append(a)
+    out.sort(key=lambda x: x.get("created_at") or "", reverse=True)
     return {"agents": out}
 
 
@@ -2015,12 +2024,20 @@ async def agent_restore(agent_id: str, u: dict = Depends(user)) -> dict:
 
 @app.delete("/api/agents/{agent_id}")
 async def agent_delete(agent_id: str, u: dict = Depends(user)) -> dict:
-    """Полное удаление агента (жёсткое, минуя Лимб). Для черновиков/ошибочных сборок."""
+    """Полное удаление агента (жёсткое, минуя Лимб). Идемпотентно: сносит ВСЕ версии этого агента
+    (по contract_audit_id), чтобы «мой» агент исчезал целиком и везде; повторный вызов не падает (#8/#9)."""
     require_level(u, "manager")
-    ok = await agent_store.delete(agent_id)
-    if not ok:
-        raise HTTPException(404, "нет такого агента")
-    return {"id": agent_id, "deleted": True}
+    a = await agent_store.get(agent_id)
+    cid = (a or {}).get("contract_audit_id")
+    deleted = 0
+    if cid:
+        vers = await agent_store.list_for(cid) + await agent_store.list_for(cid, archived=True)
+        for v in vers:
+            if await agent_store.delete(v["id"]):
+                deleted += 1
+    if not deleted:                                   # запасной путь: снести хотя бы саму версию
+        deleted = 1 if await agent_store.delete(agent_id) else 0
+    return {"id": agent_id, "deleted": True, "versions_removed": deleted}
 
 
 @app.post("/api/agents/check")
@@ -2161,7 +2178,12 @@ async def agent_author(body: dict, u: dict = Depends(user)) -> JSONResponse:
               "hitl": s["safety"]["mode"] == "action"} for s in spec["skills"]]
     graph = {"nodes": nodes, "edges": []}
     name = str((body or {}).get("name", "")).strip() or f"{spec['family_title']} · {spec['role_title']}"
-    audit_id = "authored"
+    # Стабильный per-agent id для «моего» агента: пересборка тем же пользователем того же агента →
+    # НОВАЯ ВЕРСИЯ того же агента (next_version), а не новый экземпляр «authored.vN» (#8/#9).
+    import hashlib as _hl2, re as _re2
+    _uid = str(u.get("sub") or u.get("name") or "dev")
+    _slug = _re2.sub(r"[^a-z0-9а-яё]+", "-", name.lower()).strip("-")[:40] or "agent"
+    audit_id = f"authored-{_hl2.md5(_uid.encode('utf-8')).hexdigest()[:6]}-{_slug}"
     version = await agent_store.next_version(audit_id)
     verdict = _verify_envelope(graph, env["autonomy_max"])   # авто-верификация против производного конверта
     saved = await agent_store.save(name=name, audit_id=audit_id, version=version, graph=graph,
