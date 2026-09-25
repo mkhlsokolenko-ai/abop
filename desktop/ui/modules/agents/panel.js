@@ -9,7 +9,7 @@ const BTN = "padding:9px 14px;border-radius:11px;border:1px solid var(--line);ba
 
 export async function mount(root, ctx) {
   const { api } = ctx;
-  let agents = [], hitl = [], families = [], mode = "catalog", tab = "mine";
+  let agents = [], families = [], mode = "catalog", tab = "mine";
   // состояние конструктора: выбранная семья, набор навыков, имя; editingId — правка «моего» агента
   let bFamily = "", bSkills = new Set(), bName = "", editingId = null, bOutput = "";  // bOutput: "" наследовать | structured | freeform
 
@@ -28,7 +28,6 @@ export async function mount(root, ctx) {
   }
 
   async function loadAgents() { try { agents = await api(A + "/catalog"); if (!Array.isArray(agents)) agents = []; } catch (e) { agents = []; } }
-  async function loadHitl() { try { hitl = await api(A + "/hitl"); if (!Array.isArray(hitl)) hitl = []; } catch (e) { hitl = []; } }
   async function loadFamilies() { try { families = await api(A + "/families"); if (!Array.isArray(families)) families = []; } catch (e) { families = []; } }
 
   function render() {
@@ -38,7 +37,7 @@ export async function mount(root, ctx) {
     const shown = tab === "mine" ? mine : common;
     const tabBtn = (id, label, n) => `<button class="tabBtn" data-tab="${id}" style="${BTN};${tab === id ? "background:var(--accent-bg);color:var(--accent-ink);border-color:var(--line-2)" : "background:transparent;color:var(--ink-2)"}">${label} · ${n}</button>`;
     root.innerHTML = `
-      <div style="display:flex;flex-direction:column;gap:18px;padding:20px;max-width:960px;margin:0 auto">
+      <div style="display:flex;flex-direction:column;gap:18px;padding:20px;max-width:960px;margin:0 auto;animation:ape-in .35s ease-out">
         <div style="display:flex;align-items:center;justify-content:space-between">
           <div><div style="${LBL}">РАНТАЙМ ABOP</div><div style="font-size:18px;font-weight:700;color:var(--ink)">Мои агенты</div></div>
           <span style="display:flex;gap:8px">
@@ -47,17 +46,8 @@ export async function mount(root, ctx) {
           </span>
         </div>
         <div style="display:flex;gap:8px">${tabBtn("mine", "Мои агенты", mine.length)}${tabBtn("common", "Общие агенты", common.length)}</div>
-        ${hitl.length ? `<div style="${CARD};border-color:rgba(245,158,11,.4)">
-          <div style="${LBL};color:#fbbf24">НА ПОДТВЕРЖДЕНИИ (HITL) · ${hitl.length}</div>
-          ${hitl.map((h) => `<div style="display:flex;align-items:center;gap:10px;justify-content:space-between">
-            <span style="font-size:12.5px;color:var(--ink)">${esc(h.title || h.channel)} → ${esc(h.to_addr || "")}</span>
-            <span style="display:flex;gap:6px">
-              <button class="ap" data-id="${esc(h.id)}" style="${BTN};background:rgba(16,185,129,.16);color:#6ee7b7">Подтвердить</button>
-              <button class="rj" data-id="${esc(h.id)}" style="${BTN}">Отклонить</button>
-            </span></div>`).join("")}
-        </div>` : ""}
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">
-          ${shown.length ? shown.map((a) => `<div style="${CARD}">
+          ${shown.length ? shown.map((a) => `<div class="lift" style="${CARD}">
             <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
               <div><div style="${LBL}">${esc(a.family || "—")} · ${esc(a.role || "")}</div>
                 <div style="font-size:15px;font-weight:700;color:var(--ink)">${esc(a.name)}</div></div>
@@ -74,13 +64,11 @@ export async function mount(root, ctx) {
       </div>`;
 
     root.querySelectorAll(".tabBtn").forEach((b) => (b.onclick = () => { tab = b.dataset.tab; render(); }));
-    root.querySelector("#refresh").onclick = async () => { await loadAgents(); await loadHitl(); render(); };
+    root.querySelector("#refresh").onclick = async () => { await loadAgents(); render(); };
     const bb = root.querySelector("#build"); if (bb) bb.onclick = async () => { if (!families.length) await loadFamilies(); bFamily = ""; bSkills = new Set(); bName = ""; editingId = null; bOutput = ""; mode = "builder"; render(); };
     root.querySelectorAll(".run").forEach((b) => (b.onclick = () => runAgent(b.dataset.id, b)));
     root.querySelectorAll(".cfg").forEach((b) => (b.onclick = () => reconfig(b.dataset.id)));
     root.querySelectorAll(".del").forEach((b) => (b.onclick = () => deleteAgent(b.dataset.id, b.dataset.name)));
-    root.querySelectorAll(".ap").forEach((b) => (b.onclick = () => decide(b.dataset.id, "approve")));
-    root.querySelectorAll(".rj").forEach((b) => (b.onclick = () => decide(b.dataset.id, "reject")));
   }
 
   // Идемпотентное удаление «моего» агента: сервер сносит все версии; каталог перечитываем (агент
@@ -98,7 +86,7 @@ export async function mount(root, ctx) {
     const famSkills = fam ? [...new Set((fam.members || []).flatMap((m) => m.skills || []))] : [];
     const chain = [...bSkills];
     root.innerHTML = `
-      <div style="display:flex;flex-direction:column;gap:16px;padding:20px;max-width:820px;margin:0 auto">
+      <div style="display:flex;flex-direction:column;gap:16px;padding:20px;max-width:820px;margin:0 auto;animation:ape-in .35s ease-out">
         <div style="display:flex;align-items:center;justify-content:space-between">
           <div><div style="${LBL}">${editingId ? "НАСТРОЙКА · НОВАЯ ВЕРСИЯ" : "КОНСТРУКТОР"}</div><div style="font-size:18px;font-weight:700;color:var(--ink)">${editingId ? "Настроить агента" : "Собрать агента"}</div></div>
           <button id="back" style="${BTN}">← Каталог</button>
@@ -159,7 +147,7 @@ export async function mount(root, ctx) {
       res.innerHTML = renderRun((r && r.run) || {});
     } catch (e) {
       res.innerHTML = `<div style="${CARD};border-color:rgba(239,68,68,.4)"><div style="color:#fca5a5">Ошибка прогона: ${esc(String((e && e.message) || e))}</div></div>`;
-    } finally { btn.textContent = "▶ Запустить"; btn.disabled = false; await loadHitl(); render(); }
+    } finally { btn.textContent = "▶ Запустить"; btn.disabled = false; }
   }
 
   function renderRun(run) {
@@ -174,14 +162,9 @@ export async function mount(root, ctx) {
         ${tm.total_ms ? `· ${Math.round(tm.total_ms)} мс ` : ""}${cost.rub != null ? `· ${esc(String(cost.rub))} ₽` : ""}
       </div>
       ${board.map((b) => `<div style="font-size:12px;color:var(--ink);border-left:2px solid var(--line);padding-left:10px">${esc((b.text || "").slice(0, 400))}</div>`).join("")}
-      ${dl.length ? `<div style="${LBL}">ДОСТАВКА</div>${dl.map((d) => `<div style="font-size:11.5px;color:${d.mode === "awaiting_hitl" ? "#fbbf24" : "var(--ink-2)"}">${esc(d.channel)} → ${esc(d.to || "")} · ${esc(d.mode)}</div>`).join("")}` : ""}
+      ${dl.length ? `<div style="${LBL}">ДОСТАВКА</div>${dl.map((d) => `<div style="font-size:11.5px;color:${d.mode === "awaiting_hitl" ? "#fbbf24" : "var(--ink-2)"}">${esc(d.channel)} → ${esc(d.to || "")} · ${esc(d.mode)}</div>`).join("")}${dl.some((d) => d.mode === "awaiting_hitl") ? `<div style="font-size:11px;color:#fbbf24">🛡 Подтвердить внешнее действие можно в чате — панель «Требуют подтверждения».</div>` : ""}` : ""}
     </div>`;
   }
 
-  async function decide(id, decision) {
-    try { await api(A + "/hitl/" + encodeURIComponent(id) + "/approve", { method: "POST", body: JSON.stringify({ decision }) }); } catch (e) {}
-    await loadHitl(); render();
-  }
-
-  await loadAgents(); await loadHitl(); render();
+  await loadAgents(); render();
 }

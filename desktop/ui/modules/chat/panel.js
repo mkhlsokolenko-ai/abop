@@ -75,6 +75,7 @@ export async function mount(root, ctx) {
       </div>
       <div style="flex:none;padding:10px 26px 18px">
         <div style="max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:10px">
+          <div id="hitlBar"></div>
           <div id="schedBar"></div>
           <div id="pipeBar"></div>
           <div id="quotaBar"></div>
@@ -317,6 +318,42 @@ export async function mount(root, ctx) {
       <span style="color:${col}">остаток ${fmt(b.tokens_remaining)}</span><span>${rub}</span></div>`;
   }
 
+  // ── Очередь HITL прямо в чате (не в «Мои агенты»): все ожидающие подтверждения внешние действия ──
+  // Чат — среда управления агентами, поэтому подтверждения живут здесь, закреплённой панелью над вводом.
+  let hitlQueue = [];
+  const HITL_ICON = (ch) => { const c = (ch || "").toLowerCase(); return c.includes("redmine") ? "🎫" : (c.includes("book") || c.includes("вики")) ? "📚" : (c.includes("почт") || c.includes("mail") || c.includes("email")) ? "✉" : c.includes("pdf") ? "📄" : c.includes("yougile") ? "📋" : "↗"; };
+  async function loadHitlQueue() { try { const q = await api(A_AG + "/hitl"); hitlQueue = Array.isArray(q) ? q : []; } catch { hitlQueue = []; } renderHitlBar(); }
+  function renderHitlBar() {
+    const bar = $("hitlBar"); if (!bar) return;
+    if (!hitlQueue.length) { bar.innerHTML = ""; return; }
+    const rows = hitlQueue.map((h) => `<div class="hq" style="display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:11px;background:var(--field);border:1px solid var(--line)">
+      <span style="font-size:15px;flex:none">${HITL_ICON(h.channel)}</span>
+      <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+        <span style="font-size:12.5px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(h.title || h.channel || "Внешнее действие")}</span>
+        <span style="font-size:11px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(h.channel || "")}${h.to_addr ? " → " + esc(h.to_addr) : ""}</span>
+      </span>
+      <button class="hqOk" data-id="${esc(h.id)}" title="Подтвердить действие" style="padding:7px 13px;border:none;border-radius:9px;background:rgba(16,185,129,.18);color:#6ee7b7;font-size:11.5px;font-weight:700;cursor:pointer">✓</button>
+      <button class="hqNo" data-id="${esc(h.id)}" title="Отклонить" style="width:30px;height:30px;flex:none;border:1px solid var(--line);border-radius:9px;background:transparent;color:var(--ink-2);font-size:12px;cursor:pointer">✕</button>
+    </div>`).join("");
+    bar.innerHTML = `<details open style="border:1px solid rgba(245,158,11,.4);border-radius:13px;background:rgba(245,158,11,.08);padding:9px 12px;box-shadow:var(--shadow-1);animation:ape-in .3s ease-out">
+      <summary style="cursor:pointer;font-size:12.5px;color:#fbbf24;font-weight:700;display:flex;align-items:center;gap:8px;list-style:none">🛡 Требуют вашего подтверждения · ${hitlQueue.length}
+        <button id="hqAllOk" title="Подтвердить все действия в очереди" style="margin-left:auto;padding:4px 11px;border:1px solid rgba(52,211,153,.4);border-radius:8px;background:rgba(16,185,129,.14);color:#6ee7b7;font-size:11px;font-weight:600;cursor:pointer">Подтвердить все</button></summary>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:9px;max-height:236px;overflow-y:auto">${rows}</div></details>`;
+    bar.querySelectorAll(".hqOk").forEach((b) => b.onclick = () => decideHitl([b.dataset.id], "approve", b));
+    bar.querySelectorAll(".hqNo").forEach((b) => b.onclick = () => decideHitl([b.dataset.id], "reject", b));
+    const all = bar.querySelector("#hqAllOk"); if (all) all.onclick = (e) => { e.preventDefault(); decideHitl(hitlQueue.map((h) => h.id), "approve", all); };
+  }
+  async function decideHitl(ids, decision, btn) {
+    if (btn) { btn.disabled = true; btn.textContent = "…"; }
+    let n = 0, last = "";
+    for (const id of ids) {
+      try { const r = await api(A_AG + "/hitl/" + encodeURIComponent(id) + "/approve", { method: "POST", body: JSON.stringify({ decision }) });
+        n++; const d = (r && (r.delivery || (r.result && r.result.delivery))); if (d) last = d; } catch {}
+    }
+    showToast(decision === "approve" ? `✓ Подтверждено: ${n}${last ? " · " + String(last).slice(0, 80) : ""}` : `⃠ Отклонено: ${n}`);
+    await loadHitlQueue();
+  }
+
   // ── Цепочки агентов: выход одного агента → контекст следующего (линейный конвейер) ──
   async function loadPipelines() {
     try { const r = await api(A_AG + "/pipelines"); pipelines = (r && r.pipelines) || []; } catch { pipelines = []; }
@@ -381,7 +418,7 @@ export async function mount(root, ctx) {
       run.content = `цепочка «${p.name || pid}» выполнена`;
       run.meta = { _rerun: { pid, task: task || "" }, pipeline_result: `<div style="font-weight:600;margin-bottom:2px">🔗 Цепочка «${esc(p.name || pid)}» — ${steps.length} шаг(ов) · находок: ${totFnd}${totTok ? ` · 🎫 ${totTok >= 1000 ? Math.round(totTok / 1000) + "k" : totTok} токенов` : ""}</div>${cards}` };
     } catch (e) { run.content = "Сбой цепочки: " + (e && e.message || e); run.meta = { _rerun: { pid, task: task || "" } }; }
-    render(); loadQuota(); loadThreads();
+    render(); loadQuota(); loadThreads(); loadHitlQueue();
   }
 
   // #5 авто-цепочка: семантика + LLM собирают цепочку под задачу → карточка «собрать и запустить».
@@ -435,6 +472,7 @@ export async function mount(root, ctx) {
         try { const r = await api("/api/modules/agents/hitl/" + encodeURIComponent(id) + "/approve", { method: "POST", body: JSON.stringify({ decision }) }); n++; if (r && r.delivery) last = r.delivery; } catch {}
       }
       if (wrap) wrap.innerHTML = `<span style="font-size:12px;color:${decision === "approve" ? "#6ee7b7" : "var(--ink-3)"};font-weight:600">${decision === "approve" ? "✓ Действие подтверждено" : "⃠ Действие отклонено"}${n ? " (" + n + ")" : ""}</span>${last && decision === "approve" ? `<div style="font-size:11px;color:var(--ink-3);margin-top:3px">${esc(String(last).slice(0, 140))}</div>` : ""}`;
+      loadHitlQueue();   // синхронизируем закреплённую очередь HITL над вводом
     } catch (e) { btn.textContent = "Ошибка"; btn.disabled = false; }
   }
 
@@ -600,7 +638,7 @@ export async function mount(root, ctx) {
         if (((r.run || {}).delivery || []).some((d) => d.mode === "awaiting_hitl")) showToast("⏸ Требуется ваше подтверждение — карточка внизу чата (#7)"); }
       else { run.content = "Ошибка запуска: " + (r.error || "не удалось"); }
     } catch (e) { run.content = "Сбой: " + (e && e.message || e); }
-    render(); loadThreads(); loadQuota();
+    render(); loadThreads(); loadQuota(); loadHitlQueue();
   }
 
   async function sendPrompt(text) {
@@ -661,7 +699,7 @@ export async function mount(root, ctx) {
         run.content = "Ошибка запуска: " + (r.error || "не удалось");
       }
     } catch (e) { run.content = "Сбой: " + (e && e.message || e); }
-    render(); loadThreads(); loadQuota();
+    render(); loadThreads(); loadQuota(); loadHitlQueue();
   }
 
   // быстрые роли (импровизация LLM без Data Plane) — остаётся как лёгкий режим
@@ -673,7 +711,7 @@ export async function mount(root, ctx) {
     if (el) el.innerHTML = `<span style="display:inline-flex;gap:12px;align-items:center">${mascot("thinking", 26)}<span style="color:var(--ink-2)">роли работают…</span></span>`;
     const r = await api(M + "/threads/" + cur.id + "/agents", { method: "POST", body: JSON.stringify({ task, roles: rl }) });
     run.content = r.ok ? r.content : ("Ошибка: " + (r.error === "auth_required" ? "нужен вход через GitHub" : r.error));
-    render(); loadThreads(); loadQuota();
+    render(); loadThreads(); loadQuota(); loadHitlQueue();
   }
   async function renderDrawer() {
     $("drTabTools").style.cssText += ";" + drTabStyle(drTab === "tools");
@@ -781,6 +819,7 @@ export async function mount(root, ctx) {
   loadSchedules(false);
   loadPipelines();
   loadQuota();
+  loadHitlQueue();
   if (window.__apeSchedTimer) clearInterval(window.__apeSchedTimer);
   window.__apeSchedTimer = setInterval(() => { if (root.isConnected) loadSchedules(true); else clearInterval(window.__apeSchedTimer); }, 60000);
 }

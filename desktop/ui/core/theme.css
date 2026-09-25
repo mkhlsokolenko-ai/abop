@@ -216,3 +216,14 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
 .ape-card:hover { border-color: var(--line-2); }
 .btn.primary { box-shadow: var(--shadow-accent); }
 .chip.on { box-shadow: 0 0 0 3px var(--accent-bg); }
+
+/* ── hover-lift для интерактивных карточек модулей (паритет живости с webapp) ── */
+.lift { transition: transform .16s ease, box-shadow .2s ease, border-color .15s ease; }
+.lift:hover { transform: translateY(-2px); box-shadow: var(--shadow-2); border-color: var(--line-2); }
+/* граф: палитра, узлы и порты «живые» на наведении */
+.pal { transition: transform .14s ease, border-color .15s ease, background .15s ease; }
+.pal:hover { transform: translateX(3px); border-color: var(--line-2); background: var(--hover); }
+.gn { transition: box-shadow .18s ease, border-color .15s ease; }
+.gn:hover { box-shadow: var(--shadow-2); }
+.gport { transition: transform .12s ease, background .15s ease, box-shadow .15s ease; }
+.gport.gl:hover, .gport.gr:hover { transform: translateY(-50%) scale(1.4); box-shadow: 0 0 0 4px var(--accent-bg); }

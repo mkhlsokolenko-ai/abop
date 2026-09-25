@@ -13,7 +13,7 @@ export async function mount(root, ctx) {
   let agentsCat = []; try { agentsCat = await api("/api/modules/agents/catalog"); } catch {}
   let saved = []; try { saved = await api(G + "/graphs"); } catch {}
 
-  root.innerHTML = `<div style="flex:1;min-width:0;display:flex;flex-direction:column">
+  root.innerHTML = `<div style="flex:1;min-width:0;display:flex;flex-direction:column;animation:ape-in .3s ease-out">
     <div style="display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap">
       <div style="display:flex;flex-direction:column;gap:4px">
         <span style="${LBL}">граф агента</span>
@@ -21,11 +21,12 @@ export async function mount(root, ctx) {
       </div>
       <select id="gPick" title="Сохранённые графы" style="padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:var(--field);color:var(--ink-2);font-size:12px"></select>
       <span id="gDirty" class="chip"></span>
-      <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
+      <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input id="gTask" placeholder="Задача для графа…" style="width:210px;padding:9px 12px;border-radius:10px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-size:12.5px"/>
         <button id="gNew" class="btn sm">＋ Новый</button>
         <button id="gCheck" style="padding:9px 16px;border:1px solid rgba(52,211,153,.4);border-radius:10px;background:rgba(16,185,129,.14);color:var(--ok-ink);font-size:12.5px;font-weight:600;cursor:pointer">Проверить</button>
         <button id="gSave" class="btn sm">Сохранить</button>
-        <button id="gRun" style="padding:9px 16px;border:none;border-radius:10px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:12.5px;font-weight:600;cursor:pointer">Запустить ▸</button>
+        <button id="gRun" style="padding:9px 16px;border:none;border-radius:10px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:12.5px;font-weight:600;cursor:pointer;box-shadow:var(--shadow-accent)">Запустить ▸</button>
       </div>
     </div>
     <div style="flex:1;display:flex;min-height:0">
@@ -145,13 +146,15 @@ export async function mount(root, ctx) {
       ? `<span style="color:var(--ok-ink)">✓ Исполнимо · ${r.nodes} узл., ${r.edges} связ.</span>`
       : (r.issues || []).map((i) => `<div style="color:var(--warn-ink);margin-bottom:4px">• ${esc(i)}</div>`).join("");
   };
+  $("gTask").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); $("gRun").onclick(); } };
   $("gRun").onclick = async () => {
     if (dirty || !graphId) { await $("gSave").onclick(); }
-    const task = prompt("Задача для графа:"); if (!task) return;
+    const task = ($("gTask").value || "").trim();
+    if (!task) { const t = $("gTask"); t.focus(); t.style.borderColor = "var(--warn-ink)"; setTimeout(() => (t.style.borderColor = "var(--line)"), 1400); return; }
     $("gChk").innerHTML = `<span class="faint">▍ граф выполняется…</span>`;
     const r = await api(G + "/run", { method: "POST", body: JSON.stringify({ id: graphId, task }) });
     if (!r.ok) { $("gChk").innerHTML = `<span style="color:var(--danger-ink)">${r.error === "auth_required" ? "нужен вход через GitHub" : (r.message || r.error)}</span>`; return; }
-    $("gChk").innerHTML = r.steps.map((s) => `<div style="border:1px solid var(--line);border-radius:10px;padding:9px;margin-bottom:6px"><b style="font-size:12px">🤖 ${esc(s.name)}</b><div style="font-size:11.5px;color:var(--ink-2);white-space:pre-wrap;margin-top:3px">${esc(s.text.slice(0, 400))}</div></div>`).join("");
+    $("gChk").innerHTML = r.steps.map((s) => `<div style="border:1px solid var(--line);border-radius:10px;padding:9px;margin-bottom:6px;background:var(--panel);box-shadow:var(--shadow-1);animation:ape-in .3s ease-out"><b style="font-size:12px">🤖 ${esc(s.name)}</b><div style="font-size:11.5px;color:var(--ink-2);white-space:pre-wrap;margin-top:3px">${esc(s.text.slice(0, 400))}</div></div>`).join("");
   };
 
   paintPalette(); paintPick(); setDirty(false); paint();
