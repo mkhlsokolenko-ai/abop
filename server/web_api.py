@@ -2088,6 +2088,13 @@ async def agents_match(body: dict, u: dict = Depends(user)) -> dict:
         full = await agent_store.get(b["id"])
         if full:
             agents.append(full)
+    # дедуп до ПОСЛЕДНЕЙ версии на агента — иначе подсказки/цепочки дублируют один агент (#8)
+    _latest: dict = {}
+    for a in agents:
+        cid = a.get("contract_audit_id") or a.get("id")
+        if cid not in _latest or (a.get("version") or 0) > (_latest[cid].get("version") or 0):
+            _latest[cid] = a
+    agents = list(_latest.values())
     if not agents:
         return {"matches": []}
     ql = q.lower()
