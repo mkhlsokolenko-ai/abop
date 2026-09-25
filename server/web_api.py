@@ -1606,7 +1606,17 @@ async def connector_save(body: dict, u: dict = Depends(user)) -> dict:
 @app.post("/api/data/connectors/test")
 def connector_test(body: dict, u: dict = Depends(user)) -> dict:
     """Тест-прогон коннектора: читает несколько строк источника (без записи). §5 [Тест-прогон]."""
-    return ape.data_test_connector(body)
+    spec = body or {}
+    if not str(spec.get("target") or spec.get("path") or "").strip():
+        raise HTTPException(422, "не указан источник (путь к файлу / URL / строка подключения)")
+    if not spec.get("adapter") and spec.get("kind"):
+        spec = dict(spec, adapter=spec.get("kind"))
+    try:
+        return ape.data_test_connector(spec)
+    except KeyError as ex:  # noqa: BLE001 — UX-аудит: «KeyError: 'path'» уходил в UI как есть
+        raise HTTPException(422, f"в описании источника не хватает поля {ex}")
+    except Exception as ex:  # noqa: BLE001
+        raise HTTPException(400, f"источник не читается: {type(ex).__name__}: {str(ex)[:200]}")
 
 
 # ── Рецепты (источник → canonical) — §5 таб «Рецепты» ──
@@ -1640,6 +1650,32 @@ async def recipe_save(body: dict, u: dict = Depends(user)) -> dict:
     await cachebus.notify("dataplane")
     await audit_store.record(editor, "data.recipe", r["recipe"], {"entity": r.get("entity")})
     return r
+
+
+@app.delete("/api/data/recipes/{name}")
+async def recipe_delete(name: str, u: dict = Depends(user)) -> dict:
+    """Удалить рецепт (manager+). UX-аудит W-H5: раньше кнопка удаляла только в UI."""
+    require_level(u, "manager")
+    ok = await dataplane_store.delete_recipe(name)
+    if not ok:
+        raise HTTPException(404, "нет такого рецепта")
+    await _refresh_dataplane_cache()
+    await cachebus.notify("dataplane")
+    await audit_store.record(u.get("name") or u.get("sub") or "dev", "data.recipe.delete", name, {}, severity="warn")
+    return {"deleted": True, "recipe": name}
+
+
+@app.delete("/api/data/connectors/{cid}")
+async def connector_delete(cid: str, u: dict = Depends(user)) -> dict:
+    """Удалить коннектор-инстанс (manager+)."""
+    require_level(u, "manager")
+    ok = await dataplane_store.delete_connector(cid)
+    if not ok:
+        raise HTTPException(404, "нет такого коннектора")
+    await _refresh_dataplane_cache()
+    await cachebus.notify("dataplane")
+    await audit_store.record(u.get("name") or u.get("sub") or "dev", "data.connector.delete", cid, {}, severity="warn")
+    return {"deleted": True, "connector": cid}
 
 
 @app.post("/api/compute")
@@ -2037,6 +2073,10 @@ async def agent_delete(agent_id: str, u: dict = Depends(user)) -> dict:
                 deleted += 1
     if not deleted:                                   # запасной путь: снести хотя бы саму версию
         deleted = 1 if await agent_store.delete(agent_id) else 0
+    if not deleted:
+        raise HTTPException(404, "нет такого агента")   # UX-аудит: DELETE несуществующего отвечал «успех»
+    actor = u.get("name") or u.get("sub") or "dev"
+    await audit_store.record(actor, "agent.delete", agent_id, {"versions_removed": deleted}, severity="warn")
     return {"id": agent_id, "deleted": True, "versions_removed": deleted}
 
 
@@ -3311,10 +3351,10 @@ async def pipeline_suggest(body: dict, u: dict = Depends(user)) -> dict:
 
 
 @app.get("/api/runs")
-async def runs_list(agent_id: str = "", u: dict = Depends(user)) -> dict:
-    """Журнал прогонов (последние 100). ABAC: не-admin видит только прогоны агентов своего отдела.
-    Обогащается именем/семьёй агента для отображения во Флоте/Обзоре."""
-    items = await run_store.list_runs(agent_id=agent_id or None, limit=100)
+async def runs_list(agent_id: str = "", limit: int = 100, u: dict = Depends(user)) -> dict:
+    """Журнал прогонов (по умолчанию последние 100, ?limit=1..500). ABAC: не-admin видит только
+    прогоны агентов своего отдела. Обогащается именем/семьёй агента для отображения во Флоте/Обзоре."""
+    items = await run_store.list_runs(agent_id=agent_id or None, limit=max(1, min(500, int(limit or 100))))
     # обогащение агентом: берём ЛЁГКИЕ сводки одним запросом (id/name/family/version/role без graph),
     # вместо полного agent_store.get() на каждого агента (тот тянул тяжёлый graph-JSONB ради 4 полей).
     briefs = {a["id"]: a for a in await agent_store.list_for(None)}

@@ -80,6 +80,25 @@ async def connectors_all() -> list[dict]:
         return [r[0] for r in await cur.fetchall()]
 
 
+async def delete_recipe(name: str) -> bool:
+    """Удалить рецепт (UX-аудит W-H5: раньше UI удалял локально, «призрак» возвращался после F5)."""
+    if not _has_pg():
+        return _MEM_RECIPES.pop(name, None) is not None
+    from .db import _conn
+    async with _conn() as conn:
+        cur = await conn.execute("DELETE FROM dp_recipes WHERE name=%s", (name,))
+        return (cur.rowcount or 0) > 0
+
+
+async def delete_connector(cid: str) -> bool:
+    if not _has_pg():
+        return _MEM_CONNECTORS.pop(cid, None) is not None
+    from .db import _conn
+    async with _conn() as conn:
+        cur = await conn.execute("DELETE FROM dp_connectors WHERE id=%s", (cid,))
+        return (cur.rowcount or 0) > 0
+
+
 async def save_connector(cid: str, card: dict, editor: str = "dev") -> dict:
     if not _has_pg():
         _MEM_CONNECTORS[cid] = card
