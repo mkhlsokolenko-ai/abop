@@ -225,6 +225,11 @@ def run_pipeline(pid: str, context: str = "") -> dict:
                 {"context": context}, timeout=600)
 
 
+def suggest_pipeline(q: str) -> dict:
+    """Авто-сборка цепочки под задачу (семантика + LLM): {steps, name, deliver, reason}."""
+    return _req("POST", "/api/pipelines/suggest", {"q": q}, timeout=90)
+
+
 def hitl_approve(item_id: str, decision: str = "approve", reason: str = "") -> dict:
     return _req("POST", "/api/hitl/" + urllib.request.quote(item_id) + "/approve",
                 {"decision": decision, "reason": reason}, timeout=60)

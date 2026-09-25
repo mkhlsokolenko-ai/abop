@@ -3253,6 +3253,51 @@ async def pipeline_run(pid: str, body: dict, u: dict = Depends(user)) -> JSONRes
     return JSONResponse({"pipeline": pid, "name": p.get("name"), "steps": out_steps}, status_code=201)
 
 
+@app.post("/api/pipelines/suggest")
+async def pipeline_suggest(body: dict, u: dict = Depends(user)) -> dict:
+    """Авто-сборка цепочки под задачу (#5, гибрид): семантический матчер даёт кандидатов → LLM собирает
+    из них упорядоченную линейную цепочку по контексту + выбирает доставку. Дешевле полного LLM-
+    планирования: кандидатов отбирает детерминированный /match, LLM лишь упорядочивает/отсекает."""
+    q = str((body or {}).get("q") or "").strip()
+    if not q:
+        return {"steps": []}
+    cands = (await agents_match(body, u)).get("matches", [])[:5]
+    if len(cands) < 2:
+        return {"steps": [], "reason": "для цепочки нужно 2+ подходящих агента"}
+    lines = "\n".join(
+        f'- id={c["id"]} · {c.get("name")} · семья={c.get("family")} · роль={c.get("role") or "—"} · каналы={c.get("channels") or []}'
+        for c in cands)
+    prompt = (
+        "Ты оркестратор агентов. Пользователь описал задачу; ниже агенты-кандидаты. Собери ЛИНЕЙНУЮ "
+        "цепочку (выход одного агента → вход следующего), если задача требует нескольких шагов; порядок "
+        "важен. Верни СТРОГО JSON без пояснений:\n"
+        '{"steps":["<id>",...],"name":"<кратко>","deliver":"chat|email|redmine","reason":"<1 фраза>"}\n'
+        "Бери ТОЛЬКО id из списка. Если хватает одного агента — один шаг. deliver — куда финальный результат.\n\n"
+        f"ЗАДАЧА:\n{q}\n\nАГЕНТЫ:\n{lines}")
+    import json as _json
+    ids, name, deliver, reason = [], "Авто-цепочка", "chat", ""
+    try:
+        resp = await clients.chat(messages=[{"role": "user", "content": prompt}],
+                                  profile="standard", max_tokens=700)
+        txt = resp.get("text") or ""
+        i, j = txt.find("{"), txt.rfind("}")
+        data = _json.loads(txt[i:j + 1]) if i >= 0 and j > i else {}
+        valid = {c["id"] for c in cands}
+        ids = [s for s in (data.get("steps") or []) if s in valid]
+        name = (data.get("name") or name)[:60]
+        if data.get("deliver") in ("chat", "email", "redmine"):
+            deliver = data["deliver"]
+        reason = (data.get("reason") or "")[:200]
+    except Exception:  # noqa: BLE001 — LLM недоступен → фолбэк на топ-2 семантики
+        pass
+    if len(ids) < 2:
+        ids = [c["id"] for c in cands[:2]]
+        reason = reason or "по семантике (LLM-докрутка недоступна)"
+    nm = {c["id"]: c.get("name") for c in cands}
+    steps = [{"agent_id": i, "agent_name": nm.get(i, i)} for i in ids]
+    return {"steps": steps, "name": name, "deliver": deliver, "reason": reason}
+
+
 @app.get("/api/runs")
 async def runs_list(agent_id: str = "", u: dict = Depends(user)) -> dict:
     """Журнал прогонов (последние 100). ABAC: не-admin видит только прогоны агентов своего отдела.

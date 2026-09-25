@@ -220,6 +220,15 @@ def run_pipeline(pid: str, body: PipelineRunIn):
         return _err(e)
 
 
+@router.post("/pipelines/suggest")
+def suggest_pipeline(body: dict):
+    """Авто-сборка цепочки под задачу (семантика + LLM). Тело: {q}."""
+    try:
+        return abop.suggest_pipeline(str((body or {}).get("q") or ""))
+    except abop.AbopError as e:
+        return _err(e)
+
+
 @router.delete("/{agent_id}")
 def del_agent(agent_id: str):
     """Удалить «моего» агента (все версии, идемпотентно). Одиночный сегмент — не конфликтует

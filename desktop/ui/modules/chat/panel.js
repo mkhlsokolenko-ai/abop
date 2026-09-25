@@ -188,7 +188,8 @@ export async function mount(root, ctx) {
     const inner = mine ? `<span style="font-size:13.5px;line-height:1.6;white-space:pre-wrap">${esc(m.content)}</span>`
       : (m.meta && m.meta.run_agent ? runCard(m.meta.run_agent)
         : (m.meta && m.meta.pipeline_result ? m.meta.pipeline_result
-          : (m.meta && m.meta.decision ? decisionHTML(m.meta.decision) : md(m.content))));
+          : (m.meta && m.meta.chain_suggest ? chainSuggestHTML(m.meta.chain_suggest)
+            : (m.meta && m.meta.decision ? decisionHTML(m.meta.decision) : md(m.content)))));
     const cost = m.meta && m.meta.model ? `<span style="margin-left:4px;font-family:var(--mono);font-size:10.5px;color:var(--ink-3)">${m.meta.model} · ${m.meta.cost_rub ?? 0} ₽</span>` : "";
     const acts = mine
       ? `<button data-edit="${idx}" style="padding:4px 9px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--ink-3);font-size:11px;cursor:pointer">✎ изменить</button>`
@@ -227,6 +228,8 @@ export async function mount(root, ctx) {
     $("col").querySelectorAll(".dcRun").forEach((b) => b.onclick = () => { const dc = _lastDecision(); runAbopAgentDeliver(b.dataset.id, b.dataset.name, dc ? dc.text : "", b.dataset.deliver || ""); });
     $("col").querySelectorAll(".dcAlt").forEach((b) => b.onclick = () => { const dc = _lastDecision(); runAbopAgentDeliver(b.dataset.id, b.dataset.name, dc ? dc.text : "", ""); });
     $("col").querySelectorAll(".dcChat").forEach((b) => b.onclick = () => { const dc = _lastDecision(); if (dc) sendPrompt(dc.text); });
+    $("col").querySelectorAll(".dcChain").forEach((b) => b.onclick = () => { const dc = _lastDecision(); if (dc) suggestChain(dc.text); });
+    $("col").querySelectorAll(".chainRun").forEach((b) => b.onclick = () => { for (let i = messages.length - 1; i >= 0; i--) { if (messages[i].meta && messages[i].meta.chain_suggest) { saveAndRunChain(messages[i].meta.chain_suggest); break; } } });
     $("scroll").scrollTop = $("scroll").scrollHeight;
   }
 
@@ -363,6 +366,37 @@ export async function mount(root, ctx) {
       run.meta = { pipeline_result: `<div style="font-weight:600;margin-bottom:2px">🔗 Цепочка «${esc(p.name || pid)}» — ${steps.length} шаг(ов) · находок: ${totFnd}${totTok ? ` · 🎫 ${totTok >= 1000 ? Math.round(totTok / 1000) + "k" : totTok} токенов` : ""}</div>${cards}` };
     } catch (e) { run.content = "Сбой цепочки: " + (e && e.message || e); }
     render(); loadQuota(); loadThreads();
+  }
+
+  // #5 авто-цепочка: семантика + LLM собирают цепочку под задачу → карточка «собрать и запустить».
+  async function suggestChain(task) {
+    if (!task || !cur) return;
+    const run = { role: "assistant", content: "", meta: {} }; messages.push(run); render();
+    const bubs = $("col").querySelectorAll(".bub"); const el = bubs[bubs.length - 1];
+    if (el) el.innerHTML = `<span style="display:inline-flex;gap:12px;align-items:center">${mascot("thinking", 26)}<span style="color:var(--ink-2)">подбираю цепочку под задачу…</span></span>`;
+    let r = null; try { r = await api(A_AG + "/pipelines/suggest", { method: "POST", body: JSON.stringify({ q: task }) }); } catch (e) {}
+    const steps = (r && r.steps) || [];
+    if (steps.length < 2) { run.content = "Под эту задачу цепочка не нужна — хватит одного агента (кнопки выше)."; render(); return; }
+    run.meta = { chain_suggest: { steps, name: (r && r.name) || "Авто-цепочка", deliver: (r && r.deliver) || "chat", reason: (r && r.reason) || "", task } };
+    render();
+  }
+  function chainSuggestHTML(cs) {
+    const chain = cs.steps.map((s) => esc(s.agent_name || s.agent_id)).join(" → ");
+    const dlv = cs.deliver === "email" ? "почта" : cs.deliver === "redmine" ? "Redmine" : "чат";
+    return `<div style="display:flex;flex-direction:column;gap:9px">
+      <div style="font-size:13px;color:var(--ink)">🔗 Предлагаю цепочку: <b>${chain}</b></div>
+      ${cs.reason ? `<div style="font-size:11.5px;color:var(--ink-3)">${esc(cs.reason)}</div>` : ""}
+      <div style="font-size:11.5px;color:var(--ink-2)">результат → <b>${esc(dlv)}</b></div>
+      <button class="chainRun" style="align-self:flex-start;padding:8px 13px;border:none;border-radius:10px;background:linear-gradient(135deg,#8b5cf6,#6366f1);color:#fff;font-size:12px;font-weight:600;cursor:pointer">▶ Собрать и запустить</button></div>`;
+  }
+  async function saveAndRunChain(cs) {
+    const steps = cs.steps.map((s, i) => ({ agent_id: s.agent_id, deliver: i < cs.steps.length - 1 ? "chat" : cs.deliver }));
+    let saved = null;
+    try { saved = await api(A_AG + "/pipelines", { method: "POST", body: JSON.stringify({ name: cs.name, steps }) }); } catch (e) {}
+    await loadPipelines();
+    const pid = (saved && (saved.id || (saved.pipeline && saved.pipeline.id))) || (pipelines.find((p) => p.name === cs.name) || {}).id;
+    if (pid) runPipeline(pid, cs.task);
+    else { messages.push({ role: "assistant", content: "Не удалось сохранить цепочку — попробуйте собрать вручную («🔗 Цепочки»).", meta: {} }); render(); }
   }
 
   // HITL прямо в основном окне чата: подтвердить/отклонить внешнее действие ЭТОГО прогона.
@@ -513,6 +547,7 @@ export async function mount(root, ctx) {
     return `<div style="display:flex;flex-direction:column;gap:10px">
       <div style="font-size:13px;color:var(--ink)">🎯 Похоже, это задача для агента <b>${esc(t.name)}</b> <span style="font-family:var(--mono);font-size:10px;color:var(--ink-3)">${esc(t.family || "")}</span></div>
       ${chLine}
+      ${(dc.alt && dc.alt.length) ? `<button class="dcChain" style="align-self:flex-start;padding:6px 11px;border:1px solid rgba(139,92,246,.5);border-radius:9px;background:rgba(139,92,246,.14);color:#c4b5fd;font-size:11.5px;font-weight:600;cursor:pointer">🔗 Задача многошаговая — собрать цепочку</button>` : ""}
       <div style="font-size:11.5px;color:var(--ink-2)">Куда положить результат?</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="dcRun" data-id="${esc(t.id)}" data-name="${esc(t.name)}" data-deliver="" style="padding:8px 13px;border:none;border-radius:10px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:12px;font-weight:600;cursor:pointer">▶ Запустить (как настроено)</button>
@@ -548,7 +583,8 @@ export async function mount(root, ctx) {
     if (el) el.innerHTML = `<span style="display:inline-flex;gap:12px;align-items:center">${mascot("thinking", 26)}<span style="color:var(--ink-2)">агент «${esc(agentName)}» работает…</span></span>`;
     try {
       const r = await api(M + "/threads/" + cur.id + "/run-agent", { method: "POST", body: JSON.stringify({ agent_id: agentId, context: task || "", deliver: deliver || "" }) });
-      if (r.ok) { run.content = "[агент " + agentId + "]"; run.meta = { run_agent: r.run }; }
+      if (r.ok) { run.content = "[агент " + agentId + "]"; run.meta = { run_agent: r.run };
+        if (((r.run || {}).delivery || []).some((d) => d.mode === "awaiting_hitl")) showToast("⏸ Требуется ваше подтверждение — карточка внизу чата (#7)"); }
       else { run.content = "Ошибка запуска: " + (r.error || "не удалось"); }
     } catch (e) { run.content = "Сбой: " + (e && e.message || e); }
     render(); loadThreads(); loadQuota();
@@ -607,6 +643,7 @@ export async function mount(root, ctx) {
       if (r.ok) {
         run.content = "[агент " + agentId + "]"; run.meta = { run_agent: r.run };
         // HITL рендерится прямо в карточке прогона в основном окне чата (runCard) — без отдельной модалки.
+        if (((r.run || {}).delivery || []).some((d) => d.mode === "awaiting_hitl")) showToast("⏸ Требуется ваше подтверждение — карточка внизу чата (#7)");
       } else {
         run.content = "Ошибка запуска: " + (r.error || "не удалось");
       }
