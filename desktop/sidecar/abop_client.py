@@ -215,6 +215,11 @@ def del_pipeline(pid: str) -> dict:
     return _req("DELETE", "/api/pipelines/" + urllib.request.quote(pid), timeout=30)
 
 
+def del_agent(agent_id: str) -> dict:
+    """Идемпотентное удаление «моего» агента (все версии) — сервер убирает его целиком."""
+    return _req("DELETE", "/api/agents/" + urllib.request.quote(agent_id), timeout=30)
+
+
 def run_pipeline(pid: str, context: str = "") -> dict:
     return _req("POST", "/api/pipelines/" + urllib.request.quote(pid) + "/run",
                 {"context": context}, timeout=600)

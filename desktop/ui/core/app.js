@@ -104,7 +104,7 @@ function railBtn(glyph, label, on) {
 // пряталось за палитрой/«+» и было «невостребовано»). Порядок — осмысленный, «Чат» первым;
 // ролевые модули (security/graphlens/opslens) сами отфильтруются canSee/visibleModules.
 const RAIL_ORDER = ["chat", "connectors", "agents", "graphlens", "opslens", "security", "cabinet"];
-const RAIL_TITLE = {};
+const RAIL_TITLE = { agents: "Мои агенты" };
 function railModules() {
   const rank = (id) => { const i = RAIL_ORDER.indexOf(id); return i < 0 ? RAIL_ORDER.length : i; };
   return visibleModules().slice().sort((a, b) => rank(a.id) - rank(b.id));

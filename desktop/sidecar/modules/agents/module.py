@@ -218,3 +218,13 @@ def run_pipeline(pid: str, body: PipelineRunIn):
         return abop.run_pipeline(pid, body.context)
     except abop.AbopError as e:
         return _err(e)
+
+
+@router.delete("/{agent_id}")
+def del_agent(agent_id: str):
+    """Удалить «моего» агента (все версии, идемпотентно). Одиночный сегмент — не конфликтует
+    с /pipelines/{pid} и /trigger/{a}/{t} (те многосегментные)."""
+    try:
+        return {"ok": True, **(abop.del_agent(agent_id) or {})}
+    except abop.AbopError as e:
+        return _err(e)

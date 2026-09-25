@@ -150,6 +150,7 @@ def abop_agents() -> list[dict]:
             out.append({"id": a.get("id"), "name": a.get("name"), "family": a.get("family"),
                         "role": a.get("role"), "autonomy_max": a.get("autonomy_max"),
                         "outward": bool(a.get("outward")), "description": desc,
+                        "owner": bool(a.get("owner")),   # «мой» агент vs общий — для вкладок шторки (#9)
                         "systems": sorted(set(systems))})
         return out
     except abop.AbopError:

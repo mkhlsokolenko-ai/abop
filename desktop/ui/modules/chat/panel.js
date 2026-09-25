@@ -588,6 +588,7 @@ export async function mount(root, ctx) {
   // ── шторка агентов ──
   // ── шторка с табами Инструменты / Агенты (1:1 из макета Overlays) ──
   let drTab = "tools";
+  let drAgTab = "mine";   // вкладка агентов в шторке: mine | common (#9)
   function openAgents(tab) { if (!cur) return; drTab = tab || "agents"; $("drawer").style.transform = "translateX(0)"; renderDrawer(); }
   function drTabStyle(on) { return on ? "background:var(--panel);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.2)" : "background:transparent;color:var(--ink-2)"; }
   // запуск РЕАЛЬНОГО ABOP-агента из треда (находки/доставка/HITL карточкой)
@@ -650,7 +651,10 @@ export async function mount(root, ctx) {
     b.innerHTML = `<div class="faint">Загрузка агентов ABOP…</div>`;
     let cat = []; try { cat = await api(M + "/abop-agents"); } catch {}
     const roleTxt = (ctx.roles && ctx.roles[0]) || "manager";
-    const catHTML = cat.map((a) => `<label style="padding:13px;border-radius:13px;background:var(--panel);border:1px solid var(--line);display:flex;align-items:flex-start;gap:9px;cursor:pointer">
+    const _mine = cat.filter((a) => a.owner), _common = cat.filter((a) => !a.owner);
+    const _shown = drAgTab === "mine" ? _mine : _common;   // Мои / Общие агенты (#9)
+    const _tab = (id, label, n) => `<button class="drAgTab" data-t="${id}" style="flex:1;padding:7px;border:1px solid ${drAgTab === id ? "var(--accent)" : "var(--line)"};border-radius:9px;background:${drAgTab === id ? "var(--accent-bg)" : "var(--field)"};color:${drAgTab === id ? "var(--accent-ink)" : "var(--ink-2)"};font-size:11.5px;font-weight:600;cursor:pointer">${label} · ${n}</button>`;
+    const catHTML = _shown.map((a) => `<label style="padding:13px;border-radius:13px;background:var(--panel);border:1px solid var(--line);display:flex;align-items:flex-start;gap:9px;cursor:pointer">
       <input type="radio" name="abopAgent" class="da" value="${esc(a.id)}" style="accent-color:#6366f1;margin-top:2px"/>
       <span style="display:flex;flex-direction:column;gap:3px;min-width:0">
         <span style="font-size:13px;font-weight:600">${esc(a.name)}${a.outward ? " 🛡" : ""}</span>
@@ -658,15 +662,17 @@ export async function mount(root, ctx) {
         ${a.description ? `<span style="font-size:11px;line-height:1.4;color:var(--ink-2)">${esc(a.description)}</span>` : ""}
         ${(a.systems && a.systems.length) ? `<span style="font-size:10.5px;color:var(--accent-ink-2,#a5b4fc)">🔌 ${esc(a.systems.join(", "))}</span>` : ""}
       </span></label>`).join("")
-      || `<div style="font-size:12.5px;color:var(--ink-3)">Нет доступных агентов ABOP (проверьте вход/роль). Соберите агента во вкладке 🤖 Агенты.</div>`;
-    b.innerHTML = `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:11px;background:var(--hover);border:1px solid var(--line)">
-        <span style="font-size:11.5px;color:var(--ink-2)">Агенты ABOP · видно по роли:</span><span style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--accent-ink-2)">${esc(roleTxt)}</span></div>
+      || `<div style="font-size:12.5px;color:var(--ink-3)">${drAgTab === "mine" ? "У вас пока нет своих агентов — соберите во вкладке «Мои агенты»." : "Нет общих агентов, доступных вашей роли (ABAC/RBAC)."}</div>`;
+    b.innerHTML = `<div style="display:flex;gap:6px;margin-bottom:2px">${_tab("mine", "Мои", _mine.length)}${_tab("common", "Общие", _common.length)}</div>
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:11px;background:var(--hover);border:1px solid var(--line)">
+        <span style="font-size:11.5px;color:var(--ink-2)">видно по роли:</span><span style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--accent-ink-2)">${esc(roleTxt)}</span></div>
       <textarea id="drTask" rows="3" style="${"padding:11px 13px;border-radius:11px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-size:12.5px"}" placeholder="Контекст/задача (необязательно): ссылка на документ, выделенный текст, уточнение…"></textarea>
       ${catHTML}
       <button id="drRun" style="padding:11px;border:none;border-radius:11px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:12.5px;font-weight:600;cursor:pointer">▶ Запустить агента в тред</button>
       <details><summary style="cursor:pointer;font-size:12px;color:var(--ink-3)">Быстрые роли (импровизация без данных)</summary><div style="margin-top:6px">${roles.map((r) => `<label style="display:flex;gap:8px;align-items:flex-start;padding:5px 0;font-size:12.5px"><input type="checkbox" class="rl" value="${r.id}"/><span><b>${esc(r.name)}</b> <span style="color:var(--ink-3)">${esc(r.brief)}</span></span></label>`).join("")}</div>
         <button id="drRunRoles" style="margin-top:6px;padding:9px;border:1px solid var(--line);border-radius:10px;background:var(--hover);color:var(--ink-2);font-size:12px;font-weight:600;cursor:pointer">Запустить роли</button></details>`;
     if ($("inp").value.trim()) b.querySelector("#drTask").value = $("inp").value.trim();
+    b.querySelectorAll(".drAgTab").forEach((x) => x.onclick = () => { drAgTab = x.dataset.t; renderDrawer(); });
     b.querySelector("#drRun").onclick = () => {
       const task = b.querySelector("#drTask").value.trim();
       const sel = b.querySelector(".da:checked");

@@ -9,7 +9,7 @@ const BTN = "padding:9px 14px;border-radius:11px;border:1px solid var(--line);ba
 
 export async function mount(root, ctx) {
   const { api } = ctx;
-  let agents = [], hitl = [], families = [], mode = "catalog";
+  let agents = [], hitl = [], families = [], mode = "catalog", tab = "mine";
   // состояние конструктора: выбранная семья, набор навыков, имя
   let bFamily = "", bSkills = new Set(), bName = "";
 
@@ -19,15 +19,20 @@ export async function mount(root, ctx) {
 
   function render() {
     if (mode === "builder") return renderBuilder();
+    const mine = agents.filter((a) => a.owner);       // «мои» — созданы под ID пользователя (source=authored)
+    const common = agents.filter((a) => !a.owner);    // «общие» — из ABOP по ABAC/RBAC
+    const shown = tab === "mine" ? mine : common;
+    const tabBtn = (id, label, n) => `<button class="tabBtn" data-tab="${id}" style="${BTN};${tab === id ? "background:var(--accent-bg);color:var(--accent-ink);border-color:var(--line-2)" : "background:transparent;color:var(--ink-2)"}">${label} · ${n}</button>`;
     root.innerHTML = `
       <div style="display:flex;flex-direction:column;gap:18px;padding:20px;max-width:960px;margin:0 auto">
         <div style="display:flex;align-items:center;justify-content:space-between">
-          <div><div style="${LBL}">РАНТАЙМ ABOP</div><div style="font-size:18px;font-weight:700;color:var(--ink)">Агенты</div></div>
+          <div><div style="${LBL}">РАНТАЙМ ABOP</div><div style="font-size:18px;font-weight:700;color:var(--ink)">Мои агенты</div></div>
           <span style="display:flex;gap:8px">
-            <button id="build" style="${BTN};background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none">＋ Собрать агента</button>
+            ${tab === "mine" ? `<button id="build" style="${BTN};background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none">＋ Собрать агента</button>` : ""}
             <button id="refresh" style="${BTN}">Обновить</button>
           </span>
         </div>
+        <div style="display:flex;gap:8px">${tabBtn("mine", "Мои агенты", mine.length)}${tabBtn("common", "Общие агенты", common.length)}</div>
         ${hitl.length ? `<div style="${CARD};border-color:rgba(245,158,11,.4)">
           <div style="${LBL};color:#fbbf24">НА ПОДТВЕРЖДЕНИИ (HITL) · ${hitl.length}</div>
           ${hitl.map((h) => `<div style="display:flex;align-items:center;gap:10px;justify-content:space-between">
@@ -38,21 +43,34 @@ export async function mount(root, ctx) {
             </span></div>`).join("")}
         </div>` : ""}
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">
-          ${agents.length ? agents.map((a) => `<div style="${CARD}">
-            <div><div style="${LBL}">${esc(a.family || "—")} · ${esc(a.role || "")}</div>
-              <div style="font-size:15px;font-weight:700;color:var(--ink)">${esc(a.name)}</div></div>
-            <div style="font-size:11.5px;color:var(--ink-2)">автономия ${esc(a.autonomy_max || "?")} · v${esc(String(a.version || 1))}</div>
+          ${shown.length ? shown.map((a) => `<div style="${CARD}">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
+              <div><div style="${LBL}">${esc(a.family || "—")} · ${esc(a.role || "")}</div>
+                <div style="font-size:15px;font-weight:700;color:var(--ink)">${esc(a.name)}</div></div>
+              ${a.owner ? `<button class="del" data-id="${esc(a.id)}" data-name="${esc(a.name)}" title="Удалить моего агента" style="width:26px;height:26px;flex:none;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--ink-3);font-size:12px;cursor:pointer">✕</button>` : ""}
+            </div>
+            <div style="font-size:11.5px;color:var(--ink-2)">автономия ${esc(a.autonomy_max || "?")} · v${esc(String(a.version || 1))}${a.owner ? " · мой" : " · общий (ABAC)"}</div>
             <button class="run" data-id="${esc(a.id)}" style="${BTN};background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none">▶ Запустить</button>
-          </div>`).join("") : `<div class="faint" style="padding:20px">Нет доступных агентов (проверьте доступ/роль).</div>`}
+          </div>`).join("") : `<div class="faint" style="padding:20px">${tab === "mine" ? "У вас пока нет своих агентов — «＋ Собрать агента»." : "Нет общих агентов, доступных вашей роли (ABAC/RBAC)."}</div>`}
         </div>
         <div id="result"></div>
       </div>`;
 
+    root.querySelectorAll(".tabBtn").forEach((b) => (b.onclick = () => { tab = b.dataset.tab; render(); }));
     root.querySelector("#refresh").onclick = async () => { await loadAgents(); await loadHitl(); render(); };
-    root.querySelector("#build").onclick = async () => { if (!families.length) await loadFamilies(); bFamily = ""; bSkills = new Set(); bName = ""; mode = "builder"; render(); };
+    const bb = root.querySelector("#build"); if (bb) bb.onclick = async () => { if (!families.length) await loadFamilies(); bFamily = ""; bSkills = new Set(); bName = ""; mode = "builder"; render(); };
     root.querySelectorAll(".run").forEach((b) => (b.onclick = () => runAgent(b.dataset.id, b)));
+    root.querySelectorAll(".del").forEach((b) => (b.onclick = () => deleteAgent(b.dataset.id, b.dataset.name)));
     root.querySelectorAll(".ap").forEach((b) => (b.onclick = () => decide(b.dataset.id, "approve")));
     root.querySelectorAll(".rj").forEach((b) => (b.onclick = () => decide(b.dataset.id, "reject")));
+  }
+
+  // Идемпотентное удаление «моего» агента: сервер сносит все версии; каталог перечитываем (агент
+  // исчезает везде, где читается /catalog — модуль и шторка чата) (#8/#9).
+  async function deleteAgent(id, name) {
+    if (!confirm(`Удалить агента «${name}»? Действие уберёт его целиком (все версии).`)) return;
+    try { await api(A + "/" + encodeURIComponent(id), { method: "DELETE" }); } catch (e) {}
+    await loadAgents(); render();
   }
 
   // ── КОНСТРУКТОР цепочки агентов: семья → навыки (чекбоксы) → имя → создать (ABOP /author) ──
