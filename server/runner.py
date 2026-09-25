@@ -9,7 +9,9 @@
 """
 from __future__ import annotations
 
+import json
 import os
+import re
 import time
 
 A_LEVELS = ["A0", "A1", "A2", "A3", "A4"]
@@ -116,7 +118,7 @@ def _extract_json(raw: str) -> dict | None:
     if i < 0 or j <= i:
         return None
     try:
-        o = _json.loads(s[i:j + 1])
+        o = json.loads(s[i:j + 1])
         return o if isinstance(o, dict) else None
     except Exception:  # noqa: BLE001 — не валидный JSON → нет struct
         return None
@@ -348,7 +350,16 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
                 tin, tout = int(resp.get("input_tokens") or 0), int(resp.get("output_tokens") or 0)
                 if _STRUCTURED:
                     struct = _extract_json(raw)   # робастно: JSON даже из ```-забора/после преамбулы
-                txt = _render_findings(struct) if struct else (raw or "(пустой ответ модели)")
+                if struct:
+                    txt = _render_findings(struct)
+                elif _STRUCTURED and raw and ('"наблюдени' in raw or '"находки"' in raw):
+                    # JSON битый/обрезан (модель оборвала ответ по лимиту токенов) → салвадж наблюдений
+                    # регэкспом, чтобы НИКОГДА не показывать сырой JSON в чате/отчёте.
+                    _obs = re.findall(r'"наблюдени[ея]"\s*:\s*"((?:[^"\\]|\\.)*)"', raw)
+                    txt = "\n".join("• " + o.replace('\\"', '"') for o in _obs) if _obs else \
+                        "(ответ модели не распознан — повторите прогон)"
+                else:
+                    txt = raw or "(пустой ответ модели)"
             else:
                 txt, model, tin, tout = f"(LLM недоступен: {err})", "", 0, 0
         ms = round((time.perf_counter() - _t) * 1000, 1)  # per-skill тайминг (observability)
