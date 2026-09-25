@@ -147,15 +147,22 @@ export async function mount(root, ctx) {
   async function loadThreads() { threads = await api(M + "/threads"); renderThreads(); }
   async function openThread(t) { cur = { ...t, skills: t.skills || [] }; renderThreads(); renderTools(); messages = await api(M + "/threads/" + t.id + "/messages"); render(); renderKb(); }
 
-  // очистка текста находки: если пришёл сырой JSON ({"находки":[...]}) — вынимаем наблюдения читаемо
+  // очистка текста находки: сырой JSON ({"находки":[...]}) — в т.ч. в ```-заборе или после преамбулы —
+  // вынимаем наблюдения читаемо (наблюдение + сумма/норма), мусор отбрасываем.
   function cleanFinding(t) {
     t = (t || "").trim();
-    if (t[0] === "{" || t[0] === "[") {
+    const i = t.indexOf("{"), j = t.lastIndexOf("}");
+    if (i >= 0 && j > i) {
       try {
-        const o = JSON.parse(t);
+        const o = JSON.parse(t.slice(i, j + 1));
         const arr = Array.isArray(o) ? o : (o["находки"] || o.findings || []);
         if (Array.isArray(arr) && arr.length) {
-          return arr.map((x) => (typeof x === "string" ? x : (x["наблюдение"] || x.observation || x["запись"] || JSON.stringify(x)))).join("; ");
+          return arr.map((x) => {
+            if (typeof x === "string") return x;
+            const obs = x["наблюдение"] || x.observation || x["запись"] || "";
+            const extra = [x["сумма"] && ("— " + x["сумма"]), x["норма"] && ("· норма: " + x["норма"])].filter(Boolean).join(" ");
+            return obs ? (obs + (extra ? " " + extra : "")) : JSON.stringify(x);
+          }).join("; ");
         }
       } catch (e) { /* не JSON — вернём как есть */ }
     }

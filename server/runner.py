@@ -100,6 +100,28 @@ def _render_findings(struct: dict) -> str:
     return body + (("\n— итог: " + itog) if itog else "")
 
 
+def _extract_json(raw: str) -> dict | None:
+    """Достаём JSON-объект из ответа модели, даже если он в ```-заборе или после преамбулы.
+    Self-host модели (Qwen) часто не держат response_format строго → оборачивают JSON в текст
+    («расхождений не выявлено {…}») или markdown-забор. Иначе сырьё утекает в чат/отчёт."""
+    s = (raw or "").strip()
+    if s.startswith("```"):
+        parts = s.split("```")
+        if len(parts) >= 2:
+            s = parts[1]
+            if s.lstrip().lower().startswith("json"):
+                s = s.lstrip()[4:]
+            s = s.strip()
+    i, j = s.find("{"), s.rfind("}")
+    if i < 0 or j <= i:
+        return None
+    try:
+        o = _json.loads(s[i:j + 1])
+        return o if isinstance(o, dict) else None
+    except Exception:  # noqa: BLE001 — не валидный JSON → нет struct
+        return None
+
+
 def _aidx(a: str | None) -> int:
     try:
         return A_LEVELS.index(a or "A0")
@@ -324,11 +346,8 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
                 raw = (resp.get("text") or "").strip()
                 model = resp.get("model", "")
                 tin, tout = int(resp.get("input_tokens") or 0), int(resp.get("output_tokens") or 0)
-                if _STRUCTURED and raw.startswith("{"):
-                    try:
-                        struct = _json.loads(raw)
-                    except Exception:  # noqa: BLE001 — модель вернула не-JSON → отдаём как есть
-                        struct = None
+                if _STRUCTURED:
+                    struct = _extract_json(raw)   # робастно: JSON даже из ```-забора/после преамбулы
                 txt = _render_findings(struct) if struct else (raw or "(пустой ответ модели)")
             else:
                 txt, model, tin, tout = f"(LLM недоступен: {err})", "", 0, 0
