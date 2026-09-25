@@ -154,9 +154,21 @@ export async function mount(root, ctx) {
   function fmtObjFinding(x) {
     if (typeof x === "string") return x;
     if (!x || typeof x !== "object") return String(x == null ? "" : x);
+    // 1) прямое наблюдение (структурная находка аудита)
     const obs = x["наблюдение"] || x.observation || x["запись"] || x["описание"] || "";
-    const extra = [x["сумма"] && ("— " + x["сумма"]), x["норма"] && ("· норма: " + x["норма"]), x["класс"] && ("[" + x["класс"] + "]")].filter(Boolean).join(" ");
-    return obs ? (obs + (extra ? " " + extra : "")) : JSON.stringify(x);
+    if (obs) {
+      const extra = [x["сумма"] && ("— " + x["сумма"]), x["норма"] && ("· норма: " + x["норма"]), x["класс"] && ("[" + x["класс"] + "]")].filter(Boolean).join(" ");
+      return obs + (extra ? " " + extra : "");
+    }
+    // 2) готовый человекочитаемый текст навыка/агента (проза; cleanFinding подстрахует от вложенного JSON)
+    if (typeof x.text === "string" && x.text.trim()) return cleanFinding(x.text);
+    // 3) распарсенная структура навыка как запасной вариант: {находки:[...]}
+    const s = x.structured;
+    if (s && typeof s === "object") {
+      const arr = Array.isArray(s) ? s : (s["находки"] || s.findings || null);
+      if (Array.isArray(arr) && arr.length) return arr.map(fmtObjFinding).join("; ");
+    }
+    return JSON.stringify(x);
   }
   function cleanFinding(t) {
     // находка может прийти объектом (шаги цепочки/структурный вывод) — не только строкой
