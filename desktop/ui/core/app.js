@@ -92,7 +92,10 @@ function canSee(id) {
   if (!req) return true;
   return (ctx.roles || []).some((r) => req.includes(r));
 }
-function visibleModules() { return MODULES.filter((m) => canSee(m.id)); }
+// «Операции» (opslens) убраны как лишние (#10); «Безопасность» слита в «Кабинет» — отдельным модулем
+// не показываем (#11). Энфорс прав всё равно на шлюзе; тут только видимость UI.
+const HIDDEN_MODULES = new Set(["opslens", "security"]);
+function visibleModules() { return MODULES.filter((m) => !HIDDEN_MODULES.has(m.id) && canSee(m.id)); }
 function railBtn(glyph, label, on) {
   const bg = on ? "var(--accent-bg)" : "var(--panel)";
   const fg = on ? "var(--accent-ink)" : "var(--ink-2)";
@@ -103,7 +106,7 @@ function railBtn(glyph, label, on) {
 // Рейл показывает ВСЕ доступные модули (раньше был жёсткий ["chat","cabinet"] → всё остальное
 // пряталось за палитрой/«+» и было «невостребовано»). Порядок — осмысленный, «Чат» первым;
 // ролевые модули (security/graphlens/opslens) сами отфильтруются canSee/visibleModules.
-const RAIL_ORDER = ["chat", "connectors", "agents", "graphlens", "opslens", "security", "cabinet"];
+const RAIL_ORDER = ["chat", "connectors", "agents", "graphlens", "cabinet"];
 const RAIL_TITLE = { agents: "Мои агенты" };
 function railModules() {
   const rank = (id) => { const i = RAIL_ORDER.indexOf(id); return i < 0 ? RAIL_ORDER.length : i; };
