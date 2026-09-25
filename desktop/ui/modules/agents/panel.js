@@ -10,8 +10,21 @@ const BTN = "padding:9px 14px;border-radius:11px;border:1px solid var(--line);ba
 export async function mount(root, ctx) {
   const { api } = ctx;
   let agents = [], hitl = [], families = [], mode = "catalog", tab = "mine";
-  // состояние конструктора: выбранная семья, набор навыков, имя
-  let bFamily = "", bSkills = new Set(), bName = "";
+  // состояние конструктора: выбранная семья, набор навыков, имя; editingId — правка «моего» агента
+  let bFamily = "", bSkills = new Set(), bName = "", editingId = null;
+
+  // Правка «моего» агента: открыть конструктор пред-заполненным (семья/навыки/имя из графа агента);
+  // сохранение под тем же именем → НОВАЯ ВЕРСИЯ того же агента (стабильный id, #9). Замыкаем ценность.
+  async function reconfig(id) {
+    if (!families.length) await loadFamilies();
+    let full = {}; try { full = await api(A + "/detail/" + encodeURIComponent(id)); } catch (e) {}
+    const g = full.graph || {};
+    bFamily = full.family || "";
+    bSkills = new Set((g.nodes || []).filter((n) => n.kind === "skill" && n.skill).map((n) => n.skill));
+    bName = full.name || "";
+    editingId = id;
+    mode = "builder"; render();
+  }
 
   async function loadAgents() { try { agents = await api(A + "/catalog"); if (!Array.isArray(agents)) agents = []; } catch (e) { agents = []; } }
   async function loadHitl() { try { hitl = await api(A + "/hitl"); if (!Array.isArray(hitl)) hitl = []; } catch (e) { hitl = []; } }
@@ -50,7 +63,10 @@ export async function mount(root, ctx) {
               ${a.owner ? `<button class="del" data-id="${esc(a.id)}" data-name="${esc(a.name)}" title="Удалить моего агента" style="width:26px;height:26px;flex:none;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--ink-3);font-size:12px;cursor:pointer">✕</button>` : ""}
             </div>
             <div style="font-size:11.5px;color:var(--ink-2)">автономия ${esc(a.autonomy_max || "?")} · v${esc(String(a.version || 1))}${a.owner ? " · мой" : " · общий (ABAC)"}</div>
-            <button class="run" data-id="${esc(a.id)}" style="${BTN};background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none">▶ Запустить</button>
+            <div style="display:flex;gap:8px">
+              ${a.owner ? `<button class="cfg" data-id="${esc(a.id)}" title="Настроить моего агента — сохранит новую версию" style="${BTN};flex:none">✎ Настроить</button>` : ""}
+              <button class="run" data-id="${esc(a.id)}" style="${BTN};flex:1;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none">▶ Запустить</button>
+            </div>
           </div>`).join("") : `<div class="faint" style="padding:20px">${tab === "mine" ? "У вас пока нет своих агентов — «＋ Собрать агента»." : "Нет общих агентов, доступных вашей роли (ABAC/RBAC)."}</div>`}
         </div>
         <div id="result"></div>
@@ -58,8 +74,9 @@ export async function mount(root, ctx) {
 
     root.querySelectorAll(".tabBtn").forEach((b) => (b.onclick = () => { tab = b.dataset.tab; render(); }));
     root.querySelector("#refresh").onclick = async () => { await loadAgents(); await loadHitl(); render(); };
-    const bb = root.querySelector("#build"); if (bb) bb.onclick = async () => { if (!families.length) await loadFamilies(); bFamily = ""; bSkills = new Set(); bName = ""; mode = "builder"; render(); };
+    const bb = root.querySelector("#build"); if (bb) bb.onclick = async () => { if (!families.length) await loadFamilies(); bFamily = ""; bSkills = new Set(); bName = ""; editingId = null; mode = "builder"; render(); };
     root.querySelectorAll(".run").forEach((b) => (b.onclick = () => runAgent(b.dataset.id, b)));
+    root.querySelectorAll(".cfg").forEach((b) => (b.onclick = () => reconfig(b.dataset.id)));
     root.querySelectorAll(".del").forEach((b) => (b.onclick = () => deleteAgent(b.dataset.id, b.dataset.name)));
     root.querySelectorAll(".ap").forEach((b) => (b.onclick = () => decide(b.dataset.id, "approve")));
     root.querySelectorAll(".rj").forEach((b) => (b.onclick = () => decide(b.dataset.id, "reject")));
@@ -82,7 +99,7 @@ export async function mount(root, ctx) {
     root.innerHTML = `
       <div style="display:flex;flex-direction:column;gap:16px;padding:20px;max-width:820px;margin:0 auto">
         <div style="display:flex;align-items:center;justify-content:space-between">
-          <div><div style="${LBL}">КОНСТРУКТОР</div><div style="font-size:18px;font-weight:700;color:var(--ink)">Собрать агента-цепочку</div></div>
+          <div><div style="${LBL}">${editingId ? "НАСТРОЙКА · НОВАЯ ВЕРСИЯ" : "КОНСТРУКТОР"}</div><div style="font-size:18px;font-weight:700;color:var(--ink)">${editingId ? "Настроить агента" : "Собрать агента"}</div></div>
           <button id="back" style="${BTN}">← Каталог</button>
         </div>
         <div style="${CARD}">
@@ -106,12 +123,13 @@ export async function mount(root, ctx) {
           <label style="${LBL}">3 · Цепочка и имя</label>
           <div style="font-family:var(--mono);font-size:11.5px;color:#a5b4fc">${chain.map((s, i) => esc(s) + (i < chain.length - 1 ? " → " : "")).join("")}</div>
           <input id="bname" placeholder="Имя агента (необязательно)" value="${esc(bName)}" style="${BTN};background:var(--field)"/>
-          <button id="create" style="${BTN};background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;margin-top:4px">Создать агента (${chain.length} навык${chain.length > 1 ? "ов" : ""})</button>
+          <button id="create" style="${BTN};background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;border:none;margin-top:4px">${editingId ? "Сохранить новую версию" : "Создать агента"} (${chain.length} навык${chain.length > 1 ? "ов" : ""})</button>
+          ${editingId ? `<div style="font-size:11px;color:var(--ink-3)">Сохранение под тем же именем «${esc(bName)}» → новая версия того же агента.</div>` : ""}
           <div id="berr"></div>
         </div>` : ""}
       </div>`;
 
-    root.querySelector("#back").onclick = () => { mode = "catalog"; render(); };
+    root.querySelector("#back").onclick = () => { editingId = null; mode = "catalog"; render(); };
     root.querySelector("#fam").onchange = (e) => { bFamily = e.target.value; bSkills = new Set(); render(); };
     root.querySelectorAll(".sk").forEach((c) => (c.onchange = () => { if (c.checked) bSkills.add(c.value); else bSkills.delete(c.value); render(); }));
     const nm = root.querySelector("#bname"); if (nm) nm.oninput = (e) => { bName = e.target.value; };
@@ -120,7 +138,7 @@ export async function mount(root, ctx) {
       cr.textContent = "Создаю…"; cr.disabled = true;
       try {
         const r = await api(A + "/author", { method: "POST", body: JSON.stringify({ family: bFamily, skills: [...bSkills], name: bName }) });
-        if (r && r.ok) { await loadAgents(); mode = "catalog"; render(); }
+        if (r && r.ok) { editingId = null; await loadAgents(); mode = "catalog"; render(); }
         else { root.querySelector("#berr").innerHTML = `<div style="color:#fca5a5;font-size:12px">Ошибка: ${esc((r && r.error) || "не удалось")}</div>`; cr.textContent = "Создать агента"; cr.disabled = false; }
       } catch (e) { root.querySelector("#berr").innerHTML = `<div style="color:#fca5a5;font-size:12px">${esc(String(e && e.message || e))}</div>`; cr.textContent = "Создать агента"; cr.disabled = false; }
     };
