@@ -28,7 +28,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, assembly, audit_store, cachebus, charts, clients, compute, contract_store, dataplane_store, families_store, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, report_store, run_cache_store, run_store, runner, schema_store, skill_store, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, assembly, audit_store, cachebus, charts, clients, compute, contract_store, dataplane_store, families_store, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, report_store, run_cache_store, run_store, runner, schema_store, skill_store, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
@@ -1810,6 +1810,7 @@ async def _startup() -> None:
     await reglament_store.init()
     await run_cache_store.init()
     await hitl_store.init()
+    await finding_store.init()
     import asyncio as _asyncio
     _asyncio.create_task(triggers.scheduler_loop(execute_agent_run))  # фоновый планировщик (leader-election)
     # ── очередь прогонов (гейт масштабирования, Фаза 1): воркеры вместо исполнения в HTTP-запросе ──
@@ -3647,6 +3648,112 @@ async def run_queue_stats(u: dict = Depends(user)) -> dict:
     st = await run_queue.stats()
     st["bus"] = run_bus.describe()
     return st
+
+
+
+# ═══════════════ ПИЛОТ 1С (Блок 4): карточки находок, слепая разметка, метрики, нормы ═══════════════
+_AUDIT_ROLES = ("auditor-1c", "investigator-1c")
+
+
+async def _run_visible(run_id: str, u: dict) -> dict:
+    run = await run_store.get(run_id)
+    if not run:
+        raise HTTPException(404, "прогон не найден")
+    ag = await agent_store.get(run.get("agent_id") or "")
+    if ag and not can_see_family(u, ag.get("family")):
+        raise HTTPException(403, "прогон другого отдела")
+    run = dict(run)
+    run["run_id"] = run.get("run_id") or run.get("id") or run_id
+    run["agent_name"] = (ag or {}).get("name")
+    return run
+
+
+@app.get("/api/runs/{run_id}/findings")
+async def run_findings(run_id: str, u: dict = Depends(user)) -> dict:
+    """Карточки находок прогона: участки, тип расхождения, сумма, цепочка с разрывом, объяснение, норма, разметка."""
+    run = await _run_visible(run_id, u)
+    labels = (await finding_store.labels_for_runs([run["run_id"]])).get(run["run_id"], {})
+    cards = findings.cards_for_run(run, labels)
+    return {"run_id": run["run_id"], "agent_id": run.get("agent_id"), "agent_name": run.get("agent_name"),
+            "items": cards, "metrics": findings.pilot_metrics(cards)}
+
+
+@app.post("/api/runs/{run_id}/findings/{finding_id}/label")
+async def run_finding_label(run_id: str, finding_id: str, body: dict, u: dict = Depends(user)) -> dict:
+    """Слепая разметка эксперта в интерфейсе: decision confirmed|rejected|unsure, manual_miss (вручную бы не нашли), comment.
+    Метрики пилота (точность/межучастковые/«не нашли бы вручную») считаются по этим меткам автоматически."""
+    run = await _run_visible(run_id, u)
+    decision = str((body or {}).get("decision") or "").strip()
+    if decision not in finding_store.DECISIONS:
+        raise HTTPException(422, "decision: confirmed | rejected | unsure")
+    expert = u.get("name") or u.get("sub") or "dev"
+    row = await finding_store.set_label(run["run_id"], finding_id, expert, decision,
+                                        bool((body or {}).get("manual_miss")), str((body or {}).get("comment") or "")[:2000])
+    await audit_store.record(expert, "finding.label", run["run_id"] + "/" + finding_id,
+                             {"decision": decision, "manual_miss": bool((body or {}).get("manual_miss"))})
+    labels = (await finding_store.labels_for_runs([run["run_id"]])).get(run["run_id"], {})
+    cards = findings.cards_for_run(run, labels)
+    return {"ok": True, "label": row, "metrics": findings.pilot_metrics(cards)}
+
+
+@app.delete("/api/runs/{run_id}/findings/{finding_id}/label")
+async def run_finding_unlabel(run_id: str, finding_id: str, u: dict = Depends(user)) -> dict:
+    """Снять разметку эксперта (ошибочный клик)."""
+    run = await _run_visible(run_id, u)
+    ok = await finding_store.delete_label(run["run_id"], finding_id)
+    await audit_store.record(u.get("name") or u.get("sub") or "dev", "finding.unlabel", run["run_id"] + "/" + finding_id, {})
+    return {"ok": ok}
+
+
+@app.get("/api/findings")
+async def findings_journal(limit: int = 60, runs: int = 12, agent_id: str = "", u: dict = Depends(user)) -> dict:
+    """Журнал находок пилота 1С по последним прогонам аудитора/следователя (ABAC по семье) + метрики пилота."""
+    briefs = {a["id"]: a for a in await agent_store.list_for(None, limit=500)}
+    briefs.update({a["id"]: a for a in await agent_store.list_for(None, limit=500, archived=True)})
+    items = await run_store.list_runs(agent_id=agent_id or None, limit=300)
+    picked = []
+    for it in items:
+        ag = briefs.get(it.get("agent_id"), {})
+        if not can_see_family(u, ag.get("family")):
+            continue
+        if not agent_id and (ag.get("role") or "") not in _AUDIT_ROLES:
+            continue
+        picked.append((it, ag))
+        if len(picked) >= max(1, min(50, runs)):
+            break
+    run_ids = [it["id"] for it, _ in picked]
+    labels = await finding_store.labels_for_runs(run_ids)
+    cards: list[dict] = []
+    seen: dict[str, dict] = {}   # одна и та же находка в повторных прогонах — показываем свежую, разметку берём откуда есть
+    for it, ag in picked:        # picked — от свежих к старым
+        full = await run_store.get(it["id"])
+        if not full:
+            continue
+        full = dict(full); full["run_id"] = it["id"]; full["agent_name"] = ag.get("name")
+        for c in findings.cards_for_run(full, labels.get(it["id"], {})):
+            c["agent_name"] = ag.get("name")
+            key = (ag.get("contract_audit_id") or ag.get("id") or "") + "|" + c["id"]
+            prev = seen.get(key)
+            if prev is None:
+                seen[key] = c
+                cards.append(c)
+            elif not prev.get("label") and c.get("label"):
+                prev["label"] = dict(c["label"], from_run=c["run_id"])
+    metrics = findings.pilot_metrics(cards)
+    return {"items": cards[:max(1, min(500, limit))], "total": len(cards), "runs": run_ids, "metrics": metrics}
+
+
+@app.get("/api/audit1c/norms/{name}")
+async def audit1c_norm(name: str, u: dict = Depends(user)):
+    """Текст нормы из экспертного справочника demo/audit1c/norms (markdown) — источник «Чем грозит / Что проверить»."""
+    from fastapi.responses import PlainTextResponse
+    import re as _re
+    if not _re.match(r"^[\w\-]+\.md$", name):
+        raise HTTPException(404, "нет такой нормы")
+    p = findings.NORMS_DIR / name
+    if not p.exists():
+        raise HTTPException(404, "нет такой нормы")
+    return PlainTextResponse(p.read_text(encoding="utf-8"), media_type="text/markdown; charset=utf-8")
 
 
 # ═══════════════ ЦЕПОЧКИ АГЕНТОВ (Pipelines): линейный конвейер выход→контекст ═══════════════
