@@ -1405,6 +1405,8 @@
       }
     }
     window.addEventListener("message", (e) => {
+      // origin-gate: принимаем только от своего origin (или opaque↔opaque при file:/sandbox), как в оболочке бандла
+      if (!(e.origin === window.origin || e.origin === "null" || window.origin === "null")) return;
       const type = e.data && e.data.type;
       if (type === "__dc_theme") {
         const t = e.data.theme;

@@ -49,7 +49,7 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: старт сервера
         run: |
-          nohup python -m uvicorn server.web_api:app --host 127.0.0.1 --port 8091 > server.log 2>&1 &
+          ABOP_DEV_AUTH=1 nohup python -m uvicorn server.web_api:app --host 127.0.0.1 --port 8091 > server.log 2>&1 &
           for i in $(seq 1 30); do curl -sf http://127.0.0.1:8091/api/health && break; sleep 1; done
       - name: страница рендерится (Обзор, навигация, без ошибок JS)
         run: python tests/smoke_web.py

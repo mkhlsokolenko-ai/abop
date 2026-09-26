@@ -1433,6 +1433,7 @@ def _colorize(lines):
 def _print_answer(text: str, truncated: bool = False, collapse: bool = True) -> None:
     """Печатает ответ с diff-подсветкой; длинный (если collapse) сворачивает до превью."""
     global LAST_ANSWER
+    text = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]|\x1b", "", str(text or ""))   # red-team #7: ANSI из ответа модели не пропускаем в терминал/pipe
     LAST_ANSWER = text
     lines = text.split("\n")
     colored = _colorize(lines)

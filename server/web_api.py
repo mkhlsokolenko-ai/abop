@@ -14,6 +14,7 @@
 """
 from __future__ import annotations
 
+import asyncio as _asyncio
 import os
 import sys
 import time
@@ -28,7 +29,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, assembly, audit_store, cachebus, charts, clients, compute, contract_store, dataplane_store, families_store, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, report_store, run_cache_store, run_store, runner, schema_store, skill_store, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, assembly, audit_store, cachebus, charts, clients, compute, contract_store, dataplane_store, families_store, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, report_store, run_cache_store, run_store, runner, safety, schema_store, skill_store, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
@@ -163,6 +164,10 @@ def user(request: Request) -> dict:
         return ident
     if _jwks_url() or _extra_issuers():
         raise HTTPException(401, "нужен Bearer-JWT")
+    # red-team #3: без Keycloak аноним = admin — только при явном ABOP_DEV_AUTH=1 (локальная разработка/CI);
+    # иначе fail-closed, чтобы забытый env на стенде не открывал API всем.
+    if os.getenv("ABOP_DEV_AUTH", "") != "1":
+        raise HTTPException(401, "аутентификация не настроена: задайте KEYCLOAK_JWKS_URI (или ABOP_DEV_AUTH=1 для локальной разработки)")
     return _identity({"sub": "dev", "preferred_username": "dev (admin)",
                       "realm_access": {"roles": ["admin"]}, "department": "*"}, dev=True)
 
@@ -1409,9 +1414,9 @@ async def skill_datasources_set(sid: str, body: dict, u: dict = Depends(user)) -
 
 
 @app.get("/api/data/lineage")
-def data_lineage(u: dict = Depends(user)) -> dict:
+async def data_lineage(u: dict = Depends(user)) -> dict:
     """Карта Data Plane: сущность → рецепты(наполняют) → навыки(потребляют) → роли/агенты. §5 «Карта»."""
-    return ape.data_lineage()
+    return await _asyncio.to_thread(ape.data_lineage)
 
 
 @app.get("/api/impact")
@@ -1423,7 +1428,7 @@ async def impact_analysis(kind: str, id: str, u: dict = Depends(user)) -> dict:
     tid = (id or "").strip()
     if not tid:
         raise HTTPException(422, "нужен id узла")
-    lin = ape.data_lineage()
+    lin = await _asyncio.to_thread(ape.data_lineage)
     ents = lin.get("entities") or []
     ent_by = {e["entity"]: e for e in ents}
 
@@ -1542,13 +1547,13 @@ async def _backfill_dataplane_from_files() -> None:
     не инжектнут); выполняется только если в PG соответствующая таблица пуста."""
     try:
         if not await dataplane_store.recipes_all():
-            for name in ape.data_recipes():          # файловый режим
+            for name in await _asyncio.to_thread(ape.data_recipes):          # файловый режим
                 try:
-                    await dataplane_store.save_recipe(name, ape.data_load_recipe(name), editor="migrate")
+                    await dataplane_store.save_recipe(name, await _asyncio.to_thread(ape.data_load_recipe, name), editor="migrate")
                 except Exception:  # noqa: BLE001
                     pass
         if not await dataplane_store.connectors_all():
-            for c in ape.data_connectors():           # файловый режим
+            for c in await _asyncio.to_thread(ape.data_connectors):           # файловый режим
                 if c.get("id"):
                     await dataplane_store.save_connector(c["id"], c, editor="migrate")
     except Exception:  # noqa: BLE001
@@ -1562,7 +1567,7 @@ async def connectors_list(u: dict = Depends(user)) -> dict:
     для текущего отдела (ABAC). §5 таб «Коннекторы»."""
     key = access.scope_key(department=u.get("department"))
     out = []
-    for c in ape.data_connectors():
+    for c in await _asyncio.to_thread(ape.data_connectors):
         c = dict(c)
         sid = c.get("system_id")
         if sid:
@@ -1583,7 +1588,7 @@ async def connector_save(body: dict, u: dict = Depends(user)) -> dict:
     require_level(u, "manager")
     if not str((body or {}).get("title", "")).strip():
         raise HTTPException(422, "нужен title коннектора")
-    card = ape.build_connector(body)
+    card = await _asyncio.to_thread(ape.build_connector, body)
     # slava/vector-коннектор = KNOWLEDGE-источник (не canonical): храним корпус (collection/family/top_k)
     if card.get("adapter") in ("slava", "vector"):
         fam = str((body or {}).get("family", "")).strip()
@@ -1633,9 +1638,9 @@ def recipes_list(u: dict = Depends(user)) -> dict:
 
 
 @app.get("/api/data/recipes/{name}")
-def recipe_get(name: str, u: dict = Depends(user)) -> dict:
+async def recipe_get(name: str, u: dict = Depends(user)) -> dict:
     try:
-        return ape.data_load_recipe(name)
+        return await _asyncio.to_thread(ape.data_load_recipe, name)
     except (OSError, ValueError):
         raise HTTPException(404, "нет рецепта")
 
@@ -1686,11 +1691,11 @@ async def connector_delete(cid: str, u: dict = Depends(user)) -> dict:
 
 
 @app.post("/api/compute")
-def compute_run(body: dict, u: dict = Depends(user)) -> dict:
+async def compute_run(body: dict, u: dict = Depends(user)) -> dict:
     """Whitelisted-расчёт над Data Plane (compute-tool): stats/group_by/top/reconcile. Числа считает КОД
     (детерминированно), никакого произвольного кода. Возвращает {op, result, chart?, chart_svg?}."""
     try:
-        return compute.run_html(body or {})
+        return await _asyncio.to_thread(compute.run_html, body or {})
     except ValueError as ex:
         raise HTTPException(400, str(ex))
     except Exception as ex:  # noqa: BLE001
@@ -1708,10 +1713,10 @@ def recipe_preview(body: dict, u: dict = Depends(user)) -> dict:
 
 
 @app.post("/api/data/recipes/{name}/run")
-def recipe_run(name: str, u: dict = Depends(user)) -> dict:
+async def recipe_run(name: str, u: dict = Depends(user)) -> dict:
     """Применить сохранённый рецепт и записать в canonical store. §5 публикация."""
     try:
-        entity, written, dropped, invalid = ape.data_run(name)
+        entity, written, dropped, invalid = await _asyncio.to_thread(ape.data_run, name)
     except Exception as ex:  # noqa: BLE001 — сбой источника/рецепта → 400
         raise HTTPException(400, str(ex))
     return {"entity": entity, "written": written, "dropped": dropped, "invalid": invalid}
@@ -1729,7 +1734,7 @@ async def recipe_rebind(name: str, body: dict, u: dict = Depends(user)) -> dict:
     if entity not in ape.CANONICAL_SCHEMAS:
         raise HTTPException(422, f"неизвестная сущность {entity!r} (нет в canonical schemas)")
     try:
-        r = ape.data_load_recipe(name)
+        r = await _asyncio.to_thread(ape.data_load_recipe, name)
     except (OSError, ValueError):
         raise HTTPException(404, "нет рецепта")
     r["entity"] = entity
@@ -1743,7 +1748,7 @@ async def recipe_rebind(name: str, body: dict, u: dict = Depends(user)) -> dict:
     await audit_store.record(editor, "data.rebind", saved.get("recipe"), {"entity": entity})
     if (body or {}).get("run"):
         try:
-            ent, written, dropped, invalid = ape.data_run(saved.get("recipe"))
+            ent, written, dropped, invalid = await _asyncio.to_thread(ape.data_run, saved.get("recipe"))
             out.update({"ran": True, "written": written, "dropped": dropped, "invalid": invalid})
         except Exception as ex:  # noqa: BLE001 — перепривязка удалась, прогон нет → сообщаем
             out.update({"ran": False, "run_error": str(ex)})
@@ -1868,6 +1873,7 @@ async def contracts_ingest(body: dict, u: dict = Depends(user)) -> JSONResponse:
     Тело — сам бандл {capability_request, deployment_contract, baseline_measurement,
     evidence_pack}. Невалидный → 422 со списком ошибок (SDD §4.3, не доверяем вслепую).
     """
+    require_level(u, "manager")   # red-team #3: приём контракта — мутация среды
     res = ingress.validate(body)
     if not res.accepted:
         return JSONResponse(
@@ -1887,8 +1893,9 @@ async def contracts_ingest(body: dict, u: dict = Depends(user)) -> JSONResponse:
 
 @app.get("/api/contracts")
 async def contracts_list(u: dict = Depends(user)) -> dict:
-    """Список принятых ContractSet (краткие карточки). §4/§6 — источник для канвы."""
-    return {"contracts": await contract_store.list_all()}
+    """Список принятых ContractSet (краткие карточки). §4/§6 — источник для канвы. ABAC: только своя семья."""
+    items = await contract_store.list_all()
+    return {"contracts": [c for c in items if can_see_family(u, (c.get("family") or (c.get("intake") or {}).get("family")))]}
 
 
 @app.get("/api/contracts/{audit_id}")
@@ -1897,6 +1904,8 @@ async def contracts_get(audit_id: str, u: dict = Depends(user)) -> dict:
     cs = await contract_store.get(audit_id)
     if not cs:
         raise HTTPException(404, "нет такого ContractSet")
+    if not can_see_family(u, (cs.get("family") or (cs.get("intake") or {}).get("family"))):
+        raise HTTPException(403, "контракт другого отдела")
     return cs
 
 
@@ -1985,6 +1994,7 @@ async def agent_save(body: dict, u: dict = Depends(user)) -> JSONResponse:
     автономия узла ≤ потолок (ADR-013), внешнее действие под HITL (ADR-014), покрытие (SDD §4.4).
     Жёсткие нарушения → 422; сохранение только чистого графа.
     """
+    require_level(u, "manager")   # red-team #3: сохранение агента — мутация (аналитик — только чтение)
     name = str((body or {}).get("name", "")).strip()
     audit_id = str((body or {}).get("contract_audit_id", "")).strip()
     graph = (body or {}).get("graph") or {}
@@ -3288,7 +3298,7 @@ async def _pipeline_job(job: dict) -> dict:
             continue
         contract = await _contract_for_agent(agent)
         last = i == len(steps) - 1
-        ctx_parts = [x for x in (base_ctx, (f"=== РЕЗУЛЬТАТ ПРЕДЫДУЩЕГО АГЕНТА ЦЕПОЧКИ (вход для тебя) ===\n{prev_ctx}" if prev_ctx else "")) if x]
+        ctx_parts = [x for x in (base_ctx, (safety.data_block("РЕЗУЛЬТАТ ПРЕДЫДУЩЕГО АГЕНТА ЦЕПОЧКИ (вход для тебя)", prev_ctx) if prev_ctx else "")) if x]
         step_ctx = "\n\n".join(ctx_parts)
         deliver = st.get("deliver") or ("" if last else "chat")
         try:

@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT))
 for k in ("KEYCLOAK_JWKS_URI", "KEYCLOAK_JWKS_INTERNAL", "ABOP_EXTRA_JWKS", "PG_DSN", "DATABASE_URL", "ABOP_PG_DSN"):
     os.environ.pop(k, None)
 os.environ.setdefault("ABOP_RUN_WORKERS", "0")
+os.environ["ABOP_DEV_AUTH"] = "1"   # без Keycloak API закрыт (fail-closed); тесты — dev-admin явно
 
 
 @pytest.fixture(scope="session")

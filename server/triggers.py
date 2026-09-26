@@ -152,8 +152,9 @@ async def on_bus_event(system_id: str, event: dict, run_executor, headers: dict 
     system = await systems_store.get(system_id)
     fired: list[dict] = []
     etype = str(event.get("type") or "")
-    ctx = ("=== СОБЫТИЕ ИЗ ШИНЫ ===\nсистема: " + system_id + " · тип: " + etype + "\n"
-           + json.dumps(event.get("payload") or {}, ensure_ascii=False)[:4000])
+    from . import safety as _safety
+    ctx = _safety.data_block("СОБЫТИЕ ИЗ ШИНЫ · система " + system_id + " · тип " + etype,
+                             json.dumps(event.get("payload") or {}, ensure_ascii=False), 4000)
     for a in await _latest_versions():
         full = await agent_store.get(a["id"])
         if not full or full.get("status") in ("paused", "retired"):
