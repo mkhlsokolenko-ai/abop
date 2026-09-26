@@ -2,6 +2,7 @@
 name: docker-patterns
 description: Паттерны Docker и Docker Compose для локальной разработки, безопасности контейнеров, сети, стратегий volume и оркестрации нескольких сервисов.
 origin: ECC
+tools: data_query, data_get, data_schema
 ---
 
 # Docker-паттерны

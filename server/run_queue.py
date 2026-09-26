@@ -360,7 +360,7 @@ async def requeue_stale() -> int:
         n = 0
         cutoff = _now() - _dt.timedelta(seconds=STALE_AFTER)
         for j in _MEM.values():
-            if j["status"] == "running" and j.get("heartbeat_at") and _dt.datetime.fromisoformat(j["heartbeat_at"]) < cutoff:
+            if j["status"] == "running" and (j.get("heartbeat_at") or j.get("started_at")) and _dt.datetime.fromisoformat(j.get("heartbeat_at") or j["started_at"]) < cutoff:
                 j.update({"status": "queued" if j["attempts"] < MAX_ATTEMPTS else "failed",
                           "error": "воркер не отвечал (heartbeat протух)", "locked_by": None})
                 n += 1
@@ -371,7 +371,7 @@ async def requeue_stale() -> int:
             "UPDATE run_jobs SET status=CASE WHEN attempts < %s THEN 'queued' ELSE 'failed' END, "
             "error='воркер не отвечал (heartbeat протух)', locked_by=NULL, "
             "finished_at=CASE WHEN attempts < %s THEN NULL ELSE now() END "
-            "WHERE status='running' AND heartbeat_at < now() - make_interval(secs => %s)",
+            "WHERE status='running' AND COALESCE(heartbeat_at, started_at, created_at) < now() - make_interval(secs => %s)",
             (MAX_ATTEMPTS, MAX_ATTEMPTS, STALE_AFTER))
         return cur.rowcount or 0
 
@@ -410,9 +410,17 @@ async def publish_gauges() -> None:
 
 
 async def gauges_loop(period: float = 15.0) -> None:
+    """Метрики каждые period с; раз в минуту — переклад «протухших» running (воркер умер/контейнер
+    перезапущен): иначе они висят вечно и блокируют лимит ABOP_USER_CONCURRENT их автора."""
+    tick = 0
     while True:
         try:
             await publish_gauges()
+            tick += 1
+            if tick % max(1, int(60 / period)) == 0:
+                n = await requeue_stale()
+                if n:
+                    obs.log_event("warn", "run_queue.requeued_stale", count=n)
         except Exception:  # noqa: BLE001
             pass
         await asyncio.sleep(period)
@@ -459,7 +467,7 @@ def public(job: dict, position_: int = 0) -> dict:
                          "steps_done": len(cp.get("steps") or []), "awaiting_hitl": cp.get("hitl_ids") or []} if cp else None}
 
 
-async def worker_loop(worker_id: str, handler, *, on_done=None) -> None:
+async def worker_loop(worker_id: str, handler, *, on_done=None, on_error=None) -> None:
     """Вечный цикл воркера. handler(job) → {"run_id"?, "checkpoint"?} | {"await_hitl": checkpoint}.
     Не падает на ошибках задания; таймаут, heartbeat и отмена — здесь."""
     import logging
@@ -511,12 +519,22 @@ async def worker_loop(worker_id: str, handler, *, on_done=None) -> None:
             except asyncio.TimeoutError:
                 await fail(job["id"], f"таймаут ({RUN_TIMEOUT} с)")
                 obs.inc("abop_run_jobs_total", status="failed")
+                if on_error:
+                    try:
+                        await on_error(job, f"таймаут ({RUN_TIMEOUT} с)")
+                    except Exception:  # noqa: BLE001
+                        pass
             except Exception as ex:  # noqa: BLE001
                 msg = f"{type(ex).__name__}: {ex}"
                 log.exception("job failed: %s", job["id"])
                 rq = job.get("attempts", 1) < MAX_ATTEMPTS
                 await fail(job["id"], msg, requeue=rq)
                 obs.inc("abop_run_jobs_total", status="requeued" if rq else "failed")
+                if on_error and not rq:
+                    try:
+                        await on_error(job, msg)
+                    except Exception:  # noqa: BLE001
+                        pass
             finally:
                 CURRENT_JOB.reset(tok)
                 if hb_task:

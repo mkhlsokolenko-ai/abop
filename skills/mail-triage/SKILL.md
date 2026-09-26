@@ -1,6 +1,7 @@
 ---
 name: mail-triage
 description: Разбирает входящие письма (сущность email из Mailpit) и выделяет конкретные задачи — тема, отправитель, суть, срочность. Только из писем, без домыслов; формулировка задачи как действие, а не пересказ письма.
+tools: data_query, data_get, data_schema, bus_events, redmine_create_issue
 ---
 
 # Разбор почты в задачи (mail-triage)

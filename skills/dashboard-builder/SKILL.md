@@ -1,6 +1,7 @@
 ---
 name: dashboard-builder
 description: Проектирование дашборда, за которым принимают решения — дерево метрик (input/output/guardrail), точные определения, слои exec/ops, уместная визуализация, борьба с vanity. Вызывать при постановке измерения продукта/процесса.
+tools: data_query, data_get, data_schema
 ---
 
 # Dashboard Builder

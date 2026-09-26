@@ -1,6 +1,7 @@
 ---
 name: cost-estimator
 description: Считает стоимость одного user-flow по моделям и токенам (курсовые тарифы). Вызывать, когда нужно понять, сколько стоит один пользователь/запрос и уложиться в лимит 5M/сессия.
+tools: data_query, data_get, data_schema
 ---
 
 # Cost Estimator

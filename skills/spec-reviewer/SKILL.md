@@ -1,6 +1,7 @@
 ---
 name: spec-reviewer
 description: Проверяет спеку фичи на полноту acceptance-критериев и тестируемость. Вызывать перед тем, как писать код или тесты по спеке.
+tools: data_query, data_get, data_schema
 ---
 
 # Spec Reviewer

@@ -1,6 +1,7 @@
 ---
 name: finance-report
 description: Готовит управленческий финансовый отчёт (P&L + KPI, MoM/YoY, variance к плану, сегменты, forward outlook). Вызывать для регулярной отчётности по факту периода с объяснением отклонений драйверами.
+tools: data_query, data_get, data_schema
 ---
 
 # Finance Report

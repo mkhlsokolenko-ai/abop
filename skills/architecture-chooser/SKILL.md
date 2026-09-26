@@ -1,6 +1,7 @@
 ---
 name: architecture-chooser
 description: Помогает выбрать workflow vs agent vs hybrid под конкретную задачу. Вызывать в начале проектирования, до того как писать дизайн-док.
+tools: data_query, data_get, data_schema
 ---
 
 # Architecture Chooser

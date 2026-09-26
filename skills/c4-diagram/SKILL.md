@@ -1,6 +1,7 @@
 ---
 name: c4-diagram
 description: Строит архитектурные диаграммы по модели C4 как код (Mermaid/PlantUML, рендер через Kroki). Вызывать, когда нужно визуализировать систему — контекст, контейнеры, компоненты, потоки, данные.
+tools: data_query, data_get, data_schema
 ---
 
 # C4 & Diagrams

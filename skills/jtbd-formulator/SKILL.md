@@ -1,6 +1,7 @@
 ---
 name: jtbd-formulator
 description: Помогает сформулировать Job To Be Done по структуре «когда … я хочу … чтобы …». Вызывать на discovery после первичного ICP, до постановки ML-задачи.
+tools: data_query, data_get, data_schema
 ---
 
 # JTBD Formulator

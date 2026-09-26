@@ -1,6 +1,7 @@
 ---
 name: adr-writer
 description: Генерирует Architecture Decision Record в формате Nygard из обсуждения. Вызывать каждый раз, когда принято значимое архитектурное решение (модель, RAG vs нет, workflow vs agent).
+tools: data_query, data_get, data_schema
 ---
 
 # ADR Writer

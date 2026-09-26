@@ -1,6 +1,7 @@
 ---
 name: mlsdd-writer
 description: Помогает студенту заполнить ML System Design Doc по шаблону Reliable ML (используется в ИТМО). Вызывать, когда pet-проект переходит из discovery в проектирование и нужен системный дизайн-документ.
+tools: data_query, data_get, data_schema
 ---
 
 # MLSDD Writer

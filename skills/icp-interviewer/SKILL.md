@@ -1,6 +1,7 @@
 ---
 name: icp-interviewer
 description: Симулирует представителя ICP (идеального клиента) для проверки продуктовой канвы. Вызывать на discovery, чтобы прожать гипотезу ценности до кода. Профиль research (DeepSeek).
+tools: data_query, data_get, data_schema
 ---
 
 # ICP Interviewer

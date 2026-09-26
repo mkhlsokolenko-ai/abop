@@ -1,6 +1,7 @@
 ---
 name: audit1c-extract
 description: Забирает read-only снапшот реальной 1С (документы + справочники закрытого периода) в Data Plane ABOP через коннектор audit1c и рецепты. Первый шаг конвейера аудита — без чистых данных остальные навыки не работают.
+tools: data_query, data_get, data_schema, audit1c_graph
 ---
 
 # Извлечение данных 1С (extract-1c)

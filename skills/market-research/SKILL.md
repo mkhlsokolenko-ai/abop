@@ -1,6 +1,7 @@
 ---
 name: market-research
 description: Оценка рынка и конкурентного поля под продуктовую гипотезу — размер рынка bottom-up, конкурентная матрица, силы Портера, тренды и JTBD. Вызывать в начале дискавери или перед решением о входе в сегмент.
+tools: data_query, data_get, data_schema
 ---
 
 # Market Research

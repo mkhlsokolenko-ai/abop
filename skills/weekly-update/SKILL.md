@@ -1,6 +1,7 @@
 ---
 name: weekly-update
 description: Собирает краткий недельный апдейт — ключевые метрики, аномалии, принятые решения, план на следующую неделю. На фактах, кратко. Вызывать в конце недели/спринта для регулярной сводки.
+tools: data_query, data_get, data_schema, bus_events, bookstack_publish
 ---
 
 # Weekly Update

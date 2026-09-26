@@ -1,6 +1,7 @@
 ---
 name: ledger_reconciliation
 description: Сверяет данные главной книги с субрегистрами, банком и контрагентами, находит и объясняет расхождения. Вызывать при закрытии периода, инвентаризации счетов, подготовке к аудиту.
+tools: data_query, data_get, data_schema, audit1c_graph
 ---
 
 # Ledger Reconciliation

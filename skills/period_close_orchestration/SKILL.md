@@ -1,6 +1,7 @@
 ---
 name: period_close_orchestration
 description: Ведёт закрытие учётного периода по чек-листу — последовательность шагов, зависимости, блокеры, статус готовности. Вызывать для месячного/квартального закрытия в 1С/ERP.
+tools: data_query, data_get, data_schema, bus_events, bus_publish
 ---
 
 # Period Close Orchestration

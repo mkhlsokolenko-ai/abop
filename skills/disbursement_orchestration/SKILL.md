@@ -1,6 +1,7 @@
 ---
 name: disbursement_orchestration
 description: Готовит и оркестрирует выдачу кредитных средств в core-banking — сверка условий, dry_run, HITL-подтверждение, проведение с обратной ссылкой. Движение денег без approve запрещено.
+tools: data_query, data_get, data_schema, bus_events, bus_publish
 ---
 
 # Disbursement Orchestration

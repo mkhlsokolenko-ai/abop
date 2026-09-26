@@ -1,6 +1,7 @@
 ---
 name: to-tickets
 description: Раскладывает план или спецификацию на трекуемые тикеты по INVEST, с критериями приёмки, зависимостями и порядком реализации. Вызывать, когда есть план/спека и нужно превратить её в бэклог.
+tools: data_query, data_get, data_schema, redmine_create_issue, bus_publish
 ---
 
 # To Tickets

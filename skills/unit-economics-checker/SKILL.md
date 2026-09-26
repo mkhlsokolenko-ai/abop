@@ -1,6 +1,7 @@
 ---
 name: unit-economics-checker
 description: Проверяет unit-экономику pet-проекта на дыры — стоимость пользователя vs готовность платить, маржа, точка окупаемости. Вызывать после cost-estimator, для бизнес-контура.
+tools: data_query, data_get, data_schema
 ---
 
 # Unit Economics Checker

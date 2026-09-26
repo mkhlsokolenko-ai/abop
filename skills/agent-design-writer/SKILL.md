@@ -1,6 +1,7 @@
 ---
 name: agent-design-writer
 description: Помогает спроектировать агента по методологии Agent Design (welltraum) — границы, инструменты, контекст, память, деградация. Вызывать, когда pet-проект — это агент, а не workflow.
+tools: data_query, data_get, data_schema
 ---
 
 # Agent Design Writer

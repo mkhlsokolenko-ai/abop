@@ -1,6 +1,7 @@
 ---
 name: process-map
 description: Картирование процесса AS-IS/TO-BE — SIPOC, шаги/роли/данные/решения, узкие места с метриками и место встраивания агента. Вызывать перед автоматизацией или редизайном процесса.
+tools: data_query, data_get, data_schema
 ---
 
 # Process Map (AS-IS/TO-BE)

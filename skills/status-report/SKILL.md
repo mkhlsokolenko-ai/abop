@@ -1,6 +1,7 @@
 ---
 name: status-report
 description: Собирает проектный статус-отчёт RAG (red/amber/green) на фактах из трекера — прогресс vs план, риски с владельцами, next-steps. Вызывать, когда нужен честный статус проекта для стейкхолдеров.
+tools: data_query, data_get, data_schema, bus_events, bookstack_publish
 ---
 
 # Status Report

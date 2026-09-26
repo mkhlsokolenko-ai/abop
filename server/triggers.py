@@ -12,12 +12,14 @@ cron, подписывается на события систем реестра
 """
 from __future__ import annotations
 
+import json
+
 import asyncio
 import datetime as dt
 import os
 import re
 
-from . import access, agent_store, contract_store, hitl_store, systems_store, trigger_store
+from . import access, agent_store, contract_store, hitl_store, observability as obs, systems_store, trigger_store
 
 A_LEVELS = ["A0", "A1", "A2", "A3", "A4"]
 TICK_SEC = int(os.getenv("ABOP_SCHEDULER_TICK", "45"))
@@ -110,7 +112,7 @@ async def _poll_count(system: dict, path: str) -> int | None:
     return None
 
 
-async def fire(agent: dict, trig_node: dict, reason: str, run_executor) -> dict:
+async def fire(agent: dict, trig_node: dict, reason: str, run_executor, context: str = "") -> dict:
     """Исполнить политику spawn: автономия ≤ потолок; HITL-на-создание → pending (не запускаем);
     иначе — реальный прогон через run_executor. Пишет фаер в trigger_store."""
     trig = trig_node.get("trig") or {}
@@ -137,10 +139,43 @@ async def fire(agent: dict, trig_node: dict, reason: str, run_executor) -> dict:
             requested_by="trigger:" + (trig.get("type") or "?"))
         await trigger_store.record_fire(agent["id"], tid, trig.get("type"), None, "pending_hitl", reason)
         return {"status": "pending_hitl", "hitl_id": item["id"], "note": "ожидает подтверждения создания (HITL)"}
-    out = await run_executor(agent, contract, "trigger:" + (trig.get("type") or "?"), trigger=trig_node)
+    out = await run_executor(agent, contract, "trigger:" + (trig.get("type") or "?"), trigger=trig_node,
+                             user_context=context)
     rid = out["saved"]["id"]
     await trigger_store.record_fire(agent["id"], tid, trig.get("type"), rid, "fired", reason)
     return {"status": "fired", "run_id": rid, "note": reason}
+
+
+async def on_bus_event(system_id: str, event: dict, run_executor, headers: dict | None = None) -> list[dict]:
+    """Событие из abop.<система>.events → все последние версии агентов с включённым event-триггером
+    на эту систему (ABAC: семья агента ∈ scope системы). Полезная нагрузка события уходит в контекст прогона."""
+    system = await systems_store.get(system_id)
+    fired: list[dict] = []
+    etype = str(event.get("type") or "")
+    ctx = ("=== СОБЫТИЕ ИЗ ШИНЫ ===\nсистема: " + system_id + " · тип: " + etype + "\n"
+           + json.dumps(event.get("payload") or {}, ensure_ascii=False)[:4000])
+    for a in await _latest_versions():
+        full = await agent_store.get(a["id"])
+        if not full or full.get("status") in ("paused", "retired"):
+            continue
+        for tn in triggers_of(full):
+            trig = tn.get("trig") or {}
+            if trig.get("type") != "event" or not trig.get("enabled") or trig.get("source") != system_id:
+                continue
+            want = trig.get("event_type") or trig.get("event") or ""
+            if want and want != etype:
+                continue
+            if system:
+                key = access.scope_key(family=full.get("family"))
+                ok, reason = access.can_reach_system(key, system)
+                if not ok:
+                    await trigger_store.record_fire(full["id"], tn["id"], "event", None, "skipped", f"нет доступа к «{system_id}»: {reason}")
+                    await access.audit_denial("agent:" + full["id"], key, system_id, "event", reason)
+                    continue
+            res = await fire(full, tn, f"событие {etype or '?'} из {system_id} (шина)", run_executor, context=ctx)
+            fired.append({"agent_id": full["id"], "trigger_id": tn["id"], **res})
+    obs.log_event("info", "bus.event.handled", system=system_id, type=etype, fired=len(fired))
+    return fired
 
 
 async def fire_manual(agent_id: str, trigger_id: str, run_executor) -> dict:
@@ -180,7 +215,7 @@ async def list_triggers() -> list[dict]:
             out.append({"agent_id": full["id"], "agent": full.get("name"), "trigger_id": tn["id"],
                         "title": tn.get("title"), "type": trig.get("type"), "enabled": bool(trig.get("enabled")),
                         "cron": trig.get("cron"), "source": trig.get("source"),
-                        "spawn": trig.get("spawn") or {}, "last_fire": last.isoformat() if last else None})
+                        "spawn": trig.get("spawn") or {}, "last_fire": (last.isoformat() if hasattr(last, "isoformat") else last) if last else None})
     return out
 
 

@@ -1,6 +1,7 @@
 ---
 name: rag-architect
 description: Помогает спроектировать RAG-pipeline под use-case — chunking, embedding, vector DB, reranking, eval. Вызывать, когда pet-проект про поиск/ответы по документам.
+tools: data_query, data_get, data_schema
 ---
 
 # RAG Architect

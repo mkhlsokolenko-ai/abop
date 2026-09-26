@@ -1,6 +1,7 @@
 ---
 name: budget-forecast
 description: Строит driver-based бюджет и прогноз с тремя сценариями (база/пессимизм/оптимизм), rolling forecast и обратной связью факт/план. Вызывать для планирования бюджета или обновления прогноза на основе исторического базиса.
+tools: data_query, data_get, data_schema
 ---
 
 # Budget & Forecast

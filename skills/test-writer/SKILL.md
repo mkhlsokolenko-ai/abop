@@ -1,6 +1,7 @@
 ---
 name: test-writer
 description: Пишет тесты ДО реализации по acceptance-критериям (TDD). Вызывать после ревью спеки, до кода фичи.
+tools: data_query, data_get, data_schema
 ---
 
 # Test Writer

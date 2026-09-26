@@ -1,6 +1,7 @@
 ---
 name: conventional-commits
 description: Use when creating git commits, writing commit messages, or following version control workflows
+tools: data_query, data_get, data_schema
 ---
 
 # Conventional Commits

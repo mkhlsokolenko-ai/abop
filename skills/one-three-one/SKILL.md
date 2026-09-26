@@ -1,6 +1,7 @@
 ---
 name: one-three-one
 description: Структура решения для стейкхолдеров — 1 проблема, 3 реальных варианта с trade-off, 1 обоснованная рекомендация с next-step. Вызывать когда нужно довести развилку до решения, а не до обсуждения.
+tools: data_query, data_get, data_schema
 ---
 
 # One-Three-One

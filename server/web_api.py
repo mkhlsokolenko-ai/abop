@@ -28,7 +28,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, assembly, audit_store, cachebus, charts, clients, compute, contract_store, dataplane_store, families_store, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, report_store, run_cache_store, run_store, runner, schema_store, skill_store, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, assembly, audit_store, cachebus, charts, clients, compute, contract_store, dataplane_store, families_store, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, report_store, run_cache_store, run_store, runner, schema_store, skill_store, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
@@ -1345,7 +1345,12 @@ async def skill(sid: str, u: dict = Depends(user)) -> dict:
     parsed = ape.parse_skill_md(sid)
     card["body"] = ape.load_skill_body(sid)
     card["intro"] = parsed["intro"]
-    return card
+    _out = card
+    try:
+        _out["tools"] = skill_tools.tools_for(sid)
+    except Exception:  # noqa: BLE001
+        _out["tools"] = []
+    return _out
 
 
 @app.post("/api/skills/{sid}")
@@ -1822,6 +1827,14 @@ async def _startup() -> None:
     except Exception:  # noqa: BLE001
         pass
     await run_bus.start()
+    try:   # Блок 3: пара топиков на каждую систему реестра + слушатель событий → триггеры
+        _sys_ids = [x["id"] for x in await systems_store.all()]
+        await run_bus.ensure_system_topics(_sys_ids)
+        _b = run_bus.bus()
+        if getattr(_b, "active", False) and hasattr(_b, "events_loop"):
+            _asyncio.create_task(_b.events_loop(_bus_event_handler))
+    except Exception as _ex:  # noqa: BLE001
+        obs.log_event("warning", "bus.systems.init_failed", error=str(_ex)[:200])
     for _wi in range(run_queue.WORKERS):
         _asyncio.create_task(run_bus.worker_loop(f"{os.getenv('HOSTNAME', 'api')}-w{_wi}", _handle_job))
     _asyncio.create_task(run_queue.gauges_loop())   # глубина очереди/RSS/ожидание → Prometheus/Grafana
@@ -3367,13 +3380,13 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
     _det_findings, _det_findings_err = [], None
     if "audit1c-checks" in _skills:
         try:
-            _det_findings = ape.audit1c_run_checks(ape.audit1c_build_graph())
+            _det_findings = await _asyncio.to_thread(lambda: ape.audit1c_run_checks(ape.audit1c_build_graph()))
         except Exception as ex:  # noqa: BLE001
             _det_findings_err = f"{type(ex).__name__}: {ex}"
     _det_invs, _det_invs_err = [], None
     if "invest1c-trace" in _skills:
         try:
-            _det_invs = ape.audit1c_trace_chains()
+            _det_invs = await _asyncio.to_thread(ape.audit1c_trace_chains)
         except Exception as ex:  # noqa: BLE001
             _det_invs_err = f"{type(ex).__name__}: {ex}"
     _ctx = _findings_context_text(_det_findings, _det_invs) or None
@@ -3399,7 +3412,9 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
                                    knowledge_fn=_agent_knowledge_fn(agent, started_by),
                                    skill_schemas=_skill_schemas,
                                    findings_context=_ctx, user_context=user_context,
-                                   should_cancel=(lambda: run_queue.cancel_requested(job_id)) if job_id else None)
+                                   should_cancel=(lambda: run_queue.cancel_requested(job_id)) if job_id else None,
+                                   tool_loop=skill_tools.tool_loop, actor=started_by,
+                                   trace_id=(obs.current_trace_id() if hasattr(obs, "current_trace_id") else "") or "")
     # Петля прогон→канва: прикрепляем детерминированные находки (истина, не LLM).
     if "audit1c-checks" in _skills:
         if _det_findings_err:
@@ -3754,6 +3769,59 @@ async def audit1c_norm(name: str, u: dict = Depends(user)):
     if not p.exists():
         raise HTTPException(404, "нет такой нормы")
     return PlainTextResponse(p.read_text(encoding="utf-8"), media_type="text/markdown; charset=utf-8")
+
+
+
+# ═══════════════ ШИНА (Блок 3): топики систем, события → триггеры, DLQ ═══════════════
+@app.get("/api/bus")
+async def bus_describe(u: dict = Depends(user)) -> dict:
+    """Состояние шины: драйвер, брокеры, известные топики, пары топиков систем реестра."""
+    systems = await systems_store.all()
+    pairs = {s["id"]: {"events": run_bus.system_topics(s["id"])[0], "commands": run_bus.system_topics(s["id"])[1]} for s in systems}
+    return {**run_bus.describe(), "systems": pairs, "tool_steps": skill_tools.TOOL_STEPS}
+
+
+@app.get("/api/bus/tail")
+async def bus_tail(topic: str, limit: int = 20, u: dict = Depends(user)) -> dict:
+    """Последние сообщения топика (admin/support): отладка коннекторов и событий."""
+    require_level(u, "support")
+    if not topic.startswith("abop."):
+        raise HTTPException(422, "topic: только abop.*")
+    return {"topic": topic, "items": await run_bus.bus().tail(topic, max(1, min(200, limit)))}
+
+
+@app.get("/api/bus/dlq")
+async def bus_dlq(limit: int = 30, u: dict = Depends(user)) -> dict:
+    """Ошибки из DLQ (admin/support): source-topic, error, payload, trace_id — чтобы вычитывать и чинить."""
+    require_level(u, "support")
+    items = await run_bus.bus().tail(run_bus.TOPIC_DLQ, max(1, min(200, limit)))
+    return {"topic": run_bus.TOPIC_DLQ, "items": items, "count": len(items)}
+
+
+@app.post("/api/bus/publish")
+async def bus_publish(body: dict, u: dict = Depends(user)) -> dict:
+    """Опубликовать событие системы (kind=events; вебхук/экспорт 1С/коннектор) или команду (kind=commands).
+    manager+. События уходят в триггеры агентов, команды — коннекторам."""
+    require_level(u, "manager")
+    system = str((body or {}).get("system") or "").strip()
+    kind = str((body or {}).get("kind") or "events").strip()
+    etype = str((body or {}).get("type") or "").strip()
+    payload = (body or {}).get("payload") if isinstance((body or {}).get("payload"), dict) else {}
+    if not system or not etype or kind not in ("events", "commands"):
+        raise HTTPException(422, "нужны system, type и kind ∈ {events, commands}")
+    if not await systems_store.get(system):
+        raise HTTPException(404, "системы нет в реестре")
+    if not getattr(run_bus.bus(), "active", False):
+        raise HTTPException(503, "шина не подключена (ABOP_BUS=pg)")
+    actor = u.get("name") or u.get("sub") or "dev"
+    tid = obs.current_trace_id() if hasattr(obs, "current_trace_id") else ""
+    res = await (run_bus.publish_event if kind == "events" else run_bus.publish_command)(system, etype, payload, actor=actor, trace_id=tid or "")
+    await audit_store.record(actor, "bus.publish", res["topic"], {"type": etype, "kind": kind})
+    return res
+
+
+async def _bus_event_handler(system_id: str, event: dict, headers: dict) -> None:
+    await triggers.on_bus_event(system_id, event, execute_agent_run, headers)
 
 
 # ═══════════════ ЦЕПОЧКИ АГЕНТОВ (Pipelines): линейный конвейер выход→контекст ═══════════════

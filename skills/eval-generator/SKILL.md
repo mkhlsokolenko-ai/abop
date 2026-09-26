@@ -1,6 +1,7 @@
 ---
 name: eval-generator
 description: Собирает eval-датасет из спеки и настраивает грейдеры (code / LLM-as-judge / human). Вызывать, когда нужно измерять качество LLM/агента, а не только unit-логику.
+tools: data_query, data_get, data_schema
 ---
 
 # Eval Generator

@@ -1,6 +1,7 @@
 ---
 name: api-design
 description: Проектирует HTTP/REST API по принципу contract-first (OpenAPI) — ресурсы, версионирование, идемпотентность, пагинация, единообразные ошибки. Вызывать до реализации эндпоинтов, когда определяешь внешний контракт сервиса.
+tools: data_query, data_get, data_schema
 ---
 
 # API Design

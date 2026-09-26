@@ -1,6 +1,7 @@
 ---
 name: memory-architect
 description: Помогает спроектировать двухуровневую память агента (short-term + long-term) с дистилляцией. Вызывать, когда у агента длинный разговор/сессии и нужно помнить контекст между ними.
+tools: data_query, data_get, data_schema
 ---
 
 # Memory Architect

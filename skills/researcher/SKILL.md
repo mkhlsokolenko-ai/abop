@@ -1,6 +1,7 @@
 ---
 name: researcher
 description: Ведёт направленное desk-исследование под pet-проект — рынок, конкуренты, данные/датасеты, технологии, аналоги. Вызывать на discovery, когда нужно быстро собрать и структурировать контекст. Профиль research (DeepSeek).
+tools: data_query, data_get, data_schema
 ---
 
 # Researcher

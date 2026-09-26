@@ -225,7 +225,8 @@ def run_agent(agent: dict, contract: dict, safety_of) -> dict:
 
 async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_sources,
                    load_body, chat_fn, blocked_entities=None, knowledge_fn=None,
-                   findings_context=None, user_context="", skill_schemas=None, should_cancel=None) -> dict:
+                   findings_context=None, user_context="", skill_schemas=None, should_cancel=None,
+                   tool_loop=None, actor: str = "", trace_id: str = "") -> dict:
     """НАСТОЯЩИЙ прогон: governance-каркас (run_agent) + для каждого навыка с data-scope
     собирает РЕАЛЬНЫЕ данные из canonical store (data_query) и прогоняет их через LLM
     (тело навыка = методика) → находки на доску. Числа — только из данных (анти-галлюцинация).
@@ -257,7 +258,7 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
         data = {}
         for e in entities:
             try:
-                data[e] = data_query(e, limit=_LIM["rows"])
+                data[e] = await asyncio.to_thread(data_query, e, limit=_LIM["rows"])   # файловый Data Plane — не блокируем loop
             except Exception:  # noqa: BLE001
                 data[e] = []
         if not any(data.values()):
@@ -340,6 +341,18 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
         _t = time.perf_counter()
         if should_cancel and should_cancel():   # отмена из очереди: навык не стартует, прогон завершится частично
             return None
+        # Единый tool-calling навыка (Блок 3): модель выбирает из объявленных инструментов навыка,
+        # наблюдения попадают в итоговый промпт. Без инструментов/при ошибке — как раньше.
+        tool_calls: list = []
+        if tool_loop is not None:
+            try:
+                async with sem:
+                    _obs_block, tool_calls = await tool_loop(sid, _head, chat_fn, safety=(safety_of(sid) or {}),
+                                                             actor=actor, trace_id=trace_id)
+                if _obs_block:
+                    prompt = prompt.replace("ЗАДАЧА", _obs_block + "ЗАДАЧА", 1)
+            except Exception as ex:  # noqa: BLE001
+                tool_calls = [{"error": f"{type(ex).__name__}: {ex}"}]
         async with sem:  # батчинг: семафор пускает по _LLM_CONCURRENCY вызовов за раз
             # backoff-ретрай (429/таймаут): рост параллелизма не должен портить вывод скилла —
             # при перегрузе RouteAI ждём и повторяем, а не отдаём «LLM недоступен». Качество без изменений.
@@ -376,13 +389,20 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
             else:
                 txt, model, tin, tout = f"(LLM недоступен: {err})", "", 0, 0
         ms = round((time.perf_counter() - _t) * 1000, 1)  # per-skill тайминг (observability)
+        for tc in tool_calls:   # токены вызовов инструментов — в биллинг навыка
+            tin += int(tc.get("input_tokens") or 0); tout += int(tc.get("output_tokens") or 0)
         return {"skill": sid, "entities": entities, "model": model, "text": txt,
-                "structured": struct, "input_tokens": tin, "output_tokens": tout, "ms": ms, "error": err}
+                "structured": struct, "input_tokens": tin, "output_tokens": tout, "ms": ms, "error": err,
+                "tool_calls": tool_calls}
 
     # навыки — параллельно, но с rate-limit (семафор): батч по _LLM_CONCURRENCY к RouteAI
     results = await asyncio.gather(*[_analyze(s) for s in skills])
     findings = [r for r in results if r]
     for f in findings:
+        for tc in (f.get("tool_calls") or []):
+            if tc.get("tool"):
+                base["board"].append({"kind": "tool", "agent": f["skill"],
+                                      "text": f"🔧 {tc['tool']}({json.dumps(tc.get('args') or {}, ensure_ascii=False)[:120]}) → {str(tc.get('observation') or '')[:200]}"})
         base["board"].append({"kind": "finding", "agent": f["skill"], "text": f["text"][:1800]})
     base["findings"] = findings
     # Реальный биллинг (7.1): токены из ответов RouteAI + тариф pricing.cost_rub → cost в RunMetrics

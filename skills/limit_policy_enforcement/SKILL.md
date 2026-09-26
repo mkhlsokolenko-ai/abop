@@ -1,6 +1,7 @@
 ---
 name: limit_policy_enforcement
 description: Применяет лимитно-скоринговую политику к валидной заявке и выдаёт трассируемый вердикт с лимитом. Каждое решение привязано к пункту политики. Вызывать после валидации приёма, до выдачи.
+tools: data_query, data_get, data_schema
 ---
 
 # Limit Policy Enforcement

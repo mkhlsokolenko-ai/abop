@@ -1,6 +1,7 @@
 ---
 name: meeting-action-items
 description: Превращает заметки встречи в структуру решений, действий и открытых вопросов с адресными владельцами и сроками. Вызывать после совещания/созвона, когда нужно ничего не потерять и завести тикеты-черновики.
+tools: data_query, data_get, data_schema, redmine_create_issue
 ---
 
 # Meeting Action Items

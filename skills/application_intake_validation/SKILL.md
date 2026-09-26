@@ -1,6 +1,7 @@
 ---
 name: application_intake_validation
 description: Проверяет кредитную заявку на полноту, консистентность и соответствие политике приёма; каждый отказ-флаг привязан к правилу и полю-источнику. Вызывать на входе кредитного конвейера.
+tools: data_query, data_get, data_schema
 ---
 
 # Application Intake Validation
