@@ -1,4 +1,8 @@
-*.pptx binary
-# shell-скрипты всегда с LF — иначе CRLF ломает shebang/`set -euo pipefail` при запуске на сервере
-*.sh text eol=lf
-ops/*.sh text eol=lf
+# Блок 5: исходники фронта и артефакт сборки — LF, шрифты/картинки — бинарники
+webapp/src/** text eol=lf
+webapp/src/fonts/** binary
+*.woff2 binary
+*.png binary
+webapp/index.html text eol=lf
+webapp/build.py text eol=lf
+tests/** text eol=lf
