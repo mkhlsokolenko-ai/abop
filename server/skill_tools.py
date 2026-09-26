@@ -163,10 +163,10 @@ async def run_tool(sid: str, name: str, args: dict, *, actor: str = "", trace_id
     if name == "bus_publish":
         if not getattr(run_bus.bus(), "active", False):
             return "шина не подключена (ABOP_BUS=pg) — команда не отправлена"
-        res = await run_bus.publish_command(str(args.get("system") or ""), str(args.get("type") or "command"),
-                                            args.get("payload") if isinstance(args.get("payload"), dict) else {},
-                                            actor=actor or ("skill:" + sid), trace_id=trace_id)
-        return f"команда отправлена в {res['topic']} (id {res['command']['id']})" if res["ok"] else "не удалось отправить команду"
+        return await publish_command_governed(sid, str(args.get("system") or ""), str(args.get("type") or "command"),
+                                              args.get("payload") if isinstance(args.get("payload"), dict) else {},
+                                              actor=actor or ("skill:" + sid), trace_id=trace_id, safety=safety,
+                                              family=str(args.get("_family") or ""), agent_id=str(args.get("_agent_id") or ""))
     # остальные — синхронные инструменты ядра ape, в потоке (не блокируем цикл)
     from cli import ape
     fn = (ape.AGENT_TOOLS.get(name) or (None,))[0]
@@ -182,8 +182,42 @@ async def run_tool(sid: str, name: str, args: dict, *, actor: str = "", trace_id
     return str(out)[:4000]
 
 
+async def publish_command_governed(sid: str, system: str, ctype: str, payload: dict, *, actor: str, trace_id: str,
+                                   safety: dict | None, family: str = "", agent_id: str = "") -> str:
+    """Команда в шину под governance: (1) система есть в реестре и доступна семье агента (ABAC);
+    (2) режим навыка action → сразу в топик; write или payload.hitl → заявка HITL (канал command),
+    оператор одобряет → команда публикуется (см. hitl_approve). Коннектор исполняет всё, что дошло до топика."""
+    from . import access, hitl_store, systems_store
+    system = system.strip().lower()
+    if not system or not ctype:
+        return "bus_publish: нужны system и type"
+    card = await systems_store.get(system)
+    if not card:
+        return f"системы «{system}» нет в реестре — команда не отправлена"
+    key = access.scope_key(family=family or None)
+    ok, reason = access.can_reach_system(key, card)
+    if not ok:
+        return f"ABAC: семья «{family or '?'}» не имеет доступа к «{system}» ({reason}) — команда не отправлена"
+    mode = (safety or {}).get("mode") or "read"
+    need_hitl = bool(payload.get("hitl")) or mode != "action"
+    clean = {k: v for k, v in payload.items() if k != "hitl"}
+    if need_hitl:
+        item = await hitl_store.create(
+            run_id="", agent_id=agent_id, family=family, node=sid, title=f"Команда {system}/{ctype} от навыка {sid}",
+            channel="command", to_addr=system,
+            payload={"kind": "command", "system": system, "type": ctype, "payload": clean, "actor": actor,
+                     "trace_id": trace_id, "agent_name": agent_id,
+                     "html": "<p>Навык <b>" + sid + "</b> просит выполнить команду <b>" + system + "/" + ctype
+                             + "</b>. После подтверждения команда уйдёт в шину и коннектор её исполнит.</p><pre>"
+                             + json.dumps(clean, ensure_ascii=False)[:1500] + "</pre>"},
+            requested_by=actor)
+        return f"команда {system}/{ctype} ждёт подтверждения оператора (HITL {item['id']}); наружу пока ничего не ушло"
+    res = await run_bus.publish_command(system, ctype, clean, actor=actor, trace_id=trace_id)
+    return f"команда отправлена в {res['topic']} (id {res['command']['id']}); результат придёт событием command.done" if res["ok"] else "не удалось отправить команду"
+
+
 async def tool_loop(sid: str, head: str, chat_fn, *, safety: dict | None = None, actor: str = "", trace_id: str = "",
-                    steps: int | None = None, max_tokens: int = 400, system: str = "") -> tuple[str, list[dict]]:
+                    steps: int | None = None, max_tokens: int = 400, system: str = "", family: str = "", agent_id: str = "") -> tuple[str, list[dict]]:
     """Единый цикл: ≤ steps вызовов инструментов, затем навык отвечает по методике. Возвращает
     (блок наблюдений для промпта, журнал вызовов)."""
     steps = TOOL_STEPS if steps is None else steps
@@ -208,6 +242,8 @@ async def tool_loop(sid: str, head: str, chat_fn, *, safety: dict | None = None,
             break
         name = str(act.get("tool"))
         args = act.get("args") if isinstance(act.get("args"), dict) else {}
+        if name == "bus_publish":
+            args = dict(args, _family=family, _agent_id=agent_id)
         obs_txt = safety_mod.untrusted(await run_tool(sid, name, args, actor=actor, trace_id=trace_id, safety=safety), 4000)
         log.append({"step": step + 1, "tool": name, "args": args, "observation": obs_txt[:1200],
                     "input_tokens": int((resp or {}).get("input_tokens") or 0), "output_tokens": int((resp or {}).get("output_tokens") or 0),

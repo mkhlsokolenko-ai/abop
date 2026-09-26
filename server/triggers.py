@@ -166,6 +166,8 @@ async def on_bus_event(system_id: str, event: dict, run_executor, headers: dict 
             want = trig.get("event_type") or trig.get("event") or ""
             if want and want != etype:
                 continue
+            if not want and etype.startswith("command."):
+                continue   # служебный ответ коннектора (command.done/failed) — только для триггеров, подписанных на него явно
             if system:
                 key = access.scope_key(family=full.get("family"))
                 ok, reason = access.can_reach_system(key, system)

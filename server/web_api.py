@@ -4171,6 +4171,20 @@ async def hitl_approve(item_id: str, body: dict = None, u: dict = Depends(user))
         await audit_store.record(actor, "hitl.approve", item_id, {"agent_id": ag["id"], "channel": "spawn", "job_id": job["id"]})
         obs.inc("abop_hitl_total", decision="approve")
         return JSONResponse({"id": item_id, "state": "approved", "job_id": job["id"], "delivery": "прогон поставлен в очередь"})
+    # approve: команда навыка (канал command) → в шину, исполнит коннектор-воркер
+    if payload.get("kind") == "command":
+        if not getattr(run_bus.bus(), "active", False):
+            raise HTTPException(503, "шина не подключена — команду некуда публиковать")
+        res = await run_bus.publish_command(str(payload.get("system") or ""), str(payload.get("type") or "command"),
+                                            payload.get("payload") if isinstance(payload.get("payload"), dict) else {},
+                                            actor=actor, trace_id=str(payload.get("trace_id") or obs.current_trace_id()))
+        await hitl_store.decide(item_id, "approved", actor, reason)
+        await audit_store.record(actor, "hitl.approve", item_id, {"agent_id": item.get("agent_id"), "channel": "command",
+                                                                  "topic": res.get("topic"), "command_id": (res.get("command") or {}).get("id")})
+        obs.inc("abop_hitl_total", decision="approve")
+        resumed = await _resume_job_after_hitl(item_id, payload, "approve")
+        return JSONResponse({"id": item_id, "state": "approved", "delivery": "команда опубликована в " + str(res.get("topic")),
+                             "command_id": (res.get("command") or {}).get("id"), "resumed_job": resumed})
     # approve → реальная отправка в канал
     cfg = payload.get("cfg") or {}
     out = await _send_channel(cfg, payload.get("agent_name"), payload.get("html") or "", real=True)

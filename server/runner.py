@@ -349,7 +349,8 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
             try:
                 async with sem:
                     _obs_block, tool_calls = await tool_loop(sid, _head, chat_fn, safety=(safety_of(sid) or {}),
-                                                             actor=actor, trace_id=trace_id, system=_sys)
+                                                             actor=actor, trace_id=trace_id, system=_sys,
+                                                             family=str(agent.get("family") or ""), agent_id=str(agent.get("id") or ""))
                 if _obs_block:
                     prompt = prompt.replace("ЗАДАЧА", _obs_block + "ЗАДАЧА", 1)
             except Exception as ex:  # noqa: BLE001

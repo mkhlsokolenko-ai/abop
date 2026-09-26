@@ -132,3 +132,45 @@ def test_auth_fail_closed_without_dev_flag():
             assert c.get("/api/health").status_code == 200
     finally:
         os.environ["ABOP_DEV_AUTH"] = "1"
+
+
+def test_bus_publish_governance_hitl_and_abac():
+    """Команда навыка: чужая система → отказ ABAC; режим write → заявка HITL (наружу ничего);
+    режим action → публикация (шина не подключена → честный ответ)."""
+    from server import hitl_store, skill_tools as st, systems_store
+
+    async def flow():
+        await systems_store.save("redmine", {"kind": "rest", "base_url": "http://x", "scope": ["management"]})
+        out = await st.publish_command_governed("to-tickets", "redmine", "issue.create", {"subject": "s"},
+                                                actor="a", trace_id="", safety={"mode": "write"}, family="finance", agent_id="ag1")
+        assert "ABAC" in out and "не отправлена" in out
+        out = await st.publish_command_governed("to-tickets", "redmine", "issue.create", {"subject": "s"},
+                                                actor="a", trace_id="", safety={"mode": "write"}, family="management", agent_id="ag1")
+        assert "ждёт подтверждения" in out and "HITL" in out
+        pend = [h for h in await hitl_store.list_pending() if h.get("channel") == "command"]
+        assert pend and pend[-1]["agent_id"] == "ag1"
+        out = await st.publish_command_governed("to-tickets", "redmine", "issue.create", {"subject": "s"},
+                                                actor="a", trace_id="", safety={"mode": "action"}, family="management", agent_id="ag1")
+        assert "не удалось" in out or "отправлена" in out   # PgBus: publish → False
+        out = await st.publish_command_governed("to-tickets", "nosuch", "x", {}, actor="a", trace_id="", safety={"mode": "action"})
+        assert "нет в реестре" in out
+    import asyncio
+    asyncio.run(flow())
+
+
+def test_command_result_events_do_not_fire_triggers():
+    from server import agent_store, systems_store, triggers
+    fired = []
+
+    async def executor(agent, contract, started_by, *, trigger=None, user_context="", **kw):
+        fired.append(agent["id"]); return {"saved": {"id": "r"}}
+
+    async def flow():
+        await systems_store.save("mailpit", {"kind": "rest", "base_url": "http://x", "scope": []})
+        graph = {"nodes": [{"id": "t", "kind": "trigger", "title": "по событию",
+                            "trig": {"type": "event", "source": "mailpit", "enabled": True, "spawn": {"autonomy_max": "A1"}}}]}
+        await agent_store.save(name="Т", audit_id="t-cmd", version=1, graph=graph, autonomy_max="A1", family="management", role="pm")
+        assert await triggers.on_bus_event("mailpit", {"type": "command.done", "payload": {}}, executor) == []
+        assert await triggers.on_bus_event("mailpit", {"type": "message.received", "payload": {}}, executor)
+    import asyncio
+    asyncio.run(flow())
