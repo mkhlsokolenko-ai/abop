@@ -192,6 +192,8 @@ async def _tick(run_executor) -> None:
         full = await agent_store.get(a["id"])
         if not full:
             continue
+        if full.get("status") in ("paused", "retired"):
+            continue  # флот: «пауза» — развёртывание не принимает триггеры (POST /api/agents/{id}/status)
         for tn in triggers_of(full):
             if fired >= MAX_FIRES_PER_TICK:
                 break

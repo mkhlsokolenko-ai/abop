@@ -2053,6 +2053,276 @@ async def agents_list(contract: str = "", archived: bool = False, u: dict = Depe
     return {"agents": out}
 
 
+
+# ═══════════════ ФЛОТ (линза «Эксплуатирую»): только реальные данные, без симуляции ═══════════════
+_DEPLOY_STATUSES = ("draft", "deployed", "paused")
+
+
+def _dep_status_ru(agent: dict, trig_rows: list[dict]) -> str:
+    """Статус развёртывания по-русски: актив / пауза / черновик / отозван."""
+    st = agent.get("status") or "draft"
+    if st == "retired":
+        return "отозван"
+    if st == "paused":
+        return "пауза"
+    if st == "deployed":
+        return "актив"
+    if trig_rows and any(t.get("enabled") for t in trig_rows):
+        return "актив"          # черновик, но у него включённое расписание → фактически работает
+    if trig_rows:
+        return "пауза"          # расписания есть, все выключены
+    return "черновик"
+
+
+def _graph_titles(a: dict | None) -> list[str]:
+    g = (a or {}).get("graph") or {}
+    return [str(n.get("title") or n.get("id") or "") for n in (g.get("nodes") or []) if isinstance(n, dict)]
+
+
+def _version_diff(cur: dict | None, prev: dict | None) -> list[dict]:
+    """Честная разница версий по узлам графа (что уйдёт, что вернётся при откате)."""
+    ct, pt = set(_graph_titles(cur)), set(_graph_titles(prev))
+    out = [{"sign": "−", "text": "узел «" + t + "» уйдёт (есть только в текущей версии)"} for t in sorted(ct - pt)]
+    out += [{"sign": "+", "text": "узел «" + t + "» вернётся (есть в предыдущей версии)"} for t in sorted(pt - ct)]
+    same = len(ct & pt)
+    if same:
+        out.append({"sign": "·", "text": str(same) + " " + ("узел без изменений" if same == 1 else "узлов без изменений")})
+    if (cur or {}).get("autonomy_max") != (prev or {}).get("autonomy_max"):
+        out.append({"sign": "·", "text": "автономия " + str((cur or {}).get("autonomy_max")) + " → " + str((prev or {}).get("autonomy_max"))})
+    return out or [{"sign": "·", "text": "графы версий совпадают"}]
+
+
+async def _prev_version_of(a: dict) -> dict | None:
+    """Предыдущая (не retired) версия того же агента — цель отката."""
+    cid = a.get("contract_audit_id") or a.get("id")
+    cands = [x for x in await agent_store.list_for(cid, limit=200) if (x.get("version") or 0) < (a.get("version") or 0)]
+    cands.sort(key=lambda x: x.get("version") or 0, reverse=True)
+    return cands[0] if cands else None
+
+
+@app.post("/api/agents/{agent_id}/status")
+async def agent_set_status(agent_id: str, body: dict, u: dict = Depends(user)) -> dict:
+    """Статус развёртывания: deployed (актив — принимает триггеры), paused (планировщик не фаерит),
+    draft. Реальный эффект: scheduler_loop пропускает paused. manager+."""
+    require_level(u, "manager")
+    st = str((body or {}).get("status") or "").strip()
+    if st not in _DEPLOY_STATUSES:
+        raise HTTPException(422, "status: draft | deployed | paused")
+    a = await agent_store.get(agent_id)
+    if not a:
+        raise HTTPException(404, "нет такого агента")
+    if not can_see_family(u, a.get("family")):
+        raise HTTPException(403, "агент другого отдела")
+    await agent_store.set_status(agent_id, st)
+    await audit_store.record(u.get("name") or u.get("sub") or "dev", "agent.status", agent_id,
+                             {"from": a.get("status"), "to": st})
+    return {"id": agent_id, "status": st}
+
+
+@app.get("/api/agents/{agent_id}/rollback")
+async def agent_rollback_preview(agent_id: str, u: dict = Depends(user)) -> dict:
+    """Что изменится при откате на предыдущую версию (реальный diff узлов графа)."""
+    a = await agent_store.get(agent_id)
+    if not a:
+        raise HTTPException(404, "нет такого агента")
+    prev = await _prev_version_of(a)
+    prev_full = await agent_store.get(prev["id"]) if prev else None
+    return {"id": agent_id, "version": a.get("version"), "prev": (prev or {}).get("id"),
+            "prev_version": (prev or {}).get("version"), "diff": _version_diff(a, prev_full) if prev else []}
+
+
+@app.post("/api/agents/{agent_id}/rollback")
+async def agent_rollback(agent_id: str, u: dict = Depends(user)) -> dict:
+    """Откат: предыдущая версия становится deployed, текущая уходит в Лимб (retired, обратимо через restore).
+    Планировщик берёт последнюю НЕ-retired версию → расписания начнут фаерить из предыдущей. manager+."""
+    require_level(u, "manager")
+    a = await agent_store.get(agent_id)
+    if not a:
+        raise HTTPException(404, "нет такого агента")
+    if not can_see_family(u, a.get("family")):
+        raise HTTPException(403, "агент другого отдела")
+    prev = await _prev_version_of(a)
+    if not prev:
+        raise HTTPException(409, "предыдущей версии нет — откатывать некуда")
+    await agent_store.set_status(prev["id"], "deployed")
+    await agent_store.set_status(agent_id, "retired")
+    await audit_store.record(u.get("name") or u.get("sub") or "dev", "agent.rollback", agent_id,
+                             {"to": prev["id"], "from_version": a.get("version"), "to_version": prev.get("version")})
+    return {"ok": True, "from": agent_id, "to": prev["id"], "to_version": prev.get("version")}
+
+
+@app.get("/api/fleet")
+async def fleet(u: dict = Depends(user)) -> dict:
+    """Флот целиком из реальных источников (ABAC по семье): развёртывания = последние версии агентов
+    (+ их триггеры, верификация, предыдущая версия), живые = задания очереди + недавние прогоны,
+    алерты = ошибки/HITL/память/конверт, история 8 дней = ошибки/стоимость/DoD из журнала прогонов."""
+    import datetime as _dt
+    now = _dt.datetime.now(_dt.timezone.utc)
+    actor = u.get("name") or u.get("sub") or "dev"
+    all_ = u.get("level") in ("admin", "support")
+    active = [a for a in await agent_store.list_for(None, limit=500) if can_see_family(u, a.get("family"))]
+    limbo = [a for a in await agent_store.list_for(None, limit=500, archived=True) if can_see_family(u, a.get("family"))]
+    fams = {f["id"]: f for f in await families_store.all()}
+    trig_by: dict = {}
+    for t in await triggers.list_triggers():
+        trig_by.setdefault(t["agent_id"], []).append(t)
+    # последняя версия на агента + наличие предыдущей
+    latest: dict = {}
+    versions: dict = {}
+    for a in active:
+        cid = a.get("contract_audit_id") or a.get("id")
+        versions.setdefault(cid, []).append(a.get("version") or 0)
+        if cid not in latest or (a.get("version") or 0) > (latest[cid].get("version") or 0):
+            latest[cid] = a
+    latest_ids = {a["id"] for a in latest.values()}
+    retired_latest = {}
+    for a in limbo:
+        cid = a.get("contract_audit_id") or a.get("id")
+        if cid in latest:
+            continue
+        if cid not in retired_latest or (a.get("version") or 0) > (retired_latest[cid].get("version") or 0):
+            retired_latest[cid] = a
+
+    def _trig_text(rows: list[dict]) -> tuple[str, str]:
+        if not rows:
+            return ("вручную / по запросу", "▶")
+        r = rows[0]
+        if r.get("type") == "schedule":
+            return ("расписание " + str(r.get("cron") or ""), "⏱")
+        if r.get("type") == "event":
+            return ("событие " + str(r.get("source") or ""), "⚡")
+        return (str(r.get("type") or "триггер"), "✉")
+
+    def _dep(a: dict) -> dict:
+        rows = trig_by.get(a["id"], [])
+        ttext, ticon = _trig_text(rows)
+        ver = (a.get("verification") or {}) if isinstance(a.get("verification"), dict) else {}
+        verify = "contract" if a.get("source") != "authored" else ("ok" if ver.get("ok") else ("fail" if ver else "draft"))
+        cid = a.get("contract_audit_id") or a.get("id")
+        vs = sorted(versions.get(cid, []))
+        return {"id": a["id"], "agent": a.get("name") or a["id"], "version": "v" + str(a.get("version") or 1),
+                "prev": ("v" + str(vs[-2])) if len(vs) >= 2 else None,
+                "area": (fams.get(a.get("family") or "") or {}).get("title") or a.get("family") or "—",
+                "family": a.get("family"), "role": a.get("role"),
+                "trigger": ttext, "tIcon": ticon, "triggers": len(rows),
+                "trigger_enabled": any(t.get("enabled") for t in rows),
+                "last_fire": max([t.get("last_fire") or "" for t in rows] or [""]) or None,
+                "status": _dep_status_ru(a, rows), "raw_status": a.get("status"),
+                "owner": a.get("created_by") or "—", "autonomy": str(a.get("autonomy_max") or "A1"),
+                "since": (a.get("created_at") or "")[:10], "verify": verify}
+    deployments = [_dep(a) for a in latest.values()] + [_dep(a) for a in retired_latest.values()]
+    deployments.sort(key=lambda d: ({"актив": 0, "пауза": 1, "черновик": 2, "отозван": 3}.get(d["status"], 9), d["agent"]))
+
+    # живые: задания очереди (мои / все для admin+support) + недавние прогоны
+    names = {a["id"]: a.get("name") for a in active + limbo}
+    fam_of = {a["id"]: a.get("family") for a in active + limbo}
+    jobs = [j for j in await run_queue.list_jobs(actor=None if all_ else actor, limit=100)
+            if can_see_family(u, fam_of.get(j.get("agent_id")))]
+    runs = [r for r in await run_store.list_runs(limit=300) if can_see_family(u, fam_of.get(r.get("agent_id")))]
+    run_by_id = {r["id"]: r for r in runs}
+
+    def _secs(ts: str | None, end: str | None = None) -> int:
+        try:
+            t0 = _dt.datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+            if t0.tzinfo is None:
+                t0 = t0.replace(tzinfo=_dt.timezone.utc)
+            t1 = _dt.datetime.fromisoformat(str(end).replace("Z", "+00:00")) if end else now
+            if t1.tzinfo is None:
+                t1 = t1.replace(tzinfo=_dt.timezone.utc)
+            return max(0, int((t1 - t0).total_seconds()))
+        except Exception:  # noqa: BLE001
+            return 0
+    live, seen_runs = [], set()
+    for j in jobs:
+        st = j.get("status")
+        cp = j.get("checkpoint") or {}
+        status = {"queued": "ждёт", "running": "думает", "awaiting_hitl": "HITL", "done": "готово",
+                  "failed": "ошибка", "cancelled": "отменён"}.get(st, st)
+        run = run_by_id.get(j.get("run_id") or "")
+        cost = float(((run or {}).get("cost") or {}).get("rub") or 0)
+        step = ("цепочка · шаг " + str((cp.get("step") or 0) + 1) + "/" + str(cp.get("steps_total") or "?")) if (j.get("kind") == "pipeline") \
+            else (("v" + str(j.get("version") or "")) if j.get("version") else "прогон")
+        if st == "done" and j.get("kind") == "pipeline":
+            step = "цепочка · " + str(cp.get("steps_total") or len(cp.get("steps") or [])) + " " + ("шаг" if (cp.get("steps_total") or 0) == 1 else "шага" if (cp.get("steps_total") or 0) in (2, 3, 4) else "шагов") + " · готово"
+        elif st == "done" and run:
+            step = ("вердикт пройден" if run.get("verdict_ok") else "есть замечания")
+            status = "готово" if run.get("verdict_ok") else "внимание"
+        if st == "failed":
+            step = str(j.get("error") or "ошибка")[:80]
+        live.append({"id": j["id"], "dep": j.get("agent_id"), "agent": names.get(j.get("agent_id")) or j.get("agent_id"),
+                     "step": step, "init": "запустил " + str(j.get("actor") or "—"),
+                     "dur": _secs(j.get("started_at") or j.get("created_at"), j.get("finished_at")),
+                     "cost": cost, "status": status, "phase": "live" if st in ("queued", "running", "awaiting_hitl") else "done",
+                     "run_id": j.get("run_id"), "when": (j.get("created_at") or "")[:16].replace("T", " ")})
+        if j.get("run_id"):
+            seen_runs.add(j["run_id"])
+    for r in runs[:12]:
+        if r["id"] in seen_runs:
+            continue
+        live.append({"id": r["id"], "dep": r.get("agent_id"), "agent": names.get(r.get("agent_id")) or r.get("agent_id"),
+                     "step": "вердикт пройден" if r.get("verdict_ok") else "есть замечания",
+                     "init": ("запустил " + str(r.get("started_by"))) if r.get("started_by") else "прогон",
+                     "dur": 0, "cost": float((r.get("cost") or {}).get("rub") or 0),
+                     "status": ("HITL" if (r.get("hitl_count") or 0) else ("готово" if r.get("verdict_ok") else "внимание")),
+                     "phase": "done", "run_id": r["id"], "when": (r.get("created_at") or "")[:16].replace("T", " ")})
+    order = {"live": 0, "done": 1}
+    live.sort(key=lambda x: (order.get(x["phase"], 2), x.get("when") or ""), reverse=False)
+    live = [x for x in live if x["phase"] == "live"] + sorted([x for x in live if x["phase"] != "live"], key=lambda x: x.get("when") or "", reverse=True)[:10]
+
+    # история 8 дней: ошибки / стоимость / DoD
+    days = [(now - _dt.timedelta(days=7 - k)).date() for k in range(8)]
+    hist = {d: {"err": 0, "cost": 0.0, "ok": 0, "n": 0} for d in days}
+    for r in runs:
+        try:
+            d = _dt.datetime.fromisoformat(str(r.get("created_at")).replace("Z", "+00:00")).date()
+        except Exception:  # noqa: BLE001
+            continue
+        if d in hist:
+            hist[d]["n"] += 1
+            hist[d]["ok"] += 1 if r.get("verdict_ok") else 0
+            hist[d]["err"] += 0 if r.get("verdict_ok") else 1
+            hist[d]["cost"] += float((r.get("cost") or {}).get("rub") or 0)
+    for j in jobs:
+        if j.get("status") == "failed":
+            try:
+                d = _dt.datetime.fromisoformat(str(j.get("created_at")).replace("Z", "+00:00")).date()
+                if d in hist:
+                    hist[d]["err"] += 1
+            except Exception:  # noqa: BLE001
+                pass
+    series = [{"day": d.isoformat(), "err": hist[d]["err"], "cost": round(hist[d]["cost"], 2),
+               "dod": (round(100 * hist[d]["ok"] / hist[d]["n"]) if hist[d]["n"] else None)} for d in days]
+
+    # алерты — только реальные события
+    alerts = []
+    day_ago = now - _dt.timedelta(hours=24)
+    for j in jobs:
+        if j.get("status") == "failed" and _secs(j.get("created_at")) < 86400:
+            alerts.append({"level": "crit", "kind": "runs", "agent_id": j.get("agent_id"),
+                           "title": (names.get(j.get("agent_id")) or j.get("agent_id")) + ": прогон завершился ошибкой",
+                           "note": str(j.get("error") or "")[:160] or "без текста ошибки", "action": "журнал"})
+    pending = [h for h in await hitl_store.list_pending() if can_see_family(u, h.get("family"))]
+    if pending:
+        alerts.append({"level": "warn", "kind": "hitl", "title": str(len(pending)) + " " + ("решение ждёт" if len(pending) == 1 else "решения ждут") + " оператора",
+                       "note": "Прогоны/цепочки не продолжатся, пока вы не подтвердите или не отклоните доставку.", "action": "к очереди"})
+    for d in deployments:
+        if d["verify"] == "fail":
+            alerts.append({"level": "warn", "kind": "envelope", "agent_id": d["id"], "title": d["agent"] + " " + d["version"] + ": нарушение конверта",
+                           "note": "Авто-верификация нашла узлы выше разрешённой автономии — см. вердикт в паспорте агента.", "action": "паспорт"})
+        if d["trigger_enabled"] and d["status"] == "актив" and d.get("last_fire") and _secs(d["last_fire"]) > 2 * 86400 and "расписание" in d["trigger"]:
+            alerts.append({"level": "soft", "kind": "trigger", "agent_id": d["id"], "title": d["agent"] + ": расписание не срабатывало 2 дня",
+                           "note": "Последний запуск " + str(d["last_fire"])[:16].replace("T", " ") + ". Проверьте cron и статус агента.", "action": "развёртывания"})
+    qstats = await run_queue.stats()
+    if qstats.get("memory_pressure"):
+        alerts.append({"level": "crit", "kind": "memory", "title": "Память процесса выше мягкого лимита",
+                       "note": "RSS " + str(qstats.get("rss_mb")) + " МБ при лимите " + str(qstats.get("mem_soft_mb")) + " МБ — воркеры не берут новые задания до снижения.", "action": "очередь"})
+    obs.inc("abop_http_fleet_total")
+    return {"deployments": deployments, "live": live, "alerts": alerts, "series": series,
+            "queue": {"by_status": qstats.get("by_status") or {}, "workers": qstats.get("workers"),
+                      "rss_mb": qstats.get("rss_mb"), "memory_pressure": bool(qstats.get("memory_pressure"))},
+            "hitl_pending": len(pending), "generated_at": now.isoformat(timespec="seconds")}
+
+
 @app.post("/api/agents/{agent_id}/retire")
 async def agent_retire(agent_id: str, u: dict = Depends(user)) -> dict:
     """Вывести агента из эксплуатации → Лимб (архив, status=retired; ADR-024). Обратимо через restore."""
