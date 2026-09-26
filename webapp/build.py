@@ -19,13 +19,15 @@ json.loads → replace → json.dumps. Теперь исходники лежа�
   python webapp/build.py build     # src/ → index.html
   python webapp/build.py check     # собрать во временный буфер и сравнить с index.html (CI)
   python webapp/build.py lint      # node --check для JS главного шаблона и компонентов
+
+Текстовые ресурсы и шаблон нормализуются к LF: результат сборки не зависит от того, с какими
+переводами строк файлы лежат в рабочей копии (Windows-checkout vs CI).
 """
 from __future__ import annotations
 
 import base64
 import gzip
 import json
-import os
 import re
 import subprocess
 import sys
@@ -39,6 +41,12 @@ RE_MAN = re.compile(r'<script type="__bundler/manifest">(.*?)</script>', re.S)
 RE_TPL = re.compile(r'<script type="__bundler/template">(.*?)</script>', re.S)
 RE_EXT = re.compile(r'<script type="__bundler/ext_resources">\s*(.*?)\s*</script>', re.S)
 EXT = {"text/html": ".dc.html", "text/javascript": ".js", "font/woff2": ".woff2"}
+CRLF = b"\r\n"
+LF = b"\n"
+
+
+def _lf(data: bytes) -> bytes:
+    return data.replace(CRLF, LF)
 
 
 def _names(raw: str) -> dict[str, str]:
@@ -86,13 +94,13 @@ def extract() -> None:
             base = uid[:8] + "-" + base
         used.add(base)
         sub = "components" if mime == "text/html" else ("vendor" if mime == "text/javascript" else "fonts")
-        (SRC / sub / base).write_bytes(data)
+        (SRC / sub / base).write_bytes(_lf(data) if mime.startswith("text/") else data)
         reg[uid] = {"file": f"{sub}/{base}", "mime": mime, "compressed": comp}
     (SRC / "manifest.json").write_text(json.dumps(reg, ensure_ascii=False, indent=2), encoding="utf-8")
-    (SRC / "template.html").write_text(tpl, encoding="utf-8")
+    (SRC / "template.html").write_bytes(_lf(tpl.encode("utf-8")))
     mm, mt = RE_MAN.search(raw), RE_TPL.search(raw)
     shell = raw[:mm.start(1)] + "@@MANIFEST@@" + raw[mm.end(1):mt.start(1)] + "@@TEMPLATE@@" + raw[mt.end(1):]
-    (SRC / "shell.html").write_text(shell, encoding="utf-8")
+    (SRC / "shell.html").write_bytes(_lf(shell.encode("utf-8")))
     print(f"extract ok: {len(reg)} ресурсов, template {len(tpl)} симв., shell {len(shell)} симв.")
 
 
@@ -101,16 +109,22 @@ def _font_name(data: bytes, uid: str) -> str:
     return uid[:8] + ".woff2"
 
 
+def _read_text_lf(p: Path) -> str:
+    return _lf(p.read_bytes()).decode("utf-8")
+
+
 def assemble() -> str:
     reg = json.loads((SRC / "manifest.json").read_text(encoding="utf-8"))
     man = {}
     for uid, spec in reg.items():
         data = (SRC / spec["file"]).read_bytes()
+        if spec["mime"].startswith("text/"):
+            data = _lf(data)     # текстовые ресурсы — всегда LF (Windows-checkout ≠ CI)
         if spec.get("compressed"):
             data = gzip.compress(data, mtime=0)
         man[uid] = {"mime": spec["mime"], "compressed": bool(spec.get("compressed")), "data": base64.b64encode(data).decode("ascii")}
-    tpl = (SRC / "template.html").read_text(encoding="utf-8")
-    shell = (SRC / "shell.html").read_text(encoding="utf-8")
+    tpl = _read_text_lf(SRC / "template.html")
+    shell = _read_text_lf(SRC / "shell.html")
     enc = lambda obj: json.dumps(obj, ensure_ascii=False).replace("</", "<\\/")  # noqa: E731 — как делал bundler
     return shell.replace("@@MANIFEST@@", enc(man)).replace("@@TEMPLATE@@", enc(tpl))
 
@@ -118,7 +132,7 @@ def assemble() -> str:
 def build() -> None:
     lint()
     out = assemble()
-    INDEX.write_text(out, encoding="utf-8")
+    INDEX.write_bytes(out.encode("utf-8"))
     print(f"build ok: index.html {len(out)} симв.")
 
 
@@ -128,18 +142,21 @@ def _decode(raw: str) -> tuple[str, dict[str, bytes]]:
     res = {}
     for uid, r in man.items():
         d = base64.b64decode(r["data"])
-        res[uid] = gzip.decompress(d) if r.get("compressed") else d
+        d = gzip.decompress(d) if r.get("compressed") else d
+        if str(r.get("mime", "")).startswith("text/"):
+            d = _lf(d)
+        res[uid] = d
     return tpl, res
 
 
 def check() -> int:
     """Функциональная эквивалентность: шаблон и распакованные ресурсы совпадают (gzip-байты могут отличаться)."""
-    cur = INDEX.read_text(encoding="utf-8")
+    cur = _read_text_lf(INDEX)
     new = assemble()
     t1, r1 = _decode(cur)
     t2, r2 = _decode(new)
     bad = []
-    if t1 != t2:
+    if t1.replace("\r\n", "\n") != t2.replace("\r\n", "\n"):
         bad.append("template.html отличается от index.html")
     for k in set(r1) | set(r2):
         if r1.get(k) != r2.get(k):
@@ -151,10 +168,10 @@ def check() -> int:
 
 def lint() -> None:
     node = "node"
-    tpl = (SRC / "template.html").read_text(encoding="utf-8")
+    tpl = _read_text_lf(SRC / "template.html")
     items = [("template.html", _js_of_template(tpl))]
     for p in sorted((SRC / "components").glob("*.dc.html")):
-        js = _js_of_component(p.read_text(encoding="utf-8"))
+        js = _js_of_component(_read_text_lf(p))
         if js.strip():
             items.append((p.name, js))
     for name, js in items:
