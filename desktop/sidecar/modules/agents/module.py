@@ -224,8 +224,26 @@ def del_pipeline(pid: str):
 
 @router.post("/pipelines/{pid}/run")
 def run_pipeline(pid: str, body: PipelineRunIn):
+    """Ставит цепочку в очередь ABOP; UI поллит /jobs/{job_id}. Старый ABOP → результат сразу (done)."""
     try:
         return abop.run_pipeline(pid, body.context)
+    except abop.AbopError as e:
+        return _err(e)
+
+
+@router.get("/jobs/{job_id}")
+def job_status(job_id: str):
+    """Статус задания очереди (прогон или цепочка): queued/running/awaiting_hitl/done/failed/cancelled."""
+    try:
+        return abop.run_job(job_id)
+    except abop.AbopError as e:
+        return _err(e)
+
+
+@router.post("/jobs/{job_id}/cancel")
+def job_cancel(job_id: str):
+    try:
+        return abop.cancel_job(job_id)
     except abop.AbopError as e:
         return _err(e)
 

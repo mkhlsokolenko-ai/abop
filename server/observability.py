@@ -38,6 +38,14 @@ def inc(name: str, val: float = 1.0, **labels) -> None:
     _counters[(name, tuple(sorted((k, str(v)) for k, v in labels.items())))] += val
 
 
+_gauges: dict = {}
+
+
+def gauge(name: str, val: float, **labels) -> None:
+    """Текущее значение (глубина очереди, RSS, число воркеров) — перезаписывается, не суммируется."""
+    _gauges[(name, tuple(sorted((k, str(v)) for k, v in labels.items())))] = float(val)
+
+
 def observe(name: str, val: float, **labels) -> None:
     h = _hist[(name, tuple(sorted((k, str(v)) for k, v in labels.items())))]
     h["count"] += 1
@@ -63,6 +71,11 @@ def render_prometheus() -> str:
             lines.append(f"# TYPE {name} counter")
             typed.add(name)
         lines.append(f"{name}{_fmt_labels(labels)} {val}")
+    for (name, labels), val in sorted(_gauges.items(), key=lambda x: x[0][0]):
+        if name not in typed:
+            lines.append(f"# TYPE {name} gauge")
+            typed.add(name)
+        lines.append(f"{name}{_fmt_labels(labels)} {val}")
     for (name, labels), h in sorted(_hist.items(), key=lambda x: x[0][0]):
         if name not in typed:
             lines.append(f"# TYPE {name} histogram")
@@ -80,6 +93,7 @@ def snapshot() -> dict:
     """JSON-срез метрик (для /api/observability и дашбордов внутри ABOP)."""
     return {
         "counters": [{"name": n, "labels": dict(l), "value": v} for (n, l), v in _counters.items()],
+        "gauges": [{"name": n, "labels": dict(l), "value": v} for (n, l), v in _gauges.items()],
         "histograms": [{"name": n, "labels": dict(l), "count": h["count"], "sum": round(h["sum"], 4)}
                        for (n, l), h in _hist.items()],
     }

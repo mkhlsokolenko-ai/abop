@@ -181,6 +181,8 @@ def require_level(u: dict, minimum: str) -> None:
 app = FastAPI(title="ABOP Web API", version="0.1.0",
               description="Тонкий REST/SSE поверх ядра ape (среда разработки агентов)")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+from fastapi.middleware.gzip import GZipMiddleware  # noqa: E402
+app.add_middleware(GZipMiddleware, minimum_size=1024)   # UX-аудит: 1 МБ index.html, 14 с загрузки снаружи
 
 
 @app.middleware("http")
@@ -1820,8 +1822,8 @@ async def _startup() -> None:
         pass
     await run_bus.start()
     for _wi in range(run_queue.WORKERS):
-        _asyncio.create_task(run_bus.worker_loop(f"{os.getenv('HOSTNAME', 'api')}-w{_wi}", execute_agent_run,
-                                                 load_agent=agent_store.get, load_contract=_contract_for_agent))
+        _asyncio.create_task(run_bus.worker_loop(f"{os.getenv('HOSTNAME', 'api')}-w{_wi}", _handle_job))
+    _asyncio.create_task(run_queue.gauges_loop())   # глубина очереди/RSS/ожидание → Prometheus/Grafana
     obs.log_event("info", "run_queue.started", workers=run_queue.WORKERS, bus=run_bus.describe().get("bus"))
     await _refresh_skill_ds_cache()  # инжект data-need оверрайдов из PG в ape
     await dataplane_store.init()
@@ -2755,7 +2757,8 @@ async def _deliver_out_nodes(agent: dict, result: dict, actor: str, deliver_filt
                 run_id=str(run_id), agent_id=agent.get("id") or "", family=fam,
                 node=n.get("id") or "", title=n.get("title") or channel,
                 channel=channel or "", to_addr=str(cfg.get("to") or cfg.get("book_id") or ""),
-                payload={"cfg": cfg, "html": node_html, "agent_name": agent.get("name")},
+                payload={"cfg": cfg, "html": node_html, "agent_name": agent.get("name"),
+                         "job_id": run_queue.CURRENT_JOB.get()},
                 requested_by=actor)
             deliveries.append({"node": n.get("id"), "title": n.get("title"), "channel": channel,
                                "to": cfg.get("to"), "format": cfg.get("format"),
@@ -2953,6 +2956,84 @@ async def _refresh_source_data(agent: dict) -> None:
                 obs.log_event("warn", "run.source_refresh_failed", recipe=c.get("id"), error=str(ex)[:200])
 
 
+async def _handle_job(job: dict) -> dict:
+    """Воркер очереди: kind=run → execute_agent_run; kind=pipeline → шаги цепочки с чекпоинтом."""
+    if (job.get("kind") or "run") == "pipeline":
+        return await _pipeline_job(job)
+    p = job.get("payload") or {}
+    agent = await agent_store.get(job["agent_id"])
+    if not agent:
+        raise RuntimeError("агент не найден")
+    contract = await _contract_for_agent(agent, p.get("contract_audit_id") or "")
+    out = await execute_agent_run(agent, contract, job["actor"], use_cache=bool(p.get("use_cache", False)),
+                                  user_context=p.get("user_context") or "", deliver_filter=p.get("deliver_filter") or "",
+                                  trigger=p.get("trigger"), job_id=job["id"])
+    return {"run_id": out["saved"]["id"]}
+
+
+async def _pipeline_job(job: dict) -> dict:
+    """Цепочка агентов через очередь: каждый шаг — обычный прогон; выход шага → контекст следующего.
+    Если у шага есть доставка «ждёт подтверждения» и шаг не последний — задание уходит в awaiting_hitl
+    с чекпоинтом (индекс, контекст, hitl_ids); решение оператора возвращает его в очередь, и цепочка
+    продолжается со следующего шага (отклонение — тоже продолжает, с пометкой в контексте)."""
+    p = job.get("payload") or {}
+    cp = dict(job.get("checkpoint") or {})
+    pipe = await pipeline_store.get(p.get("pid") or "")
+    if not pipe:
+        raise RuntimeError("цепочка не найдена")
+    steps = pipe.get("steps") or []
+    base_ctx = str(p.get("context") or "")[:20000]
+    i = int(cp.get("step") or 0)
+    prev_ctx = cp.get("prev_ctx") or ""
+    done_steps = list(cp.get("steps") or [])
+    # решение по HITL прошлого шага — в контекст следующего
+    if cp.get("hitl_ids") and cp.get("hitl_decisions"):
+        decs = cp["hitl_decisions"]
+        note = "; ".join(f"{k}: {'подтверждено' if v == 'approve' else 'отклонено'}" for k, v in decs.items())
+        prev_ctx = (prev_ctx + f"\n\n=== РЕШЕНИЕ ОПЕРАТОРА ПО ПРЕДЫДУЩЕМУ ШАГУ ===\n{note}").strip()
+        cp["hitl_ids"] = []
+    actor = job["actor"]
+    while i < len(steps):
+        if run_queue.cancel_requested(job["id"]):
+            raise RuntimeError("отменено оператором")
+        st = steps[i]
+        agent = await agent_store.get(st.get("agent_id"))
+        if not agent:
+            done_steps.append({"agent_id": st.get("agent_id"), "error": "агент не найден", "skipped": True})
+            i += 1
+            continue
+        contract = await _contract_for_agent(agent)
+        last = i == len(steps) - 1
+        ctx_parts = [x for x in (base_ctx, (f"=== РЕЗУЛЬТАТ ПРЕДЫДУЩЕГО АГЕНТА ЦЕПОЧКИ (вход для тебя) ===\n{prev_ctx}" if prev_ctx else "")) if x]
+        step_ctx = "\n\n".join(ctx_parts)
+        deliver = st.get("deliver") or ("" if last else "chat")
+        try:
+            res = await execute_agent_run(agent, contract, actor, use_cache=False, user_context=step_ctx,
+                                          deliver_filter=deliver, job_id=job["id"])
+            result = res["result"]
+            prev_ctx = _result_to_context(agent, result)
+            _sc = ((res.get("saved") or {}).get("run_metrics") or {}).get("cost") or {}
+            done_steps.append({"agent_id": agent["id"], "agent_name": agent.get("name"), "run_id": res["saved"]["id"],
+                               "deliver": deliver, "tokens": int(_sc.get("input_tokens") or 0) + int(_sc.get("output_tokens") or 0),
+                               "findings": result.get("findings") or [],
+                               "findings_total": (result.get("findings_summary") or {}).get("total") or len(result.get("findings") or []),
+                               "investigations_total": len(result.get("investigations") or []),
+                               "delivery": result.get("delivery") or [], "verdict": result.get("verdict") or {},
+                               "trace_id": result.get("trace_id") or ""})
+            waits = [d.get("hitl_id") for d in (result.get("delivery") or []) if d.get("mode") == "awaiting_hitl" and d.get("hitl_id")]
+        except Exception as ex:  # noqa: BLE001 — сбой шага не рушит цепочку
+            done_steps.append({"agent_id": agent["id"], "agent_name": agent.get("name"), "error": str(ex)[:300]})
+            waits = []
+        i += 1
+        cp.update({"step": i, "steps_total": len(steps), "steps": done_steps, "prev_ctx": prev_ctx[:6000]})
+        await run_queue.set_checkpoint(job["id"], cp)
+        if waits and i < len(steps):   # HITL-пауза: следующий шаг только после решения оператора
+            cp["hitl_ids"] = waits
+            return {"await_hitl": cp}
+    await audit_store.record(actor, "pipeline.run", p.get("pid") or "", {"steps": len(done_steps), "job_id": job["id"]})
+    return {"checkpoint": cp}
+
+
 async def _contract_for_agent(agent: dict, audit_id: str = "") -> dict:
     """Контракт агента (или минимальный конверт из его autonomy_max) — общий хелпер API и воркеров."""
     contract = await contract_store.get(agent.get("contract_audit_id") or audit_id)
@@ -2969,6 +3050,8 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
     Кэш результатов (multi-user): при попадании возвращает сохранённый вывод без LLM/доставки."""
     _t0 = time.perf_counter()
     _trace = obs.current_trace_id()
+    if job_id:
+        run_queue.CURRENT_JOB.set(job_id)
     fam_key = access.scope_key(family=agent.get("family"))
     blocked, data_denied = await _gate_agent_data(agent, fam_key, started_by)  # ABAC на данных
     # КЭШ результатов (multi-user): тот же агент+данные+конфиг → отдаём сохранённый вывод без LLM/доставки.
@@ -3256,6 +3339,11 @@ async def run_job_status(job_id: str, u: dict = Depends(user)) -> dict:
         if run:
             run["run_id"] = job["run_id"]
             out["run"] = run
+    if (job.get("kind") or "run") == "pipeline":
+        cp = job.get("checkpoint") or {}
+        out["pipeline"] = (job.get("payload") or {}).get("pid")
+        out["name"] = (job.get("payload") or {}).get("name")
+        out["steps"] = cp.get("steps") or []
     return out
 
 
@@ -3340,7 +3428,8 @@ async def pipeline_delete(pid: str, u: dict = Depends(user)) -> dict:
 
 
 @app.post("/api/pipelines/{pid}/run")
-async def pipeline_run(pid: str, body: dict, u: dict = Depends(user)) -> JSONResponse:
+async def pipeline_run(pid: str, body: dict, u: dict = Depends(user),
+                       request_async: str = Query(default="", alias="async")) -> JSONResponse:
     """Исполнить цепочку по порядку: выход шага → контекст следующего. Промежуточные шаги идут в чат
     (без внешней доставки), последний — как настроено в шаге. Возвращает результаты по шагам."""
     p = await pipeline_store.get(pid)
@@ -3353,6 +3442,16 @@ async def pipeline_run(pid: str, body: dict, u: dict = Depends(user)) -> JSONRes
     if not _rate_check(actor):
         raise HTTPException(429, "слишком много прогонов — подождите")
     base_ctx = str((body or {}).get("context") or "").strip()[:20000]
+    if bool((body or {}).get("async")) or str(request_async or "").lower() in ("1", "true", "yes"):
+        # цепочка через очередь: шаги — задания воркера, HITL-пауза между шагами, чекпоинт переживает рестарт
+        job = await run_queue.enqueue(agent_id=str((steps[0] or {}).get("agent_id") or pid), actor=actor, kind="pipeline",
+                                      payload={"pid": pid, "name": p.get("name"), "context": base_ctx,
+                                               "trace_id": obs.current_trace_id()})
+        await run_bus.bus().publish_request(job, obs.current_trace_id())
+        obs.inc("abop_run_jobs_total", status="queued")
+        pos = await run_queue.position(job["id"])
+        return JSONResponse({**run_queue.public(job, pos), "pipeline": pid, "name": p.get("name"),
+                             "poll": f"/api/runs/jobs/{job['id']}"}, status_code=202)
     prev_ctx = ""
     out_steps = []
     for i, st in enumerate(steps):
@@ -3595,14 +3694,29 @@ async def hitl_approve(item_id: str, body: dict = None, u: dict = Depends(user))
     decision = str((body or {}).get("decision", "approve")).lower()
     reason = str((body or {}).get("reason", ""))
     actor = u.get("name") or u.get("sub") or "operator"
+    payload = item.get("payload") or {}
     if decision == "reject":
         await hitl_store.decide(item_id, "rejected", actor, reason)
         await audit_store.record(actor, "hitl.reject", item_id,
                                  {"agent_id": item.get("agent_id"), "channel": item.get("channel")}, severity="warn")
         obs.inc("abop_hitl_total", decision="reject")
-        return JSONResponse({"id": item_id, "state": "rejected"})
+        resumed = await _resume_job_after_hitl(item_id, payload, "reject")
+        return JSONResponse({"id": item_id, "state": "rejected", "resumed_job": resumed})
+    # approve: заявка на ЗАПУСК (триггер с HITL-на-создание) → прогон в очередь заданий
+    if payload.get("kind") == "spawn":
+        ag = await agent_store.get(item.get("agent_id") or "")
+        if not ag:
+            raise HTTPException(404, "агент заявки не найден")
+        job = await run_queue.enqueue(agent_id=ag["id"], actor=actor, kind="run",
+                                      payload={"contract_audit_id": ag.get("contract_audit_id"), "use_cache": False,
+                                               "user_context": "", "deliver_filter": "",
+                                               "trigger": payload.get("trigger_node"), "trace_id": obs.current_trace_id()})
+        await run_bus.bus().publish_request(job, obs.current_trace_id())
+        await hitl_store.decide(item_id, "approved", actor, reason)
+        await audit_store.record(actor, "hitl.approve", item_id, {"agent_id": ag["id"], "channel": "spawn", "job_id": job["id"]})
+        obs.inc("abop_hitl_total", decision="approve")
+        return JSONResponse({"id": item_id, "state": "approved", "job_id": job["id"], "delivery": "прогон поставлен в очередь"})
     # approve → реальная отправка в канал
-    payload = item.get("payload") or {}
     cfg = payload.get("cfg") or {}
     out = await _send_channel(cfg, payload.get("agent_name"), payload.get("html") or "", real=True)
     await hitl_store.decide(item_id, "approved", actor, reason)
@@ -3611,7 +3725,25 @@ async def hitl_approve(item_id: str, body: dict = None, u: dict = Depends(user))
                               "result": str(out)[:200]}, severity="info")
     obs.inc("abop_hitl_total", decision="approve")
     obs.log_event("info", "hitl.approved", item_id=item_id, channel=item.get("channel"))
-    return JSONResponse({"id": item_id, "state": "approved", "delivery": str(out)[:400]})
+    resumed = await _resume_job_after_hitl(item_id, payload, "approve")
+    return JSONResponse({"id": item_id, "state": "approved", "delivery": str(out)[:400], "resumed_job": resumed})
+
+
+async def _resume_job_after_hitl(item_id: str, payload: dict, decision: str) -> str | None:
+    """Если заявка принадлежит заданию очереди, которое ждёт решения (цепочка на HITL-шаге) —
+    вернуть его в очередь; воркер продолжит со следующего шага с учётом решения."""
+    job = None
+    jid = payload.get("job_id")
+    if jid:
+        job = await run_queue.get(jid)
+    if not job or job.get("status") != "awaiting_hitl":
+        job = await run_queue.find_awaiting_by_hitl(item_id)
+    if not job:
+        return None
+    await run_queue.resume(job["id"], decision, item_id)
+    await run_bus.bus().publish_request(job, obs.current_trace_id())
+    obs.log_event("info", "run_queue.resumed", job_id=job["id"], hitl_id=item_id, decision=decision)
+    return job["id"]
 
 
 # ═══════════════ Статика: buildless-React фронт ABOP (webapp/) ═══════════════

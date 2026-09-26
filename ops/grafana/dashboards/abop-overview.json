@@ -1,79 +1,422 @@
 {
-  "annotations": {"list": []},
+  "annotations": {
+    "list": []
+  },
   "editable": true,
   "title": "ABOP — Обзор (прогоны, латентность, стоимость, LLM)",
   "uid": "abop-overview",
-  "tags": ["abop"],
+  "tags": [
+    "abop"
+  ],
   "timezone": "browser",
   "schemaVersion": 39,
   "refresh": "30s",
-  "time": {"from": "now-6h", "to": "now"},
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
   "panels": [
     {
-      "id": 1, "type": "stat", "title": "Прогонов (всего)",
-      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
-      "targets": [{"expr": "sum(abop_runs_total)", "refId": "A"}],
-      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}}}
-    },
-    {
-      "id": 2, "type": "stat", "title": "Успешных %",
-      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
-      "targets": [{"expr": "100 * sum(abop_runs_total{ok=\"true\"}) / clamp_min(sum(abop_runs_total), 1)", "refId": "A"}],
-      "fieldConfig": {"defaults": {"unit": "percent", "color": {"mode": "thresholds"}, "thresholds": {"steps": [{"color": "red", "value": null}, {"color": "yellow", "value": 70}, {"color": "green", "value": 90}]}}}
-    },
-    {
-      "id": 3, "type": "stat", "title": "Стоимость LLM (₽, всего)",
-      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
-      "targets": [{"expr": "sum(abop_run_cost_rub_total)", "refId": "A"}],
-      "fieldConfig": {"defaults": {"decimals": 2}}
-    },
-    {
-      "id": 4, "type": "stat", "title": "LLM в полёте / потолок",
-      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
-      "targets": [{"expr": "abop_llm_inflight", "refId": "A"}, {"expr": "abop_llm_inflight_max", "refId": "B"}]
-    },
-    {
-      "id": 5, "type": "timeseries", "title": "Латентность прогона p50/p95 (сек)",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+      "id": 1,
+      "type": "stat",
+      "title": "Прогонов (всего)",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
       "targets": [
-        {"expr": "histogram_quantile(0.5, sum(rate(abop_run_seconds_bucket[5m])) by (le))", "refId": "A", "legendFormat": "p50"},
-        {"expr": "histogram_quantile(0.95, sum(rate(abop_run_seconds_bucket[5m])) by (le))", "refId": "B", "legendFormat": "p95"}
+        {
+          "expr": "sum(abop_runs_total)",
+          "refId": "A"
+        }
       ],
-      "fieldConfig": {"defaults": {"unit": "s"}}
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          }
+        }
+      }
     },
     {
-      "id": 6, "type": "timeseries", "title": "HTTP RPS по маршрутам",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
-      "targets": [{"expr": "sum(rate(abop_http_requests_total[1m])) by (route)", "refId": "A", "legendFormat": "{{route}}"}],
-      "fieldConfig": {"defaults": {"unit": "reqps"}}
-    },
-    {
-      "id": 7, "type": "timeseries", "title": "HTTP латентность p95 (сек) по маршрутам",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
-      "targets": [{"expr": "histogram_quantile(0.95, sum(rate(abop_http_request_seconds_bucket[5m])) by (le, route))", "refId": "A", "legendFormat": "{{route}}"}],
-      "fieldConfig": {"defaults": {"unit": "s"}}
-    },
-    {
-      "id": 8, "type": "timeseries", "title": "Прогоны/мин по семье",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
-      "targets": [{"expr": "sum(rate(abop_runs_total[5m])) by (family) * 60", "refId": "A", "legendFormat": "{{family}}"}]
-    },
-    {
-      "id": 9, "type": "timeseries", "title": "Находки / Доставки (rate)",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 20},
+      "id": 2,
+      "type": "stat",
+      "title": "Успешных %",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
       "targets": [
-        {"expr": "sum(rate(abop_findings_total[5m]))", "refId": "A", "legendFormat": "находки/с"},
-        {"expr": "sum(rate(abop_deliveries_total[5m])) by (mode)", "refId": "B", "legendFormat": "доставки {{mode}}"}
+        {
+          "expr": "100 * sum(abop_runs_total{ok=\"true\"}) / clamp_min(sum(abop_runs_total), 1)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "green",
+                "value": 90
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Стоимость LLM (₽, всего)",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "sum(abop_run_cost_rub_total)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 2
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "LLM в полёте / потолок",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "abop_llm_inflight",
+          "refId": "A"
+        },
+        {
+          "expr": "abop_llm_inflight_max",
+          "refId": "B"
+        }
       ]
     },
     {
-      "id": 10, "type": "timeseries", "title": "Мягкие ошибки / rate-limit 429",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 20},
+      "id": 5,
+      "type": "timeseries",
+      "title": "Латентность прогона p50/p95 (сек)",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
       "targets": [
-        {"expr": "sum(rate(abop_run_soft_errors_total[5m]))", "refId": "A", "legendFormat": "soft_errors/с"},
-        {"expr": "sum(rate(abop_rate_limited_total[5m]))", "refId": "B", "legendFormat": "429/с"},
-        {"expr": "sum(rate(abop_run_cache_total{hit=\"true\"}[5m]))", "refId": "C", "legendFormat": "cache hit/с"}
+        {
+          "expr": "histogram_quantile(0.5, sum(rate(abop_run_seconds_bucket[5m])) by (le))",
+          "refId": "A",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(abop_run_seconds_bucket[5m])) by (le))",
+          "refId": "B",
+          "legendFormat": "p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "HTTP RPS по маршрутам",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(abop_http_requests_total[1m])) by (route)",
+          "refId": "A",
+          "legendFormat": "{{route}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "HTTP латентность p95 (сек) по маршрутам",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(abop_http_request_seconds_bucket[5m])) by (le, route))",
+          "refId": "A",
+          "legendFormat": "{{route}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Прогоны/мин по семье",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(abop_runs_total[5m])) by (family) * 60",
+          "refId": "A",
+          "legendFormat": "{{family}}"
+        }
       ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Находки / Доставки (rate)",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 20
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(abop_findings_total[5m]))",
+          "refId": "A",
+          "legendFormat": "находки/с"
+        },
+        {
+          "expr": "sum(rate(abop_deliveries_total[5m])) by (mode)",
+          "refId": "B",
+          "legendFormat": "доставки {{mode}}"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Мягкие ошибки / rate-limit 429",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 20
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(abop_run_soft_errors_total[5m]))",
+          "refId": "A",
+          "legendFormat": "soft_errors/с"
+        },
+        {
+          "expr": "sum(rate(abop_rate_limited_total[5m]))",
+          "refId": "B",
+          "legendFormat": "429/с"
+        },
+        {
+          "expr": "sum(rate(abop_run_cache_total{hit=\"true\"}[5m]))",
+          "refId": "C",
+          "legendFormat": "cache hit/с"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "Очередь: ждут",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 28
+      },
+      "targets": [
+        {
+          "expr": "abop_run_queue_depth",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {}
+      }
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "Очередь: выполняются",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 28
+      },
+      "targets": [
+        {
+          "expr": "abop_run_queue_jobs{status=\"running\"}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {}
+      }
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "Ждут решения (HITL)",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 28
+      },
+      "targets": [
+        {
+          "expr": "abop_run_queue_jobs{status=\"awaiting_hitl\"}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {}
+      }
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "RSS процесса, МБ",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 28
+      },
+      "targets": [
+        {
+          "expr": "abop_process_rss_mb",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "decmbytes"
+        }
+      }
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Очередь прогонов: ожидание и длительность (p95)",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 32
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(abop_run_queue_wait_seconds_bucket[5m])) by (le))",
+          "refId": "A",
+          "legendFormat": "ожидание p95"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(abop_run_job_seconds_bucket[5m])) by (le))",
+          "refId": "B",
+          "legendFormat": "исполнение p95"
+        },
+        {
+          "expr": "abop_run_queue_depth",
+          "refId": "C",
+          "legendFormat": "глубина очереди"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
     }
   ]
 }

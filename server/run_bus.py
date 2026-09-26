@@ -167,7 +167,7 @@ def describe() -> dict:
             "topics": {"requests": TOPIC_REQ, "results": TOPIC_RES, "dlq": TOPIC_DLQ} if b.kind == "kafka" else {}}
 
 
-async def worker_loop(worker_id: str, executor, *, load_agent, load_contract) -> None:
+async def worker_loop(worker_id: str, handler) -> None:
     """Воркер поверх run_queue: при KafkaBus сначала ждёт сигнал, но всегда умеет опросить PG сам
     (задания, положенные до старта брокера или при его сбое, не теряются)."""
     b = bus()
@@ -184,5 +184,4 @@ async def worker_loop(worker_id: str, executor, *, load_agent, load_contract) ->
                 except Exception:  # noqa: BLE001
                     await asyncio.sleep(1)
         asyncio.create_task(_hinting())
-    await run_queue.worker_loop(worker_id, executor, load_agent=load_agent, load_contract=load_contract,
-                                on_done=_on_done)
+    await run_queue.worker_loop(worker_id, handler, on_done=_on_done)

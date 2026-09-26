@@ -17,7 +17,7 @@ import datetime as dt
 import os
 import re
 
-from . import access, agent_store, contract_store, systems_store, trigger_store
+from . import access, agent_store, contract_store, hitl_store, systems_store, trigger_store
 
 A_LEVELS = ["A0", "A1", "A2", "A3", "A4"]
 TICK_SEC = int(os.getenv("ABOP_SCHEDULER_TICK", "45"))
@@ -126,9 +126,17 @@ async def fire(agent: dict, trig_node: dict, reason: str, run_executor) -> dict:
         await trigger_store.record_fire(agent["id"], tid, trig.get("type"), None, "skipped",
                                         f"автономия spawn {want} > потолок {ceiling}")
         return {"status": "skipped", "note": f"autonomy {want} > ceiling {ceiling}"}
-    if spawn.get("hitl"):  # регулируемое создание: ждёт подтверждения человека, прогон НЕ запускаем
+    if spawn.get("hitl"):  # регулируемое создание: заявка в очередь HITL; approve → прогон через очередь заданий
+        item = await hitl_store.create(
+            run_id="", agent_id=agent.get("id") or "", family=agent.get("family") or "",
+            node=str(tid or ""), title=f"Запуск по триггеру: {agent.get('name') or agent.get('id')}",
+            channel="spawn", to_addr="",
+            payload={"kind": "spawn", "agent_name": agent.get("name"), "trigger_node": trig_node, "reason": reason,
+                     "html": f"<p>Триггер «{trig.get('type')}» просит запустить агента «{agent.get('name')}». "
+                             f"Причина: {reason}. После подтверждения прогон встанет в очередь.</p>"},
+            requested_by="trigger:" + (trig.get("type") or "?"))
         await trigger_store.record_fire(agent["id"], tid, trig.get("type"), None, "pending_hitl", reason)
-        return {"status": "pending_hitl", "note": "ожидает подтверждения создания (HITL)"}
+        return {"status": "pending_hitl", "hitl_id": item["id"], "note": "ожидает подтверждения создания (HITL)"}
     out = await run_executor(agent, contract, "trigger:" + (trig.get("type") or "?"), trigger=trig_node)
     rid = out["saved"]["id"]
     await trigger_store.record_fire(agent["id"], tid, trig.get("type"), rid, "fired", reason)

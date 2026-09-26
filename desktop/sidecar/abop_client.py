@@ -248,8 +248,12 @@ def del_agent(agent_id: str) -> dict:
 
 
 def run_pipeline(pid: str, context: str = "") -> dict:
-    return _req("POST", "/api/pipelines/" + urllib.request.quote(pid) + "/run",
-                {"context": context}, timeout=600)
+    """Цепочка через очередь ABOP: 202 {job_id,…}; старый ABOP отвечает 201 с шагами сразу → {done:true, steps}."""
+    r = _req("POST", "/api/pipelines/" + urllib.request.quote(pid) + "/run?async=1",
+             {"context": context, "async": True}, timeout=60)
+    if isinstance(r, dict) and r.get("steps") is not None and not r.get("job_id"):
+        return {"done": True, "steps": r.get("steps") or [], "name": r.get("name")}
+    return r
 
 
 def suggest_pipeline(q: str) -> dict:

@@ -432,14 +432,34 @@ export async function mount(root, ctx) {
     if (el) el.innerHTML = `<span style="display:inline-flex;gap:12px;align-items:center">${mascot("thinking", 26)}<span style="color:var(--ink-2)">цепочка «${esc(p.name || pid)}» работает… шагов: ${(p.steps || []).length}</span></span>`;
     setBusy(true, "цепочка");
     try {
-      const r = await api(A_AG + "/pipelines/" + encodeURIComponent(pid) + "/run", { method: "POST", body: JSON.stringify({ context: task || "" }) });
+      // через очередь ABOP: 202 job_id → поллинг; между шагами цепочка может ждать вашего «да» (awaiting_hitl)
+      let r = await api(A_AG + "/pipelines/" + encodeURIComponent(pid) + "/run", { method: "POST", body: JSON.stringify({ context: task || "" }) });
+      if (r && r.job_id && !r.done) {
+        curJob = { id: r.job_id, agent: pid }; setBusy(true, "цепочка");
+        const jobId = r.job_id, t0 = Date.now(); let fin = null;
+        const stat = (txt) => { if (el && el.isConnected) el.innerHTML = `<span style="display:inline-flex;gap:12px;align-items:center">${mascot("thinking", 26)}<span style="color:var(--ink-2)">${txt}</span></span>`; };
+        while (Date.now() - t0 < 30 * 60 * 1000) {
+          await new Promise((ok) => setTimeout(ok, 3000));
+          if (!root.isConnected) return;
+          let j; try { j = await api(A_AG + "/jobs/" + encodeURIComponent(jobId)); } catch (e) { stat("связь с ABOP прервалась, повторяю…"); continue; }
+          const pr = j.progress || {}; const sec = Math.round((Date.now() - t0) / 1000);
+          if (j.status === "done" || j.status === "failed" || j.status === "cancelled") { fin = j; break; }
+          if (j.status === "awaiting_hitl") { stat(`цепочка «${esc(p.name || pid)}» ждёт вашего подтверждения после шага ${pr.steps_done || "?"} из ${pr.steps_total || "?"} — панель «Требуют подтверждения»`); loadHitlQueue(); }
+          else if (j.status === "queued") stat(`цепочка «${esc(p.name || pid)}» в очереди · впереди ${Math.max(0, (j.position || 1) - 1)} · ${sec} с`);
+          else stat(`цепочка «${esc(p.name || pid)}» · шаг ${(pr.steps_done || 0) + 1} из ${pr.steps_total || (p.steps || []).length} · ${sec} с`);
+        }
+        curJob = null;
+        if (!fin) throw new Error("цепочка не завершилась за 30 минут — проверьте журнал прогонов позже");
+        if (fin.status !== "done") throw new Error(fin.status === "cancelled" ? "цепочка отменена" : (fin.error || "цепочка не выполнена"));
+        r = { steps: fin.steps || [] };
+      }
       const steps = (r && r.steps) || [];
       messages.pop();
       await note(`цепочка «${p.name || pid}» выполнена`, { pipeline_result: { pid, name: p.name || pid, task: task || "", steps } });
       const waits = steps.some((s) => (s.delivery || []).some((d) => d.mode === "awaiting_hitl"));
       toast(waits ? "Цепочка выполнена — есть действия на ваше подтверждение" : "Цепочка выполнена", waits ? "warn" : "ok");
     } catch (e) { run.content = "Сбой цепочки: " + humanError(e); run.meta = { _rerun: { pid, task: task || "" }, notice: { icon: "⚠" } }; toast(humanError(e), "danger"); }
-    setBusy(false);
+    curJob = null; setBusy(false);
     render(); scrollDown(true); loadQuota(); loadThreads(); loadHitlQueue();
   }
 
