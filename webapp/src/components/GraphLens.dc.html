@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>GraphLens</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    @keyframes ab-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+    @keyframes ab-slide-in { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: none; } }
+    @keyframes ab-slide-left { from { opacity: 0; transform: translateX(-24px); } to { opacity: 1; transform: none; } }
+    @keyframes ab-spin { to { transform: rotate(360deg); } }
+    @keyframes ab-pulse { 0%, 100% { opacity: .35; transform: scale(.86); } 50% { opacity: 1; transform: scale(1); } }
+  </style>
+</helmet>
+<sc-if value="{{ gl.isCanvas }}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; flex-direction: column; gap: 18px;">
+            <div style="display: flex; align-items: flex-end; gap: 18px; flex-wrap: wrap;">
+              <div style="display: flex; flex-direction: column; gap: 7px;">
+                <div style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--w40);">{{ gl.canvasEyebrow }}</div>
+                <h1 style="margin: 0; font-size: 25px; font-weight: 800; letter-spacing: -.6px;">{{ gl.canvasTitle }}</h1>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  <span style="display: inline-flex; align-items: center; gap: 8px; padding: 5px 11px; border-radius: 9999px; background: {{ gl.saveChipBg }}; border: 1px solid {{ gl.saveChipBorder }}; color: {{ gl.saveChipFg }}; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; font-weight: 600;">
+                    <sc-if value="{{ gl.canvasDirty }}" hint-placeholder-val="{{ false }}">
+                      <span style="width: 7px; height: 7px; border-radius: 9999px; background: #f59e0b; flex: none;"></span>
+                    </sc-if>
+                    {{ gl.saveChipLabel }}
+                  </span>
+                  <span style="padding: 5px 11px; border-radius: 9999px; background: {{ gl.agentBadgeBg }}; border: 1px solid {{ gl.agentBadgeBorder }}; color: {{ gl.agentBadgeFg }}; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; font-weight: 600;">{{ gl.agentBadge }}</span>
+                </div>
+                
+              </div>
+              
+              <div style="margin-left: auto; display: flex; align-items: center; gap: 10px; min-height: 42px;">
+                <span style="width: 1px; height: 20px; background: var(--w10);"></span>
+                <button onClick="{{ gl.saveGraphNow }}" title="Сохранить черновик графа" style="padding: 10px 13px; border: 1px solid var(--w14); border-radius: 11px; background: var(--w5); color: var(--ink); font-size: 15px; line-height: 1;" style-hover="background: var(--w10);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"></path><path d="M17 21v-8H7v8"></path><path d="M7 3v5h7"></path></svg></button>
+                <button onClick="{{ gl.goPassport }}" title="Паспорт агента (verified envelope)" style="padding: 10px 13px; border: 1px solid var(--w14); border-radius: 11px; background: var(--w5); color: var(--ink); font-size: 15px; line-height: 1;" style-hover="background: var(--w10);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><circle cx="9" cy="10" r="2"></circle><path d="M14 9h4"></path><path d="M14 13h4"></path><path d="M6 15h6"></path></svg></button>
+                <span style="width: 1px; height: 20px; background: var(--w10);"></span>
+                <button onClick="{{ gl.runCheck }}" title="Проверить: governance + трасса исполнения на узлах" style="display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; border: 1px solid rgba(52,211,153,.4); border-radius: 11px; background: rgba(16,185,129,.14); color: var(--ok-ink); font-size: 15px; font-weight: 600; line-height: 1;" style-hover="background: rgba(16,185,129,.22);">
+                  <sc-if value="{{ gl.checking }}" hint-placeholder-val="{{ false }}">
+                    <svg width="15" height="15" viewBox="0 0 60 60" fill="none" style="animation: ab-spin 1s linear infinite;"><circle cx="30" cy="30" r="24" stroke="rgba(110,231,183,.25)" stroke-width="9"></circle><circle cx="30" cy="30" r="24" stroke="var(--ok-ink)" stroke-width="9" stroke-linecap="round" stroke-dasharray="150" stroke-dashoffset="108"></circle></svg>
+                  </sc-if>
+                  ✓
+                </button>
+                <button onClick="{{ gl.launchFromCanvas }}" title="Запустить прогон (обратимо)" style="padding: 10px 15px; border: none; border-radius: 11px; background: {{ gl.launchBg }}; color: {{ gl.launchFg }}; font-size: 15px; font-weight: 600; line-height: 1; box-shadow: {{ gl.launchShadow }};" style-hover="transform: scale(1.02);">▶</button>
+                <button onClick="{{ gl.buildAndRunGo }}" title="Собрать агента из контракта сценария и запустить прогон — в один клик" style="padding: 10px 15px; border: none; border-radius: 11px; background: linear-gradient(135deg,#10b981,#059669); color: var(--ink); font-size: 13px; font-weight: 700; line-height: 1; box-shadow: 0 10px 26px rgba(16,185,129,.28);" style-hover="transform: scale(1.02);">▶ Собрать и запустить</button>
+                <span style="width: 1px; height: 20px; background: var(--w10);"></span>
+                <sc-if value="{{ gl.runOverlayOn }}" hint-placeholder-val="{{ false }}">
+                  <button onClick="{{ gl.goTraceOnMap }}" title="Показать этот прогон на карте процесса" style="padding: 10px 13px; border: 1px solid rgba(129,140,248,.3); border-radius: 11px; background: rgba(99,102,241,.16); color: var(--acc-ink2); font-size: 12.5px; font-weight: 600;" style-hover="background: rgba(99,102,241,.26);">На карте ▸</button>
+                </sc-if>
+                <button onClick="{{ gl.askProd }}" title="В прод — публикация версии агента (governance, необратимо)" style="padding: 10px 13px; border: 1px solid rgba(245,158,11,.35); border-radius: 11px; background: rgba(245,158,11,.12); color: var(--warn-ink); font-size: 15px; line-height: 1;" style-hover="background: rgba(245,158,11,.2);"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M5 16c-1.3 1-1.7 4.3-1.7 4.3S6.6 20 7.6 18.7c.5-.6.4-1.7-.2-2.3-.6-.6-1.7-.7-2.4-.4Z"></path><path d="M12.5 15 9 11.5a11 11 0 0 1 4.8-7.8C16 2.3 19.5 2.5 19.5 2.5s.2 3.5-1.2 5.7A11 11 0 0 1 12.5 15Z"></path><circle cx="14.5" cy="8.5" r="1.2"></circle></svg></button>
+                <sc-if value="{{ gl.reviseMode }}" hint-placeholder-val="{{ false }}">
+                  <button onClick="{{ gl.deployFromCanvas }}" style="padding: 11px 20px; border: none; border-radius: 11px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; font-size: 13px; font-weight: 600; box-shadow: 0 10px 26px rgba(99,102,241,.28);" style-hover="transform: scale(1.02);">Развернуть ▸</button>
+                </sc-if>
+              </div>
+            </div>
+
+            <sc-if value="{{ gl.fromOpsMode }}" hint-placeholder-val="{{ false }}">
+              <div style="display: flex; align-items: center; gap: 14px; padding: 12px 16px; border-radius: 12px; background: rgba(99,102,241,.1); border: 1px solid rgba(129,140,248,.28); flex-wrap: wrap;">
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--acc-ink2);">{{ gl.fromOpsCrumb }}</span>
+                <span style="font-size: 12.5px; color: var(--w55);">агент: {{ gl.fromOpsAgent }}</span>
+                <button onClick="{{ gl.backToOps }}" style="margin-left: auto; padding: 8px 14px; border: 1px solid rgba(129,140,248,.4); border-radius: 9px; background: rgba(99,102,241,.16); color: var(--acc-ink2); font-size: 12px; font-weight: 600;" style-hover="background: rgba(99,102,241,.26);">↑ к процессу</button>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ gl.reviseMode }}" hint-placeholder-val="{{ false }}">
+              <div style="display: flex; align-items: center; gap: 14px; padding: 14px 18px; border-radius: 12px; background: rgba(245,158,11,.1); border: 1px solid rgba(245,158,11,.3); flex-wrap: wrap;">
+                <span style="width: 9px; height: 9px; border-radius: 9999px; background: #f59e0b; flex: none;"></span>
+                <span style="flex: 1; min-width: 240px; font-size: 13px; line-height: 1.5; color: var(--warn-ink2);">{{ gl.reviseBanner }}</span>
+                <button onClick="{{ gl.showDiff }}" style="padding: 8px 14px; border: 1px solid rgba(245,158,11,.35); border-radius: 9px; background: rgba(245,158,11,.14); color: var(--warn-ink2); font-size: 12px; font-weight: 600;">Сравнить с прод-версией</button>
+                <button onClick="{{ gl.exitRevise }}" style="padding: 8px 14px; border: 1px solid var(--w14); border-radius: 9px; background: var(--w5); color: var(--ink); font-size: 12px; font-weight: 600;">Выйти из пересмотра</button>
+              </div>
+            </sc-if>
+
+            <div style="display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; position: {{ gl.zonePos }}; inset: {{ gl.zoneInset }}; z-index: {{ gl.zoneZ }}; padding: {{ gl.zonePad }}; background: {{ gl.zoneBg }}; overflow: {{ gl.zoneOverflow }};">
+
+              <sc-if value="{{ gl.paletteOpen }}" hint-placeholder-val="{{ true }}">
+              <div style="flex: 0 0 224px; width: 224px; max-height: {{ gl.canvasH }}px; overflow-y: auto; padding: 16px; border-radius: 16px; background: var(--bg3); border: 1px solid var(--w10); display: flex; flex-direction: column; gap: 14px; animation: ab-slide-left .26s cubic-bezier(.4,0,.2,1);">
+                <div>
+                  <button onClick="{{ gl.toggleScenPicker }}" style="display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 11px; border: 1px solid var(--w14); border-radius: 10px; background: var(--s60); color: var(--ink); font-size: 12px; font-weight: 600; text-align: left;" style-hover="border-color: #818cf8;">
+                    <span style="flex: none; font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 1px; color: var(--w45);">СЦЕНАРИЙ</span>
+                    <span style="flex: 1;"></span>
+                    <span style="flex: none; font-size: 10px; color: var(--w50);">{{ gl.scenCaret }}</span>
+                  </button>
+                  <sc-if value="{{ gl.scenPickerOpen }}" hint-placeholder-val="{{ true }}">
+                  <div style="display: flex; flex-direction: column; gap: 5px; margin-top: 6px;">
+                    <sc-for list="{{ gl.scenarioTabs }}" as="t" hint-placeholder-count="2">
+                      <button onClick="{{ t.pick }}" style="padding: 7px 10px; border: 1px solid {{ t.border }}; border-radius: 8px; background: {{ t.outlineBg }}; color: {{ t.fg }}; font-size: 12px; font-weight: 600; text-align: left;" style-hover="border-color: #818cf8;">{{ t.label }}</button>
+                    </sc-for>
+                    <button onClick="{{ gl.newScenario }}" title="Добавить нового агента" style="padding: 7px 10px; border: 1px dashed rgba(129,140,248,.5); border-radius: 8px; background: rgba(99,102,241,.1); color: var(--acc-ink); font-size: 12px; font-weight: 600; text-align: left;" style-hover="background: rgba(99,102,241,.2);">＋ новый агент</button>
+                    <sc-if value="{{ gl.ownScenario }}" hint-placeholder-val="{{ false }}">
+                      <input value="{{ gl.scenarioName }}" onChange="{{ gl.setScenarioName }}" title="Имя агента" style="width: 100%; padding: 7px 9px; border-radius: 8px; border: 1px solid var(--w14); background: var(--s60); color: var(--ink); font-size: 12px;" style-focus="border-color: #6366f1;">
+                      <button onClick="{{ gl.dropScenario }}" title="Удалить черновик агента" style="padding: 7px 10px; border: 1px solid rgba(239,68,68,.3); border-radius: 8px; background: rgba(239,68,68,.1); color: var(--err-ink); font-size: 12px; font-weight: 600; text-align: left;">Удалить черновик</button>
+                    </sc-if>
+                  </div>
+                  </sc-if>
+                  <div style="height: 1px; background: var(--w8); margin-top: 12px;"></div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="flex: 1; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--w40);">Палитра · тяни на холст</span>
+                  <button onClick="{{ gl.hidePalette }}" title="Убрать палитру влево" style="width: 26px; height: 26px; border: 1px solid var(--w12); border-radius: 8px; background: var(--w5); color: var(--acc-ink2); font-size: 13px;" style-hover="border-color: #818cf8; color: var(--ink);">‹</button>
+                </div>
+                <sc-for list="{{ gl.palette }}" as="g" hint-placeholder-count="4">
+                  <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <button onClick="{{ g.toggle }}" style="display: flex; align-items: center; gap: 6px; width: 100%; padding: 2px 0; border: none; background: transparent; color: var(--w60); font-size: 12px; font-weight: 600; text-align: left; cursor: pointer;" style-hover="color: var(--ink);"><span style="font-size: 9px; width: 9px; flex: none;">{{ g.caret }}</span>{{ g.title }}</button>
+                    <sc-if value="{{ g.open }}" hint-placeholder-val="{{ true }}">
+                    <sc-for list="{{ g.items }}" as="p" hint-placeholder-count="3">
+                      <div draggable="{{ true }}" onDragStart="{{ p.dragStart }}" onClick="{{ p.add }}" style="display: flex; align-items: center; gap: 9px; padding: 9px 11px; border: 1px solid var(--w9); border-radius: 10px; background: var(--s45); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 11.5px; cursor: grab;" style-hover="border-color: #818cf8; background: rgba(99,102,241,.14);">
+                        <span style="width: 20px; height: 20px; border-radius: 6px; background: {{ p.iconBg }}; display: flex; align-items: center; justify-content: center; font-size: 10px; flex: none;">{{ p.glyph }}</span>
+                        <span style="flex: 1;">{{ p.label }}</span>
+                      </div>
+                    </sc-for>
+                    </sc-if>
+                  </div>
+                </sc-for>
+                <div style="font-size: 11px; line-height: 1.5; color: var(--w35);">Клик тоже добавляет блок — на свободное место холста.</div>
+              </div>
+              </sc-if>
+
+              <sc-if value="{{ gl.paletteHidden }}" hint-placeholder-val="{{ false }}">
+                <button onClick="{{ gl.showPalette }}" title="Открыть палитру" style="flex: none; align-self: flex-start; display: flex; align-items: center; gap: 8px; padding: 12px 10px; border: 1px solid var(--w16); border-left: none; border-radius: 0 12px 12px 0; background: var(--p95); color: var(--acc-ink2); font-size: 12px; font-weight: 600; writing-mode: vertical-rl;" style-hover="border-color: #818cf8; color: var(--ink);">Палитра ›</button>
+              </sc-if>
+
+              <div style="position: relative; flex: 1 1 300px; min-width: 300px; height: {{ gl.canvasH }}px; border-radius: 16px; overflow: hidden; background: var(--s45); border: 1px solid {{ gl.canvasBorder }};">
+              <div style="position: absolute; right: 12px; top: 12px; z-index: 5; display: flex; align-items: center; gap: 6px;">
+                <div style="display: flex; align-items: center; gap: 2px; padding: 3px; border-radius: 10px; background: var(--p90); border: 1px solid var(--w16);">
+                  <button onClick="{{ gl.zoomOut }}" title="Уменьшить" style="width: 26px; height: 26px; border: none; border-radius: 7px; background: transparent; color: var(--acc-ink2); font-size: 15px; line-height: 1;" style-hover="background: var(--w9); color: var(--ink);">−</button>
+                  <button onClick="{{ gl.zoomReset }}" title="Сбросить масштаб" style="min-width: 42px; padding: 0 4px; height: 26px; border: none; border-radius: 7px; background: transparent; color: var(--w60); font-family: 'JetBrains Mono', monospace; font-size: 10.5px; font-weight: 600;" style-hover="background: var(--w9); color: var(--ink);">{{ gl.zoomPct }}</button>
+                  <button onClick="{{ gl.zoomIn }}" title="Увеличить" style="width: 26px; height: 26px; border: none; border-radius: 7px; background: transparent; color: var(--acc-ink2); font-size: 15px; line-height: 1;" style-hover="background: var(--w9); color: var(--ink);">＋</button>
+                </div>
+                <button onClick="{{ gl.toggleFull }}" title="{{ gl.fullTitle }}" style="width: 34px; height: 34px; border: 1px solid var(--w16); border-radius: 10px; background: var(--p90); color: var(--acc-ink2); font-size: 14px; display: flex; align-items: center; justify-content: center;" style-hover="border-color: #818cf8; color: var(--ink);">{{ gl.fullGlyph }}</button>
+              </div>
+
+              <div title="Мини-карта графа" style="position: absolute; right: 12px; bottom: 12px; z-index: 5; width: 128px; height: 72px; border-radius: 9px; background: rgba(19,28,51,.92); border: 1px solid var(--w14); overflow: hidden;">
+                <sc-for list="{{ gl.miniNodes }}" as="mn" hint-placeholder-count="4">
+                  <span style="position: absolute; left: {{ mn.left }}; top: {{ mn.top }}; width: {{ mn.size }}; height: {{ mn.size }}; border-radius: 9999px; background: {{ mn.bg }};"></span>
+                </sc-for>
+              </div>
+              <div style="position: absolute; inset: 56px 0 0 0; overflow: auto; background-image: radial-gradient(var(--w9) 1px, transparent 1px); background-size: {{ gl.canvasGrid }};">
+              <div style="position: relative; width: {{ gl.canvasSizerW }}px; height: {{ gl.canvasSizerH }}px;">
+              <div ref="{{ gl.canvasRef }}" onDragOver="{{ gl.onDragOver }}" onDrop="{{ gl.onDrop }}" onPointerMove="{{ gl.onCanvasMove }}" onPointerUp="{{ gl.onCanvasUp }}" onClick="{{ gl.onCanvasClick }}" style="position: absolute; left: 0; top: 0; width: {{ gl.surfaceW }}px; height: {{ gl.surfaceH }}px; transform: scale({{ gl.zoomVal }}); transform-origin: 0 0;">
+
+                <svg width="100%" height="100%" style="position: absolute; inset: 0; pointer-events: none;">
+                  <sc-for list="{{ gl.edges }}" as="e" hint-placeholder-count="3">
+                    <g>
+                      <path d="{{ e.d }}" stroke="{{ e.stroke }}" stroke-width="2" fill="none" stroke-dasharray="{{ e.dash }}"></path>
+                      <circle cx="{{ e.mx }}" cy="{{ e.my }}" r="8" fill="var(--bg2)" stroke="{{ e.stroke }}" stroke-width="1.5" style="pointer-events: auto; cursor: pointer;" onClick="{{ e.remove }}"></circle>
+                      <text x="{{ e.mx }}" y="{{ e.ty }}" text-anchor="middle" font-size="9" fill="var(--w60)" style="pointer-events: none;">✕</text>
+                      <text x="{{ e.labelX }}" y="{{ e.labelY }}" text-anchor="middle" font-size="9" font-family="JetBrains Mono, monospace" fill="{{ e.labelFill }}" style="pointer-events: none;">{{ e.label }}</text>
+                    </g>
+                  </sc-for>
+                  <sc-if value="{{ gl.linking }}" hint-placeholder-val="{{ false }}">
+                    <path d="{{ gl.linkPath }}" stroke="var(--warn-ink)" stroke-width="2" stroke-dasharray="5 5" fill="none"></path>
+                  </sc-if>
+                </svg>
+
+                <sc-for list="{{ gl.canvasNodes }}" as="n" hint-placeholder-count="4">
+                  <div onPointerDown="{{ n.down }}" onClick="{{ n.select }}" style="position: absolute; left: {{ n.left }}px; top: {{ n.top }}px; width: 208px; padding: 12px 14px; border: 1px solid {{ n.border }}; border-radius: 14px; background: {{ n.bg }}; box-shadow: {{ n.shadow }}; cursor: grab; touch-action: none;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                      <span style="width: 28px; height: 28px; border-radius: 9px; background: {{ n.iconBg }}; display: flex; align-items: center; justify-content: center; font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700; color: var(--ink); flex: none;">{{ n.abbr }}</span>
+                      <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;">
+                        <span style="font-size: 12.5px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ n.title }}</span>
+                        <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--w45);">{{ n.subtitle }}</span>
+                      </span>
+                      <button onClick="{{ n.remove }}" style="border: none; background: transparent; color: var(--w30); font-size: 12px; padding: 0 2px;" style-hover="color: var(--err-ink);">✕</button>
+                    </div>
+
+                    <sc-if value="{{ n.isWait }}" hint-placeholder-val="{{ false }}">
+                      <div style="margin-top: 10px; display: flex; align-items: center; gap: 9px; padding: 7px 10px; border-radius: 9px; background: rgba(99,102,241,.12); border: 1px solid rgba(99,102,241,.26);">
+                        <svg width="15" height="15" viewBox="0 0 60 60" fill="none" style="animation: ab-spin 1.4s linear infinite; flex: none;"><circle cx="30" cy="30" r="24" stroke="var(--w14)" stroke-width="9"></circle><circle cx="30" cy="30" r="24" stroke="var(--acc-ink)" stroke-width="9" stroke-linecap="round" stroke-dasharray="150" stroke-dashoffset="108"></circle></svg>
+                        <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--acc-ink2);">ожидание · {{ n.meta }}</span>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{ n.isDoc }}" hint-placeholder-val="{{ false }}">
+                      <div style="margin-top: 10px; display: flex; align-items: center; gap: 9px; padding: 7px 10px; border-radius: 9px; background: rgba(52,211,153,.1); border: 1px solid rgba(52,211,153,.24);">
+                        <span style="display: inline-flex; gap: 3px; flex: none;">
+                          <span style="width: 5px; height: 5px; border-radius: 9999px; background: #34d399; animation: ab-dot 1.1s ease-in-out infinite;"></span>
+                          <span style="width: 5px; height: 5px; border-radius: 9999px; background: #34d399; animation: ab-dot 1.1s ease-in-out .16s infinite;"></span>
+                          <span style="width: 5px; height: 5px; border-radius: 9999px; background: #34d399; animation: ab-dot 1.1s ease-in-out .32s infinite;"></span>
+                        </span>
+                        <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--ok-ink);">входящие · {{ n.meta }}</span>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{ n.isHitl }}" hint-placeholder-val="{{ false }}">
+                      <div style="margin-top: 10px; display: flex; align-items: center; gap: 9px; padding: 7px 10px; border-radius: 9px; background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.3);">
+                        <dc-import name="Ape" state="hitl" size="18" hint-size="18px,24px"></dc-import>
+                        <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--warn-ink);">{{ n.meta }}</span>
+                      </div>
+                    </sc-if>
+
+                    <div style="margin-top: 9px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                      <sc-if value="{{ n.runShown }}" hint-placeholder-val="{{ false }}">
+                        <span title="Статус исполнения этого узла в текущем прогоне" style="display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 7px; background: var(--s55); border: 1px solid {{ n.runRing }}; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; font-weight: 600; color: {{ n.runFg }};">
+                          <span style="width: 6px; height: 6px; border-radius: 9999px; background: {{ n.runRing }}; flex: none;"></span>{{ n.runLabel }}
+                        </span>
+                      </sc-if>
+                      <span title="Уровень прав узла: L1 читает · L2 пишет внутри · L3 действует наружу через подтверждение" style="padding: 3px 8px; border-radius: 7px; background: rgba(99,102,241,.16); border: 1px solid rgba(129,140,248,.3); color: var(--acc-ink2); font-family: 'JetBrains Mono', monospace; font-size: 9.5px; font-weight: 600;">{{ n.rightsBadge }}</span>
+                      <sc-if value="{{ n.egressOut }}" hint-placeholder-val="{{ false }}">
+                        <span title="Действие наружу — уходит за периметр только после вашего подтверждения" style="padding: 3px 8px; border-radius: 7px; background: rgba(245,158,11,.14); border: 1px solid rgba(245,158,11,.34); color: var(--warn-ink); font-family: 'JetBrains Mono', monospace; font-size: 9.5px; font-weight: 600;">↗ наружу</span>
+                      </sc-if>
+                    </div>
+
+                    <sc-if value="{{ n.chipsShown }}" hint-placeholder-val="{{ true }}">
+                      <div style="margin-top: 10px; display: flex; gap: 5px; flex-wrap: wrap;">
+                        <sc-for list="{{ n.chips }}" as="c" hint-placeholder-count="2">
+                          <span style="padding: 3px 8px; border-radius: 9999px; background: {{ c.bg }}; color: {{ c.fg }}; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; font-weight: 600;">{{ c.label }}</span>
+                        </sc-for>
+                      </div>
+                    </sc-if>
+
+                    <sc-if value="{{ n.issue }}" hint-placeholder-val="{{ false }}">
+                      <div style="margin-top: 9px; font-size: 10.5px; line-height: 1.4; color: {{ n.issueColor }};">{{ n.issue }}</div>
+                    </sc-if>
+
+                    <button onClick="{{ n.startLink }}" title="Выход — потяните отсюда к входу другого блока" style="position: absolute; right: -9px; top: 22px; width: 18px; height: 18px; border-radius: 9999px; border: 2px solid {{ n.portOut }}; background: var(--bg2); color: {{ n.portOut }}; font-size: 8px; line-height: 1; padding: 0; display: flex; align-items: center; justify-content: center;" style-hover="border-color: var(--warn-ink); color: var(--warn-ink);">→</button>
+                    <button onClick="{{ n.endLink }}" title="Вход — сюда приходит связь" style="position: absolute; left: -9px; top: 22px; width: 18px; height: 18px; border-radius: 9999px; border: 2px solid {{ n.portIn }}; background: var(--bg2); color: {{ n.portIn }}; font-size: 8px; line-height: 1; padding: 0; display: flex; align-items: center; justify-content: center;" style-hover="border-color: var(--warn-ink); color: var(--warn-ink);">▸</button>
+                  </div>
+                </sc-for>
+
+              </div>
+              </div>
+
+                <sc-if value="{{ gl.canvasEmpty }}" hint-placeholder-val="{{ false }}">
+                  <div style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; pointer-events: none;">
+                    <dc-import name="Ape" state="idle" size="60" hint-size="60px,80px"></dc-import>
+                    <div style="display: flex; flex-direction: column; gap: 10px; max-width: 360px;">
+                      <div style="font-size: 13.5px; font-weight: 600; text-align: center; color: var(--w70);">Холст пуст — три шага до результата</div>
+                      <div style="display: flex; flex-direction: column; gap: 8px;">
+                        <div style="display: flex; gap: 10px; align-items: flex-start;">
+                          <span style="width: 20px; height: 20px; flex: none; border-radius: 6px; background: rgba(99,102,241,.2); color: var(--acc-ink); font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center;">1</span>
+                          <span style="font-size: 12.5px; line-height: 1.45; color: var(--w55);">Перетащите блок из палитры слева.</span>
+                        </div>
+                        <div style="display: flex; gap: 10px; align-items: flex-start;">
+                          <span style="width: 20px; height: 20px; flex: none; border-radius: 6px; background: rgba(99,102,241,.2); color: var(--acc-ink); font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center;">2</span>
+                          <span style="font-size: 12.5px; line-height: 1.45; color: var(--w55);">Свяжите блоки за точки: потяните правую «→» к левой «▸» другого.</span>
+                        </div>
+                        <div style="display: flex; gap: 10px; align-items: flex-start;">
+                          <span style="width: 20px; height: 20px; flex: none; border-radius: 6px; background: rgba(99,102,241,.2); color: var(--acc-ink); font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center;">3</span>
+                          <span style="font-size: 12.5px; line-height: 1.45; color: var(--w55);">Нажмите «Проверить», затем «Запустить».</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </sc-if>
+
+              </div>
+
+                <sc-if value="{{ gl.linking }}" hint-placeholder-val="{{ false }}">
+                  <div style="position: absolute; left: 16px; top: 16px; padding: 9px 14px; border-radius: 9999px; background: rgba(245,158,11,.16); border: 1px solid rgba(245,158,11,.4); font-size: 12px; color: var(--warn-ink);">Связь из «{{ gl.linkFromTitle }}» — кликните вход целевого блока (Esc — отмена)</div>
+                </sc-if>
+
+                <button onClick="{{ gl.draftFlow }}" style="position: absolute; left: 16px; bottom: 16px; display: inline-flex; align-items: center; gap: 9px; padding: 10px 16px; border: 1px dashed rgba(129,140,248,.5); border-radius: 11px; background: var(--p90); color: var(--acc-ink2); font-size: 12.5px; font-weight: 600;" style-hover="background: rgba(99,102,241,.24);">
+                  <sc-if value="{{ gl.drafting }}" hint-placeholder-val="{{ false }}">
+                    <svg width="14" height="14" viewBox="0 0 60 60" fill="none" style="animation: ab-spin 1s linear infinite;"><circle cx="30" cy="30" r="24" stroke="rgba(199,210,254,.3)" stroke-width="9"></circle><circle cx="30" cy="30" r="24" stroke="var(--acc-ink2)" stroke-width="9" stroke-linecap="round" stroke-dasharray="150" stroke-dashoffset="108"></circle></svg>
+                  </sc-if>
+                  {{ gl.draftLabel }}
+                </button>
+                <div style="position: absolute; right: 16px; bottom: 16px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--w30);">{{ gl.graphMeta }}</div>
+              </div>
+
+              <sc-if value="{{ gl.inspectorOpen }}" hint-placeholder-val="{{ true }}">
+              <div style="flex: 1 1 320px; width: 320px; min-width: 300px; max-width: 320px; position: sticky; top: 12px; align-self: flex-start; display: flex; flex-direction: column; gap: 14px;">
+                <div style="padding: 20px; border-radius: 16px; background: var(--bg3); border: 1px solid var(--w10); display: flex; flex-direction: column; gap: 16px;">
+                  <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="flex: 1; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--w40);">Инспектор узла</span>
+                    <button onClick="{{ gl.hideInspector }}" title="Убрать шторку" style="width: 26px; height: 26px; border: 1px solid var(--w14); border-radius: 8px; background: var(--w5); color: var(--acc-ink2); font-size: 13px; display: flex; align-items: center; justify-content: center;" style-hover="border-color: #818cf8; color: var(--ink);">›</button>
+                  </div>
+                  <sc-if value="{{ gl.hasSelection }}" hint-placeholder-val="{{ true }}">
+                    <div style="display: flex; flex-direction: column; gap: 16px;">
+                      <div style="display: flex; flex-direction: column; gap: 5px;">
+                        <div style="font-size: 15px; font-weight: 600;">{{ gl.sel.title }}</div>
+                        <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w45);">{{ gl.sel.subtitle }}</div>
+                      </div>
+                      <div style="display: flex; flex-direction: column; gap: 7px; padding: 12px; border-radius: 11px; background: var(--s60); border: 1px solid var(--w8);">
+                        <sc-for list="{{ gl.execMetrics }}" as="mx" hint-placeholder-count="6">
+                          <div style="display: flex; align-items: baseline; gap: 10px;">
+                            <span style="width: 62px; flex: none; font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: .5px; text-transform: uppercase; color: var(--w35);">{{ mx.k }}</span>
+                            <span style="flex: 1; min-width: 0; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: {{ mx.color }}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ mx.v }}</span>
+                          </div>
+                        </sc-for>
+                      </div>
+                      <sc-if value="{{ gl.selHasFamily }}" hint-placeholder-val="{{ true }}">
+                        <div style="display: flex; flex-direction: column; gap: 10px;">
+                          <label style="display: flex; flex-direction: column; gap: 6px;">
+                            <span style="font-size: 11.5px; color: var(--w45);">семья</span>
+                            <select value="{{ gl.selFamily }}" onChange="{{ gl.setFamily }}" style="padding: 10px 12px; border-radius: 10px; border: 2px solid var(--w12); background: var(--s70); color: var(--ink); font-size: 12.5px;">
+                              <sc-for list="{{ gl.familyOptions }}" as="o" hint-placeholder-count="4">
+                                <option value="{{ o.value }}">{{ o.label }}</option>
+                              </sc-for>
+                            </select>
+                          </label>
+                          <label style="display: flex; flex-direction: column; gap: 6px;">
+                            <span style="font-size: 11.5px; color: var(--w45);">член семьи</span>
+                            <select value="{{ gl.selMember }}" onChange="{{ gl.setMember }}" style="padding: 10px 12px; border-radius: 10px; border: 2px solid var(--w12); background: var(--s70); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+                              <sc-for list="{{ gl.memberOptions }}" as="o" hint-placeholder-count="3">
+                                <option value="{{ o.value }}">{{ o.label }}</option>
+                              </sc-for>
+                            </select>
+                          </label>
+                          <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: rgba(165,180,252,.8); line-height: 1.4;">{{ gl.selRoleSkills }}</span>
+                        </div>
+                      </sc-if>
+                      <sc-if value="{{ gl.selIsSource }}" hint-placeholder-val="{{ false }}">
+                        <div style="display: flex; flex-direction: column; gap: 8px;">
+                          <label style="display: flex; flex-direction: column; gap: 6px;"><span style="font-size: 11.5px; color: var(--w45);">вход данных · рецепт-источник</span>
+                          <select value="{{ gl.selSourceRecipe }}" onChange="{{ gl.setSourceRecipe }}" style="padding: 10px 12px; border-radius: 10px; border: 2px solid rgba(52,211,153,.25); background: var(--s70); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+                            <sc-for list="{{ gl.sourceRecipeOptions }}" as="o" hint-placeholder-count="2"><option value="{{ o.value }}">{{ o.label }}</option></sc-for>
+                          </select></label>
+                          <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--w50);">{{ gl.selSourceInfo }}</span>
+                          <span style="font-size: 10.5px; color: rgba(129,140,248,.8); line-height: 1.4;">{{ gl.selSrcConsumersText }}</span>
+                          <button onClick="{{ gl.editSourceFromNode }}" style="padding: 10px; border: 1px solid rgba(52,211,153,.32); border-radius: 10px; background: rgba(16,185,129,.1); color: var(--ok-ink); font-size: 12px; font-weight: 600;" style-hover="background: rgba(16,185,129,.2);">Открыть рецепт в Данных →</button>
+                        </div>
+                      </sc-if>
+                      <sc-if value="{{ gl.selIsTrigger }}" hint-placeholder-val="{{ false }}">
+                        <div style="display: flex; flex-direction: column; gap: 8px;">
+                          <label style="display: flex; flex-direction: column; gap: 6px;"><span style="font-size: 11.5px; color: var(--w45);">стартовое событие · тип</span>
+                          <select value="{{ gl.selTrigType }}" onChange="{{ gl.setTrigType }}" style="padding: 10px 12px; border-radius: 10px; border: 2px solid rgba(234,179,8,.3); background: var(--s70); color: var(--ink); font-size: 12px;"><sc-for list="{{ gl.trigTypeOptions }}" as="o" hint-placeholder-count="3"><option value="{{ o.value }}">{{ o.label }}</option></sc-for></select></label>
+                          <label style="display: flex; flex-direction: column; gap: 6px;"><span style="font-size: 11px; color: var(--w40);">cron (расписание) · напр. 0 2 * * *</span>
+                          <input type="text" value="{{ gl.selTrigCron }}" onChange="{{ gl.setTrigCron }}" style="padding: 9px 11px; border-radius: 9px; border: 1px solid var(--w14); background: rgba(0,0,0,.25); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 11.5px;" /></label>
+                          <label style="display: flex; flex-direction: column; gap: 6px;"><span style="font-size: 11px; color: var(--w40);">источник события (из реестра систем)</span>
+                          <select value="{{ gl.selTrigSource }}" onChange="{{ gl.setTrigSource }}" style="padding: 9px 11px; border-radius: 9px; border: 1px solid var(--w14); background: var(--s70); color: var(--ink); font-size: 11.5px;"><sc-for list="{{ gl.trigSourceOptions }}" as="o" hint-placeholder-count="2"><option value="{{ o.value }}">{{ o.label }}</option></sc-for></select></label>
+                          <div style="height:1px;background:var(--w8);margin:3px 0;"></div>
+                          <span style="font-size: 11px; color: rgba(234,179,8,.85); font-weight:600;">Политика создания (spawn)</span>
+                          <label style="display: flex; flex-direction: column; gap: 6px;"><span style="font-size: 11px; color: var(--w40);">роль/агент, которого создаём на событие</span>
+                          <input type="text" value="{{ gl.selTrigRole }}" onChange="{{ gl.setTrigRole }}" style="padding: 9px 11px; border-radius: 9px; border: 1px solid var(--w14); background: rgba(0,0,0,.25); color: var(--ink); font-size: 11.5px;" /></label>
+                          <div style="display:flex;gap:8px;">
+                            <label style="flex:1;display:flex;flex-direction:column;gap:6px;"><span style="font-size:11px;color:var(--w40);">сколько</span>
+                            <select value="{{ gl.selTrigCount }}" onChange="{{ gl.setTrigCount }}" style="padding:9px 11px;border-radius:9px;border:1px solid var(--w14);background:var(--s70);color:var(--ink);font-size:11.5px;"><sc-for list="{{ gl.trigCountOptions }}" as="o" hint-placeholder-count="2"><option value="{{ o.value }}">{{ o.label }}</option></sc-for></select></label>
+                            <label style="flex:1;display:flex;flex-direction:column;gap:6px;"><span style="font-size:11px;color:var(--w40);">потолок автономии</span>
+                            <select value="{{ gl.selTrigAutonomy }}" onChange="{{ gl.setTrigAutonomy }}" style="padding:9px 11px;border-radius:9px;border:1px solid var(--w14);background:var(--s70);color:var(--ink);font-size:11.5px;"><sc-for list="{{ gl.trigAutonomyOptions }}" as="o" hint-placeholder-count="4"><option value="{{ o.value }}">{{ o.label }}</option></sc-for></select></label>
+                          </div>
+                          <div style="display:flex;gap:8px;">
+                            <button onClick="{{ gl.toggleTrigHitl }}" style="flex:1;padding:9px;border:1px solid {{ gl.trigHitlBorder }};border-radius:9px;background:{{ gl.trigHitlBg }};color:{{ gl.trigHitlFg }};font-size:11.5px;font-weight:600;">{{ gl.trigHitlLabel }}</button>
+                            <button onClick="{{ gl.toggleTrigEnabled }}" style="flex:1;padding:9px;border:1px solid {{ gl.trigEnabledBorder }};border-radius:9px;background:{{ gl.trigEnabledBg }};color:{{ gl.trigEnabledFg }};font-size:11.5px;font-weight:600;">{{ gl.trigEnabledLabel }}</button>
+                          </div>
+                          <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--w55);line-height:1.4;">{{ gl.selTrigInfo }}</span>
+                          <button onClick="{{ gl.fireTrigger }}" style="padding:10px;border:none;border-radius:10px;background:linear-gradient(135deg,#eab308,#f59e0b);color:#111;font-size:12px;font-weight:700;">⚡ Запустить сейчас</button>
+                        </div>
+                      </sc-if>
+                      <sc-if value="{{ gl.selIsOut }}" hint-placeholder-val="{{ false }}">
+                        <div style="display: flex; flex-direction: column; gap: 8px;">
+                          <label style="display:flex;flex-direction:column;gap:6px;"><span style="font-size:11.5px;color:var(--w45);">выходное событие · канал доставки</span>
+                            <select value="{{ gl.selOutChannel }}" onChange="{{ gl.setOutChannel }}" style="padding:10px 12px;border-radius:10px;border:2px solid var(--w12);background:var(--s70);color:var(--ink);font-size:12px;">
+                              <sc-for list="{{ gl.outChannelOptions }}" as="o" hint-placeholder-count="4"><option value="{{ o.value }}">{{ o.label }}</option></sc-for>
+                            </select>
+                          </label>
+                          <label style="display:flex;flex-direction:column;gap:6px;"><span style="font-size:11.5px;color:var(--w45);">{{ gl.selOutToLabel }}</span>
+                            <input value="{{ gl.selOutTo }}" onInput="{{ gl.setOutTo }}" placeholder="{{ gl.selOutToPh }}" style="padding:10px 12px;border-radius:10px;border:2px solid var(--w12);background:var(--s70);color:var(--ink);font-family:'JetBrains Mono',monospace;font-size:12px;">
+                          </label>
+                          <label style="display:flex;flex-direction:column;gap:6px;"><span style="font-size:11.5px;color:var(--w45);">тема / заголовок</span>
+                            <input value="{{ gl.selOutSubject }}" onInput="{{ gl.setOutSubject }}" placeholder="Отчёт агента" style="padding:10px 12px;border-radius:10px;border:2px solid var(--w12);background:var(--s70);color:var(--ink);font-size:12px;">
+                          </label>
+                          <label style="display:flex;flex-direction:column;gap:6px;"><span style="font-size:11.5px;color:var(--w45);">формат отчёта</span>
+                            <select value="{{ gl.selOutFormat }}" onChange="{{ gl.setOutFormat }}" style="padding:10px 12px;border-radius:10px;border:2px solid var(--w12);background:var(--s70);color:var(--ink);font-size:12px;">
+                              <option value="pdf">PDF</option><option value="html">HTML</option>
+                            </select>
+                          </label>
+                          <div style="display:flex;gap:6px;">
+                            <button onClick="{{ gl.toggleOutRun }}" title="Пробный режим — только предпросмотр. Реальная отправка наружу — осознанно." style="flex:1;padding:9px;border-radius:9px;border:1px solid {{ gl.outRunBorder }};background:{{ gl.outRunBg }};color:{{ gl.outRunFg }};font-size:11px;font-weight:700;">{{ gl.outRunLabel }}</button>
+                            <button onClick="{{ gl.toggleOutHitl }}" title="Наружу — только после подтверждения человека" style="flex:1;padding:9px;border-radius:9px;border:1px solid {{ gl.outHitlBorder }};background:{{ gl.outHitlBg }};color:{{ gl.outHitlFg }};font-size:11px;font-weight:700;">{{ gl.outHitlLabel }}</button>
+                          </div>
+                          <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--w55);line-height:1.4;">{{ gl.selOutInfo }}</span>
+                        </div>
+                      </sc-if>
+                      <sc-if value="{{ gl.selIsWait }}" hint-placeholder-val="{{ false }}">
+                        <label style="display: flex; flex-direction: column; gap: 6px;">
+                          <span style="font-size: 11.5px; color: var(--w45);">таймаут ожидания</span>
+                          <select value="{{ gl.selTimeout }}" onChange="{{ gl.setTimeoutVal }}" style="padding: 10px 12px; border-radius: 10px; border: 2px solid var(--w12); background: var(--s70); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+                            <option value="5м">5 минут</option>
+                            <option value="15м">15 минут</option>
+                            <option value="2ч">2 часа</option>
+                            <option value="сутки">сутки</option>
+                          </select>
+                        </label>
+                      </sc-if>
+                      <sc-if value="{{ gl.selIsLLM }}" hint-placeholder-val="{{ true }}">
+                        <label style="display: flex; flex-direction: column; gap: 6px;">
+                          <span style="font-size: 11.5px; color: var(--w45);">модель узла</span>
+                          <select value="{{ gl.sel.model }}" onChange="{{ gl.setModel }}" style="padding: 10px 12px; border-radius: 10px; border: 2px solid var(--w12); background: var(--s70); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+                            <sc-for list="{{ gl.modelOptions }}" as="mo" hint-placeholder-count="3"><option value="{{ mo.value }}">{{ mo.label }}</option></sc-for>
+                          </select>
+                          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:rgba(110,231,183,.7);margin-top:4px;">активная: {{ gl.modelActive }}</span>
+                        </label>
+                      </sc-if>
+                      <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <span style="font-size: 11.5px; color: var(--w45);">безопасность узла</span>
+                        <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                          <sc-for list="{{ gl.selChips }}" as="c" hint-placeholder-count="2">
+                            <span style="padding: 5px 11px; border-radius: 9999px; background: {{ c.bg }}; border: 1px solid {{ c.border }}; color: {{ c.fg }}; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600;">{{ c.label }}</span>
+                          </sc-for>
+                        </div>
+                      </div>
+                      <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <div style="display: flex; align-items: baseline; justify-content: space-between;">
+                          <span style="font-size: 11.5px; color: var(--w45);">права узла</span>
+                          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: {{ gl.rightsColor }};">{{ gl.rightsLabel }}</span>
+                        </div>
+                        <div style="display: flex; gap: 4px;">
+                          <sc-for list="{{ gl.rightsLevels }}" as="lv" hint-placeholder-count="4">
+                            <button onClick="{{ lv.pick }}" title="{{ lv.title }}" style="flex: 1; padding: 8px 4px; border: 1px solid {{ lv.border }}; border-radius: 8px; background: {{ lv.bg }}; color: {{ lv.fg }}; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; font-weight: 600;">{{ lv.label }}</button>
+                          </sc-for>
+                        </div>
+                        <input type="range" min="1" max="4" step="1" value="{{ gl.rights }}" onChange="{{ gl.setRights }}" style="width: 100%; accent-color: #8b5cf6;">
+                        <div style="position: relative; height: 6px; border-radius: 9999px; background: var(--w8);">
+                          <div style="position: absolute; top: 0; bottom: 0; left: 0; width: {{ gl.rightsFill }}%; border-radius: 9999px; background: linear-gradient(90deg, #6366f1, #8b5cf6);"></div>
+                          <div style="position: absolute; top: -4px; bottom: -4px; left: 75%; width: 3px; border-radius: 9999px; background: #34d399;"></div>
+                          <div style="position: absolute; top: 0; bottom: 0; left: 75%; right: 0; border-radius: 0 9999px 9999px 0; background: repeating-linear-gradient(45deg, rgba(239,68,68,.22) 0 5px, transparent 5px 10px);"></div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: var(--w35);">
+                          <span>требуется</span><span style="color: #34d399;">потолок L3</span><span>залочено</span>
+                        </div>
+                        <div style="font-size: 11.5px; line-height: 1.5; color: var(--w45);">{{ gl.rightsNote }}</div>
+                        <sc-if value="{{ gl.rightsAudit }}" hint-placeholder-val="{{ false }}">
+                          <div style="display: flex; flex-direction: column; gap: 7px; padding: 10px 12px; border-radius: 10px; background: rgba(245,158,11,.1); border: 1px solid rgba(245,158,11,.3);">
+                            <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; font-weight: 600; color: var(--warn-ink);">ослабление прав · мини-аудит</span>
+                            <span style="font-size: 11.5px; line-height: 1.45; color: var(--w60);">{{ gl.rightsAudit }}</span>
+                            <button onClick="{{ gl.goSecurityAudit }}" style="align-self: flex-start; padding: 6px 11px; border: 1px solid rgba(245,158,11,.35); border-radius: 8px; background: rgba(245,158,11,.14); color: var(--warn-ink); font-size: 11px; font-weight: 600;" style-hover="background: rgba(245,158,11,.24);">Разобрать в Безопасности →</button>
+                          </div>
+                        </sc-if>
+                      </div>
+                      <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <span style="font-size: 11.5px; color: var(--w45);">тип новой связи</span>
+                        <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                          <sc-for list="{{ gl.linkKindOptions }}" as="k" hint-placeholder-count="4">
+                            <button onClick="{{ k.pick }}" title="{{ k.hint }}" style="padding: 6px 11px; border: 1px solid {{ k.border }}; border-radius: 9999px; background: {{ k.bg }}; color: {{ k.fg }}; font-size: 11.5px; font-weight: 600;">{{ k.label }}</button>
+                          </sc-for>
+                        </div>
+                      </div>
+                      <sc-if value="{{ gl.selHasEdges }}" hint-placeholder-val="{{ false }}">
+                        <div style="display: flex; flex-direction: column; gap: 8px;">
+                          <span style="font-size: 11.5px; color: var(--w45);">исходящие связи</span>
+                          <sc-for list="{{ gl.selEdges }}" as="e" hint-placeholder-count="1">
+                            <div style="display: flex; flex-direction: column; gap: 7px; padding: 10px 12px; border-radius: 10px; background: var(--s55); border: 1px solid var(--w8);">
+                              <div style="display:flex;align-items:center;gap:8px;"><span style="flex:1;font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--w55);">→ {{ e.toTitle }}</span><button onClick="{{ e.remove }}" title="Удалить связь" style="padding:3px 9px;border-radius:7px;border:1px solid rgba(239,68,68,.3);background:rgba(239,68,68,.1);color:var(--err-ink);font-size:11px;font-weight:600;">✕</button></div>
+                              <select value="{{ e.kind }}" onChange="{{ e.setKind }}" style="padding: 8px 10px; border-radius: 9px; border: 1px solid var(--w14); background: var(--s80); color: var(--ink); font-size: 12px;">
+                                <sc-for list="{{ gl.edgeKindOptions }}" as="o" hint-placeholder-count="4">
+                                  <option value="{{ o.value }}">{{ o.label }}</option>
+                                </sc-for>
+                              </select>
+                              <span style="font-size:10.5px;color:var(--w40);line-height:1.4;">{{ e.kindHint }}</span>
+                              <sc-if value="{{ e.isTimer }}" hint-placeholder-val="{{ false }}"><input value="{{ e.schedule }}" onChange="{{ e.setSchedule }}" placeholder="напр. каждый час · раз в 2 дня 12:00" style="padding:7px 10px;border-radius:9px;border:1px solid rgba(129,140,248,.3);background:var(--s80);color:var(--acc-ink2);font-size:11.5px;font-family:'JetBrains Mono',monospace;"></sc-if>
+                            </div>
+                          </sc-for>
+                          <sc-if value="{{ gl.selParallel }}" hint-placeholder-val="{{ false }}"><span style="font-size:10.5px;color:var(--ok-ink);line-height:1.4;">▸ Несколько исходящих связей = параллельное ветвление: шаги пойдут одновременно (напр. запрос к нескольким БД сразу).</span></sc-if>
+                        </div>
+                      </sc-if>
+                      <div style="display: flex; gap: 8px;">
+                        <button onClick="{{ gl.startLinkFromSel }}" style="flex: 1; padding: 10px; border: 1px solid var(--w14); border-radius: 10px; background: var(--w5); color: var(--ink); font-size: 12px; font-weight: 600;" style-hover="background: var(--w10);">Связь →</button>
+                        <button onClick="{{ gl.removeSel }}" style="padding: 10px 14px; border: 1px solid rgba(239,68,68,.32); border-radius: 10px; background: rgba(239,68,68,.1); color: var(--err-ink); font-size: 12px; font-weight: 600;" style-hover="background: rgba(239,68,68,.2);">Удалить</button>
+                      </div>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ gl.noSelection }}" hint-placeholder-val="{{ false }}">
+                    <div style="padding: 26px 10px; text-align: center; font-size: 12.5px; color: var(--w42);">Выберите узел на холсте.</div>
+                  </sc-if>
+                </div>
+
+                <div style="padding: 20px; border-radius: 16px; background: var(--w5); border: 1px solid {{ gl.checkPanelBorder }}; backdrop-filter: blur(16px); display: flex; flex-direction: column; gap: 14px;">
+                  <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--w40);">Проверка исполнимости</span>
+                    <sc-if value="{{ gl.checking }}" hint-placeholder-val="{{ false }}">
+                      <dc-import name="Ape" state="scan" size="24" hint-size="24px,32px"></dc-import>
+                    </sc-if>
+                  </div>
+
+                  <sc-if value="{{ gl.checkIdle }}" hint-placeholder-val="{{ true }}">
+                    <div style="font-size: 12.5px; line-height: 1.55; color: var(--w50);">Соберите поток и нажмите «Проверить» — среда обойдёт граф: доступность компонентов, связность, циклы, точки HITL и конверт автономии.</div>
+                  </sc-if>
+
+                  <sc-for list="{{ gl.checkSteps }}" as="c" hint-placeholder-count="0">
+                    <div style="display: flex; align-items: flex-start; gap: 10px; animation: ab-in .25s ease-out;">
+                      <span style="margin-top: 1px; width: 18px; height: 18px; flex: none; border-radius: 6px; background: {{ c.bg }}; color: {{ c.fg }}; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center;">
+                        <sc-if value="{{ c.spinning }}" hint-placeholder-val="{{ false }}">
+                          <svg width="11" height="11" viewBox="0 0 60 60" fill="none" style="animation: ab-spin 1s linear infinite;"><circle cx="30" cy="30" r="24" stroke="var(--w20)" stroke-width="12"></circle><circle cx="30" cy="30" r="24" stroke="var(--acc-ink2)" stroke-width="12" stroke-linecap="round" stroke-dasharray="150" stroke-dashoffset="110"></circle></svg>
+                        </sc-if>
+                        <sc-if value="{{ c.markShown }}" hint-placeholder-val="{{ true }}">
+                          <span>{{ c.mark }}</span>
+                        </sc-if>
+                      </span>
+                      <span style="display: flex; flex-direction: column; gap: 3px;">
+                        <span style="font-size: 12.5px; font-weight: 600; color: {{ c.titleColor }};">{{ c.label }}</span>
+                        <sc-if value="{{ c.detail }}" hint-placeholder-val="{{ true }}">
+                          <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; line-height: 1.5; color: var(--w45);">{{ c.detail }}</span>
+                        </sc-if>
+                      </span>
+                    </div>
+                  </sc-for>
+
+                  <sc-if value="{{ gl.checkVerdict }}" hint-placeholder-val="{{ false }}">
+                    <div style="padding: 14px; border-radius: 12px; background: {{ gl.verdictBg }}; border: 1px solid {{ gl.verdictBorder }}; display: flex; flex-direction: column; gap: 8px;">
+                      <div style="display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 700; color: {{ gl.verdictFg }};">
+                        <dc-import name="Ape" state="{{ gl.verdictApe }}" size="22" hint-size="22px,29px"></dc-import>{{ gl.checkVerdict }}
+                      </div>
+                      <div style="font-size: 12px; line-height: 1.5; color: var(--w60);">{{ gl.verdictNote }}</div>
+                    </div>
+                  </sc-if>
+                </div>
+              </div>
+              </sc-if>
+
+              <sc-if value="{{ gl.inspectorHidden }}" hint-placeholder-val="{{ false }}">
+                <button onClick="{{ gl.showInspector }}" title="Открыть инспектор" style="position: {{ gl.tabPos }}; right: {{ gl.tabRight }}px; top: {{ gl.tabTop }}px; z-index: 95; display: flex; align-items: center; gap: 8px; padding: 12px 10px; border: 1px solid var(--w16); border-right: none; border-radius: 12px 0 0 12px; background: var(--p95); color: var(--acc-ink2); font-size: 12px; font-weight: 600; writing-mode: vertical-rl;" style-hover="border-color: #818cf8; color: var(--ink);">‹ Инспектор</button>
+              </sc-if>
+            </div>
+          </div>
+        </sc-if>
+
+</x-dc>
+<script data-dc-script type="text/plain" data-props='{"gl":{"editor":null,"tsType":"object"}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

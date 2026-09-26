@@ -1,0 +1,107 @@
+{
+  "c33967c5-5a06-403c-acd0-405675696cee": {
+    "file": "vendor/dc-runtime.js",
+    "mime": "text/javascript",
+    "compressed": true
+  },
+  "65be068e-78ac-4d96-99e0-e63126dd6f87": {
+    "file": "components/Ape.dc.html",
+    "mime": "text/html",
+    "compressed": true
+  },
+  "adcd913c-4597-4f15-9139-0658dfeeb0bd": {
+    "file": "components/GraphLens.dc.html",
+    "mime": "text/html",
+    "compressed": true
+  },
+  "82ed70ed-d94f-402c-875b-4ad529dcb14e": {
+    "file": "components/OpsLens.dc.html",
+    "mime": "text/html",
+    "compressed": true
+  },
+  "fbdc0993-1096-4fef-864c-5a079840e3d5": {
+    "file": "components/AdminScreens.dc.html",
+    "mime": "text/html",
+    "compressed": true
+  },
+  "039d0e6e-a8c0-4205-bcaa-41bb1cee9a3e": {
+    "file": "components/Overlays.dc.html",
+    "mime": "text/html",
+    "compressed": true
+  },
+  "6a17d5f0-d936-4860-aa7f-7b4aeddee6b0": {
+    "file": "vendor/react.production.min.js",
+    "mime": "text/javascript",
+    "compressed": true
+  },
+  "2192d5b2-6645-4d24-8bf1-62b67c90c944": {
+    "file": "vendor/react-dom.production.min.js",
+    "mime": "text/javascript",
+    "compressed": true
+  },
+  "69944d0b-d74b-41ca-9a75-1da790f59a5c": {
+    "file": "fonts/69944d0b.woff2",
+    "mime": "font/woff2",
+    "compressed": false
+  },
+  "c4658e2d-b766-4abd-b264-839b9bfe9219": {
+    "file": "fonts/c4658e2d.woff2",
+    "mime": "font/woff2",
+    "compressed": false
+  },
+  "05ffff3a-689c-4d2e-876b-030e4974e743": {
+    "file": "fonts/05ffff3a.woff2",
+    "mime": "font/woff2",
+    "compressed": false
+  },
+  "9fb3edcd-a145-4910-9ec6-def79fb97a20": {
+    "file": "fonts/9fb3edcd.woff2",
+    "mime": "font/woff2",
+    "compressed": false
+  },
+  "5b030254-5f6c-4929-903c-d82100e545be": {
+    "file": "fonts/5b030254.woff2",
+    "mime": "font/woff2",
+    "compressed": false
+  },
+  "9aefde62-3759-4662-b6a4-566f0a0c21ae": {
+    "file": "fonts/9aefde62.woff2",
+    "mime": "font/woff2",
+    "compressed": false
+  },
+  "dcf4d921-7e68-4532-9589-967715c3e065": {
+    "file": "fonts/dcf4d921.woff2",
+    "mime": "font/woff2",
+    "compressed": false
+  },
+  "2186064c-0b3c-46aa-bbf0-4b35503c505e": {
+    "file": "fonts/2186064c.woff2",
+    "mime": "font/woff2",
+    "compressed": false
+  },
+  "dd2ceb53-56b8-4aa6-b445-c7efccc87ac0": {
+    "file": "fonts/dd2ceb53.woff2",
+    "mime": "font/woff2",
+    "compressed": false
+  },
+  "b0718857-4916-47d2-8246-1bb8f5a0bebe": {
+    "file": "fonts/b0718857.woff2",
+    "mime": "font/woff2",
+    "compressed": false
+  },
+  "9dbaaaa6-2486-4083-aafe-8d68b1bb1d11": {
+    "file": "fonts/9dbaaaa6.woff2",
+    "mime": "font/woff2",
+    "compressed": false
+  },
+  "95569a9a-492e-4644-bfc8-4ee9d0cf54d9": {
+    "file": "fonts/95569a9a.woff2",
+    "mime": "font/woff2",
+    "compressed": false
+  },
+  "7c03d9dc-a3c0-4d5e-8c93-8cf59742f77a": {
+    "file": "fonts/7c03d9dc.woff2",
+    "mime": "font/woff2",
+    "compressed": false
+  }
+}

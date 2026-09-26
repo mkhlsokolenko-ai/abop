@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>AdminScreens</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    @keyframes ab-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  </style>
+</helmet>
+<sc-if value="{{ adm.isSecurity }}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; flex-direction: column; gap: 20px; animation: ab-in .35s ease-out;">
+            <div style="display: flex; align-items: flex-end; gap: 18px; flex-wrap: wrap;">
+              <div style="display: flex; flex-direction: column; gap: 7px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  <h1 style="margin: 0; font-size: 32px; font-weight: 800; letter-spacing: -.8px;">Безопасность</h1>
+                  <span style="padding: 5px 11px; border-radius: 9999px; background: rgba(124,58,237,.14); border: 1px solid rgba(124,58,237,.32); color: var(--vio-ink); font-family: 'JetBrains Mono', monospace; font-size: 10.5px; font-weight: 600;">admin-gated</span>
+                  <sc-if value="{{ adm.secViolations }}" hint-placeholder-val="{{ false }}">
+                    <span style="padding: 5px 11px; border-radius: 9999px; background: rgba(239,68,68,.12); border: 1px solid rgba(239,68,68,.3); color: var(--err-ink); font-family: 'JetBrains Mono', monospace; font-size: 10.5px; font-weight: 600;">{{ adm.secViolations }} нарушения</span>
+                  </sc-if>
+                </div>
+                <p style="margin: 0; font-size: 13.5px; color: var(--w50);">Governance среды: кто что может, периметр агента, эскалация, ре-аттестация и неизменяемый аудит ИБ. Безопасность навыка (mode/egress/cite) — уровнем ниже, в каталоге.</p>
+              </div>
+              <div style="margin-left: auto; display: flex; gap: 6px; padding: 4px; border-radius: 12px; background: var(--w5); border: 1px solid var(--w10); flex-wrap: wrap;">
+                <sc-for list="{{ adm.secTabs }}" as="t" hint-placeholder-count="5">
+                  <button onClick="{{ t.pick }}" style="padding: 9px 16px; border: none; border-radius: 9px; background: {{ t.bg }}; color: {{ t.fg }}; font-size: 13px; font-weight: 600;">{{ t.label }}</button>
+                </sc-for>
+              </div>
+            </div>
+
+            <sc-if value="{{ adm.secIsRbac }}" hint-placeholder-val="{{ true }}">
+              <div style="display: grid; grid-template-columns: 1.35fr 1fr; gap: 18px; align-items: start;">
+                <div style="padding: 24px; border-radius: 16px; background: var(--w5); border: 1px solid var(--w10); display: flex; flex-direction: column; gap: 14px;">
+                  <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--w40);">Политика доступа · RBAC</span>
+                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--w40);">{{ adm.rbacVersion }}</span>
+                  </div>
+                  <div style="display: grid; grid-template-columns: 1fr 1.4fr 1fr; gap: 10px; padding: 8px 0; font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: .6px; text-transform: uppercase; color: var(--w35); border-bottom: 1px solid var(--w8);">
+                    <span>роль · люди</span><span>разрешено</span><span>запрещено</span>
+                  </div>
+                  <sc-for list="{{ adm.rbacRows }}" as="r" hint-placeholder-count="4">
+                    <div style="display: grid; grid-template-columns: 1fr 1.4fr 1fr; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--w5); align-items: start;">
+                      <span style="display: flex; flex-direction: column; gap: 3px;">
+                        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--ink);">{{ r.role }}</span>
+                        <span style="font-size: 11px; color: var(--w40);">{{ r.people }}</span>
+                      </span>
+                      <span style="font-size: 12px; line-height: 1.5; color: var(--w65);">{{ r.allow }}</span>
+                      <span style="display: flex; align-items: flex-start; gap: 8px;">
+                        <span style="flex: 1; font-size: 12px; line-height: 1.5; color: var(--err-ink);">{{ r.deny }}</span>
+                        <button onClick="{{ r.edit }}" style="padding: 5px 10px; border: 1px solid var(--w14); border-radius: 8px; background: var(--w5); color: var(--acc-ink2); font-size: 11px; font-weight: 600; flex: none;" style-hover="border-color: #818cf8;">Править</button>
+                      </span>
+                    </div>
+                  </sc-for>
+                  <div style="font-size: 11.5px; color: var(--w40);">Роли приходят из Keycloak realm; правки RBAC версионируются и попадают в аудит ИБ с автором.</div>
+                </div>
+
+                <div style="padding: 24px; border-radius: 16px; background: var(--w5); border: 1px solid var(--w10); display: flex; flex-direction: column; gap: 14px;">
+                  <div style="display: flex; align-items: center; justify-content: space-between;">
+                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--w40);">YAML · side-by-side</span>
+                    <button onClick="{{ adm.saveRbac }}" style="padding: 6px 12px; border: 1px solid var(--w14); border-radius: 8px; background: var(--w5); color: var(--ink); font-size: 11.5px; font-weight: 600;" style-hover="background: var(--w10);">Применить</button>
+                  </div>
+                  <div style="padding: 14px; border-radius: 12px; background: var(--s60); border: 1px solid var(--w8); font-family: 'JetBrains Mono', monospace; font-size: 11.5px; line-height: 1.75; color: var(--w72);">
+                    <sc-for list="{{ adm.rbacYaml }}" as="ln" hint-placeholder-count="8">
+                      <div>{{ ln.text }}</div>
+                    </sc-for>
+                  </div>
+                </div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ adm.secIsScope }}" hint-placeholder-val="{{ false }}">
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start;">
+                <div style="padding: 24px; border-radius: 16px; background: var(--w5); border: 1px solid var(--w10); display: flex; flex-direction: column; gap: 16px;">
+                  <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--w40);">Периметр агента · инвариант</span>
+                  <div style="padding: 16px; border-radius: 12px; background: var(--s60); border: 1px solid var(--w8); font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--acc-ink);">scope(агент) ⊆ права(создатель) ≤ DeploymentContract</div>
+                  <div style="font-size: 12.5px; line-height: 1.6; color: var(--w60);">Проверяется при сборке и деплое — не редактируется вручную. Агент не может получить прав больше, чем у роли, которая его собрала.</div>
+                  <sc-for list="{{ adm.scopeChecks }}" as="c" hint-placeholder-count="3">
+                    <div style="display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-radius: 11px; background: {{ c.bg }}; border: 1px solid {{ c.border }};">
+                      <span style="margin-top: 1px; width: 18px; height: 18px; flex: none; border-radius: 6px; background: {{ c.markBg }}; color: {{ c.markFg }}; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center;">{{ c.mark }}</span>
+                      <span style="display: flex; flex-direction: column; gap: 3px;">
+                        <span style="font-size: 12.5px; font-weight: 600; color: var(--ink);">{{ c.title }}</span>
+                        <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; line-height: 1.5; color: var(--w50);">{{ c.detail }}</span>
+                      </span>
+                    </div>
+                  </sc-for>
+                </div>
+                <div style="padding: 24px; border-radius: 16px; background: var(--w5); border: 1px solid var(--w10); display: flex; flex-direction: column; gap: 14px;">
+                  <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--w40);">Классы агентов</span>
+                  <sc-for list="{{ adm.agentClasses }}" as="ac" hint-placeholder-count="2">
+                    <div style="display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: 12px; background: var(--s50); border: 1px solid var(--w8);">
+                      <div style="display: flex; align-items: center; gap: 10px;">
+                        <span style="padding: 4px 10px; border-radius: 9999px; background: {{ ac.bg }}; border: 1px solid {{ ac.border }}; color: {{ ac.fg }}; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; font-weight: 600;">{{ ac.label }}</span>
+                        <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--w40);">{{ ac.count }}</span>
+                      </div>
+                      <div style="font-size: 12.5px; line-height: 1.55; color: var(--w60);">{{ ac.note }}</div>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ adm.secIsEsc }}" hint-placeholder-val="{{ false }}">
+              <div style="padding: 24px; border-radius: 16px; background: var(--w5); border: 1px solid var(--w10); display: flex; flex-direction: column; gap: 18px;">
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--w40);">Модель эскалации</span>
+                <sc-for list="{{ adm.escRules }}" as="e" hint-placeholder-count="4">
+                  <div style="display: flex; align-items: center; gap: 16px; padding: 14px 16px; border-radius: 12px; background: var(--s50); border: 1px solid var(--w7);">
+                    <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+                      <div style="font-size: 13px; font-weight: 600;">{{ e.trigger }}</div>
+                      <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w45);">{{ e.route }}</div>
+                    </div>
+                    <select value="{{ e.threshold }}" onChange="{{ e.setThreshold }}" style="padding: 9px 11px; border-radius: 10px; border: 1px solid var(--w14); background: var(--s80); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+                      <sc-for list="{{ e.options }}" as="o" hint-placeholder-count="3">
+                        <option value="{{ o.value }}">{{ o.label }}</option>
+                      </sc-for>
+                    </select>
+                  </div>
+                </sc-for>
+                <div style="font-size: 11.5px; color: var(--w40);">Пороги — конфиг эскалации на сервере; изменение пишется в аудит ИБ.</div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ adm.secIsReattest }}" hint-placeholder-val="{{ false }}">
+              <div style="padding: 24px; border-radius: 16px; background: var(--w5); border: 1px solid var(--w10); display: flex; flex-direction: column; gap: 16px;">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                  <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--w40);">Ре-аттестация · очередь</span>
+                  <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--w40);">период 90 дней</span>
+                </div>
+                <sc-for list="{{ adm.reattestRows }}" as="r" hint-placeholder-count="3">
+                  <div style="display: flex; align-items: center; gap: 16px; padding: 14px 16px; border-radius: 12px; background: {{ r.bg }}; border: 1px solid {{ r.border }};">
+                    <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+                      <div style="font-size: 13px; font-weight: 600;">{{ r.subject }}</div>
+                      <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w45);">срок: {{ r.due }} · ответственный {{ r.owner }}</div>
+                    </div>
+                    <span style="padding: 5px 11px; border-radius: 9999px; background: {{ r.badgeBg }}; color: {{ r.badgeFg }}; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; font-weight: 600;">{{ r.state }}</span>
+                    <button onClick="{{ r.review }}" style="padding: 9px 14px; border: 1px solid var(--w14); border-radius: 10px; background: var(--w5); color: var(--ink); font-size: 12px; font-weight: 600;" style-hover="background: var(--w10);">Пересмотреть</button>
+                  </div>
+                </sc-for>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ adm.secIsAudit }}" hint-placeholder-val="{{ false }}">
+              <div style="padding: 24px; border-radius: 16px; background: var(--w5); border: 1px solid var(--w10); display: flex; flex-direction: column; gap: 16px;">
+                <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                  <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--w40);">Аудит ИБ · append-only</span>
+                  <div style="margin-left: auto; display: flex; gap: 6px;">
+                    <sc-for list="{{ adm.secFilters }}" as="ft" hint-placeholder-count="4">
+                      <button onClick="{{ ft.pick }}" style="padding: 7px 13px; border: 1px solid {{ ft.border }}; border-radius: 9999px; background: {{ ft.bg }}; color: {{ ft.fg }}; font-size: 12px; font-weight: 600;">{{ ft.label }}</button>
+                    </sc-for>
+                  </div>
+                  <button onClick="{{ adm.exportAudit }}" style="padding: 8px 14px; border: 1px solid var(--w14); border-radius: 9px; background: var(--w5); color: var(--ink); font-size: 12px; font-weight: 600;" style-hover="background: var(--w10);">Экспорт</button>
+                </div>
+                <div style="display: grid; grid-template-columns: .8fr .8fr 2fr .8fr; gap: 10px; padding: 8px 0; font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: .6px; text-transform: uppercase; color: var(--w35); border-bottom: 1px solid var(--w8);">
+                  <span>когда</span><span>кто</span><span>что</span><span>хэш</span>
+                </div>
+                <sc-for list="{{ adm.auditSec }}" as="au" hint-placeholder-count="5">
+                  <div style="display: grid; grid-template-columns: .8fr .8fr 2fr .8fr; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--w5); font-family: 'JetBrains Mono', monospace; font-size: 11.5px;">
+                    <span style="color: var(--w50);">{{ au.at }}</span>
+                    <span style="color: var(--ink);">{{ au.who }}</span>
+                    <span style="color: {{ au.color }};">{{ au.what }}</span>
+                    <span style="color: var(--w35);">{{ au.hash }}</span>
+                  </div>
+                </sc-for>
+                <sc-if value="{{ adm.auditEmpty }}" hint-placeholder-val="{{ false }}">
+                  <div style="padding: 32px; text-align: center; font-size: 12.5px; color: var(--w40);">Под фильтр записей нет.</div>
+                </sc-if>
+                <div style="font-size: 11.5px; color: var(--w40);">Хэш-цепочка: каждая запись ссылается на предыдущую, изменение задним числом обнаруживается сверкой.</div>
+              </div>
+            </sc-if>
+          </div>
+        </sc-if>
+
+
+<sc-if value="{{ adm.isSettings }}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; flex-direction: column; gap: 20px; animation: ab-in .35s ease-out;">
+            <div style="display: flex; flex-direction: column; gap: 7px;">
+              <h1 style="margin: 0; font-size: 32px; font-weight: 800; letter-spacing: -.8px;">Настройки</h1>
+              <p style="margin: 0; font-size: 13.5px; color: var(--w50);">Подключения, модели, авторизация, арендаторы, биллинг.</p>
+            </div>
+            <div style="display: flex; gap: 6px; padding: 4px; border-radius: 12px; background: var(--w5); border: 1px solid var(--w10); align-self: flex-start; flex-wrap: wrap;">
+              <sc-for list="{{ adm.settingsTabs }}" as="t" hint-placeholder-count="5">
+                <button onClick="{{ t.pick }}" style="padding: 9px 16px; border: none; border-radius: 9px; background: {{ t.bg }}; color: {{ t.fg }}; font-size: 13px; font-weight: 600;">{{ t.label }}</button>
+              </sc-for>
+            </div>
+            <div style="padding: 26px; border-radius: 16px; background: var(--w5); border: 1px solid var(--w10); display: flex; flex-direction: column; gap: 18px;">
+              <div style="font-size: 15px; font-weight: 600;">{{ adm.settingsTitle }}</div>
+              <sc-if value="{{ adm.isMemoryTab }}" hint-placeholder-val="{{ false }}">
+                <div style="display: flex; flex-direction: column; gap: 12px;">
+                  <div style="font-size: 12.5px; line-height: 1.55; color: var(--w55);">Долговременная память агентов: класс критичности задаёт TTL забывания. Записи пишет агент, оператор может изменить класс или забыть досрочно.</div>
+                  <sc-for list="{{ adm.memoryRows }}" as="m" hint-placeholder-count="3">
+                    <div style="display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: 12px; background: var(--s50); border: 1px solid var(--w7);">
+                      <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px;">
+                        <div style="font-size: 13px; color: var(--ink);">{{ m.text }}</div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                          <span style="padding: 3px 9px; border-radius: 9999px; background: {{ m.clsBg }}; color: {{ m.clsFg }}; font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 600;">{{ m.clsLabel }}</span>
+                          <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--w40);">TTL {{ m.ttl }}</span>
+                        </div>
+                      </div>
+                      <select value="{{ m.cls }}" onChange="{{ m.setCls }}" style="padding: 9px 11px; border-radius: 10px; border: 1px solid var(--w14); background: var(--s80); color: var(--ink); font-size: 12px;">
+                        <option value="op">операционная · 30д</option>
+                        <option value="imp">важная · 90д</option>
+                        <option value="reg">регуляторная · 365д</option>
+                        <option value="crit">критичная · без TTL</option>
+                      </select>
+                      <button onClick="{{ m.forget }}" style="padding: 9px 14px; border: 1px solid rgba(239,68,68,.3); border-radius: 10px; background: rgba(239,68,68,.1); color: var(--err-ink); font-size: 12px; font-weight: 600;" style-hover="background: rgba(239,68,68,.22);">Забыть</button>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-if>
+              <sc-if value="{{ adm.isModelsTab }}" hint-placeholder-val="{{ false }}">
+                <div style="display: flex; flex-direction: column; gap: 12px;">
+                  <div style="padding:16px;border-radius:12px;background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.28);display:flex;flex-direction:column;gap:10px;">
+                    <div style="display:flex;align-items:center;gap:8px;"><span style="font-size:13px;font-weight:700;color:var(--ink);">Self-host LLM-инстанс (бокс)</span><span style="padding:2px 8px;border-radius:9999px;background:{{ adm.llmOverrideBg }};color:{{ adm.llmOverrideFg }};font-family:'JetBrains Mono',monospace;font-size:10px;">{{ adm.llmOverrideLabel }}</span></div>
+                    <div style="font-size:11.5px;color:var(--w55);line-height:1.5;">Активная модель: <b style="color:var(--ok-ink);">{{ adm.llmActiveModel }}</b> · {{ adm.llmActiveBase }}. Смена — в 1 клик, без правки .env и рестарта (для мультиноды: разные агенты → разные боксы).</div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                      <input value="{{ adm.llmEndpointDraft }}" onInput="{{ adm.setLlmDraft }}" placeholder="http://IP:PORT/v1" style="flex:1;min-width:220px;padding:9px 12px;border-radius:10px;border:1px solid var(--w14);background:var(--s70);color:var(--ink);font-family:'JetBrains Mono',monospace;font-size:12px;"/>
+                      <input value="{{ adm.llmModelDraft }}" onInput="{{ adm.setLlmModelDraft }}" placeholder="модель (напр. qwen3-30b-a3b)" style="flex:1;min-width:160px;padding:9px 12px;border-radius:10px;border:1px solid var(--w14);background:var(--s70);color:var(--ink);font-family:'JetBrains Mono',monospace;font-size:12px;"/>
+                    </div>
+                    <div style="display:flex;gap:8px;">
+                      <button sc-camel-on-click="{{ adm.applyLlm }}" style="padding:9px 16px;border:none;border-radius:10px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:var(--ink);font-size:12px;font-weight:700;cursor:pointer;">Применить эндпоинт</button>
+                      <button sc-camel-on-click="{{ adm.resetLlm }}" style="padding:9px 16px;border:1px solid var(--w14);border-radius:10px;background:var(--w5);color:var(--w60);font-size:12px;font-weight:600;cursor:pointer;">Сбросить на .env</button>
+                    </div>
+                  </div>
+                  <div style="font-size: 12.5px; line-height: 1.55; color: var(--w55);">Профиль задаёт, какая модель обслуживает класс задач. Периметровый профиль работает без выхода наружу — им закрываются данные под требованиями.</div>
+                  <sc-for list="{{ adm.modelRows }}" as="m" hint-placeholder-count="3">
+                    <div style="display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: 12px; background: var(--s50); border: 1px solid var(--w7); flex-wrap: wrap;">
+                      <div style="flex: 1; min-width: 170px; display: flex; flex-direction: column; gap: 3px;">
+                        <span style="font-size: 13px; font-weight: 600;">{{ m.label }}</span>
+                        <span style="font-size: 11.5px; color: var(--w45);">{{ m.note }}</span>
+                      </div>
+                      <select value="{{ m.model }}" onChange="{{ m.setModel }}" style="padding: 9px 11px; border-radius: 10px; border: 1px solid var(--w14); background: var(--s80); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+                        <sc-for list="{{ m.models }}" as="o" hint-placeholder-count="3"><option value="{{ o }}">{{ o }}</option></sc-for>
+                      </select>
+                      <select value="{{ m.temp }}" onChange="{{ m.setTemp }}" title="Температура" style="padding: 9px 11px; border-radius: 10px; border: 1px solid var(--w14); background: var(--s80); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+                        <sc-for list="{{ m.temps }}" as="o" hint-placeholder-count="3"><option value="{{ o }}">{{ o }}</option></sc-for>
+                      </select>
+                      <button onClick="{{ m.makeDefault }}" style="padding: 9px 13px; border: 1px solid {{ m.defBorder }}; border-radius: 10px; background: {{ m.defBg }}; color: {{ m.defFg }}; font-size: 12px; font-weight: 600;" style-hover="border-color: #818cf8;">{{ m.defLabel }}</button>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ adm.isConnTab }}" hint-placeholder-val="{{ false }}">
+                <div style="display: flex; flex-direction: column; gap: 12px;">
+                  <div style="font-size: 12.5px; line-height: 1.55; color: var(--w55);">Шлюзы, через которые агенты видят внешний мир. Проверка соединения — обычная операция: она пишется в аудит и не меняет конверт.</div>
+                  <sc-for list="{{ adm.connRows }}" as="c" hint-placeholder-count="3">
+                    <div style="display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: 12px; background: var(--s50); border: 1px solid var(--w7); flex-wrap: wrap;">
+                      <span style="width: 8px; height: 8px; flex: none; border-radius: 9999px; background: {{ c.dot }};"></span>
+                      <div style="flex: 1; min-width: 180px; display: flex; flex-direction: column; gap: 3px;">
+                        <span style="font-size: 13px; font-weight: 600;">{{ c.label }}</span>
+                        <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w45);">{{ c.value }}</span>
+                      </div>
+                      <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: {{ c.fg }};">{{ c.status }}</span>
+                      <button onClick="{{ c.check }}" style="padding: 9px 13px; border: 1px solid var(--w14); border-radius: 10px; background: var(--w5); color: var(--ink); font-size: 12px; font-weight: 600;" style-hover="background: var(--w10);">Проверить</button>
+                      <button onClick="{{ c.toggle }}" style="padding: 9px 13px; border: 1px solid {{ c.tBorder }}; border-radius: 10px; background: {{ c.tBg }}; color: {{ c.tFg }}; font-size: 12px; font-weight: 600;">{{ c.tLabel }}</button>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ adm.isTenantTab }}" hint-placeholder-val="{{ false }}">
+                <div style="display: flex; flex-direction: column; gap: 12px;">
+                  <div style="font-size: 12.5px; line-height: 1.55; color: var(--w55);">Общие креды дешевле, но смешивают ответственность между арендаторами. Свои креды (BYO) изолируют доступ и аудит.</div>
+                  <sc-for list="{{ adm.tenantRows }}" as="t" hint-placeholder-count="2">
+                    <div style="display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: 12px; background: var(--s50); border: 1px solid {{ t.border }}; flex-wrap: wrap;">
+                      <div style="flex: 1; min-width: 180px; display: flex; flex-direction: column; gap: 3px;">
+                        <span style="font-size: 13px; font-weight: 600;">{{ t.label }}</span>
+                        <span style="font-size: 11.5px; line-height: 1.4; color: var(--w50);">{{ t.note }}</span>
+                      </div>
+                      <div style="display: flex; gap: 3px; padding: 3px; border-radius: 10px; background: var(--w5); border: 1px solid var(--w10);">
+                        <sc-for list="{{ t.modes }}" as="md" hint-placeholder-count="2">
+                          <button onClick="{{ md.pick }}" style="padding: 8px 13px; border: none; border-radius: 8px; background: {{ md.bg }}; color: {{ md.fg }}; font-size: 12px; font-weight: 600;">{{ md.label }}</button>
+                        </sc-for>
+                      </div>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ adm.isBillTab }}" hint-placeholder-val="{{ false }}">
+                <div style="display: flex; flex-direction: column; gap: 14px;">
+                  <div style="font-size: 12.5px; line-height: 1.55; color: var(--w55);">Квота — предел расхода среды за неделю. Политика решает, что делать на пределе: остановить, спросить человека или продолжить с записью в аудит.</div>
+                  <div style="padding: 16px; border-radius: 12px; background: var(--s50); border: 1px solid var(--w8); display: flex; flex-direction: column; gap: 12px;">
+                    <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap;">
+                      <span style="font-size: 13px; font-weight: 600;">Расход недели</span>
+                      <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: {{ adm.quotaFg }};">{{ adm.quotaText }}</span>
+                    </div>
+                    <div style="position: relative; height: 8px; border-radius: 9999px; background: var(--w8);">
+                      <div style="position: absolute; inset: 0 auto 0 0; width: {{ adm.quotaFill }}%; border-radius: 9999px; background: {{ adm.quotaBar }};"></div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                      <span style="font-size: 12px; color: var(--w50);">лимит недели</span>
+                      <select value="{{ adm.quotaLimit }}" onChange="{{ adm.setQuota }}" style="padding: 9px 11px; border-radius: 10px; border: 1px solid var(--w14); background: var(--s80); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+                        <sc-for list="{{ adm.quotaOptions }}" as="o" hint-placeholder-count="3"><option value="{{ o }}">{{ o }}</option></sc-for>
+                      </select>
+                      <span style="font-size: 12px; color: var(--w50);">на пределе</span>
+                      <div style="display: flex; gap: 3px; padding: 3px; border-radius: 10px; background: var(--w5); border: 1px solid var(--w10);">
+                        <sc-for list="{{ adm.quotaPolicies }}" as="p" hint-placeholder-count="3">
+                          <button onClick="{{ p.pick }}" title="{{ p.hint }}" style="padding: 8px 13px; border: none; border-radius: 8px; background: {{ p.bg }}; color: {{ p.fg }}; font-size: 12px; font-weight: 600;">{{ p.label }}</button>
+                        </sc-for>
+                      </div>
+                    </div>
+                  </div>
+                  <sc-for list="{{ adm.billRows }}" as="b" hint-placeholder-count="2">
+                    <div style="display: flex; align-items: center; gap: 14px; padding: 13px 16px; border-radius: 12px; background: var(--s50); border: 1px solid var(--w7);">
+                      <div style="flex: 1; display: flex; flex-direction: column; gap: 3px;">
+                        <span style="font-size: 13px; font-weight: 600;">{{ b.label }}</span>
+                        <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w45);">{{ b.value }}</span>
+                      </div>
+                      <button onClick="{{ b.act }}" style="padding: 9px 13px; border: 1px solid var(--w14); border-radius: 10px; background: var(--w5); color: var(--ink); font-size: 12px; font-weight: 600;" style-hover="background: var(--w10);">{{ b.actLabel }}</button>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ adm.isAuthTab }}" hint-placeholder-val="{{ false }}">
+                <div style="display: flex; flex-direction: column; gap: 14px;">
+                  <div style="font-size: 12.5px; line-height: 1.55; color: var(--w55);">Ваша роль определяет, что разрешено делать в среде: сборку, подтверждение действий наружу, вывод в прод. Смена роли сразу меняет доступные кнопки — так видно ограничения на себе.</div>
+                  <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <sc-for list="{{ adm.roleOptions }}" as="r" hint-placeholder-count="4">
+                      <button onClick="{{ r.pick }}" title="{{ r.hint }}" style="display: flex; flex-direction: column; gap: 4px; align-items: flex-start; padding: 12px 14px; border: 1px solid {{ r.border }}; border-radius: 12px; background: {{ r.bg }}; text-align: left; min-width: 190px;" style-hover="border-color: #818cf8;">
+                        <span style="font-size: 13px; font-weight: 700; color: {{ r.fg }};">{{ r.label }}</span>
+                        <span style="font-size: 11.5px; line-height: 1.4; color: var(--w50);">{{ r.hint }}</span>
+                        <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--w38);">{{ r.people }}</span>
+                      </button>
+                    </sc-for>
+                  </div>
+
+                  <div style="padding: 14px 16px; border-radius: 12px; background: var(--s50); border: 1px solid var(--w8); display: flex; flex-direction: column; gap: 10px;">
+                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--w35);">что можно с текущей ролью</span>
+                    <sc-for list="{{ adm.roleCaps }}" as="c" hint-placeholder-count="4">
+                      <span style="display: flex; align-items: flex-start; gap: 9px; font-size: 12.5px; line-height: 1.45; color: var(--w72);">
+                        <span style="color: {{ c.fg }}; font-weight: 700;">{{ c.mark }}</span>{{ c.text }}
+                      </span>
+                    </sc-for>
+                  </div>
+
+                  <div style="display: flex; flex-direction: column; gap: 10px;">
+                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--w35);">пороги эскалации к человеку</span>
+                    <sc-for list="{{ adm.escRows }}" as="e" hint-placeholder-count="4">
+                      <div style="display: flex; align-items: center; gap: 14px; padding: 12px 14px; border-radius: 12px; background: var(--s50); border: 1px solid var(--w7);">
+                        <div style="flex: 1; display: flex; flex-direction: column; gap: 3px;">
+                          <span style="font-size: 13px; font-weight: 600;">{{ e.label }}</span>
+                          <span style="font-size: 11.5px; color: var(--w45);">{{ e.note }}</span>
+                        </div>
+                        <select value="{{ e.value }}" onChange="{{ e.set }}" style="padding: 9px 11px; border-radius: 10px; border: 1px solid var(--w14); background: var(--s80); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+                          <sc-for list="{{ e.options }}" as="o" hint-placeholder-count="3">
+                            <option value="{{ o }}">{{ o }}</option>
+                          </sc-for>
+                        </select>
+                      </div>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-if>
+
+              <button onClick="{{ adm.saveSettings }}" style="align-self: flex-start; padding: 11px 20px; border: none; border-radius: 11px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; font-size: 13px; font-weight: 600;" style-hover="transform: scale(1.02);">Сохранить</button>
+            </div>
+          </div>
+        </sc-if>
+
+</x-dc>
+<script data-dc-script type="text/plain" data-props='{"adm":{"editor":null,"tsType":"object"}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

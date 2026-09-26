@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Overlays</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    @keyframes ab-slide-in { from { transform: translateX(28px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    @keyframes ab-drop { from { transform: translateY(-16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    @keyframes ab-in { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    @keyframes ab-spin { to { transform: rotate(360deg); } }
+  </style>
+</helmet>
+<sc-if value="{{ ov.launchModal }}" hint-placeholder-val="{{ false }}">
+    <div role="dialog" aria-modal="true" style="position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 24px;">
+      <div onClick="{{ ov.closeModal }}" style="position: absolute; inset: 0; background: rgba(4,7,18,.62); backdrop-filter: blur(4px);"></div>
+      <div style="position: relative; width: 620px; max-width: 94vw; padding: 28px; border-radius: 16px; background: var(--bg2); border: 1px solid var(--w12); box-shadow: 0 20px 60px var(--sh45); display: flex; flex-direction: column; gap: 20px; animation: ab-drop .3s ease-out;">
+        <div style="display: flex; align-items: flex-start; gap: 14px;">
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 5px;">
+            <div style="font-size: 19px; font-weight: 700;">Запуск прогона</div>
+            <div style="font-size: 12.5px; color: var(--w50);">Опишите цель — среда подберёт семьи агентов и запустит реальный прогон. Действия наружу пройдут через ваше подтверждение.</div>
+          </div>
+          <button onClick="{{ ov.closeModal }}" style="width: 30px; height: 30px; border: 1px solid var(--w12); border-radius: 9px; background: var(--w5); color: var(--ink);">✕</button>
+        </div>
+        <textarea value="{{ ov.goalText }}" onChange="{{ ov.setGoal }}" rows="3" style="padding: 14px; border-radius: 12px; border: 2px solid var(--w12); background: var(--s60); color: var(--ink); font-size: 13.5px; line-height: 1.5; resize: vertical;" style-focus="border-color: #6366f1;"></textarea>
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w62);">План этапов · по семьям агентов (из ABOP)</div>
+          <sc-if value="{{ ov.planEmpty }}" hint-placeholder-val="{{ false }}"><div style="padding: 12px 14px; border-radius: 11px; border: 1px dashed var(--w16); font-size: 12.5px; color: var(--w60);">План появится после «Проверить план»: среда разложит цель по семьям агентов.</div></sc-if>
+          <sc-for list="{{ ov.planWaves }}" as="p" hint-placeholder-count="0">
+            <div style="display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 11px; background: var(--s55); border: 1px solid var(--w8);">
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--acc-ink); width: 58px; flex: none;">этап {{ p.n }}</span>
+              <span style="flex: 1; font-size: 12.5px;">{{ p.text }}</span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w62);">{{ p.family }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: 12px; background: {{ ov.gateBg }}; border: 1px solid {{ ov.gateBorder }};">
+          <div style="display: flex; align-items: center; gap: 10px; font-size: 12.5px; font-weight: 600; color: {{ ov.gateFg }};">{{ ov.gateTitle }}</div>
+          <div style="font-size: 12px; line-height: 1.5; color: var(--w60);">{{ ov.gateNote }}</div>
+          <sc-for list="{{ ov.planSteps }}" as="p" hint-placeholder-count="0">
+            <div style="display: flex; align-items: flex-start; gap: 9px; animation: ab-in .25s ease-out;">
+              <span style="margin-top: 1px; width: 17px; height: 17px; flex: none; border-radius: 6px; background: {{ p.bg }}; color: {{ p.fg }}; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center;">{{ p.mark }}</span>
+              <span style="font-size: 12px; line-height: 1.45; color: var(--w70);">{{ p.text }}</span>
+            </div>
+          </sc-for>
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w50);">{{ ov.planEstimate }}</div>
+        </div>
+        <div style="display: flex; gap: 10px;">
+          <button onClick="{{ ov.startRun }}" style="flex: 1; padding: 13px; border: none; border-radius: 12px; background: {{ ov.gateBtnBg }}; color: {{ ov.gateBtnFg }}; font-size: 14px; font-weight: 600;" style-hover="transform: scale(1.02);">{{ ov.gateBtnLabel }}</button>
+          <button onClick="{{ ov.closeModal }}" style="padding: 13px 20px; border: 1px solid var(--w14); border-radius: 12px; background: var(--w5); color: var(--ink); font-size: 13.5px; font-weight: 600;">Отмена</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ ov.hitlModal }}" hint-placeholder-val="{{ false }}">
+    <div role="dialog" aria-modal="true" style="position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 24px;">
+      <div onClick="{{ ov.closeModal }}" style="position: absolute; inset: 0; background: rgba(4,7,18,.62); backdrop-filter: blur(4px);"></div>
+      <div style="position: relative; width: 640px; max-width: 94vw; padding: 28px; border-radius: 16px; background: var(--bg2); border: 1px solid rgba(245,158,11,.3); box-shadow: 0 20px 60px var(--sh45); display: flex; flex-direction: column; gap: 20px; animation: ab-drop .3s ease-out;">
+        <div style="display: flex; align-items: center; gap: 14px;">
+          <dc-import name="Ape" state="hitl" size="40" hint-size="40px,53px"></dc-import>
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+            <div style="font-size: 18px; font-weight: 700;">{{ ov.hitlTitle }}</div>
+            <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w50);">{{ ov.hitlMeta }}</div>
+          </div>
+          <button onClick="{{ ov.closeModal }}" style="width: 30px; height: 30px; border: 1px solid var(--w12); border-radius: 9px; background: var(--w5); color: var(--ink);">✕</button>
+        </div>
+        <div style="padding: 18px; border-radius: 12px; background: #f8fafc; color: #111827; display: flex; flex-direction: column; gap: 10px;">
+          <div style="font-size: 12px; font-weight: 600; color: #374151;">{{ ov.hitlPvHead }}</div>
+          <div style="height: 1px; background: #e5e7eb;"></div>
+          <div style="font-size: 13px; line-height: 1.6;">{{ ov.hitlPvBody }}</div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;"><div style="flex: 1; min-width: 200px; font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.7; color: var(--w50);">{{ ov.hitlPvProv }}</div><sc-if value="{{ ov.hitlHasFindings }}" hint-placeholder-val="{{ false }}"><button onClick="{{ ov.hitlOpenFindings }}" style="padding: 7px 12px; border: 1px solid rgba(129,140,248,.35); border-radius: 9px; background: rgba(99,102,241,.14); color: var(--acc-ink2); font-size: 12px; font-weight: 700;">Карточки находок ▸</button></sc-if></div>
+        <div style="display: flex; gap: 10px;">
+          <button onClick="{{ ov.approveHitl }}" style="flex: 1; padding: 13px; border: none; border-radius: 12px; background: #f59e0b; color: #1c1917; font-size: 14px; font-weight: 700;" style-hover="transform: scale(1.02);">{{ ov.hitlApproveLabel }}</button>
+          <button onClick="{{ ov.rejectHitl }}" style="padding: 13px 20px; border: 1px solid rgba(239,68,68,.35); border-radius: 12px; background: rgba(239,68,68,.12); color: var(--err-ink); font-size: 13.5px; font-weight: 600;">Отклонить</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ ov.stopModal }}" hint-placeholder-val="{{ false }}">
+    <div role="dialog" aria-modal="true" style="position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 24px;">
+      <div onClick="{{ ov.closeModal }}" style="position: absolute; inset: 0; background: rgba(4,7,18,.62); backdrop-filter: blur(4px);"></div>
+      <div style="position: relative; width: 420px; max-width: 94vw; padding: 26px; border-radius: 16px; background: var(--bg2); border: 1px solid rgba(239,68,68,.3); display: flex; flex-direction: column; gap: 18px; animation: ab-drop .3s ease-out;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <dc-import name="Ape" state="stop" size="34" hint-size="34px,45px"></dc-import>
+          <div style="font-size: 17px; font-weight: 700;">Остановить прогон?</div>
+        </div>
+        <div style="font-size: 13px; line-height: 1.55; color: var(--w60);">Демо-симуляция остановится, доска сохранится. Незавершённые действия наружу не уйдут.</div>
+        <div style="display: flex; gap: 10px;">
+          <button onClick="{{ ov.confirmStop }}" style="flex: 1; padding: 12px; border: none; border-radius: 11px; background: #ef4444; color: var(--ink); font-size: 13.5px; font-weight: 600;">Остановить</button>
+          <button onClick="{{ ov.closeModal }}" style="padding: 12px 18px; border: 1px solid var(--w14); border-radius: 11px; background: var(--w5); color: var(--ink); font-size: 13.5px; font-weight: 600;">Продолжить</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ ov.recipeModal }}" hint-placeholder-val="{{ false }}">
+    <div style="position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-start; justify-content: center; padding: 32px 24px;">
+      <div onClick="{{ ov.closeModal }}" style="position: absolute; inset: 0; background: var(--scrim); backdrop-filter: blur(5px);"></div>
+      <div style="position: relative; width: 980px; max-width: 96vw; max-height: 88vh; overflow-y: auto; padding: 28px; border-radius: 16px; background: var(--bg2); border: 1px solid var(--w12); box-shadow: 0 24px 70px var(--sh50); display: flex; flex-direction: column; gap: 20px; animation: ab-drop .3s ease-out;">
+        <div style="display: flex; align-items: flex-start; gap: 14px;">
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 6px;">
+            <div style="font-size: 19px; font-weight: 700;">Настройка рецепта</div>
+            <div style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--w66);">source → map → rules → emit · без кода</div>
+          </div>
+          <span style="padding: 5px 11px; border-radius: 9999px; background: rgba(99,102,241,.15); color: var(--acc-ink); font-family: 'JetBrains Mono', monospace; font-size: 11px;">{{ ov.recipeStatus }}</span>
+          <button onClick="{{ ov.closeModal }}" style="width: 30px; height: 30px; border: 1px solid var(--w12); border-radius: 9px; background: var(--w5); color: var(--ink);">✕</button>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1.15fr 1fr; gap: 18px; align-items: start;">
+          <div style="display: flex; flex-direction: column; gap: 20px;">
+            <label style="display: flex; flex-direction: column; gap: 6px;">
+              <span style="font-size: 11.5px; color: var(--w66);">имя канонической сущности</span>
+              <input value="{{ ov.recipeTitle }}" onChange="{{ ov.setRecipeTitle }}" style="padding: 12px 14px; border-radius: 12px; border: 2px solid var(--w12); background: var(--s60); color: var(--ink); font-size: 13.5px;" style-focus="border-color: #6366f1;">
+            </label>
+
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+              <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--acc-ink);">source</div>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <sc-for list="{{ ov.adapters }}" as="a" hint-placeholder-count="4">
+                  <button onClick="{{ a.pick }}" style="padding: 9px 16px; border: 1px solid {{ a.border }}; border-radius: 10px; background: {{ a.bg }}; color: {{ a.fg }}; font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 500;" style-hover="border-color: var(--w55);">{{ a.label }}</button>
+                </sc-for>
+              </div>
+              <label style="display: flex; flex-direction: column; gap: 6px; margin-top: 4px;">
+                <span style="font-size: 11.5px; color: var(--w66);">{{ ov.sourceLabel }}</span>
+                <input value="{{ ov.sourceValue }}" onChange="{{ ov.setSource }}" style="padding: 12px 14px; border-radius: 12px; border: 2px solid var(--w12); background: var(--s60); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 12.5px;" style-focus="border-color: #6366f1;">
+              </label>
+              <sc-if value="{{ ov.adapterNote }}" hint-placeholder-val="{{ true }}">
+                <div style="font-size: 11.5px; color: {{ ov.adapterNoteColor }};">{{ ov.adapterNote }}</div>
+              </sc-if>
+              <button onClick="{{ ov.discoverSource }}" style="align-self: flex-start; padding: 7px 13px; border: 1px solid rgba(129,140,248,.5); border-radius: 9px; background: rgba(99,102,241,.12); color: var(--acc-ink); font-size: 12px; font-weight: 600;" style-hover="background: rgba(99,102,241,.2);">🔎 Показать поля источника</button>
+              <sc-if value="{{ ov.hasCols }}" hint-placeholder-val="{{ false }}">
+                <div style="display: flex; flex-direction: column; gap: 6px;">
+                  <span style="font-size: 11px; color: var(--w66);">поля источника (клик → добавить в map):</span>
+                  <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                    <sc-for list="{{ ov.srcColumns }}" as="c" hint-placeholder-count="4">
+                      <button onClick="{{ c.add }}" style="padding: 5px 10px; border-radius: 8px; border: 1px solid rgba(16,185,129,.35); background: rgba(16,185,129,.12); color: var(--ok-ink); font-family: 'JetBrains Mono', monospace; font-size: 11px;" style-hover="background: rgba(16,185,129,.22);">{{ c.name }}</button>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-if>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+              <div style="display: flex; align-items: center; justify-content: space-between;">
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--acc-ink);">map · поле → спека</span>
+                <button onClick="{{ ov.addMapRow }}" style="padding: 5px 11px; border: 1px solid var(--w14); border-radius: 8px; background: var(--w5); color: var(--ink); font-size: 11.5px; font-weight: 600;" style-hover="background: var(--w10);">＋ поле</button>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 6px;">
+                <sc-for list="{{ ov.mapRows }}" as="mp" hint-placeholder-count="3">
+                  <div style="display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px; background: var(--s50); border: 1px solid var(--w8); font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+                    <input value="{{ mp.field }}" onChange="{{ mp.setField }}" placeholder="поле" style="width: 120px; min-width: 120px; padding: 7px 9px; border-radius: 8px; border: 1px solid var(--w14); background: var(--s70); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 12px;" style-focus="border-color: #6366f1;">
+                    <span style="color: var(--w55);">→</span>
+                    <input value="{{ mp.spec }}" onChange="{{ mp.setSpec }}" placeholder="col:колонка · cast:тип" style="flex: 1; min-width: 0; padding: 7px 9px; border-radius: 8px; border: 1px solid var(--w14); background: var(--s70); color: var(--w90); font-family: 'JetBrains Mono', monospace; font-size: 12px;" style-focus="border-color: #6366f1;">
+                    <button onClick="{{ mp.remove }}" style="border: none; background: transparent; color: var(--w55); font-size: 14px; padding: 0 4px;" style-hover="color: var(--err-ink);">✕</button>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+              <div style="display: flex; align-items: center; justify-content: space-between;">
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--acc-ink);">rules</span>
+                <button onClick="{{ ov.addRule }}" style="padding: 5px 11px; border: 1px solid var(--w14); border-radius: 8px; background: var(--w5); color: var(--ink); font-size: 11.5px; font-weight: 600;" style-hover="background: var(--w10);">＋ правило</button>
+              </div>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <sc-for list="{{ ov.rules }}" as="r" hint-placeholder-count="2">
+                  <span style="display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 9999px; background: rgba(124,58,237,.14); border: 1px solid rgba(124,58,237,.3); font-family: 'JetBrains Mono', monospace; font-size: 11.5px;">
+                    <input value="{{ r.text }}" onChange="{{ r.setText }}" placeholder="assert поле > 0 / pii_mask(поле)" style="background: transparent; border: none; color: var(--vio-ink); font-family: 'JetBrains Mono', monospace; font-size: 11.5px; width: 200px;" style-focus="outline: none;">
+                    <button onClick="{{ r.remove }}" style="border: none; background: transparent; color: rgba(196,181,253,.6); font-size: 12px; padding: 0;" style-hover="color: var(--ink);">✕</button>
+                  </span>
+                </sc-for>
+              </div>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--acc-ink);">emit</span>
+              <div style="padding: 12px 14px; border-radius: 10px; background: var(--s50); border: 1px solid var(--w8); font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--w60);">entity: {{ ov.recipeEntity }} · schema v3 · ttl: 30d · provenance: обязателен</div>
+            </div>
+          </div>
+
+          <div style="padding: 20px; border-radius: 14px; background: var(--w4); border: 1px solid var(--w9); display: flex; flex-direction: column; gap: 16px;">
+            <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--w62);">Предпросмотр · data_run (dry-run)</div>
+
+            <sc-if value="{{ ov.previewIdle }}" hint-placeholder-val="{{ true }}">
+              <div style="padding: 36px 20px; border-radius: 12px; border: 1px dashed var(--w14); display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center;">
+                <dc-import name="Ape" state="idle" size="48" hint-size="48px,64px"></dc-import>
+                <div style="font-size: 13px; color: var(--w55); max-width: 240px;">Нажмите «Проверить» — покажу канонические записи на выборке, ничего не сохраняя.</div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ ov.previewLoading }}" hint-placeholder-val="{{ false }}">
+              <div style="display: flex; flex-direction: column; gap: 14px;">
+                <div style="display: flex; align-items: center; gap: 14px; padding: 14px; border-radius: 12px; background: rgba(99,102,241,.09); border: 1px solid rgba(99,102,241,.22);">
+                  <dc-import name="Ape" state="scan" size="34" hint-size="34px,45px"></dc-import>
+                  <div style="display: flex; flex-direction: column; gap: 3px;">
+                    <div style="font-size: 12.5px; font-weight: 600;">Гоняю выборку через рецепт</div>
+                    <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w66);">map → rules → emit · 500 строк</div>
+                  </div>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 9px;">
+                  <div style="height: 52px; border-radius: 10px; background: linear-gradient(100deg, var(--w6) 30%, var(--w16) 50%, var(--w6) 70%); background-size: 220% 100%; animation: ab-shimmer 1.6s linear infinite;"></div>
+                  <div style="height: 52px; border-radius: 10px; background: linear-gradient(100deg, var(--w6) 30%, var(--w16) 50%, var(--w6) 70%); background-size: 220% 100%; animation: ab-shimmer 1.6s linear .2s infinite;"></div>
+                  <div style="height: 52px; border-radius: 10px; background: linear-gradient(100deg, var(--w6) 30%, var(--w16) 50%, var(--w6) 70%); background-size: 220% 100%; animation: ab-shimmer 1.6s linear .4s infinite;"></div>
+                </div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ ov.previewError }}" hint-placeholder-val="{{ false }}">
+              <div style="padding: 16px; border-radius: 12px; background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.3); display: flex; flex-direction: column; gap: 10px;">
+                <div style="font-size: 13px; font-weight: 600; color: var(--err-ink);">Сбой адаптера, а не «нет данных»</div>
+                <div style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; line-height: 1.6; color: var(--w60);">{{ ov.previewErr }}</div>
+                <button onClick="{{ ov.runPreview }}" style="align-self: flex-start; padding: 8px 14px; border: 1px solid rgba(239,68,68,.35); border-radius: 9px; background: rgba(239,68,68,.14); color: var(--err-ink); font-size: 12px; font-weight: 600;">Повторить</button>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ ov.previewDone }}" hint-placeholder-val="{{ false }}">
+              <div style="display: flex; flex-direction: column; gap: 14px;">
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                  <span style="padding: 7px 13px; border-radius: 9999px; background: rgba(16,185,129,.13); border: 1px solid rgba(16,185,129,.3); color: var(--ok-ink); font-family: 'JetBrains Mono', monospace; font-size: 11.5px;">✓ {{ ov.previewOkCount }} записей</span>
+                  <span style="padding: 7px 13px; border-radius: 9999px; background: rgba(245,158,11,.13); border: 1px solid rgba(245,158,11,.3); color: var(--warn-ink); font-family: 'JetBrains Mono', monospace; font-size: 11.5px;">⚠ {{ ov.previewInvalidCount }} невалидно по схеме</span>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 9px; max-height: 260px; overflow-y: auto;">
+                  <sc-for list="{{ ov.previewRecords }}" as="rec" hint-placeholder-count="3">
+                    <div style="padding: 12px 14px; border-radius: 10px; background: var(--s55); border: 1px solid var(--w8); font-family: 'JetBrains Mono', monospace; font-size: 11.5px; line-height: 1.7; color: var(--w72); animation: ab-in .3s ease-out;">
+                      <div style="color: var(--acc-ink);">{{ rec.head }}</div>
+                      <div>{{ rec.body }}</div>
+                      <div style="color: var(--w38);">{{ rec.prov }}</div>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-if>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 10px; padding-top: 4px;">
+          <button onClick="{{ ov.runPreview }}" style="display: inline-flex; align-items: center; gap: 9px; padding: 12px 20px; border: 1px solid var(--w14); border-radius: 12px; background: var(--w5); color: var(--ink); font-size: 13.5px; font-weight: 600;" style-hover="background: var(--w10);">
+            <sc-if value="{{ ov.previewLoading }}" hint-placeholder-val="{{ false }}">
+              <svg width="15" height="15" viewBox="0 0 60 60" fill="none" style="animation: ab-spin 1s linear infinite;"><circle cx="30" cy="30" r="24" stroke="var(--w25)" stroke-width="9"></circle><circle cx="30" cy="30" r="24" stroke="var(--ink)" stroke-width="9" stroke-linecap="round" stroke-dasharray="150" stroke-dashoffset="108"></circle></svg>
+            </sc-if>
+            {{ ov.previewBtnLabel }}
+          </button>
+          <button onClick="{{ ov.saveRecipe }}" style="flex: 1; padding: 12px 20px; border: none; border-radius: 12px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; font-size: 13.5px; font-weight: 600;" style-hover="transform: scale(1.01);">Сохранить рецепт</button>
+          <button onClick="{{ ov.deleteActiveRecipe }}" style="padding: 12px 18px; border: 1px solid rgba(239,68,68,.32); border-radius: 12px; background: rgba(239,68,68,.1); color: var(--err-ink); font-size: 13.5px; font-weight: 600;" style-hover="background: rgba(239,68,68,.2);">Удалить</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ ov.connectorModal }}" hint-placeholder-val="{{ false }}">
+    <div role="dialog" aria-modal="true" style="position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 24px;">
+      <div onClick="{{ ov.closeModal }}" style="position: absolute; inset: 0; background: rgba(4,7,18,.62); backdrop-filter: blur(4px);"></div>
+      <div style="position: relative; width: 480px; max-width: 94vw; padding: 26px; border-radius: 16px; background: var(--bg2); border: 1px solid var(--w12); display: flex; flex-direction: column; gap: 18px; animation: ab-drop .3s ease-out;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div style="flex: 1; font-size: 17px; font-weight: 700;">{{ ov.connectorModalTitle }}</div>
+          <button onClick="{{ ov.closeModal }}" style="width: 30px; height: 30px; border: 1px solid var(--w12); border-radius: 9px; background: var(--w5); color: var(--ink);">✕</button>
+        </div>
+        <label style="display: flex; flex-direction: column; gap: 6px;">
+          <span style="font-size: 11.5px; color: var(--w66);">адаптер</span>
+          <select value="{{ ov.connAdapter }}" onChange="{{ ov.setConnAdapter }}" style="padding: 11px 12px; border-radius: 11px; border: 2px solid var(--w12); background: var(--s70); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 12.5px;">
+            <option value="csv">csv</option><option value="http">http</option><option value="sqlite">sqlite</option><option value="computed">computed</option><option value="slava">slava · знание/RAG</option>
+          </select>
+        </label>
+        <sc-if value="{{ ov.connIsSlava }}" hint-placeholder-val="{{ false }}">
+        <label style="display: flex; flex-direction: column; gap: 6px;"><span style="font-size: 11.5px; color: rgba(129,140,248,.75);">система реестра (Qdrant/sLAVA)</span>
+        <select value="{{ ov.connSystem }}" onChange="{{ ov.setConnSystem }}" style="padding: 11px 12px; border-radius: 11px; border: 2px solid rgba(129,140,248,.28); background: var(--s70); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 12px;"><sc-for list="{{ ov.connSystemOptions }}" as="o" hint-placeholder-count="2"><option value="{{ o.value }}">{{ o.label }}</option></sc-for></select></label>
+        <label style="display: flex; flex-direction: column; gap: 6px;"><span style="font-size: 11.5px; color: rgba(129,140,248,.75);">корпус СЕМЬИ (изоляция знания)</span>
+        <select value="{{ ov.connFamily }}" onChange="{{ ov.setConnFamily }}" style="padding: 11px 12px; border-radius: 11px; border: 2px solid rgba(129,140,248,.28); background: var(--s70); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 12px;"><sc-for list="{{ ov.connFamOptions }}" as="o" hint-placeholder-count="2"><option value="{{ o.value }}">{{ o.label }}</option></sc-for></select></label>
+        <label style="display: flex; flex-direction: column; gap: 6px;"><span style="font-size: 11.5px; color: var(--w66);">или коллекция напрямую (опц., напр. slava_audit1c_norms)</span>
+        <input value="{{ ov.connCollection }}" onChange="{{ ov.setConnCollection }}" placeholder="slava_fam_<family> / slava_audit1c_norms" style="padding: 11px 12px; border-radius: 11px; border: 2px solid var(--w12); background: var(--s70); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 12px;"></label>
+        <label style="display: flex; flex-direction: column; gap: 6px;"><span style="font-size: 11.5px; color: var(--w66);">top_k — чанков в контекст</span>
+        <input value="{{ ov.connTopK }}" onChange="{{ ov.setConnTopK }}" placeholder="4" style="padding: 11px 12px; border-radius: 11px; border: 2px solid var(--w12); background: var(--s70); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 12px;"></label>
+      </sc-if>
+      <label style="display: flex; flex-direction: column; gap: 6px;">
+          <span style="font-size: 11.5px; color: var(--w66);">путь / URL</span>
+          <input value="{{ ov.connTarget }}" onChange="{{ ov.setConnTarget }}" placeholder="/mnt/data/transactions_2026.csv" style="padding: 11px 12px; border-radius: 11px; border: 2px solid var(--w12); background: var(--s70); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 12.5px;" style-focus="border-color: #6366f1;">
+        </label>
+        <label style="display: flex; flex-direction: column; gap: 6px;">
+          <span style="font-size: 11.5px; color: var(--w66);">токен авторизации (для REST/API · заголовок Authorization)</span>
+          <input value="{{ ov.connToken }}" onChange="{{ ov.setConnToken }}" placeholder="Token abop...:secret  или  Bearer eyJ...  или  X-Redmine-API-Key: ключ" style="padding: 11px 12px; border-radius: 11px; border: 2px solid var(--w12); background: var(--s70); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 12px;" style-focus="border-color: #6366f1;">
+        </label>
+        <label style="display: flex; flex-direction: column; gap: 6px;">
+          <span style="font-size: 11.5px; color: var(--w66);">root — ключ массива в ответе (опц.; Twenty: data.opportunities)</span>
+          <input value="{{ ov.connRoot }}" onChange="{{ ov.setConnRoot }}" placeholder="data / items / data.opportunities" style="padding: 11px 12px; border-radius: 11px; border: 2px solid var(--w12); background: var(--s70); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 12px;" style-focus="border-color: #6366f1;">
+        </label>
+        <div style="font-size: 12px; line-height: 1.55; color: var(--w50);">Токен уходит в заголовок Authorization (или свой заголовок «Имя: значение»). Тест-прогон использует ИМЕННО эти токен+root — как настоящий рецепт. http egress — через анти-SSRF.</div>
+        <sc-if value="{{ ov.connTestMsg }}" hint-placeholder-val="{{ false }}">
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; padding: 10px 12px; border-radius: 10px; background: var(--s60); border: 1px solid var(--w12); color: {{ ov.connTestColor }};">{{ ov.connTestMsg }}</div>
+        </sc-if>
+        <div style="display: flex; gap: 10px;">
+          <button onClick="{{ ov.saveConnector }}" style="flex: 1; padding: 12px; border: none; border-radius: 11px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; font-size: 13.5px; font-weight: 600;">{{ ov.connectorSaveLabel }}</button>
+          <button onClick="{{ ov.testConnector }}" style="padding: 12px 18px; border: 1px solid var(--w14); border-radius: 11px; background: var(--w5); color: var(--ink); font-size: 13.5px; font-weight: 600;">Тест-прогон</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ ov.skillDrawer }}" hint-placeholder-val="{{ false }}">
+    <div style="position: fixed; inset: 0; z-index: 70; display: flex; justify-content: flex-end;">
+      <div onClick="{{ ov.closeSkillDrawer }}" style="position: absolute; inset: 0; background: var(--scrim); backdrop-filter: blur(5px);"></div>
+      <div style="position: relative; display: flex; width: 1080px; max-width: 96vw; height: 100%;">
+
+        <div style="flex: 1 1 520px; min-width: 320px; height: 100%; overflow-y: auto; padding: 26px; background: #101830; border-left: 1px solid var(--w10); display: flex; flex-direction: column; gap: 18px; animation: ab-slide-in .28s cubic-bezier(.4,0,.2,1);">
+          <div style="display: flex; align-items: flex-start; gap: 12px;">
+            <div style="flex: 1; display: flex; flex-direction: column; gap: 6px;">
+              <input value="{{ ov.editTitle }}" onChange="{{ ov.setSkillTitle }}" style="padding: 10px 12px; border-radius: 10px; border: 2px solid var(--w12); background: var(--s60); color: var(--ink); font-size: 17px; font-weight: 700;" style-focus="border-color: #6366f1;">
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--w66);">{{ ov.drawer.id }} · {{ ov.skillVersion }} · правил {{ ov.skillEditor }} · {{ ov.skillEditedAt }}</span>
+            </div>
+            <button onClick="{{ ov.closeSkillDrawer }}" style="width: 30px; height: 30px; border: 1px solid var(--w12); border-radius: 9px; background: var(--w5); color: var(--ink);">✕</button>
+          </div>
+
+          <label style="display: flex; flex-direction: column; gap: 7px;">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w38);">описание навыка</span>
+            <textarea value="{{ ov.skillDesc }}" onChange="{{ ov.setSkillDesc }}" rows="3" style="padding: 11px 13px; border-radius: 11px; border: 2px solid var(--w12); background: var(--s60); color: var(--ink); font-size: 13px; line-height: 1.5; resize: vertical;" style-focus="border-color: #6366f1;"></textarea>
+          </label>
+
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w38);">воркфлоу агента</span>
+            <sc-for list="{{ ov.flowSteps }}" as="fs" hint-placeholder-count="4">
+              <div style="display: flex; align-items: center; gap: 9px;">
+                <span style="width: 24px; height: 24px; flex: none; border-radius: 8px; background: rgba(99,102,241,.2); color: var(--acc-ink); font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center;">{{ fs.n }}</span>
+                <input value="{{ fs.text }}" onChange="{{ fs.set }}" style="flex: 1; padding: 9px 11px; border-radius: 10px; border: 1px solid var(--w12); background: var(--s60); color: var(--ink); font-size: 12.5px;" style-focus="border-color: #6366f1;">
+                <button onClick="{{ fs.up }}" title="Выше" style="width: 28px; height: 28px; border: 1px solid var(--w12); border-radius: 8px; background: var(--w5); color: var(--acc-ink2); font-size: 11px;">↑</button>
+                <button onClick="{{ fs.down }}" title="Ниже" style="width: 28px; height: 28px; border: 1px solid var(--w12); border-radius: 8px; background: var(--w5); color: var(--acc-ink2); font-size: 11px;">↓</button>
+                <button onClick="{{ fs.remove }}" title="Удалить шаг" style="width: 28px; height: 28px; border: 1px solid rgba(239,68,68,.28); border-radius: 8px; background: rgba(239,68,68,.1); color: var(--err-ink); font-size: 11px;">✕</button>
+              </div>
+            </sc-for>
+            <button onClick="{{ ov.addFlowStep }}" style="align-self: flex-start; padding: 8px 13px; border: 1px dashed rgba(129,140,248,.5); border-radius: 9px; background: rgba(99,102,241,.1); color: var(--acc-ink); font-size: 12px; font-weight: 600;" style-hover="background: rgba(99,102,241,.2);">＋ шаг</button>
+          </div>
+
+          <sc-for list="{{ ov.skillTextFields }}" as="tf" hint-placeholder-count="4">
+            <label style="display: flex; flex-direction: column; gap: 7px;">
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w38);">{{ tf.label }}</span>
+              <textarea value="{{ tf.value }}" onChange="{{ tf.set }}" rows="2" style="padding: 10px 12px; border-radius: 10px; border: 1px solid var(--w12); background: var(--s60); color: var(--ink); font-size: 12.5px; line-height: 1.5; resize: vertical;" style-focus="border-color: #6366f1;"></textarea>
+            </label>
+          </sc-for>
+        </div>
+
+        <div style="flex: 0 0 340px; width: 340px; height: 100%; overflow-y: auto; padding: 22px; background: var(--bg2); border-left: 1px solid var(--w10); display: flex; flex-direction: column; gap: 16px;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w38);">безопасность навыка</span>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <span style="font-size: 11.5px; color: var(--w50);">режим</span>
+            <div style="display: flex; gap: 6px;">
+              <sc-for list="{{ ov.editModes }}" as="em" hint-placeholder-count="3">
+                <button onClick="{{ em.pick }}" style="flex: 1; padding: 8px 4px; border: 1px solid {{ em.border }}; border-radius: 9px; background: {{ em.bg }}; color: {{ em.fg }}; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; font-weight: 600;">{{ em.label }}</button>
+              </sc-for>
+            </div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <span style="font-size: 11.5px; color: var(--w50);">egress</span>
+            <div style="display: flex; gap: 6px;">
+              <sc-for list="{{ ov.editEgress }}" as="eg" hint-placeholder-count="2">
+                <button onClick="{{ eg.pick }}" style="flex: 1; padding: 8px 4px; border: 1px solid {{ eg.border }}; border-radius: 9px; background: {{ eg.bg }}; color: {{ eg.fg }}; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; font-weight: 600;">{{ eg.label }}</button>
+              </sc-for>
+            </div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 8px;"><span style="font-size: 11.5px; color: var(--w50);">семьи · доступ по отделу (ABAC)</span><div style="display: flex; gap: 6px; flex-wrap: wrap;"><sc-for list="{{ ov.editFamilies }}" as="ef" hint-placeholder-count="2"><button onClick="{{ ef.remove }}" title="убрать семью" style="padding: 6px 11px; border: 1px solid rgba(124,58,237,.45); border-radius: 9999px; background: rgba(124,58,237,.2); color: var(--vio-ink); font-size: 11.5px; font-weight: 600;">{{ ef.label }} ✕</button></sc-for><sc-for list="{{ ov.famAddable }}" as="fa" hint-placeholder-count="3"><button onClick="{{ fa.add }}" title="привязать семью" style="padding: 6px 11px; border: 1px dashed var(--w20); border-radius: 9999px; background: var(--w3); color: var(--w55); font-size: 11.5px; font-weight: 600;">+ {{ fa.label }}</button></sc-for></div><div style="display: flex; gap: 6px;"><input value="{{ ov.newFamVal }}" onChange="{{ ov.setNewFam }}" placeholder="своя семья (slug, напр. sales)" style="flex: 1; padding: 7px 10px; border: 1px solid var(--w12); border-radius: 9px; background: var(--w4); color: var(--ink); font-size: 11.5px;" style-focus="border-color: #6366f1;"><button onClick="{{ ov.addNewFam }}" style="padding: 7px 12px; border: 1px solid rgba(129,140,248,.5); border-radius: 9px; background: rgba(99,102,241,.18); color: var(--acc-ink2); font-size: 11.5px; font-weight: 600;">＋ добавить</button></div></div><button onClick="{{ ov.toggleCite }}" style="padding: 9px 12px; border: 1px solid {{ ov.citeBorder }}; border-radius: 9px; background: {{ ov.citeBg }}; color: {{ ov.citeFg }}; font-size: 12px; font-weight: 600;">{{ ov.citeLabel }}</button>
+          <button onClick="{{ ov.toggleOutput }}" title="Формат вывода навыка: структурированный JSON (детекторы/списки) или свободный текст (документ/письмо/план)" style="padding: 9px 12px; border: 1px solid {{ ov.outputBorder }}; border-radius: 9px; background: {{ ov.outputBg }}; color: {{ ov.outputFg }}; font-size: 12px; font-weight: 600;">{{ ov.outputLabel }}</button>
+
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w38);">семьи</span>
+          <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+            <sc-for list="{{ ov.editFamilies }}" as="ef" hint-placeholder-count="4">
+              <button onClick="{{ ef.toggle }}" style="padding: 7px 11px; border: 1px solid {{ ef.border }}; border-radius: 9999px; background: {{ ef.bg }}; color: {{ ef.fg }}; font-size: 11.5px; font-weight: 600;">{{ ef.label }}</button>
+            </sc-for>
+          </div>
+
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w38);">источники данных (data-need · сущность → поля)</span>
+          <sc-for list="{{ ov.skillSourcesEdit }}" as="src" hint-placeholder-count="2">
+            <div style="display: flex; flex-direction: column; gap: 5px; padding: 9px 11px; border: 1px solid var(--w10); border-radius: 10px; background: var(--s50);">
+              <div style="display: flex; align-items: center; gap: 6px;">
+                <select value="{{ src.entity }}" onChange="{{ src.setEntity }}" style="flex: 1; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--w14); background: var(--s70); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+                  <sc-for list="{{ ov.skillEntityOpts }}" as="opt" hint-placeholder-count="6"><option value="{{ opt }}">{{ opt }}</option></sc-for>
+                </select>
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--ok-ink);">{{ src.recipe }}</span>
+                <button onClick="{{ src.remove }}" style="border: none; background: transparent; color: var(--w55); font-size: 14px; padding: 0 4px;" style-hover="color: var(--err-ink);">✕</button>
+              </div>
+              <input value="{{ src.fields }}" onChange="{{ src.setFields }}" placeholder="поля через запятую: id, amount, date" style="padding: 6px 9px; border-radius: 8px; border: 1px solid var(--w12); background: var(--s70); color: var(--w85); font-family: 'JetBrains Mono', monospace; font-size: 11.5px;" style-focus="border-color: #6366f1;">
+            </div>
+          </sc-for>
+          <div style="display: flex; gap: 6px;">
+            <button onClick="{{ ov.addSkillSource }}" style="flex: 1; padding: 8px 11px; border: 1px dashed rgba(129,140,248,.5); border-radius: 10px; background: rgba(99,102,241,.1); color: var(--acc-ink); font-size: 12px; font-weight: 600;" style-hover="background: rgba(99,102,241,.2);">＋ сущность</button>
+            <button onClick="{{ ov.saveSkillSources }}" style="padding: 8px 14px; border: 1px solid rgba(16,185,129,.4); border-radius: 10px; background: rgba(16,185,129,.14); color: var(--ok-ink); font-size: 12px; font-weight: 600;" style-hover="background: rgba(16,185,129,.24);">Сохранить источники</button>
+          </div>
+
+          <div style="margin-top: auto; display: flex; flex-direction: column; gap: 8px;">
+            <button onClick="{{ ov.saveSkillVersion }}" style="padding: 12px; border: none; border-radius: 11px; background: {{ ov.saveBtnBg }}; color: {{ ov.saveBtnFg }}; font-size: 12.5px; font-weight: 700;">{{ ov.saveBtnLabel }}</button>
+            <div style="display: flex; gap: 8px;">
+              <button onClick="{{ ov.resetSkill }}" style="flex: 1; padding: 10px; border: 1px solid var(--w14); border-radius: 10px; background: var(--w5); color: var(--ink); font-size: 12px; font-weight: 600;">Сбросить</button>
+              <button onClick="{{ ov.duplicateSkill }}" style="flex: 1; padding: 10px; border: 1px solid var(--w14); border-radius: 10px; background: var(--w5); color: var(--ink); font-size: 12px; font-weight: 600;">Дублировать</button>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button onClick="{{ ov.addToCanvas }}" style="flex: 1; padding: 10px; border: 1px solid rgba(129,140,248,.4); border-radius: 10px; background: rgba(99,102,241,.16); color: var(--acc-ink2); font-size: 12px; font-weight: 600;">На холст</button>
+              <button onClick="{{ ov.deleteSkill }}" style="flex: 1; padding: 10px; border: 1px solid rgba(239,68,68,.3); border-radius: 10px; background: rgba(239,68,68,.1); color: var(--err-ink); font-size: 12px; font-weight: 600;">Удалить</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ ov.agentDrawerOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="position: fixed; inset: 0; z-index: 72; display: flex; justify-content: flex-end;">
+      <div onClick="{{ ov.closeAgent }}" style="position: absolute; inset: 0; background: var(--scrim); backdrop-filter: blur(5px);"></div>
+      <div style="position: relative; width: 640px; max-width: 95vw; height: 100%; overflow-y: auto; padding: 26px; background: #101830; border-left: 1px solid var(--w10); display: flex; flex-direction: column; gap: 18px; animation: ab-slide-in .28s cubic-bezier(.4,0,.2,1);">
+        <div style="display: flex; align-items: flex-start; gap: 12px;">
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 6px;">
+            <span style="font-size: 20px; font-weight: 800; letter-spacing: -.4px; color: var(--ink);">{{ ov.agentDrawerTitle }}</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--w50);">{{ ov.agentDrawerRole }} · семья {{ ov.agentDrawerFamily }} · автономия {{ ov.agentDrawerAutonomy }}</span>
+          </div>
+          <button onClick="{{ ov.closeAgent }}" style="width: 30px; height: 30px; border: 1px solid var(--w12); border-radius: 9px; background: var(--w5); color: var(--ink);">✕</button>
+        </div>
+        <p style="margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--w70);">{{ ov.agentDrawerMission }}</p>
+
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w38);">конверт безопасности</span>
+          <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+            <sc-for list="{{ ov.agentDrawerEnv }}" as="e" hint-placeholder-count="3">
+              <span style="padding: 5px 11px; border-radius: 9999px; background: rgba(99,102,241,.16); border: 1px solid rgba(129,140,248,.4); color: var(--acc-ink2); font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600;">{{ e.label }}</span>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w38);">навыки роли</span>
+          <sc-for list="{{ ov.agentDrawerSkills }}" as="sk" hint-placeholder-count="3">
+            <div style="display: flex; align-items: flex-start; gap: 10px; padding: 11px 13px; border-radius: 11px; background: var(--w4); border: 1px solid var(--w8);">
+              <span style="flex: 1; display: flex; flex-direction: column; gap: 3px;">
+                <span style="font-size: 13px; font-weight: 600; color: var(--ink);">{{ sk.title }}</span>
+                <span style="font-size: 12px; color: var(--w55);">{{ sk.short }}</span>
+              </span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w62);">{{ sk.mode }}</span>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w38);">источники данных (data-scope)</span>
+          <sc-for list="{{ ov.agentDrawerScope }}" as="d" hint-placeholder-count="2">
+            <div style="display: flex; align-items: center; gap: 9px; padding: 10px 13px; border-radius: 11px; background: var(--s50); border: 1px solid var(--w10);">
+              <span style="flex: 1; font-size: 12.5px; color: var(--w80);">{{ d.entity }} · {{ d.fields }}</span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--ok-ink);">{{ d.recipe }}</span>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w38);">переходы become (роли той же семьи)</span>
+          <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+            <sc-for list="{{ ov.agentDrawerBecome }}" as="b" hint-placeholder-count="3">
+              <span style="padding: 6px 11px; border-radius: 9999px; background: var(--w5); border: 1px solid var(--w12); color: var(--w70); font-size: 11.5px;">{{ b.title }}</span>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ ov.lineageModal }}" hint-placeholder-val="{{ false }}">
+    <div style="position: fixed; inset: 0; z-index: 82; display: flex; justify-content: flex-end;">
+      <div onClick="{{ ov.closeModal }}" style="position: absolute; inset: 0; background: var(--scrim); backdrop-filter: blur(5px);"></div>
+      <div style="position: relative; width: 560px; max-width: 94vw; height: 100%; overflow-y: auto; padding: 26px; background: var(--bg2); border-left: 1px solid var(--w14); display: flex; flex-direction: column; gap: 18px; animation: ab-slide-in .28s cubic-bezier(.4,0,.2,1);">
+        <div style="display: flex; align-items: flex-start; gap: 12px;">
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 7px;">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .9px; text-transform: uppercase; color: var(--w62);">откуда взялось число</span>
+            <span style="font-size: 19px; font-weight: 700; line-height: 1.3;">{{ ov.lineageTitle }}</span>
+            <span style="align-self: flex-start; padding: 5px 11px; border-radius: 9999px; background: {{ ov.lineageKindBg }}; color: {{ ov.lineageKindFg }}; font-size: 11.5px; font-weight: 600;">{{ ov.lineageKind }}</span>
+          </div>
+          <button onClick="{{ ov.closeModal }}" style="width: 30px; height: 30px; border: 1px solid var(--w12); border-radius: 9px; background: var(--w5); color: var(--ink);">✕</button>
+        </div>
+
+        <div style="padding: 14px 16px; border-radius: 12px; background: var(--s55); border: 1px solid var(--w9); display: flex; flex-direction: column; gap: 6px;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w60);">как считано</span>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.55; color: var(--w78);">{{ ov.lineageFormula }}</span>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 0;">
+          <span style="margin-bottom: 10px; font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w60);">цепочка происхождения</span>
+          <sc-for list="{{ ov.lineageChain }}" as="c" hint-placeholder-count="5">
+            <div style="display: flex; gap: 14px; align-items: flex-start;">
+              <div style="display: flex; flex-direction: column; align-items: center; flex: none; align-self: stretch;">
+                <span style="width: 26px; height: 26px; flex: none; border-radius: 9999px; background: rgba(99,102,241,.2); border: 1px solid rgba(129,140,248,.4); color: var(--acc-ink2); font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center;">{{ c.nn }}</span>
+                <sc-if value="{{ c.last }}" hint-placeholder-val="{{ false }}"><span style="width: 0;"></span></sc-if>
+                <span style="flex: 1; width: 2px; min-height: 14px; background: rgba(129,140,248,.28);"></span>
+              </div>
+              <div style="flex: 1; padding-bottom: 16px; display: flex; flex-direction: column; gap: 4px;">
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .7px; text-transform: uppercase; color: var(--w38);">{{ c.step }}</span>
+                <span style="font-size: 13.5px; font-weight: 600; line-height: 1.4; color: var(--ink);">{{ c.val }}</span>
+                <span style="font-size: 12px; line-height: 1.45; color: var(--w55);">{{ c.note }}</span>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="padding: 14px 16px; border-radius: 12px; background: rgba(16,185,129,.08); border: 1px solid rgba(16,185,129,.24); display: flex; flex-direction: column; gap: 8px;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w62);">что проверено</span>
+          <sc-for list="{{ ov.lineageChecks }}" as="ch" hint-placeholder-count="3">
+            <span style="display: flex; gap: 9px; align-items: flex-start; font-size: 12.5px; line-height: 1.45; color: var(--w72);">
+              <span style="color: var(--ok-ink); font-weight: 700;">✓</span>{{ ch }}
+            </span>
+          </sc-for>
+        </div>
+
+        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+          <button onClick="{{ ov.lineageOpenRecipe }}" style="flex: 1; min-width: 160px; padding: 12px; border: 1px solid rgba(129,140,248,.4); border-radius: 11px; background: rgba(99,102,241,.16); color: var(--acc-ink2); font-size: 12.5px; font-weight: 600;" style-hover="background: rgba(99,102,241,.26);">Открыть рецепт ▸</button>
+          <button onClick="{{ ov.lineageOpenNode }}" style="flex: 1; min-width: 160px; padding: 12px; border: 1px solid var(--w14); border-radius: 11px; background: var(--w5); color: var(--ink); font-size: 12.5px; font-weight: 600;" style-hover="background: var(--w10);">Узел в графе ▸</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ ov.guardModal }}" hint-placeholder-val="{{ false }}">
+    <div style="position: fixed; inset: 0; z-index: 80; display: flex; align-items: center; justify-content: center; padding: 24px;">
+      <div onClick="{{ ov.guardCancel }}" style="position: absolute; inset: 0; background: var(--scrim); backdrop-filter: blur(5px);"></div>
+      <div style="position: relative; width: 440px; max-width: 94vw; padding: 26px; border-radius: 16px; background: var(--bg3); border: 1px solid rgba(245,158,11,.32); box-shadow: 0 20px 60px var(--sh45); display: flex; flex-direction: column; gap: 18px; animation: ab-drop .28s ease-out;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <dc-import name="Ape" state="hitl" size="30" hint-size="30px,40px"></dc-import>
+          <div style="flex: 1; font-size: 17px; font-weight: 700;">Несохранённые правки графа</div>
+        </div>
+        <div style="font-size: 13px; line-height: 1.55; color: var(--w65);">{{ ov.guardNote }}</div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <button onClick="{{ ov.guardSave }}" style="padding: 12px; border: none; border-radius: 11px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; font-size: 13.5px; font-weight: 700;">Сохранить и перейти</button>
+          <button onClick="{{ ov.guardSkip }}" style="padding: 12px; border: 1px solid rgba(239,68,68,.3); border-radius: 11px; background: rgba(239,68,68,.1); color: var(--err-ink); font-size: 13px; font-weight: 600;">Перейти без сохранения</button>
+          <button onClick="{{ ov.guardCancel }}" style="padding: 12px; border: 1px solid var(--w14); border-radius: 11px; background: var(--w5); color: var(--ink); font-size: 13px; font-weight: 600;">Остаться в графе</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ ov.srcBindModal }}" hint-placeholder-val="{{ false }}">
+    <div style="position: fixed; inset: 0; z-index: 80; display: flex; align-items: center; justify-content: center; padding: 24px;">
+      <div onClick="{{ ov.srcBindClose }}" style="position: absolute; inset: 0; background: var(--scrim); backdrop-filter: blur(5px);"></div>
+      <div style="position: relative; width: 480px; max-width: 94vw; padding: 26px; border-radius: 16px; background: var(--bg3); border: 1px solid rgba(129,140,248,.4); box-shadow: 0 20px 60px var(--sh45); display: flex; flex-direction: column; gap: 16px; animation: ab-drop .28s ease-out;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <dc-import name="Ape" state="hitl" size="30" hint-size="30px,40px"></dc-import>
+          <div style="flex: 1; font-size: 17px; font-weight: 700;">Связка источника — влияние на цепочку</div>
+        </div>
+        <div style="font-size: 13px; line-height: 1.55; color: var(--w70);">Рецепт «{{ ov.srcBindRecipe }}» · сущность «{{ ov.srcBindEntity }}» ({{ ov.srcBindAdapter }}). По графу этот источник питает навыки:</div>
+        <div style="display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow: auto;">
+          <sc-for list="{{ ov.srcBindSkills }}" as="skb" hint-placeholder-count="2">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border-radius: 9px; background: var(--w4); border: 1px solid var(--w8);">
+              <span style="font-size: 12.5px; color: var(--ink);">{{ skb.title }}</span>
+              <span style="font-size: 11.5px; font-weight: 600; color: {{ skb.fg }};">{{ skb.mark }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="font-size: 12px; line-height: 1.5; color: var(--w55);">{{ ov.srcBindNote }}</div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <button onClick="{{ ov.srcBindSync }}" style="padding: 12px; border: none; border-radius: 11px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; font-size: 13.5px; font-weight: 700;">Синхронизировать data-need навыков</button>
+          <button onClick="{{ ov.srcBindClose }}" style="padding: 12px; border: 1px solid var(--w14); border-radius: 11px; background: var(--w5); color: var(--ink); font-size: 13px; font-weight: 600;">Только привязать узел</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ ov.rebindWarnModal }}" hint-placeholder-val="{{ false }}">
+    <div style="position: fixed; inset: 0; z-index: 80; display: flex; align-items: center; justify-content: center; padding: 24px;">
+      <div onClick="{{ ov.rebindWarnClose }}" style="position: absolute; inset: 0; background: var(--scrim); backdrop-filter: blur(5px);"></div>
+      <div style="position: relative; width: 480px; max-width: 94vw; padding: 26px; border-radius: 16px; background: var(--bg3); border: 1px solid rgba(245,158,11,.4); box-shadow: 0 20px 60px var(--sh45); display: flex; flex-direction: column; gap: 16px; animation: ab-drop .28s ease-out;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <dc-import name="Ape" state="hitl" size="30" hint-size="30px,40px"></dc-import>
+          <div style="flex: 1; font-size: 17px; font-weight: 700;">Перепривязка рецепта — влияние на данные</div>
+        </div>
+        <div style="font-size: 13px; line-height: 1.55; color: var(--w70);">Рецепт «{{ ov.rebindWarnRecipe }}»: сущность «{{ ov.rebindWarnFrom }}» → «{{ ov.rebindWarnTo }}». Рецепт будет применён к новой сущности с записью в canonical store.</div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <div style="padding: 10px 12px; border-radius: 9px; background: rgba(239,68,68,.08); border: 1px solid rgba(239,68,68,.22);">
+            <div style="font-size: 11px; font-weight: 700; color: var(--err-ink); text-transform: uppercase; letter-spacing: .5px;">Потеряют источник (читают «{{ ov.rebindWarnFrom }}»)</div>
+            <div style="margin-top: 4px; font-size: 12.5px; color: var(--ink);">{{ ov.rebindWarnLoseText }}</div>
+          </div>
+          <div style="padding: 10px 12px; border-radius: 9px; background: rgba(16,185,129,.08); border: 1px solid rgba(16,185,129,.22);">
+            <div style="font-size: 11px; font-weight: 700; color: var(--ok-ink); text-transform: uppercase; letter-spacing: .5px;">Получат источник (читают «{{ ov.rebindWarnTo }}»)</div>
+            <div style="margin-top: 4px; font-size: 12.5px; color: var(--ink);">{{ ov.rebindWarnGainText }}</div>
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <button onClick="{{ ov.rebindWarnApply }}" style="padding: 12px; border: none; border-radius: 11px; background: linear-gradient(135deg, #f59e0b, #ef4444); color: var(--ink); font-size: 13.5px; font-weight: 700;">Перепривязать и записать</button>
+          <button onClick="{{ ov.rebindWarnClose }}" style="padding: 12px; border: 1px solid var(--w14); border-radius: 11px; background: var(--w5); color: var(--ink); font-size: 13px; font-weight: 600;">Отмена</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ ov.regDrawer }}" hint-placeholder-val="{{ false }}">
+    <div style="display: flex; justify-content: flex-end; width: 100%;">
+      <div style="position: relative; width: 100%; max-height: 640px; overflow-y: auto; padding: 20px; border-radius: 16px; background: var(--bg3); border: 1px solid var(--w12); display: flex; flex-direction: column; gap: 14px;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div style="flex: 1; font-size: 16px; font-weight: 700;">Реестр развёртываний</div>
+          <button onClick="{{ ov.closeDrawer }}" title="Убрать шторку вправо" style="width: 30px; height: 30px; border: 1px solid var(--w12); border-radius: 9px; background: var(--w5); color: var(--acc-ink2); font-size: 15px;" style-hover="border-color: #818cf8; color: var(--ink);">→</button>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+          <sc-for list="{{ ov.fleetFilters }}" as="fl" hint-placeholder-count="4">
+            <button onClick="{{ fl.pick }}" style="padding: 7px 13px; border: 1px solid {{ fl.border }}; border-radius: 9999px; background: {{ fl.bg }}; color: {{ fl.fg }}; font-size: 11.5px; font-weight: 600;">{{ fl.label }}</button>
+          </sc-for>
+          <span style="margin-left: auto; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w60);">{{ ov.depCount }} {{ ov.depCountWord }}</span>
+        </div>
+        <sc-if value="{{ ov.depEmpty }}" hint-placeholder-val="{{ false }}"><div style="padding: 18px 14px; border: 1px dashed var(--w14); border-radius: 11px; font-size: 12.5px; line-height: 1.5; color: var(--w55);">Развёртываний нет: в вашем отделе пока нет агентов. Соберите агента на экране «Граф» или примите контракт в «Загрузке аудитов».</div></sc-if>
+        <sc-for list="{{ ov.depRows }}" as="d" hint-placeholder-count="4">
+          <div style="padding: 15px; border-radius: 12px; background: var(--w4); border: 1px solid var(--w9); display: flex; flex-direction: column; gap: 11px;">
+            <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+              <button onClick="{{ d.open }}" style="flex: 1; min-width: 150px; padding: 0; border: none; background: transparent; text-align: left; display: flex; flex-direction: column; gap: 3px;">
+                <span style="font-size: 14px; font-weight: 700; color: var(--ink);">{{ d.agent }} <span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--w66);">{{ d.version }}</span></span> <span title="{{ d.vbTitle }}" style="font-family: 'JetBrains Mono', monospace; font-size: 11px; padding: 2px 8px; border-radius: 9999px; background: {{ d.vbBg }}; color: {{ d.vbFg }}; margin-left: 6px;">{{ d.vbLabel }}</span>
+                <span style="font-size: 11px; color: var(--w42);">участок «{{ d.area }}» · {{ d.tIcon }} {{ d.trigger }}</span>
+              </button>
+              <span style="display: inline-flex; align-items: center; gap: 7px; padding: 6px 11px; border-radius: 9999px; background: {{ d.statusBg }}; border: 1px solid {{ d.statusBorder }}; color: {{ d.statusFg }}; font-size: 11.5px; font-weight: 600;">
+                <span style="width: 6px; height: 6px; border-radius: 9999px; background: {{ d.statusDot }};"></span>{{ d.status }}
+              </span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w50);">{{ d.live }} · {{ d.autonomy }}</span>
+            </div>
+            <div style="display: flex; gap: 7px; flex-wrap: wrap; padding-top: 10px; border-top: 1px solid var(--w7);">
+              <sc-if value="{{ d.canPause }}" hint-placeholder-val="{{ true }}">
+                <button onClick="{{ d.pause }}" style="padding: 7px 12px; border: 1px solid var(--w13); border-radius: 8px; background: var(--w5); color: var(--ink); font-size: 11.5px; font-weight: 600;">Пауза</button>
+              </sc-if>
+              <sc-if value="{{ d.canResume }}" hint-placeholder-val="{{ false }}">
+                <button onClick="{{ d.resume }}" style="padding: 7px 12px; border: 1px solid rgba(16,185,129,.3); border-radius: 8px; background: rgba(16,185,129,.13); color: var(--ok-ink); font-size: 11.5px; font-weight: 600;">Возобновить</button>
+              </sc-if>
+              <sc-if value="{{ d.canRollback }}" hint-placeholder-val="{{ true }}">
+                <button onClick="{{ d.rollback }}" style="padding: 7px 12px; border: 1px solid var(--w13); border-radius: 8px; background: var(--w5); color: var(--ink); font-size: 11.5px; font-weight: 600;">Отозвать версию</button>
+              </sc-if>
+              <button onClick="{{ d.revise }}" style="padding: 7px 12px; border: 1px solid var(--w13); border-radius: 8px; background: var(--w5); color: var(--ink); font-size: 11.5px; font-weight: 600;">Пересмотреть в графе</button>
+              <sc-if value="{{ d.canRetire }}" hint-placeholder-val="{{ true }}">
+                <button onClick="{{ d.retire }}" style="padding: 7px 12px; border: 1px solid rgba(239,68,68,.28); border-radius: 8px; background: rgba(239,68,68,.1); color: var(--err-ink); font-size: 11.5px; font-weight: 600;">Вывести</button>
+              </sc-if>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ ov.liveDrawer }}" hint-placeholder-val="{{ false }}">
+    <div style="display: flex; justify-content: flex-end; width: 100%;">
+      <div style="position: relative; width: 100%; max-height: 640px; overflow-y: auto; padding: 20px; border-radius: 16px; background: var(--bg3); border: 1px solid var(--w12); display: flex; flex-direction: column; gap: 12px;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div style="flex: 1; font-size: 16px; font-weight: 700;">Живые экземпляры</div>
+          <button onClick="{{ ov.toggleFreeze }}" style="padding: 8px 12px; border: 1px solid var(--w14); border-radius: 9px; background: var(--w5); color: var(--ink); font-size: 11.5px; font-weight: 600;">{{ ov.freezeLabel }}</button>
+          <button onClick="{{ ov.closeDrawer }}" title="Убрать шторку вправо" style="width: 30px; height: 30px; border: 1px solid var(--w12); border-radius: 9px; background: var(--w5); color: var(--acc-ink2); font-size: 15px;" style-hover="border-color: #818cf8; color: var(--ink);">→</button>
+        </div>
+        <span style="display: inline-flex; align-items: center; gap: 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w66);">
+          <span style="width: 7px; height: 7px; border-radius: 9999px; background: #34d399;"></span>обновление каждые 10 с · {{ ov.liveN }} активных
+        </span>
+        <sc-if value="{{ ov.liveEmpty }}" hint-placeholder-val="{{ false }}"><div style="padding: 18px 14px; border: 1px dashed var(--w14); border-radius: 11px; font-size: 12.5px; line-height: 1.5; color: var(--w55);">Сейчас никто не работает: очередь пуста и недавних прогонов нет. Запустите агента — экземпляр появится здесь.</div></sc-if>
+        <sc-for list="{{ ov.liveRows }}" as="i" hint-placeholder-count="5">
+          <button onClick="{{ i.open }}" style="display: grid; grid-template-columns: 1fr .8fr; gap: 8px 10px; align-items: center; width: 100%; padding: 13px 14px; border: 1px solid var(--w8); border-radius: 11px; background: {{ i.rowBg }}; opacity: {{ i.opacity }}; text-align: left; transition: opacity .5s ease;" style-hover="background: var(--w7);">
+            <span style="font-size: 12.5px; font-weight: 600; color: var(--ink);">{{ i.agent }}</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w60);">{{ i.step }}</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w55);">{{ i.dur }} · {{ i.cost }}</span>
+            <span style="display: inline-flex; align-items: center; gap: 7px; font-size: 11.5px; font-weight: 600; color: {{ i.fg }};">
+              <dc-import name="Ape" state="{{ i.ape }}" size="17" hint-size="17px,23px"></dc-import>{{ i.status }}
+            </span>
+          </button>
+        </sc-for>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ ov.healthDrawer }}" hint-placeholder-val="{{ false }}">
+    <div style="display: flex; justify-content: flex-end; width: 100%;">
+      <div style="position: relative; width: 100%; max-height: 640px; overflow-y: auto; padding: 20px; border-radius: 16px; background: var(--bg3); border: 1px solid var(--w12); display: flex; flex-direction: column; gap: 16px;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div style="flex: 1; font-size: 16px; font-weight: 700;">Здоровье флота</div>
+          <button onClick="{{ ov.closeDrawer }}" title="Убрать шторку вправо" style="width: 30px; height: 30px; border: 1px solid var(--w12); border-radius: 9px; background: var(--w5); color: var(--acc-ink2); font-size: 15px;" style-hover="border-color: #818cf8; color: var(--ink);">→</button>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <sc-for list="{{ ov.fleetKpis }}" as="k" hint-placeholder-count="4">
+            <div style="padding: 15px; border-radius: 12px; background: var(--w4); border: 1px solid var(--w10); display: flex; flex-direction: column; gap: 6px;">
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w38);">{{ k.label }}</span>
+              <span style="font-size: 24px; font-weight: 800; color: {{ k.fg }};">{{ k.value }}</span>
+              <span style="font-size: 11px; line-height: 1.4; color: var(--w66);">{{ k.note }}</span>
+              <sc-if value="{{ k.hasLineage }}" hint-placeholder-val="{{ false }}">
+                <button onClick="{{ k.lineage }}" title="Откуда взялось число" style="align-self: flex-start; margin-top: 4px; padding: 4px 9px; border: 1px solid rgba(129,140,248,.3); border-radius: 7px; background: rgba(99,102,241,.12); color: var(--acc-ink2); font-size: 11px; font-weight: 600;" style-hover="background: rgba(99,102,241,.22);">откуда ▸</button>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+        <div style="padding: 15px; border-radius: 12px; background: rgba(245,158,11,.08); border: 1px solid rgba(245,158,11,.24); display: flex; flex-direction: column; gap: 10px;">
+          <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 10px;">
+            <span title="Дрейф DoD — падение доли прогонов, закрывших Definition of Done." style="font-size: 13px; font-weight: 600; color: var(--warn-ink2);">Дрейф DoD</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--warn-ink);">{{ ov.dodDrift }}</span>
+          </div>
+          <div style="position: relative; height: 7px; border-radius: 9999px; background: var(--w8);">
+            <div style="position: absolute; inset: 0 auto 0 0; width: {{ ov.dodFill }}%; border-radius: 9999px; background: linear-gradient(90deg, #f59e0b, var(--warn-ink));"></div>
+          </div>
+        </div>
+        <sc-for list="{{ ov.fleetAlerts }}" as="a" hint-placeholder-count="3">
+          <div style="padding: 14px 16px; border-radius: 11px; background: {{ a.bg }}; border: 1px solid {{ a.border }}; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+            <span style="width: 8px; height: 8px; border-radius: 9999px; background: {{ a.dot }}; flex: none;"></span>
+            <div style="flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 3px;">
+              <span style="font-size: 12.5px; font-weight: 600; color: {{ a.fg }};">{{ a.title }}</span>
+              <span style="font-size: 11.5px; line-height: 1.4; color: var(--w55);">{{ a.note }}</span>
+            </div>
+            <button onClick="{{ a.go }}" style="padding: 8px 12px; border: 1px solid var(--w16); border-radius: 9px; background: var(--w6); color: var(--ink); font-size: 11.5px; font-weight: 600;">{{ a.action }} ▸</button>
+          </div>
+        </sc-for>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;">
+          <sc-for list="{{ ov.sparks }}" as="sp" hint-placeholder-count="3">
+            <div style="padding: 14px; border-radius: 11px; background: var(--w3); border: 1px solid var(--w8); display: flex; flex-direction: column; gap: 10px;">
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w60);">{{ sp.label }}</span>
+              <div style="display: flex; align-items: flex-end; gap: 4px; height: 46px;">
+                <sc-for list="{{ sp.bars }}" as="b" hint-placeholder-count="8">
+                  <span style="flex: 1; height: {{ b.h }}px; border-radius: 3px 3px 0 0; background: {{ sp.color }}; opacity: .65;"></span>
+                </sc-for>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ ov.deployModal }}" hint-placeholder-val="{{ false }}">
+    <div style="position: fixed; inset: 0; z-index: 66; display: flex; align-items: center; justify-content: center; padding: 24px;">
+      <div onClick="{{ ov.closeModal }}" style="position: absolute; inset: 0; background: var(--scrim); backdrop-filter: blur(5px);"></div>
+      <div style="position: relative; width: 560px; max-width: 94vw; max-height: 88vh; overflow-y: auto; padding: 26px; border-radius: 16px; background: var(--bg2); border: 1px solid var(--w14); box-shadow: 0 24px 70px var(--sh50); display: flex; flex-direction: column; gap: 18px; animation: ab-drop .3s ease-out;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div style="flex: 1; font-size: 18px; font-weight: 700;">Развернуть агента в прод</div>
+          <button onClick="{{ ov.closeModal }}" style="width: 30px; height: 30px; border: 1px solid var(--w12); border-radius: 9px; background: var(--w5); color: var(--ink);">✕</button>
+        </div>
+        <div style="font-size: 12.5px; line-height: 1.55; color: var(--w55);">Развёртывание сажает версию агента на участок процесса и само запускает прогоны по триггеру. Автономия не может превысить контракт LUDA.</div>
+        <div style="display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-radius: 11px; background: {{ ov.deployGateBg }}; border: 1px solid var(--w10);">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w62); flex: none; margin-top: 2px;">префлайт</span>
+          <span style="flex: 1; font-size: 12px; line-height: 1.5; color: {{ ov.deployGateFg }};">{{ ov.preflightText }}</span>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w38);">версия</span>
+          <div style="display: flex; gap: 8px; margin-top: 8px;">
+            <sc-for list="{{ ov.deployVersions }}" as="v" hint-placeholder-count="3">
+              <button onClick="{{ v.pick }}" style="padding: 9px 16px; border: 1px solid {{ v.border }}; border-radius: 9px; background: {{ v.bg }}; color: {{ v.fg }}; font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600;">{{ v.label }}</button>
+            </sc-for>
+          </div>
+        </div>
+
+        <label style="display: flex; flex-direction: column; gap: 7px;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w38);">участок процесса</span>
+          <input value="{{ ov.deployArea }}" onChange="{{ ov.setDeployArea }}" style="padding: 12px 14px; border-radius: 12px; border: 2px solid var(--w12); background: var(--s60); color: var(--ink); font-size: 13px;" style-focus="border-color: #6366f1;">
+        </label>
+
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w38);">триггер</span>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <sc-for list="{{ ov.deployTriggers }}" as="t" hint-placeholder-count="3">
+              <button onClick="{{ t.pick }}" style="padding: 9px 14px; border: 1px solid {{ t.border }}; border-radius: 9px; background: {{ t.bg }}; color: {{ t.fg }}; font-size: 12px; font-weight: 600;">{{ t.label }}</button>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <div style="display: flex; align-items: baseline; justify-content: space-between;">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w38);">политика автономии</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--acc-ink);">{{ ov.deployAutonomy }}</span>
+          </div>
+          <div style="display: flex; gap: 6px;">
+            <sc-for list="{{ ov.deployAutonomyLevels }}" as="lv" hint-placeholder-count="4">
+              <button onClick="{{ lv.pick }}" style="flex: 1; padding: 9px 4px; border: 1px solid {{ lv.border }}; border-radius: 8px; background: {{ lv.bg }}; color: {{ lv.fg }}; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; font-weight: 700;">{{ lv.label }}</button>
+            </sc-for>
+          </div>
+          <div style="position: relative; height: 6px; border-radius: 9999px; background: var(--w8);">
+            <div style="position: absolute; top: 0; bottom: 0; left: 0; width: {{ ov.deployAutonomyFill }}%; border-radius: 9999px; background: linear-gradient(90deg, #6366f1, #8b5cf6);"></div>
+            <div style="position: absolute; top: -4px; bottom: -4px; left: 75%; width: 3px; border-radius: 9999px; background: #34d399;"></div>
+          </div>
+          <div style="padding: 10px 12px; border-radius: 10px; background: {{ ov.deployGateBg }}; color: {{ ov.deployGateFg }}; font-size: 12px; font-weight: 600;">{{ ov.deployGateText }}</div>
+        </div>
+
+        <label style="display: flex; flex-direction: column; gap: 7px;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w38);">лимит параллельных экземпляров</span>
+          <input type="number" min="1" max="8" value="{{ ov.deployLimit }}" onChange="{{ ov.setDeployLimit }}" style="padding: 12px 14px; border-radius: 12px; border: 2px solid var(--w12); background: var(--s60); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 13px;" style-focus="border-color: #6366f1;">
+        </label>
+
+        <div style="display: flex; gap: 10px;">
+          <button onClick="{{ ov.deployDo }}" style="flex: 1; padding: 13px; border: none; border-radius: 11px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; font-size: 13.5px; font-weight: 700;" style-hover="transform: scale(1.01);">Развернуть</button>
+          <button onClick="{{ ov.closeModal }}" style="padding: 13px 18px; border: 1px solid var(--w14); border-radius: 11px; background: var(--w5); color: var(--ink); font-size: 13.5px; font-weight: 600;">Отмена</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ ov.rollbackModal }}" hint-placeholder-val="{{ false }}">
+    <div style="position: fixed; inset: 0; z-index: 66; display: flex; align-items: center; justify-content: center; padding: 24px;">
+      <div onClick="{{ ov.closeModal }}" style="position: absolute; inset: 0; background: var(--scrim); backdrop-filter: blur(5px);"></div>
+      <div style="position: relative; width: 520px; max-width: 94vw; padding: 26px; border-radius: 16px; background: var(--bg2); border: 1px solid var(--w14); box-shadow: 0 24px 70px var(--sh50); display: flex; flex-direction: column; gap: 18px; animation: ab-drop .3s ease-out;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div style="flex: 1; font-size: 17px; font-weight: 700;">Отозвать версию {{ ov.rollbackFrom }} → {{ ov.rollbackTo }}</div>
+          <button onClick="{{ ov.closeModal }}" style="width: 30px; height: 30px; border: 1px solid var(--w12); border-radius: 9px; background: var(--w5); color: var(--ink);">✕</button>
+        </div>
+        <div style="font-size: 12.5px; line-height: 1.55; color: var(--w60);">«{{ ov.rollbackAgent }}» вернётся на предыдущую версию. Живые экземпляры доработают на {{ ov.rollbackFrom }}, новые пойдут на {{ ov.rollbackTo }}.</div>
+        <div style="display: flex; flex-direction: column; gap: 9px; padding: 16px; border-radius: 12px; background: var(--s50); border: 1px solid var(--w8);">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w60);">что изменится</span>
+          <sc-for list="{{ ov.rollbackDiff }}" as="d" hint-placeholder-count="3">
+            <div style="display: flex; gap: 10px; align-items: flex-start;">
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: {{ d.fg }};">{{ d.sign }}</span>
+              <span style="font-size: 12.5px; line-height: 1.45; color: var(--w70);">{{ d.text }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="display: flex; gap: 10px;">
+          <button onClick="{{ ov.rollbackDo }}" style="flex: 1; padding: 13px; border: none; border-radius: 11px; background: #f59e0b; color: #1c1917; font-size: 13.5px; font-weight: 700;">Отозвать версию</button>
+          <button onClick="{{ ov.closeModal }}" style="padding: 13px 18px; border: 1px solid var(--w14); border-radius: 11px; background: var(--w5); color: var(--ink); font-size: 13.5px; font-weight: 600;">Отмена</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ ov.confirmModal }}" hint-placeholder-val="{{ false }}">
+    <div role="dialog" aria-modal="true" style="position: fixed; inset: 0; z-index: 65; display: flex; align-items: center; justify-content: center; padding: 24px;">
+      <div onClick="{{ ov.closeModal }}" style="position: absolute; inset: 0; background: var(--scrim); backdrop-filter: blur(5px);"></div>
+      <div style="position: relative; width: 460px; max-width: 94vw; padding: 26px; border-radius: 16px; background: var(--bg2); border: 1px solid rgba(245,158,11,.32); box-shadow: 0 20px 60px var(--sh45); display: flex; flex-direction: column; gap: 18px; animation: ab-drop .3s ease-out;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <dc-import name="Ape" state="hitl" size="32" hint-size="32px,42px"></dc-import>
+          <div style="flex: 1; font-size: 17px; font-weight: 700;">{{ ov.confirmTitle }}</div>
+          <button onClick="{{ ov.closeModal }}" style="width: 30px; height: 30px; border: 1px solid var(--w12); border-radius: 9px; background: var(--w5); color: var(--ink);">✕</button>
+        </div>
+        <div style="font-size: 13px; line-height: 1.55; color: var(--w65);">{{ ov.confirmNote }}</div>
+        <label style="display: flex; flex-direction: column; gap: 6px;">
+          <span style="font-size: 11.5px; color: var(--w66);">введите «{{ ov.confirmWord }}» для подтверждения</span>
+          <input value="{{ ov.confirmText }}" onChange="{{ ov.setConfirmText }}" style="padding: 12px 14px; border-radius: 12px; border: 2px solid var(--w12); background: var(--s60); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 13px;" style-focus="border-color: #f59e0b;">
+        </label>
+        <div style="display: flex; gap: 10px;">
+          <button onClick="{{ ov.confirmDo }}" style="flex: 1; padding: 12px; border: none; border-radius: 11px; background: {{ ov.confirmBtnBg }}; color: {{ ov.confirmBtnFg }}; font-size: 13.5px; font-weight: 700;">{{ ov.confirmBtnLabel }}</button>
+          <button onClick="{{ ov.closeModal }}" style="padding: 12px 18px; border: 1px solid var(--w14); border-radius: 11px; background: var(--w5); color: var(--ink); font-size: 13.5px; font-weight: 600;">Отмена</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ ov.helpPanel }}" hint-placeholder-val="{{ false }}">
+    <div style="position: fixed; inset: 0; z-index: 65; display: flex; justify-content: flex-end;">
+      <div onClick="{{ ov.closeModal }}" style="position: absolute; inset: 0; background: rgba(4,7,18,.6); backdrop-filter: blur(4px);"></div>
+      <div style="position: relative; width: 420px; max-width: 92vw; height: 100%; overflow-y: auto; padding: 28px; background: var(--bg2); border-left: 1px solid var(--w12); display: flex; flex-direction: column; gap: 18px;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div style="flex: 1; font-size: 18px; font-weight: 700;">Помощь</div>
+          <button onClick="{{ ov.closeModal }}" style="width: 30px; height: 30px; border: 1px solid var(--w12); border-radius: 9px; background: var(--w5); color: var(--ink);">✕</button>
+        </div>
+        <input value="{{ ov.helpQuery }}" onChange="{{ ov.setHelpQuery }}" placeholder="Спросите про конверт, HITL, рецепты…" style="padding: 12px 14px; border-radius: 12px; border: 2px solid var(--w12); background: var(--s60); color: var(--ink); font-size: 13px;" style-focus="border-color: #6366f1;">
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <sc-for list="{{ ov.helpTopics }}" as="h" hint-placeholder-count="4">
+            <div style="padding: 14px; border-radius: 12px; background: var(--w4); border: 1px solid var(--w9); display: flex; flex-direction: column; gap: 6px;">
+              <div style="font-size: 13px; font-weight: 600;">{{ h.q }}</div>
+              <div style="font-size: 12.5px; line-height: 1.55; color: var(--w60);">{{ h.a }}</div>
+            </div>
+          </sc-for>
+          <sc-if value="{{ ov.helpEmpty }}" hint-placeholder-val="{{ false }}">
+            <div style="padding: 24px; text-align: center; font-size: 12.5px; color: var(--w62);">Ничего не нашлось — переформулируйте вопрос.</div>
+          </sc-if>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ ov.cmdkOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="position: fixed; inset: 0; z-index: 70; display: flex; align-items: flex-start; justify-content: center; padding: 96px 24px 24px;">
+      <div onClick="{{ ov.closeModal }}" style="position: absolute; inset: 0; background: rgba(4,7,18,.65); backdrop-filter: blur(6px);"></div>
+      <div style="position: relative; width: 620px; max-width: 94vw; border-radius: 16px; background: var(--bg2); border: 1px solid var(--w14); box-shadow: 0 24px 70px var(--sh50); overflow: hidden; animation: ab-drop .25s ease-out;">
+        <input value="{{ ov.cmdkQuery }}" onChange="{{ ov.setCmdk }}" onKeyDown="{{ ov.cmdkKey }}" autoFocus="{{ true }}" placeholder="Навыки, прогоны, экраны…" style="width: 100%; padding: 18px 22px; border: none; border-bottom: 1px solid var(--w10); background: transparent; color: var(--ink); font-size: 15px;">
+        <div style="max-height: 360px; overflow-y: auto; padding: 8px;">
+          <sc-for list="{{ ov.cmdkResults }}" as="r" hint-placeholder-count="5">
+            <button onClick="{{ r.go }}" style="width: 100%; display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: none; border-radius: 10px; background: transparent; text-align: left;" style-hover="background: rgba(99,102,241,.16);">
+              <span style="padding: 3px 8px; border-radius: 6px; background: {{ r.kindBg }}; color: {{ r.kindFg }}; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600; flex: none;">{{ r.kind }}</span>
+              <span style="flex: 1; font-size: 13.5px; color: var(--ink);">{{ r.label }}</span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w60);">{{ r.hint }}</span>
+            </button>
+          </sc-for>
+          <sc-if value="{{ ov.cmdkEmpty }}" hint-placeholder-val="{{ false }}">
+            <div style="padding: 28px; text-align: center; font-size: 13px; color: var(--w62);">Ничего не нашлось.</div>
+          </sc-if>
+        </div>
+        <div style="padding: 10px 18px; border-top: 1px solid var(--w8); font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w60);">Enter — перейти · Esc — закрыть</div>
+      </div>
+    </div>
+  </sc-if>
+
+  
+</x-dc>
+<script data-dc-script type="text/plain" data-props='{"ov":{"editor":null,"tsType":"object"}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
