@@ -19,7 +19,7 @@ import sys
 import time
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Query, Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
@@ -28,7 +28,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, assembly, audit_store, cachebus, charts, clients, compute, contract_store, dataplane_store, families_store, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, report_store, run_cache_store, run_store, runner, schema_store, skill_store, slava, systems_store, trigger_store, triggers, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, assembly, audit_store, cachebus, charts, clients, compute, contract_store, dataplane_store, families_store, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, report_store, run_cache_store, run_store, runner, schema_store, skill_store, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
@@ -1810,6 +1810,19 @@ async def _startup() -> None:
     await hitl_store.init()
     import asyncio as _asyncio
     _asyncio.create_task(triggers.scheduler_loop(execute_agent_run))  # фоновый планировщик (leader-election)
+    # ── очередь прогонов (гейт масштабирования, Фаза 1): воркеры вместо исполнения в HTTP-запросе ──
+    await run_queue.init()
+    try:
+        _st = await run_queue.requeue_stale()
+        if _st:
+            obs.log_event("warn", "run_queue.requeued_stale", count=_st)
+    except Exception:  # noqa: BLE001
+        pass
+    await run_bus.start()
+    for _wi in range(run_queue.WORKERS):
+        _asyncio.create_task(run_bus.worker_loop(f"{os.getenv('HOSTNAME', 'api')}-w{_wi}", execute_agent_run,
+                                                 load_agent=agent_store.get, load_contract=_contract_for_agent))
+    obs.log_event("info", "run_queue.started", workers=run_queue.WORKERS, bus=run_bus.describe().get("bus"))
     await _refresh_skill_ds_cache()  # инжект data-need оверрайдов из PG в ape
     await dataplane_store.init()
     await _backfill_dataplane_from_files()  # одноразовый перенос ~/.ape → PG (сохранить демо-рецепты)
@@ -2940,8 +2953,17 @@ async def _refresh_source_data(agent: dict) -> None:
                 obs.log_event("warn", "run.source_refresh_failed", recipe=c.get("id"), error=str(ex)[:200])
 
 
+async def _contract_for_agent(agent: dict, audit_id: str = "") -> dict:
+    """Контракт агента (или минимальный конверт из его autonomy_max) — общий хелпер API и воркеров."""
+    contract = await contract_store.get(agent.get("contract_audit_id") or audit_id)
+    if not contract:
+        contract = {"intake": {"autonomy_ceiling": agent.get("autonomy_max") or "A2"}, "bundle": {}}
+    return contract
+
+
 async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, trigger: dict | None = None,
-                            use_cache: bool = True, user_context: str = "", deliver_filter: str = "") -> dict:
+                            use_cache: bool = True, user_context: str = "", deliver_filter: str = "",
+                            job_id: str | None = None) -> dict:
     """Ядро прогона (LLM-раскладка + находки audit1c + сохранение + аудит). Переиспользуется
     POST /api/runs и планировщиком триггеров (server/triggers.py). Возвращает {saved, result}.
     Кэш результатов (multi-user): при попадании возвращает сохранённый вывод без LLM/доставки."""
@@ -3022,7 +3044,8 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
                                    chat_fn=clients.chat, blocked_entities=blocked,
                                    knowledge_fn=_agent_knowledge_fn(agent, started_by),
                                    skill_schemas=_skill_schemas,
-                                   findings_context=_ctx, user_context=user_context)
+                                   findings_context=_ctx, user_context=user_context,
+                                   should_cancel=(lambda: run_queue.cancel_requested(job_id)) if job_id else None)
     # Петля прогон→канва: прикрепляем детерминированные находки (истина, не LLM).
     if "audit1c-checks" in _skills:
         if _det_findings_err:
@@ -3151,8 +3174,10 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
 
 
 @app.post("/api/runs")
-async def run_start(body: dict, u: dict = Depends(user)) -> JSONResponse:
-    """Запуск прогона агента. Тело: {agent_id} ИЛИ {contract_audit_id}. Возвращает 201."""
+async def run_start(body: dict, u: dict = Depends(user),
+                    request_async: str = Query(default="", alias="async")) -> JSONResponse:
+    """Запуск прогона агента. Тело: {agent_id} ИЛИ {contract_audit_id}. Синхронно → 201 с результатом;
+    {async:true} или ?async=1 → 202 с job_id (очередь, см. GET /api/runs/jobs/{id})."""
     agent_id = str((body or {}).get("agent_id", "")).strip()
     audit_id = str((body or {}).get("contract_audit_id", "")).strip()
     if not agent_id and audit_id:
@@ -3194,10 +3219,76 @@ async def run_start(body: dict, u: dict = Depends(user)) -> JSONResponse:
     # второй дождётся первого и заберёт результат из кэша (двойной клик не запускает двойной прогон)
     idem = str((body or {}).get("idempotency_key", "")).strip()
     lock_key = f"{actor}:{agent_id}:{idem}"
+    # ── async-режим (гейт масштабирования): 202 + job_id, исполняет пул воркеров, клиент поллит
+    #    GET /api/runs/jobs/{id}. Не больше ABOP_USER_CONCURRENT прогонов на пользователя одновременно,
+    #    одинаковые задания дедуплицируются, память защищена бэкпрешером, есть таймаут и отмена. ──
+    if bool((body or {}).get("async")) or str(request_async or "").lower() in ("1", "true", "yes"):
+        job = await run_queue.enqueue(agent_id=agent["id"], actor=actor, dedupe_key=lock_key if idem else None,
+                                      payload={"contract_audit_id": agent.get("contract_audit_id") or audit_id,
+                                               "use_cache": use_cache, "user_context": user_context,
+                                               "deliver_filter": deliver_filter, "trace_id": obs.current_trace_id()},
+                                      priority=int((body or {}).get("priority") or 5))
+        await run_bus.bus().publish_request(job, obs.current_trace_id())
+        obs.inc("abop_run_jobs_total", status="queued")
+        pos = await run_queue.position(job["id"])
+        return JSONResponse({**run_queue.public(job, pos), "poll": f"/api/runs/jobs/{job['id']}",
+                             "deduped": bool(job.get("deduped"))}, status_code=202)
     async with _run_lock(lock_key):
         out = await execute_agent_run(agent, contract, actor, use_cache=use_cache,
                                       user_context=user_context, deliver_filter=deliver_filter)
     return JSONResponse({"run_id": out["saved"]["id"], **out["result"]}, status_code=201)
+
+
+@app.get("/api/runs/jobs/{job_id}")
+async def run_job_status(job_id: str, u: dict = Depends(user)) -> dict:
+    """Статус задания очереди: queued (с позицией) / running / done (+ полный результат) / failed / cancelled.
+    Видит автор задания, admin/support — любое."""
+    job = await run_queue.get(job_id)
+    if not job:
+        raise HTTPException(404, "нет такого задания")
+    actor = u.get("name") or u.get("sub") or "dev"
+    if job["actor"] != actor and u.get("level") not in ("admin", "support"):
+        raise HTTPException(403, "чужое задание")
+    pos = await run_queue.position(job_id) if job["status"] == "queued" else 0
+    out = run_queue.public(job, pos)
+    if job["status"] == "done" and job.get("run_id"):
+        run = await run_store.get(job["run_id"])
+        if run:
+            run["run_id"] = job["run_id"]
+            out["run"] = run
+    return out
+
+
+@app.post("/api/runs/jobs/{job_id}/cancel")
+async def run_job_cancel(job_id: str, u: dict = Depends(user)) -> dict:
+    """Отменить задание: из очереди — сразу; выполняющееся — кооперативно (навыки, что ещё не начались,
+    не стартуют). Автор или admin."""
+    actor = u.get("name") or u.get("sub") or "dev"
+    res = await run_queue.cancel(job_id, actor=actor, admin=u.get("level") in ("admin", "support"))
+    if not res:
+        raise HTTPException(404, "нет такого задания")
+    if res.get("denied"):
+        raise HTTPException(403, "чужое задание")
+    obs.inc("abop_run_jobs_total", status="cancel_requested")
+    return run_queue.public(res)
+
+
+@app.get("/api/runs/jobs")
+async def run_jobs_mine(limit: int = 30, u: dict = Depends(user)) -> dict:
+    """Мои задания (admin/support — все) — для «моих прогонов» и уведомлений."""
+    actor = u.get("name") or u.get("sub") or "dev"
+    all_ = u.get("level") in ("admin", "support")
+    jobs = await run_queue.list_jobs(actor=None if all_ else actor, limit=max(1, min(200, limit)))
+    return {"jobs": [run_queue.public(j) for j in jobs]}
+
+
+@app.get("/api/runs/queue")
+async def run_queue_stats(u: dict = Depends(user)) -> dict:
+    """Состояние очереди: глубина по статусам, воркеры, лимиты, память процесса, шина. admin/support."""
+    require_level(u, "support")
+    st = await run_queue.stats()
+    st["bus"] = run_bus.describe()
+    return st
 
 
 # ═══════════════ ЦЕПОЧКИ АГЕНТОВ (Pipelines): линейный конвейер выход→контекст ═══════════════

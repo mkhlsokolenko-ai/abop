@@ -225,7 +225,7 @@ def run_agent(agent: dict, contract: dict, safety_of) -> dict:
 
 async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_sources,
                    load_body, chat_fn, blocked_entities=None, knowledge_fn=None,
-                   findings_context=None, user_context="", skill_schemas=None) -> dict:
+                   findings_context=None, user_context="", skill_schemas=None, should_cancel=None) -> dict:
     """НАСТОЯЩИЙ прогон: governance-каркас (run_agent) + для каждого навыка с data-scope
     собирает РЕАЛЬНЫЕ данные из canonical store (data_query) и прогоняет их через LLM
     (тело навыка = методика) → находки на доску. Числа — только из данных (анти-галлюцинация).
@@ -338,6 +338,8 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
                      " Верни СТРОГО JSON по заданной схеме. Только из " + _src + ", ничего не выдумывай."
             _resp_fmt = _custom.get("response_format") or _resp_fmt
         _t = time.perf_counter()
+        if should_cancel and should_cancel():   # отмена из очереди: навык не стартует, прогон завершится частично
+            return None
         async with sem:  # батчинг: семафор пускает по _LLM_CONCURRENCY вызовов за раз
             # backoff-ретрай (429/таймаут): рост параллелизма не должен портить вывод скилла —
             # при перегрузе RouteAI ждём и повторяем, а не отдаём «LLM недоступен». Качество без изменений.

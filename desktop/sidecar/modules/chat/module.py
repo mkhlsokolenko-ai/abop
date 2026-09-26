@@ -180,34 +180,18 @@ def abop_agents() -> list[dict]:
         return _AG_CACHE["data"] or []
 
 
-@router.post("/threads/{thread_id}/run-agent")
-def run_agent(thread_id: int, body: RunAgentIn) -> dict:
-    """Запуск реального ABOP-агента из чата. Контекст треда (последняя задача/выделенный текст/ссылка)
-    прокидывается как подсказка. Возвращает находки/доставку/HITL — рендерятся карточкой в треде.
-    Инженерная логика (Data Plane/governance/HITL/трасса) — на стороне ABOP; чат лишь запускает и показывает."""
-    ctx = (body.context or "").strip()
-    if not ctx:
-        # берём последнюю реплику пользователя как контекст запуска
-        rows = db.q("SELECT content FROM messages WHERE thread_id=? AND role='user' ORDER BY id DESC LIMIT 1",
-                    (thread_id,))
-        ctx = rows[0]["content"] if rows else ""
-    # добавляем текст вложений треда (модель/агент видит приложенные документы)
-    att = _attach_context(thread_id, ctx)
-    full_ctx = (att + ctx).strip()
-    try:
-        run = abop.run(agent_id=body.agent_id, context=full_ctx, no_cache=body.no_cache, deliver=body.deliver)
-    except abop.AbopError as e:
-        return {"ok": False, "error": str(e)}
+def _run_summary(agent_id: str, run: dict) -> dict:
+    """Компактная сводка прогона для карточки в чате (общая для sync и async путей)."""
     run = run.get("run", run) if isinstance(run, dict) else run
-    # компактная сводка находок/доставки для карточки в чате
     findings = [ (b.get("text") or "") for b in (run.get("board") or []) if b.get("kind") == "finding" ]
     # hitl_id обязателен: подтверждение в чате идёт строго по заявке (D-C3), а не «всё pending агента»
     delivery = [ {"channel": d.get("channel"), "to": d.get("to"), "mode": d.get("mode"),
                   "hitl_id": d.get("hitl_id"), "title": d.get("title"), "result": (d.get("result") or "")[:200]}
                  for d in (run.get("delivery") or []) ]
-    summary = {
-        "agent_id": body.agent_id,
+    return {
+        "agent_id": agent_id,
         "agent_name": (run.get("agent") or {}).get("name") if isinstance(run.get("agent"), dict) else run.get("agent_name"),
+        "run_id": run.get("run_id"),
         "trace_id": run.get("trace_id"),
         "cached": run.get("cached"),
         "findings": findings[:8],
@@ -215,13 +199,70 @@ def run_agent(thread_id: int, body: RunAgentIn) -> dict:
         "investigations_total": (run.get("investigations_summary") or {}).get("total"),
         "delivery": delivery,
         "verdict": run.get("verdict") if isinstance(run.get("verdict"), dict) else None,
+        "tokens": int(((run.get("run_metrics") or {}).get("cost") or {}).get("input_tokens") or 0)
+                  + int(((run.get("run_metrics") or {}).get("cost") or {}).get("output_tokens") or 0),
     }
-    # сохраняем краткий след в тред (история)
-    line = f"[агент {body.agent_id}] находок: {summary['findings_total']}"
+
+
+def _persist_run(thread_id: int, agent_id: str, summary: dict) -> None:
+    line = f"[агент {agent_id}] находок: {summary['findings_total']}"
     db.run("INSERT INTO messages(thread_id,role,content,meta,created_at) VALUES(?,?,?,?,?)",
            (thread_id, "assistant", line, json.dumps({"run_agent": summary}, ensure_ascii=False), db.now()))
     db.run("UPDATE threads SET updated_at=? WHERE id=?", (db.now(), thread_id))
-    return {"ok": True, "run": summary}
+
+
+def _run_context(thread_id: int, body: "RunAgentIn") -> str:
+    ctx = (body.context or "").strip()
+    if not ctx:
+        rows = db.q("SELECT content FROM messages WHERE thread_id=? AND role='user' ORDER BY id DESC LIMIT 1",
+                    (thread_id,))
+        ctx = rows[0]["content"] if rows else ""
+    att = _attach_context(thread_id, ctx)
+    return (att + ctx).strip()
+
+
+@router.post("/threads/{thread_id}/run-agent")
+def run_agent(thread_id: int, body: RunAgentIn) -> dict:
+    """Запуск реального ABOP-агента из чата — ЧЕРЕЗ ОЧЕРЕДЬ (гейт масштабирования): ABOP отвечает 202
+    с job_id, UI поллит /run-job/{job_id}; долгого HTTP-запроса больше нет, второй запуск того же
+    пользователя ждёт в очереди, а не конкурирует. Старый ABOP (201 сразу) обрабатывается как раньше."""
+    full_ctx = _run_context(thread_id, body)
+    try:
+        r = abop.run_async(agent_id=body.agent_id, context=full_ctx, no_cache=body.no_cache, deliver=body.deliver)
+    except abop.AbopError as e:
+        return {"ok": False, "error": str(e)}
+    if isinstance(r, dict) and r.get("done"):
+        summary = _run_summary(body.agent_id, r["run"])
+        _persist_run(thread_id, body.agent_id, summary)
+        return {"ok": True, "done": True, "run": summary}
+    return {"ok": True, "done": False, "job_id": r.get("job_id"), "status": r.get("status"),
+            "position": r.get("position"), "deduped": bool(r.get("deduped"))}
+
+
+@router.get("/threads/{thread_id}/run-job/{job_id}")
+def run_job_status(thread_id: int, job_id: str, agent_id: str = "") -> dict:
+    """Один шаг поллинга. done → карточка сохраняется в тред и возвращается run; failed/cancelled → ошибка."""
+    try:
+        j = abop.run_job(job_id)
+    except abop.AbopError as e:
+        return {"ok": False, "error": str(e)}
+    st = j.get("status")
+    if st == "done" and j.get("run"):
+        aid = agent_id or j.get("agent_id") or ""
+        summary = _run_summary(aid, j["run"])
+        _persist_run(thread_id, aid, summary)
+        return {"ok": True, "done": True, "run": summary}
+    if st in ("failed", "cancelled"):
+        return {"ok": False, "done": True, "status": st, "error": j.get("error") or ("прогон отменён" if st == "cancelled" else "прогон не выполнен")}
+    return {"ok": True, "done": False, "status": st, "position": j.get("position") or 0}
+
+
+@router.post("/threads/{thread_id}/run-job/{job_id}/cancel")
+def run_job_cancel(thread_id: int, job_id: str) -> dict:
+    try:
+        return {"ok": True, **(abop.cancel_job(job_id) or {})}
+    except abop.AbopError as e:
+        return {"ok": False, "error": str(e)}
 
 
 # ── скиллы для UI: тянем из ABOP (единый каталог навыков), локальные — как fallback ──

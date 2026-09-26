@@ -75,6 +75,7 @@ export async function mount(root, ctx) {
   let threads = [], cur = null, messages = [], skills = [], roles = [], search = "", curAbort = null, abopAgents = [];
   let schedules = [], _schedSeen = {}, pipelines = [], hitlQueue = [], quota = null, kbFiles = [];
   let busy = false;          // идёт стрим/прогон — композер и запуски блокируются (D-H4)
+  let curJob = null;         // задание очереди ABOP (async-прогон): можно отменить
   const persona = () => { try { return localStorage.getItem("ape_persona") || ""; } catch { return ""; } };
 
   // Каталоги грузим ПАРАЛЛЕЛЬНО и не блокируем ими первый экран (D-H11: раньше чат ждал 3 запроса подряд).
@@ -613,6 +614,7 @@ export async function mount(root, ctx) {
     const b = $("sendBtn"), inp = $("inp");
     if (on) {
       if (curAbort) { b.textContent = "⏹"; b.title = "Остановить"; b.setAttribute("aria-label", "Остановить"); b.className = "btn danger"; b.onclick = () => curAbort && curAbort.abort(); }
+      else if (curJob) { b.textContent = "⏹"; b.title = "Отменить прогон"; b.setAttribute("aria-label", "Отменить прогон"); b.className = "btn danger"; b.disabled = false; b.onclick = async () => { const j = curJob; if (!j) return; try { await api(M + "/threads/" + cur.id + "/run-job/" + encodeURIComponent(j.id) + "/cancel", { method: "POST" }); toast("Запросил отмену прогона", "warn"); } catch (e) { toast(humanError(e), "danger"); } }; }
       else { b.textContent = "…"; b.title = (what || "агент") + " работает"; b.className = "btn"; b.disabled = true; }
       inp.placeholder = what ? `${what} работает… Enter отправит сообщение после завершения` : "Ответ печатается… Esc — остановить";
     } else { b.disabled = false; b.textContent = "↑"; b.title = "Отправить · Enter"; b.setAttribute("aria-label", "Отправить"); b.className = "btn primary"; b.onclick = sendFromInput; inp.placeholder = "Опишите задачу…  (Enter — отправить, Shift+Enter — перенос)"; }
@@ -682,15 +684,37 @@ export async function mount(root, ctx) {
     const bubs = $("col").querySelectorAll(".bub"); const el = bubs[bubs.length - 1];
     if (el) el.innerHTML = `<span style="display:inline-flex;gap:12px;align-items:center">${mascot("thinking", 26)}<span style="color:var(--ink-2)">агент «${esc(agentNm)}» работает… это может занять до минуты</span></span>`;
     setBusy(true, "агент");
-    try {
-      const r = await api(M + "/threads/" + cur.id + "/run-agent", { method: "POST", body: JSON.stringify({ agent_id: agentId, context: task || "", deliver: deliver || "", no_cache: !!isRerun }) });
-      if (r.ok) {
+    // Через очередь ABOP (гейт масштабирования): run-agent → 202 job_id → поллинг run-job. Пока ждём,
+    // показываем место в очереди; кнопка ⏹ отменяет задание. Старый ABOP отвечает done сразу.
+    const status = (txt) => { if (el && el.isConnected) el.innerHTML = `<span style="display:inline-flex;gap:12px;align-items:center">${mascot("thinking", 26)}<span style="color:var(--ink-2)">${txt}</span></span>`; };
+    const finish = (r) => {
+      if (r.ok && r.run) {
         run.content = "[агент " + agentId + "]"; run.meta = { run_agent: { ...r.run, agent_name: r.run.agent_name || agentNm, task: task || "", deliver: deliver || "" } };
         const waits = ((r.run || {}).delivery || []).some((d) => d.mode === "awaiting_hitl");
         toast(waits ? "Агент подготовил внешнее действие — подтвердите в карточке" : `Агент «${agentNm}» завершил: находок ${r.run.findings_total ?? 0}`, waits ? "warn" : "ok");
-      } else { run.content = "Не удалось запустить агента: " + humanError(r.error || "не удалось"); run.meta = { notice: { icon: "⚠" } }; toast(humanError(r.error), "danger"); }
+      } else { const msg = humanError(r.error || "не удалось"); run.content = (r.status === "cancelled" ? "Прогон отменён" : "Не удалось выполнить прогон: " + msg); run.meta = { notice: { icon: r.status === "cancelled" ? "⏹" : "⚠" } }; if (r.status !== "cancelled") toast(msg, "danger"); }
+    };
+    try {
+      const r = await api(M + "/threads/" + cur.id + "/run-agent", { method: "POST", body: JSON.stringify({ agent_id: agentId, context: task || "", deliver: deliver || "", no_cache: !!isRerun }) });
+      if (!r.ok) finish(r);
+      else if (r.done || r.run || !r.job_id) finish(r);   // старый сайдкар (≤1.0.6) отдаёт результат сразу
+      else {
+        curJob = { id: r.job_id, agent: agentId }; setBusy(true, "агент");
+        if (r.deduped) toast("Такой прогон уже в очереди — присоединяюсь к нему", "warn");
+        status(r.position > 1 ? `в очереди · впереди ${r.position - 1} · агент «${esc(agentNm)}»` : `агент «${esc(agentNm)}» запускается…`);
+        const t0 = Date.now(); let res = null;
+        while (Date.now() - t0 < 15 * 60 * 1000) {
+          await new Promise((ok) => setTimeout(ok, 2500));
+          if (!root.isConnected) return;
+          let j; try { j = await api(M + "/threads/" + cur.id + "/run-job/" + encodeURIComponent(r.job_id) + "?agent_id=" + encodeURIComponent(agentId)); } catch (e) { status(`связь с ABOP прервалась, повторяю… (${humanError(e)})`); continue; }
+          if (j.done) { res = j; break; }
+          const sec = Math.round((Date.now() - t0) / 1000);
+          status(j.status === "queued" ? `в очереди · впереди ${Math.max(0, (j.position || 1) - 1)} · ${sec} с` : `агент «${esc(agentNm)}» работает · ${sec} с`);
+        }
+        finish(res || { ok: false, error: "прогон не завершился за 15 минут — проверьте журнал прогонов позже" });
+      }
     } catch (e) { run.content = "Не удалось запустить агента: " + humanError(e); run.meta = { notice: { icon: "⚠" } }; toast(humanError(e), "danger"); }
-    setBusy(false);
+    curJob = null; setBusy(false);
     render(); scrollDown(true); loadThreads(); loadQuota(); loadHitlQueue();
   }
 

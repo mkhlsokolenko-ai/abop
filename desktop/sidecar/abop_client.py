@@ -159,6 +159,31 @@ def run(agent_id: str = "", scenario: str = "", context: str = "", no_cache: boo
     return _req("POST", "/api/runs", body, timeout=300)
 
 
+def run_async(agent_id: str, context: str = "", no_cache: bool = False, deliver: str = "") -> dict:
+    """Поставить прогон в очередь ABOP (202): {job_id, status, position}. Старый ABOP без очереди
+    отвечает 201 с готовым результатом — возвращаем его как {done:true, run:{…}}."""
+    body: dict = {"agent_id": agent_id, "async": True}
+    if context:
+        body["context"] = context[:20000]
+    if no_cache:
+        body["no_cache"] = True
+    if deliver:
+        body["deliver"] = deliver
+    r = _req("POST", "/api/runs?async=1", body, timeout=60)
+    if isinstance(r, dict) and r.get("run_id") and not r.get("job_id"):
+        return {"done": True, "run": r}
+    return r
+
+
+def run_job(job_id: str) -> dict:
+    """Статус задания очереди (queued/running/done/failed/cancelled); при done — полный run."""
+    return _req("GET", "/api/runs/jobs/" + urllib.request.quote(job_id), timeout=30)
+
+
+def cancel_job(job_id: str) -> dict:
+    return _req("POST", "/api/runs/jobs/" + urllib.request.quote(job_id) + "/cancel", {}, timeout=30)
+
+
 def runs(agent_id: str = "") -> list:
     q = ("?agent_id=" + urllib.request.quote(agent_id)) if agent_id else ""
     r = _req("GET", "/api/runs" + q, timeout=30)
