@@ -139,7 +139,9 @@
 | GET | `/api/bus` | Драйвер (`kafka`/`pg`), брокеры, известные топики, пары топиков систем | user |
 | POST | `/api/bus/publish` | `{system, kind: events|commands, type, payload}` — событие системы (вебхук/экспорт 1С) или команда коннектору | manager+ |
 | GET | `/api/bus/tail?topic=` | Последние сообщения топика | support+ |
-| GET | `/api/bus/dlq` | Ошибки из DLQ: source-topic, error, payload, trace_id | support+ |
+| GET | `/api/bus/dlq` | Ошибки из DLQ: source-topic, error, payload, trace_id + отметки разбора (`ack`: acked/replayed), `replayable`, `open` | support+ |
+| POST | `/api/bus/dlq/replay` | `{partition, offset}` — повторить команду коннектора из DLQ (новый id, отметка replayed) | manager+ |
+| POST | `/api/bus/dlq/ack` | `{partition, offset, note}` — списать сообщение DLQ (разобрано руками), отметка в аудит | manager+ |
 
 ### 2.8 HITL (очередь подтверждений)
 | Метод | Путь | Назначение | Доступ |

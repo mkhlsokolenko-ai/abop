@@ -2238,7 +2238,7 @@ const SETTINGS = {
     { label: 'Общие креды', value: 'используются 2 арендаторами', badge: 'shared', ok: false },
     { label: 'BYO-креды', value: 'arendator-b · собственный ERP', badge: 'BYO', ok: true }
   ],
-  'Память': [], 'Биллинг': [
+  'Память': [], 'Шина': [], 'Биллинг': [
     { label: 'Недельная квота', value: '1 240 ₽ из 4 000 ₽', badge: '31%', ok: true },
     { label: 'Дороже всех', value: 'dcf-valuation · 0.14 ₽ за вызов', badge: 'per-node', ok: false },
     { label: 'Аудит-след', value: '100% перешагов с провенансом', badge: 'полный', ok: true }
@@ -4609,6 +4609,28 @@ class Component extends DCLogic {
       applyLlm: () => { if (!(s.llmEndpointDraft || '').trim()) { this.showToast('Укажите эндпоинт http://IP:PORT/v1'); return; } this.setLlmEndpoint((s.llmEndpointDraft || '').trim(), (s.llmModelDraft || '').trim()); },
       resetLlm: () => this.setLlmEndpoint('', ''),
       isConnTab: s.settingsTab === 'Подключения',
+      isBusTab: s.settingsTab === 'Шина',
+      busReload: () => this.loadBus(),
+      busLoading: !!s.busLoading,
+      busErr: s.busErr || '',
+      busDriver: (s.busInfo && s.busInfo.bus) || '—',
+      busActive: !!(s.busInfo && s.busInfo.kafka_active),
+      busStatus: s.busInfo ? (s.busInfo.kafka_active ? 'подключена · ' + ((s.busInfo.brokers || []).join(', ') || '—') + (s.busInfo.sasl ? ' · SASL' : '') : 'не подключена (ABOP_BUS=pg)') : '…',
+      busStatusFg: (s.busInfo && s.busInfo.kafka_active) ? 'var(--ok-ink)' : 'var(--warn-ink)',
+      busDlqOpen: (s.busDlq && s.busDlq.open) || 0,
+      busDlqCount: (s.busDlq && s.busDlq.count) || 0,
+      busSystems: Object.keys((s.busInfo && s.busInfo.systems) || {}).map(id => { var t = s.busInfo.systems[id]; return { id: id, events: t.events, commands: t.commands,
+        tailEv: () => this.loadBusTail(t.events), tailCmd: () => this.loadBusTail(t.commands) }; }),
+      busTopic: s.busTopic || '',
+      busTail: (s.busTail || []).map(m => { var v = m.value || {}; return { ts: (m.ts || '').replace('T', ' ').slice(0, 19), key: m.key || '', type: v.type || v.schema || '', trace: (v.trace_id || (m.headers || {})['x-trace-id'] || '').slice(0, 12),
+        actor: v.actor || '', short: JSON.stringify(v.payload !== undefined ? v.payload : v).slice(0, 220) }; }),
+      busTailEmpty: !!s.busTopic && !(s.busTail || []).length,
+      busDlqRows: ((s.busDlq && s.busDlq.items) || []).map(m => { var ack = m.ack; return { id: m.key_id, ts: (m.ts || '').replace('T', ' ').slice(0, 19), src: m.source_topic || '', error: m.error || '', trace: (m.trace_id || '').slice(0, 12),
+        short: JSON.stringify(((m.value || {}).payload) || {}).slice(0, 200),
+        ackLabel: ack ? (ack.state === 'replayed' ? 'повторено · ' + (ack.actor || '') : 'списано · ' + (ack.actor || '')) : 'не разобрано',
+        ackFg: ack ? 'var(--ok-ink)' : 'var(--warn-ink)', canReplay: !!m.replayable && !ack, canAck: !ack,
+        replay: () => this.dlqAct('replay', m), ack: () => this.dlqAct('ack', m) }; }),
+      busDlqEmpty: !!s.busDlq && !((s.busDlq.items || []).length),
       isTenantTab: s.settingsTab === 'Арендаторы',
       isBillTab: s.settingsTab === 'Биллинг',
       modelRows: [
@@ -4732,7 +4754,7 @@ class Component extends DCLogic {
         }
       })),
       settingsTabs: Object.keys(SETTINGS).map(t => ({
-        label: t, pick: () => this.setState({ settingsTab: t }),
+        label: t, pick: () => { this.setState({ settingsTab: t }); if (t === 'Шина') this.loadBus(); },
         bg: s.settingsTab === t ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : 'transparent',
         fg: s.settingsTab === t ? 'var(--ink)' : 'var(--w55)'
       })),
@@ -5217,6 +5239,24 @@ class Component extends DCLogic {
     this.setState({ reglamentMsg:'Строю граф (иерархия + кросс-цитирование)…' });
     fetch('/api/reglament/graph/build',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tenant:tenant})})
       .then(function(r){return r.json();}).then(function(d){ self.setState({ reglamentMsg:'Граф: узлов '+(d.nodes||0)+' · иерархия '+(d.hierarchy_edges||0)+' · кросс-цитирование '+(d.xcite_edges||0) }); }).catch(function(){ self.setState({ reglamentMsg:'Ошибка графа' }); });
+  }
+  // Шина (Redpanda): состояние, топики систем, хвост топика, DLQ с отметками разбора (повтор/списание).
+  loadBus() {
+    var self = this; self.setState({ busLoading: true, busErr: '' });
+    fetch('/api/bus').then(function(r){ if(!r.ok) throw new Error(r.status); return r.json(); }).then(function(d){ self.setState({ busInfo: d }); }).catch(function(e){ self.setState({ busErr: 'шина: ' + e.message }); });
+    fetch('/api/bus/dlq?limit=50').then(function(r){ if(!r.ok) throw new Error(r.status); return r.json(); }).then(function(d){ self.setState({ busDlq: d, busLoading: false }); }).catch(function(e){ self.setState({ busDlq: { items: [], count: 0, open: 0 }, busLoading: false, busErr: 'DLQ: нет доступа или ошибка (' + e.message + ')' }); });
+  }
+  loadBusTail(topic) {
+    var self = this; self.setState({ busTopic: topic, busTail: [] });
+    fetch('/api/bus/tail?topic=' + encodeURIComponent(topic) + '&limit=20').then(function(r){ return r.ok ? r.json() : { items: [] }; }).then(function(d){ self.setState({ busTail: (d.items || []).slice().reverse() }); }).catch(function(){});
+  }
+  dlqAct(action, m) {
+    var self = this;
+    if (action === 'ack' && !window.confirm('Списать сообщение DLQ ' + m.key_id + '? Повтора не будет, отметка попадёт в аудит.')) return;
+    fetch('/api/bus/dlq/' + action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ partition: m.partition, offset: m.offset }) })
+      .then(function(r){ return r.json().then(function(j){ return { ok: r.ok, j: j || {} }; }); })
+      .then(function(res){ if (!res.ok) { self.showToast('DLQ: ' + (res.j.detail || 'не удалось')); return; } self.showToast(action === 'replay' ? ('Команда повторена → ' + (res.j.topic || '') + ' · id ' + (res.j.command_id || '')) : 'Сообщение списано'); self.loadBus(); })
+      .catch(function(){ self.showToast('ABOP недоступен'); });
   }
   loadSystems() {
     var self = this;

@@ -280,6 +280,69 @@
                 </div>
               </sc-if>
 
+              <sc-if value="{{ adm.isBusTab }}" hint-placeholder-val="{{ false }}">
+                <div style="display: flex; flex-direction: column; gap: 14px;">
+                  <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                    <div style="font-size: 12.5px; line-height: 1.55; color: var(--w55); flex: 1; min-width: 260px;">Шина событий: команды навыков уходят коннектору, события систем — триггерам агентов. Ошибки коннектора попадают в DLQ и ждут разбора.</div>
+                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: {{ adm.busStatusFg }};">{{ adm.busDriver }} · {{ adm.busStatus }}</span>
+                    <button onClick="{{ adm.busReload }}" style="padding: 9px 13px; border: 1px solid var(--w14); border-radius: 10px; background: var(--w5); color: var(--ink); font-size: 12px; font-weight: 600;">Обновить</button>
+                  </div>
+                  <sc-if value="{{ adm.busErr }}" hint-placeholder-val="{{ false }}">
+                    <div style="font-size: 12px; color: var(--warn-ink);">{{ adm.busErr }}</div>
+                  </sc-if>
+                  <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                    <div style="flex: 1; min-width: 160px; padding: 14px 16px; border-radius: 12px; background: var(--s50); border: 1px solid var(--w7);">
+                      <div style="font-size: 11px; color: var(--w45); text-transform: uppercase; letter-spacing: .6px;">DLQ не разобрано</div>
+                      <div style="font-family: 'JetBrains Mono', monospace; font-size: 26px; font-weight: 700; color: var(--warn-ink);">{{ adm.busDlqOpen }}</div>
+                    </div>
+                    <div style="flex: 1; min-width: 160px; padding: 14px 16px; border-radius: 12px; background: var(--s50); border: 1px solid var(--w7);">
+                      <div style="font-size: 11px; color: var(--w45); text-transform: uppercase; letter-spacing: .6px;">DLQ в хвосте</div>
+                      <div style="font-family: 'JetBrains Mono', monospace; font-size: 26px; font-weight: 700;">{{ adm.busDlqCount }}</div>
+                    </div>
+                  </div>
+                  <div style="font-size: 13px; font-weight: 600;">Топики систем реестра</div>
+                  <sc-for list="{{ adm.busSystems }}" as="c" hint-placeholder-count="3">
+                    <div style="display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 10px; background: var(--s50); border: 1px solid var(--w7); flex-wrap: wrap;">
+                      <span style="font-size: 13px; font-weight: 600; width: 120px;">{{ c.id }}</span>
+                      <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w45); flex: 1; min-width: 220px;">{{ c.events }} · {{ c.commands }}</span>
+                      <button onClick="{{ c.tailEv }}" style="padding: 7px 11px; border: 1px solid var(--w14); border-radius: 9px; background: var(--w5); color: var(--ink); font-size: 11.5px; font-weight: 600;">события</button>
+                      <button onClick="{{ c.tailCmd }}" style="padding: 7px 11px; border: 1px solid var(--w14); border-radius: 9px; background: var(--w5); color: var(--ink); font-size: 11.5px; font-weight: 600;">команды</button>
+                    </div>
+                  </sc-for>
+                  <sc-if value="{{ adm.busTopic }}" hint-placeholder-val="{{ false }}">
+                    <div style="font-size: 13px; font-weight: 600;">Хвост топика <span style="font-family: 'JetBrains Mono', monospace; font-weight: 400; color: var(--w55);">{{ adm.busTopic }}</span></div>
+                    <sc-if value="{{ adm.busTailEmpty }}" hint-placeholder-val="{{ false }}">
+                      <div style="font-size: 12px; color: var(--w45);">Сообщений нет или шина не подключена.</div>
+                    </sc-if>
+                    <sc-for list="{{ adm.busTail }}" as="m" hint-placeholder-count="2">
+                      <div style="display: flex; flex-direction: column; gap: 4px; padding: 10px 14px; border-radius: 10px; background: var(--s50); border: 1px solid var(--w7);">
+                        <div style="display: flex; gap: 10px; flex-wrap: wrap; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w55);"><span>{{ m.ts }}</span><span style="color: var(--ink);">{{ m.type }}</span><span>key {{ m.key }}</span><span>trace {{ m.trace }}</span><span>{{ m.actor }}</span></div>
+                        <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w45); word-break: break-all;">{{ m.short }}</div>
+                      </div>
+                    </sc-for>
+                  </sc-if>
+                  <div style="font-size: 13px; font-weight: 600;">DLQ · ошибки коннектора</div>
+                  <sc-if value="{{ adm.busDlqEmpty }}" hint-placeholder-val="{{ false }}">
+                    <div style="font-size: 12px; color: var(--w45);">DLQ пуст — ошибок коннектора нет.</div>
+                  </sc-if>
+                  <sc-for list="{{ adm.busDlqRows }}" as="d" hint-placeholder-count="2">
+                    <div style="display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 10px; background: var(--s50); border: 1px solid var(--w7);">
+                      <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w55);"><span>{{ d.ts }}</span><span style="color: var(--ink);">{{ d.src }}</span><span>trace {{ d.trace }}</span><span style="color: {{ d.ackFg }};">{{ d.ackLabel }}</span></div>
+                      <div style="font-size: 12.5px; color: var(--danger-ink);">{{ d.error }}</div>
+                      <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w45); word-break: break-all;">{{ d.short }}</div>
+                      <div style="display: flex; gap: 8px;">
+                        <sc-if value="{{ d.canReplay }}" hint-placeholder-val="{{ false }}">
+                          <button onClick="{{ d.replay }}" style="padding: 7px 11px; border: 1px solid var(--w14); border-radius: 9px; background: var(--w5); color: var(--ink); font-size: 11.5px; font-weight: 600;">Повторить команду</button>
+                        </sc-if>
+                        <sc-if value="{{ d.canAck }}" hint-placeholder-val="{{ false }}">
+                          <button onClick="{{ d.ack }}" style="padding: 7px 11px; border: 1px solid var(--w14); border-radius: 9px; background: transparent; color: var(--w55); font-size: 11.5px; font-weight: 600;">Списать</button>
+                        </sc-if>
+                      </div>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-if>
+
               <sc-if value="{{ adm.isBillTab }}" hint-placeholder-val="{{ false }}">
                 <div style="display: flex; flex-direction: column; gap: 14px;">
                   <div style="font-size: 12.5px; line-height: 1.55; color: var(--w55);">Квота — предел расхода среды за неделю. Политика решает, что делать на пределе: остановить, спросить человека или продолжить с записью в аудит.</div>

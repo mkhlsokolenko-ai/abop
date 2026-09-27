@@ -29,7 +29,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, assembly, audit_store, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, families_store, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, report_store, run_cache_store, run_store, runner, safety, schema_store, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, assembly, audit_store, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, report_store, run_cache_store, run_store, runner, safety, schema_store, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
@@ -1918,6 +1918,10 @@ async def _startup() -> None:
     obs.log_event("info", "run_queue.started", workers=run_queue.WORKERS, bus=run_bus.describe().get("bus"))
     await _refresh_skill_ds_cache()  # инжект data-need оверрайдов из PG в ape
     await dataplane_store.init()
+    try:
+        await dlq_store.init()
+    except Exception as _ex:  # noqa: BLE001
+        obs.log_event("warning", "dlq_store.init_failed", error=str(_ex)[:200])
     await _backfill_dataplane_from_files()  # одноразовый перенос ~/.ape → PG (сохранить демо-рецепты)
     await _refresh_dataplane_cache()  # инжект рецептов/коннекторов из PG в ape
     # LLM-override (эндпоинт бокса из UI) — восстановить из PG при старте, инжектить в clients
@@ -3992,10 +3996,76 @@ async def bus_tail(topic: str, limit: int = 20, u: dict = Depends(user)) -> dict
 
 @app.get("/api/bus/dlq")
 async def bus_dlq(limit: int = 30, u: dict = Depends(user)) -> dict:
-    """Ошибки из DLQ (admin/support): source-topic, error, payload, trace_id — чтобы вычитывать и чинить."""
+    """Ошибки из DLQ (admin/support): source-topic, error, payload, trace_id + отметки разбора (списано/повторено).
+    Kafka-сообщение не удалить — состояние разбора живёт в dlq_acks по ключу partition:offset."""
     require_level(u, "support")
     items = await run_bus.bus().tail(run_bus.TOPIC_DLQ, max(1, min(200, limit)))
-    return {"topic": run_bus.TOPIC_DLQ, "items": items, "count": len(items)}
+    acks = await dlq_store.all()
+    out = []
+    for it in items:
+        k = dlq_store.key_of(it.get("partition") or 0, it.get("offset") or 0)
+        v = it.get("value") if isinstance(it.get("value"), dict) else {}
+        src = str(v.get("source_topic") or (it.get("headers") or {}).get("source-topic") or "")
+        out.append({**it, "key_id": k, "source_topic": src, "error": str(v.get("error") or (it.get("headers") or {}).get("error") or "")[:400],
+                    "trace_id": v.get("trace_id") or (it.get("headers") or {}).get("x-trace-id") or "",
+                    "replayable": src.endswith(".commands") and isinstance(v.get("payload"), dict) and bool((v.get("payload") or {}).get("system")),
+                    "ack": acks.get(k)})
+    open_ = sum(1 for x in out if not x.get("ack"))
+    return {"topic": run_bus.TOPIC_DLQ, "items": out, "count": len(out), "open": open_}
+
+
+async def _dlq_find(partition: int, offset: int) -> dict | None:
+    for it in await run_bus.bus().tail(run_bus.TOPIC_DLQ, 200):
+        if int(it.get("partition") or 0) == int(partition) and int(it.get("offset") or 0) == int(offset):
+            return it
+    return None
+
+
+@app.post("/api/bus/dlq/replay")
+async def bus_dlq_replay(body: dict, u: dict = Depends(user)) -> dict:
+    """Повторить команду из DLQ (manager+): исходная команда коннектора публикуется заново в abop.<система>.commands
+    с новым id (дедуп коннектора по id — иначе он её не исполнит). Отметка replayed в dlq_acks."""
+    require_level(u, "manager")
+    try:
+        partition, offset = int((body or {}).get("partition")), int((body or {}).get("offset"))
+    except Exception:  # noqa: BLE001
+        raise HTTPException(422, "нужны partition и offset сообщения DLQ")
+    if not getattr(run_bus.bus(), "active", False):
+        raise HTTPException(503, "шина не подключена — повторить некуда")
+    it = await _dlq_find(partition, offset)
+    if not it:
+        raise HTTPException(404, "сообщение DLQ не найдено в хвосте топика")
+    v = it.get("value") if isinstance(it.get("value"), dict) else {}
+    cmd = v.get("payload") if isinstance(v.get("payload"), dict) else {}
+    src = str(v.get("source_topic") or "")
+    if not src.endswith(".commands") or not cmd.get("system") or not cmd.get("type"):
+        raise HTTPException(422, "повторить можно только команду коннектора (source_topic abop.<система>.commands)")
+    actor = u.get("name") or u.get("sub") or "dev"
+    res = await run_bus.publish_command(str(cmd["system"]), str(cmd["type"]), cmd.get("payload") if isinstance(cmd.get("payload"), dict) else {},
+                                        actor=actor, trace_id=str(v.get("trace_id") or cmd.get("trace_id") or obs.current_trace_id()))
+    if not res.get("ok"):
+        raise HTTPException(502, "не удалось опубликовать команду")
+    k = dlq_store.key_of(partition, offset)
+    rec = await dlq_store.mark(k, "replayed", actor, note=str((body or {}).get("note") or ""), replay_id=(res.get("command") or {}).get("id") or "")
+    await audit_store.record(actor, "bus.dlq.replay", k, {"system": cmd.get("system"), "type": cmd.get("type"), "command_id": rec["replay_id"]}, severity="warn")
+    obs.inc("abop_bus_dlq_handled_total", action="replay")
+    return {"ok": True, "key_id": k, "topic": res.get("topic"), "command_id": rec["replay_id"], "ack": rec}
+
+
+@app.post("/api/bus/dlq/ack")
+async def bus_dlq_ack(body: dict, u: dict = Depends(user)) -> dict:
+    """Списать сообщение DLQ (manager+): разобрано руками, повтор не нужен. Заметка — в аудит."""
+    require_level(u, "manager")
+    try:
+        partition, offset = int((body or {}).get("partition")), int((body or {}).get("offset"))
+    except Exception:  # noqa: BLE001
+        raise HTTPException(422, "нужны partition и offset сообщения DLQ")
+    actor = u.get("name") or u.get("sub") or "dev"
+    k = dlq_store.key_of(partition, offset)
+    rec = await dlq_store.mark(k, "acked", actor, note=str((body or {}).get("note") or "")[:500])
+    await audit_store.record(actor, "bus.dlq.ack", k, {"note": rec["note"][:200]}, severity="info")
+    obs.inc("abop_bus_dlq_handled_total", action="ack")
+    return {"ok": True, "key_id": k, "ack": rec}
 
 
 @app.post("/api/bus/publish")

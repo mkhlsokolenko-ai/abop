@@ -37,7 +37,7 @@
 - Логи: `docker logs abop-connector` (JSON-строки `connector.started/done/failed/duplicate`).
 - Новый адаптер = функция `async def f(payload) -> dict` + запись в `ADAPTERS[(система, тип)]`; временные ошибки — `raise Transient(...)`.
 - Повторная доставка одной команды (ребаланс, рестарт) не создаёт дубля: id хранится в `/data/connector.sqlite`.
-- DLQ читается `GET /api/bus/dlq` (support+); чтобы переиграть команду — опубликовать её заново с новым id.
+- DLQ читается `GET /api/bus/dlq` (support+) с отметками разбора; **страница «Настройки → Шина» в веб-админке**: состояние шины, топики систем с хвостом, DLQ с кнопками «Повторить команду» (`POST /api/bus/dlq/replay` — новый id, коннектор исполнит) и «Списать» (`POST /api/bus/dlq/ack`). Kafka-сообщение не удаляется, отметка живёт в `dlq_acks` (partition:offset).
 
 ## Наблюдаемость (Grafana, 27.09)
 

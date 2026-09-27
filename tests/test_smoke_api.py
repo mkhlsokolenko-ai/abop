@@ -297,3 +297,16 @@ def test_report_templates_from_repo_and_run_report_html(client):
     r2 = client.get(f"/api/runs/{rid}/report?template=digest")
     assert r2.status_code == 200 and "Задачи и сводка" in r2.text and "<th>ранг</th>" in r2.text
     assert client.get("/api/runs/no-such-run/report").status_code == 404
+
+
+def test_bus_dlq_ack_and_replay(client):
+    """Разбор DLQ: отметки «списано/повторено» живут отдельно от Kafka (dlq_acks); без шины повтор честно 503."""
+    r = client.get("/api/bus/dlq")
+    assert r.status_code == 200 and r.json()["count"] == 0 and r.json()["open"] == 0
+    r = client.post("/api/bus/dlq/ack", json={"partition": 0, "offset": 17, "note": "ошибка коннектора разобрана руками"})
+    assert r.status_code == 200 and r.json()["key_id"] == "0:17" and r.json()["ack"]["state"] == "acked"
+    assert client.post("/api/bus/dlq/ack", json={"partition": "x"}).status_code == 422
+    r = client.post("/api/bus/dlq/replay", json={"partition": 0, "offset": 17})
+    assert r.status_code == 503   # PgBus в тестах: повторить некуда
+    b = client.get("/api/bus").json()
+    assert "systems" in b and "bus" in b
