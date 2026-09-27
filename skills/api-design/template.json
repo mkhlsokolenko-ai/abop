@@ -1,0 +1,361 @@
+{
+  "name": "Проектирование REST API contract-first (api-design)",
+  "instruction": "По описанию сервиса, требованиям и существующим контрактам из блока данных спроектируй HTTP/REST API contract-first: ресурсы (существительные во множественном числе), эндпоинты с методами и кодами, схемы данных, единый формат ошибок RFC 7807, стратегия версионирования, идемпотентность POST, cursor-пагинация, authz на входе и rate-limit на мутациях, правила обратной совместимости. Имена сущностей, полей и ограничения бери только из данных; чего нет — оставляй пустым или «не удалось определить», предположения помечай в допущениях. В примерах и фрагменте OpenAPI — только плейсхолдеры, никаких реальных хостов, токенов и секретов.",
+  "json_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "сервис",
+      "версионирование",
+      "ресурсы",
+      "эндпоинты",
+      "схемы",
+      "ошибки",
+      "безопасность",
+      "обратная_совместимость",
+      "openapi_фрагмент",
+      "допущения",
+      "открытые_вопросы",
+      "итог"
+    ],
+    "properties": {
+      "сервис": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "название",
+          "назначение",
+          "аудитория",
+          "базовый_путь",
+          "источник"
+        ],
+        "properties": {
+          "название": {
+            "type": "string"
+          },
+          "назначение": {
+            "type": "string",
+            "description": "что делает сервис, 1–2 предложения из данных"
+          },
+          "аудитория": {
+            "type": "string",
+            "enum": [
+              "внешние клиенты",
+              "между сервисами",
+              "обе"
+            ]
+          },
+          "базовый_путь": {
+            "type": "string",
+            "description": "например «/v1»"
+          },
+          "источник": {
+            "type": "string",
+            "description": "откуда взяты требования: документ, задача, обсуждение"
+          }
+        }
+      },
+      "версионирование": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "стратегия",
+          "обоснование",
+          "правило_мажорной_версии"
+        ],
+        "properties": {
+          "стратегия": {
+            "type": "string",
+            "enum": [
+              "версия в URL",
+              "версия в заголовке Accept"
+            ]
+          },
+          "обоснование": {
+            "type": "string"
+          },
+          "правило_мажорной_версии": {
+            "type": "string",
+            "description": "какие изменения требуют новой мажорной версии"
+          }
+        }
+      },
+      "ресурсы": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ресурс",
+            "путь",
+            "описание",
+            "родитель"
+          ],
+          "properties": {
+            "ресурс": {
+              "type": "string",
+              "description": "существительное во множественном числе, например «documents»"
+            },
+            "путь": {
+              "type": "string",
+              "description": "например «/collections/{id}/documents», вложенность не глубже 2"
+            },
+            "описание": {
+              "type": "string"
+            },
+            "родитель": {
+              "type": "string",
+              "description": "ресурс-родитель для вложенных или пустая строка"
+            }
+          }
+        }
+      },
+      "эндпоинты": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "метод",
+            "путь",
+            "назначение",
+            "параметры",
+            "тело_запроса",
+            "ответ_успеха",
+            "коды_ошибок",
+            "идемпотентность",
+            "пагинация",
+            "требует_авторизации",
+            "rate_limit",
+            "критичность"
+          ],
+          "properties": {
+            "метод": {
+              "type": "string",
+              "enum": [
+                "GET",
+                "POST",
+                "PUT",
+                "PATCH",
+                "DELETE"
+              ]
+            },
+            "путь": {
+              "type": "string"
+            },
+            "назначение": {
+              "type": "string"
+            },
+            "параметры": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "path/query/header параметры: «имя (где): тип, обязательность, ограничение»"
+            },
+            "тело_запроса": {
+              "type": "string",
+              "description": "имя схемы или «нет»"
+            },
+            "ответ_успеха": {
+              "type": "string",
+              "description": "код и краткое описание тела, например «200 — список + next_cursor»"
+            },
+            "коды_ошибок": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "например «404 — коллекция не найдена», «422 — валидация»"
+            },
+            "идемпотентность": {
+              "type": "string",
+              "enum": [
+                "идемпотентен по определению",
+                "ключ Idempotency-Key",
+                "не идемпотентен"
+              ]
+            },
+            "пагинация": {
+              "type": "string",
+              "enum": [
+                "cursor",
+                "offset/limit",
+                "нет"
+              ],
+              "description": "cursor — дефолт для коллекций; offset только для маленьких статичных"
+            },
+            "требует_авторизации": {
+              "type": "boolean"
+            },
+            "rate_limit": {
+              "type": "boolean",
+              "description": "true для мутирующих эндпоинтов"
+            },
+            "критичность": {
+              "type": "string",
+              "enum": [
+                "высокая",
+                "средняя",
+                "низкая"
+              ],
+              "description": "мутации, egress, чувствительные данные — высокая"
+            }
+          }
+        }
+      },
+      "схемы": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "название",
+            "назначение",
+            "поля"
+          ],
+          "properties": {
+            "название": {
+              "type": "string",
+              "description": "имя схемы в components, например «Document»"
+            },
+            "назначение": {
+              "type": "string"
+            },
+            "поля": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "«имя: тип, обязательное/опциональное, описание»"
+            }
+          }
+        }
+      },
+      "ошибки": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "формат",
+          "поля",
+          "коды"
+        ],
+        "properties": {
+          "формат": {
+            "type": "string",
+            "description": "RFC 7807, application/problem+json"
+          },
+          "поля": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "type, title, status, detail, instance и доп. поля"
+          },
+          "коды": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "код",
+                "когда"
+              ],
+              "properties": {
+                "код": {
+                  "type": "integer",
+                  "description": "HTTP-статус"
+                },
+                "когда": {
+                  "type": "string",
+                  "description": "в какой ситуации возвращается"
+                }
+              }
+            }
+          }
+        }
+      },
+      "безопасность": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "схемы_авторизации",
+          "где_проверяется",
+          "rate_limit",
+          "валидация_входа"
+        ],
+        "properties": {
+          "схемы_авторизации": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "security schemes: Bearer JWT, API-key и т.п."
+          },
+          "где_проверяется": {
+            "type": "string",
+            "description": "на входе, единожды, с кэшированием токена"
+          },
+          "rate_limit": {
+            "type": "string",
+            "description": "политика и ответ 429 с Retry-After"
+          },
+          "валидация_входа": {
+            "type": "string",
+            "description": "по схеме OpenAPI/Pydantic"
+          }
+        }
+      },
+      "обратная_совместимость": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "можно_без_новой_версии",
+          "только_с_новой_версией",
+          "влияние_на_существующих_клиентов"
+        ],
+        "properties": {
+          "можно_без_новой_версии": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "только_с_новой_версией": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "влияние_на_существующих_клиентов": {
+            "type": "string",
+            "description": "если контракт меняется; иначе «новый контракт»"
+          }
+        }
+      },
+      "openapi_фрагмент": {
+        "type": "string",
+        "description": "YAML-фрагмент paths и components для ключевых эндпоинтов; только плейсхолдеры"
+      },
+      "допущения": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "что предположено сверх данных"
+      },
+      "открытые_вопросы": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "что уточнить у владельца сервиса или смежных команд"
+      },
+      "итог": {
+        "type": "string",
+        "description": "2–3 предложения: сколько ресурсов и эндпоинтов, ключевые решения по версиям, ошибкам и пагинации"
+      }
+    }
+  },
+  "max_tokens": 5000
+}

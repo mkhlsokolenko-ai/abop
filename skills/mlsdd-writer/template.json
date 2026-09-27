@@ -1,0 +1,378 @@
+{
+  "name": "ML System Design Doc по шаблону Reliable ML (mlsdd-writer)",
+  "instruction": "По артефактам discovery (ICP, JTBD, гипотеза ценности), спеке, cost-модели и eval-метрикам из блока данных заполни восемь секций ML System Design Doc по шаблону Reliable ML: проблема и цель с бизнес-метрикой (не ML-метрикой), постановка задачи с baseline, данные (источник, объём, лицензия, утечки, дрейф), метрики онлайн/офлайн, архитектура (workflow vs agent с обоснованием), валидация, риски, cost-модель. Секции, для которых в данных нет конкретики, не заполняй абстракциями — отметь их в дырах с вопросом «а конкретно?» студенту. Факты — только из данных; чего нет — «не удалось определить», предположения помечай в допущениях.",
+  "json_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "проект",
+      "проблема_и_цель",
+      "постановка_задачи",
+      "данные",
+      "метрики",
+      "архитектура",
+      "валидация",
+      "риски",
+      "cost_модель",
+      "дыры",
+      "допущения",
+      "итог"
+    ],
+    "properties": {
+      "проект": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "название",
+          "автор",
+          "стадия",
+          "источники"
+        ],
+        "properties": {
+          "название": {
+            "type": "string"
+          },
+          "автор": {
+            "type": "string",
+            "description": "студент/владелец из данных"
+          },
+          "стадия": {
+            "type": "string",
+            "description": "что уже сделано в discovery"
+          },
+          "источники": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "документы и записи, на которых основан документ"
+          }
+        }
+      },
+      "проблема_и_цель": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "задача",
+          "пользователь",
+          "боль",
+          "бизнес_метрика",
+          "целевое_значение"
+        ],
+        "properties": {
+          "задача": {
+            "type": "string",
+            "description": "что за задача, 1–2 предложения"
+          },
+          "пользователь": {
+            "type": "string",
+            "description": "ICP: кто и в каком контексте"
+          },
+          "боль": {
+            "type": "string",
+            "description": "какую боль снимаем"
+          },
+          "бизнес_метрика": {
+            "type": "string",
+            "description": "что меняется у пользователя/бизнеса; не accuracy"
+          },
+          "целевое_значение": {
+            "type": "string",
+            "description": "значение строкой или «не удалось определить»"
+          }
+        }
+      },
+      "постановка_задачи": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "тип",
+          "вход",
+          "выход",
+          "baseline"
+        ],
+        "properties": {
+          "тип": {
+            "type": "string",
+            "enum": [
+              "классификация",
+              "генерация",
+              "retrieval",
+              "агент",
+              "комбинированная"
+            ]
+          },
+          "вход": {
+            "type": "string"
+          },
+          "выход": {
+            "type": "string"
+          },
+          "baseline": {
+            "type": "string",
+            "description": "с чем сравниваем: правило, простая модель, текущий процесс"
+          }
+        }
+      },
+      "данные": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "источник",
+          "объём",
+          "лицензия",
+          "лицензия_проверена",
+          "разметка",
+          "утечки",
+          "дрейф",
+          "синтетика_vs_реальные"
+        ],
+        "properties": {
+          "источник": {
+            "type": "string"
+          },
+          "объём": {
+            "type": "string",
+            "description": "строкой с единицей"
+          },
+          "лицензия": {
+            "type": "string"
+          },
+          "лицензия_проверена": {
+            "type": "string",
+            "enum": [
+              "проверена",
+              "не проверена",
+              "не удалось определить"
+            ]
+          },
+          "разметка": {
+            "type": "string",
+            "description": "есть ли, кто и как размечает"
+          },
+          "утечки": {
+            "type": "string",
+            "description": "риск утечки таргета или реальных данных и как его закрываем"
+          },
+          "дрейф": {
+            "type": "string",
+            "description": "как меняются данные во времени и как отслеживаем"
+          },
+          "синтетика_vs_реальные": {
+            "type": "string"
+          }
+        }
+      },
+      "метрики": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "онлайн",
+          "офлайн",
+          "галлюцинации"
+        ],
+        "properties": {
+          "онлайн": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "бизнес-метрики в проде"
+          },
+          "офлайн": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "ML/eval-метрики"
+          },
+          "галлюцинации": {
+            "type": "string",
+            "description": "как измеряем, если применимо; иначе «не применимо»"
+          }
+        }
+      },
+      "архитектура": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "тип",
+          "обоснование",
+          "модели",
+          "rag",
+          "память"
+        ],
+        "properties": {
+          "тип": {
+            "type": "string",
+            "enum": [
+              "один LLM-вызов",
+              "workflow",
+              "agent",
+              "hybrid"
+            ]
+          },
+          "обоснование": {
+            "type": "string",
+            "description": "почему не проще; ссылка на вывод architecture-chooser, если есть"
+          },
+          "модели": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "модель/профиль и для чего"
+          },
+          "rag": {
+            "type": "string",
+            "description": "нужен ли и как; иначе «нет»"
+          },
+          "память": {
+            "type": "string",
+            "description": "нужна ли и как; иначе «нет»"
+          }
+        }
+      },
+      "валидация": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "eval_датасет",
+          "грейдеры",
+          "пороги"
+        ],
+        "properties": {
+          "eval_датасет": {
+            "type": "string",
+            "description": "что есть или что собрать"
+          },
+          "грейдеры": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "code / LLM-as-judge / human и на что"
+          },
+          "пороги": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "метрика: значение или «откалибровать»"
+          }
+        }
+      },
+      "риски": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "риск",
+            "описание",
+            "смягчение"
+          ],
+          "properties": {
+            "риск": {
+              "type": "string",
+              "enum": [
+                "prompt injection",
+                "стоимость",
+                "latency",
+                "отказоустойчивость",
+                "данные и лицензии",
+                "регуляторика",
+                "иное"
+              ]
+            },
+            "описание": {
+              "type": "string"
+            },
+            "смягчение": {
+              "type": "string",
+              "description": "cascade fallback, лимиты, изоляция промпта и т.п."
+            }
+          }
+        }
+      },
+      "cost_модель": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "токены_на_user_flow",
+          "тариф",
+          "оценка",
+          "впишется_в_лимит"
+        ],
+        "properties": {
+          "токены_на_user_flow": {
+            "type": "string",
+            "description": "оценка строкой"
+          },
+          "тариф": {
+            "type": "string",
+            "description": "модель и цена за токен или «не удалось определить»"
+          },
+          "оценка": {
+            "type": "string",
+            "description": "стоимость одного user-flow и в месяц, строкой"
+          },
+          "впишется_в_лимит": {
+            "type": "string",
+            "enum": [
+              "да",
+              "нет",
+              "не удалось определить"
+            ]
+          }
+        }
+      },
+      "дыры": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "секция",
+            "что_не_хватает",
+            "вопрос_студенту"
+          ],
+          "properties": {
+            "секция": {
+              "type": "string",
+              "enum": [
+                "Проблема и цель",
+                "Постановка задачи",
+                "Данные",
+                "Метрики",
+                "Архитектура",
+                "Валидация",
+                "Риски",
+                "Cost-модель"
+              ]
+            },
+            "что_не_хватает": {
+              "type": "string",
+              "description": "абстракция вместо конкретики, пустота, подмена метрики"
+            },
+            "вопрос_студенту": {
+              "type": "string",
+              "description": "«а конкретно?» — точный вопрос"
+            }
+          }
+        }
+      },
+      "допущения": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "итог": {
+        "type": "string",
+        "description": "2–3 предложения: готовность документа, главная дыра и следующий шаг"
+      }
+    }
+  },
+  "max_tokens": 5000
+}

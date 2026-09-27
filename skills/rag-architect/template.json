@@ -1,0 +1,342 @@
+{
+  "name": "Архитектура RAG-pipeline (rag-architect)",
+  "instruction": "По описанию use-case и корпуса из блока данных спроектируй RAG-pipeline: chunking под тип документа (не «512 по инерции»), embedding, vector DB и структура коллекции, retrieval top-K → reranker → top-N с порогом отсечения, анти-галлюцинация (fallback и обязательные цитаты), anti-injection для внешнего корпуса, eval (Recall@K, доля ответов без цитат). Тип и объём корпуса, требования к точности, наличие seed-датасета — только из данных; пороги без калибровки помечай как предварительные; чего нет — «не удалось определить», предположения помечай в допущениях.",
+  "json_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "use_case",
+      "chunking",
+      "embedding",
+      "vector_db",
+      "retrieval",
+      "анти_галлюцинация",
+      "anti_injection",
+      "eval",
+      "решения_для_adr",
+      "допущения",
+      "открытые_вопросы",
+      "итог"
+    ],
+    "properties": {
+      "use_case": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "задача",
+          "тип_корпуса",
+          "объём_корпуса",
+          "язык",
+          "доверенность_корпуса",
+          "требования_к_точности",
+          "источник"
+        ],
+        "properties": {
+          "задача": {
+            "type": "string",
+            "description": "какие вопросы и по каким документам отвечает система"
+          },
+          "тип_корпуса": {
+            "type": "string",
+            "enum": [
+              "регламенты и нормативка",
+              "чаты и переписка",
+              "код",
+              "статьи и веб",
+              "смешанный",
+              "не удалось определить"
+            ]
+          },
+          "объём_корпуса": {
+            "type": "string",
+            "description": "число документов/страниц строкой или «не удалось определить»"
+          },
+          "язык": {
+            "type": "string"
+          },
+          "доверенность_корпуса": {
+            "type": "string",
+            "enum": [
+              "внутренний доверенный",
+              "внешний недоверенный",
+              "смешанный"
+            ]
+          },
+          "требования_к_точности": {
+            "type": "string",
+            "description": "что важнее: полнота или точность, цена ошибки"
+          },
+          "источник": {
+            "type": "string",
+            "description": "описание проекта, обсуждение, корпус"
+          }
+        }
+      },
+      "chunking": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "стратегия",
+          "размер",
+          "overlap",
+          "обоснование",
+          "метаданные_чанка"
+        ],
+        "properties": {
+          "стратегия": {
+            "type": "string",
+            "enum": [
+              "по структуре документа",
+              "фиксированный размер с overlap",
+              "семантический",
+              "по абзацам",
+              "иерархический"
+            ]
+          },
+          "размер": {
+            "type": "string",
+            "description": "в токенах или символах, строкой"
+          },
+          "overlap": {
+            "type": "string"
+          },
+          "обоснование": {
+            "type": "string",
+            "description": "почему под этот тип корпуса"
+          },
+          "метаданные_чанка": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "что кладём в payload: документ, раздел, дата, тенант"
+          }
+        }
+      },
+      "embedding": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "модель",
+          "размерность",
+          "обоснование"
+        ],
+        "properties": {
+          "модель": {
+            "type": "string",
+            "description": "BGE-M3 — дефолт курса"
+          },
+          "размерность": {
+            "type": "string",
+            "description": "например «1024»"
+          },
+          "обоснование": {
+            "type": "string"
+          }
+        }
+      },
+      "vector_db": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "выбор",
+          "коллекция",
+          "payload_поля",
+          "фильтры",
+          "обоснование"
+        ],
+        "properties": {
+          "выбор": {
+            "type": "string",
+            "enum": [
+              "Qdrant",
+              "pgvector",
+              "иное"
+            ]
+          },
+          "коллекция": {
+            "type": "string",
+            "description": "имя коллекции и принцип изоляции"
+          },
+          "payload_поля": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "фильтры": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "по каким полям фильтруем до векторного поиска"
+          },
+          "обоснование": {
+            "type": "string"
+          }
+        }
+      },
+      "retrieval": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "top_k_вектор",
+          "reranker",
+          "top_n_после_reranker",
+          "порог_отсечения",
+          "статус_порога",
+          "гибридный_поиск"
+        ],
+        "properties": {
+          "top_k_вектор": {
+            "type": "string",
+            "description": "например «20»"
+          },
+          "reranker": {
+            "type": "string",
+            "description": "модель, например BGE-reranker-v2-m3"
+          },
+          "top_n_после_reranker": {
+            "type": "string",
+            "description": "например «5»"
+          },
+          "порог_отсечения": {
+            "type": "string",
+            "description": "значение или «не откалиброван»"
+          },
+          "статус_порога": {
+            "type": "string",
+            "enum": [
+              "откалиброван на seed-датасете",
+              "предварительный",
+              "не удалось определить"
+            ]
+          },
+          "гибридный_поиск": {
+            "type": "string",
+            "description": "BM25 + вектор или «нет»"
+          }
+        }
+      },
+      "анти_галлюцинация": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "условие_fallback",
+          "текст_fallback",
+          "цитаты_обязательны",
+          "формат_цитаты"
+        ],
+        "properties": {
+          "условие_fallback": {
+            "type": "string",
+            "description": "нет контекста выше порога"
+          },
+          "текст_fallback": {
+            "type": "string",
+            "description": "стандартный ответ «недостаточно данных»"
+          },
+          "цитаты_обязательны": {
+            "type": "boolean"
+          },
+          "формат_цитаты": {
+            "type": "string",
+            "description": "документ, раздел, чанк"
+          }
+        }
+      },
+      "anti_injection": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "нужен",
+          "меры"
+        ],
+        "properties": {
+          "нужен": {
+            "type": "boolean",
+            "description": "true для внешнего или смешанного корпуса"
+          },
+          "меры": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "retrieved-контент как данные, изоляция промпта, фильтрация инструкций"
+          }
+        }
+      },
+      "eval": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "метрики",
+          "seed_датасет",
+          "целевые_пороги"
+        ],
+        "properties": {
+          "метрики": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Recall@K, доля ответов без цитат, pass-rate judge"
+          },
+          "seed_датасет": {
+            "type": "string",
+            "description": "что есть в данных или «нет — собрать»"
+          },
+          "целевые_пороги": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "метрика: целевое значение"
+          }
+        }
+      },
+      "решения_для_adr": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "решение",
+            "альтернатива",
+            "почему"
+          ],
+          "properties": {
+            "решение": {
+              "type": "string"
+            },
+            "альтернатива": {
+              "type": "string"
+            },
+            "почему": {
+              "type": "string"
+            }
+          }
+        },
+        "description": "каждое ключевое решение — кандидат в отдельный ADR"
+      },
+      "допущения": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "открытые_вопросы": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "что уточнить о корпусе и требованиях"
+      },
+      "итог": {
+        "type": "string",
+        "description": "2–3 предложения: ключевые параметры pipeline и главный риск"
+      }
+    }
+  },
+  "max_tokens": 4000
+}

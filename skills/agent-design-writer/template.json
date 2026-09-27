@@ -1,0 +1,358 @@
+{
+  "name": "Дизайн агента по Agent Design (agent-design-writer)",
+  "instruction": "По выводу architecture-chooser, требованиям домена и обсуждению из блока данных спроектируй агента до кода по восьми разделам: job to be done одной фразой, границы (что не делает, необратимые действия под HITL), tool surface (для каждого инструмента — зачем, вход/выход, обратимость, гейт), контекст (стабильный системный промпт vs per-turn, prompt caching), память, деградация (модель недоступна, пустой retrieval, квота), наблюдаемость, eval. Инструменты, системы и ограничения бери только из данных, не придумывай; чего нет — «не удалось определить», предположения помечай в допущениях. Каждый необратимый инструмент — только под подтверждение человека или за границей агента.",
+  "json_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "агент",
+      "границы",
+      "tool_surface",
+      "контекст",
+      "память",
+      "деградация",
+      "наблюдаемость",
+      "eval",
+      "риски",
+      "допущения",
+      "открытые_вопросы",
+      "итог"
+    ],
+    "properties": {
+      "агент": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "название",
+          "job_to_be_done",
+          "домен",
+          "почему_агент",
+          "источник"
+        ],
+        "properties": {
+          "название": {
+            "type": "string"
+          },
+          "job_to_be_done": {
+            "type": "string",
+            "description": "одна фраза: что агент доводит до результата"
+          },
+          "домен": {
+            "type": "string"
+          },
+          "почему_агент": {
+            "type": "string",
+            "description": "вывод architecture-chooser из данных или «не удалось определить»"
+          },
+          "источник": {
+            "type": "string",
+            "description": "документы и обсуждения, на которых основан дизайн"
+          }
+        }
+      },
+      "границы": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "не_делает",
+          "требует_подтверждения",
+          "вне_агента"
+        ],
+        "properties": {
+          "не_делает": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "что агент никогда не делает"
+          },
+          "требует_подтверждения": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "действие",
+                "почему_необратимо"
+              ],
+              "properties": {
+                "действие": {
+                  "type": "string"
+                },
+                "почему_необратимо": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "необратимые действия под HITL: отправка, удаление, критичные записи"
+          },
+          "вне_агента": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "что вынесено в код или к человеку целиком"
+          }
+        }
+      },
+      "tool_surface": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "инструмент",
+            "зачем",
+            "вход",
+            "выход",
+            "обратимость",
+            "гейт",
+            "egress",
+            "критичность"
+          ],
+          "properties": {
+            "инструмент": {
+              "type": "string",
+              "description": "имя инструмента через MCP"
+            },
+            "зачем": {
+              "type": "string"
+            },
+            "вход": {
+              "type": "string"
+            },
+            "выход": {
+              "type": "string"
+            },
+            "обратимость": {
+              "type": "string",
+              "enum": [
+                "обратимый",
+                "необратимый",
+                "частично обратимый"
+              ]
+            },
+            "гейт": {
+              "type": "string",
+              "enum": [
+                "HITL-подтверждение",
+                "за границей агента",
+                "не нужен"
+              ]
+            },
+            "egress": {
+              "type": "boolean",
+              "description": "true, если инструмент ходит наружу периметра"
+            },
+            "критичность": {
+              "type": "string",
+              "enum": [
+                "высокая",
+                "средняя",
+                "низкая"
+              ]
+            }
+          }
+        }
+      },
+      "контекст": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "системный_промпт",
+          "per_turn",
+          "prompt_caching"
+        ],
+        "properties": {
+          "системный_промпт": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "стабильные части: роль, правила, описания инструментов"
+          },
+          "per_turn": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "что подаём на каждом ходу: запрос, retrieval, память"
+          },
+          "prompt_caching": {
+            "type": "string",
+            "description": "что кэшируется и как сохраняем стабильный префикс"
+          }
+        }
+      },
+      "память": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "нужна_долгая",
+          "short_term",
+          "long_term",
+          "дистилляция"
+        ],
+        "properties": {
+          "нужна_долгая": {
+            "type": "boolean"
+          },
+          "short_term": {
+            "type": "string",
+            "description": "как управляем окном"
+          },
+          "long_term": {
+            "type": "string",
+            "description": "что и где храним или «не нужна»"
+          },
+          "дистилляция": {
+            "type": "string",
+            "description": "как пополняется или «не применимо»"
+          }
+        }
+      },
+      "деградация": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ситуация",
+            "поведение",
+            "fallback"
+          ],
+          "properties": {
+            "ситуация": {
+              "type": "string",
+              "enum": [
+                "модель недоступна",
+                "пустой retrieval",
+                "исчерпана квота",
+                "ошибка инструмента",
+                "иное"
+              ]
+            },
+            "поведение": {
+              "type": "string",
+              "description": "что делает агент"
+            },
+            "fallback": {
+              "type": "string",
+              "description": "cascade на другую модель, честный отказ, эскалация человеку"
+            }
+          }
+        }
+      },
+      "наблюдаемость": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "логируем",
+          "трейсы",
+          "версия_промпта",
+          "стоимость"
+        ],
+        "properties": {
+          "логируем": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "tool-calls, стоимость, версия промпта, latency"
+          },
+          "трейсы": {
+            "type": "string",
+            "description": "куда пишем трейсы, например Langfuse; или «не удалось определить»"
+          },
+          "версия_промпта": {
+            "type": "string",
+            "description": "как версионируется"
+          },
+          "стоимость": {
+            "type": "string",
+            "description": "как считаем и лимитируем"
+          }
+        }
+      },
+      "eval": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "как_поймём_что_работает",
+          "датасет",
+          "грейдеры",
+          "пороги"
+        ],
+        "properties": {
+          "как_поймём_что_работает": {
+            "type": "string"
+          },
+          "датасет": {
+            "type": "string",
+            "description": "что есть или что собрать"
+          },
+          "грейдеры": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "code / LLM-as-judge / human с указанием на что"
+          },
+          "пороги": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "метрика: значение или «откалибровать»"
+          }
+        }
+      },
+      "риски": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "риск",
+            "влияние",
+            "смягчение"
+          ],
+          "properties": {
+            "риск": {
+              "type": "string"
+            },
+            "влияние": {
+              "type": "string",
+              "enum": [
+                "высокая",
+                "средняя",
+                "низкая"
+              ]
+            },
+            "смягчение": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "допущения": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "открытые_вопросы": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "что уточнить у владельца задачи до реализации"
+      },
+      "итог": {
+        "type": "string",
+        "description": "2–3 предложения: что за агент, главные границы и главный риск"
+      }
+    }
+  },
+  "max_tokens": 5000
+}

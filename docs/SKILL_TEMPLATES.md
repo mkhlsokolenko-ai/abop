@@ -1,6 +1,6 @@
 # Шаблоны извлечения навыков (`skills/<sid>/template.json`)
 
-Дата: 2026-09-27. Статус: на проде, 16 навыков (4 демо-кейса покрыты полностью).
+Дата: 2026-09-27. Статус: на проде, 51 навык из 56 (4 демо-кейса + все бизнес-, финансовые и архитектурные навыки). Без шаблонов только code-навыки: conventional-commits, docker-patterns, fastapi-patterns, grill-me, test-writer (их результат — код/диалог, не структура).
 
 ## Зачем
 
@@ -46,20 +46,30 @@
    (заголовок из первого осмысленного поля: название/причина/id…), вложенность — отступом. Общий рендер «находок»
    (`_render_findings`) применяется только если элементы несут поле `наблюдение` (дефолтная схема).
 
-## Покрытие (16)
+## Покрытие (51)
 
-| Кейс | Навыки |
+| Группа | Навыки |
 |---|---|
-| Аудитор 1С | audit1c-extract, graph-build, match-weak, checks, root-cause, rank, explain |
-| Инвест-контроль 1С | invest1c-trace, invest1c-verdict |
-| Почта / день менеджера | mail-triage, daily-plan, client-letter |
-| Требования / финансы | bft-draft, dcf-valuation, unit-economics-checker, finance-report |
+| Аудитор 1С (демо) | audit1c-extract, graph-build, match-weak, checks, root-cause, rank, explain |
+| Инвест-контроль 1С (демо) | invest1c-trace, invest1c-verdict |
+| Почта / день менеджера (демо) | mail-triage, daily-plan, client-letter, email-draft, email-thread-reconstruct |
+| Требования / БФТ (демо) | bft-draft, spec-reviewer, to-tickets, meeting-action-items, process-map, one-three-one |
+| Финансы | dcf-valuation, unit-economics-checker, finance-report, budget-forecast, three-statement-model, variance_explanation, ledger_reconciliation, period_close_orchestration, cost-estimator |
+| Кредитный конвейер | application_intake_validation, limit_policy_enforcement, disbursement_orchestration |
+| Отчётность / PM | status-report, weekly-update, dashboard-builder |
+| Продукт / идеи | market-research, idea-scorer, idea-selector, jtbd-formulator, devils-advocate, icp-interviewer, researcher |
+| Архитектура / AI | adr-writer, api-design, c4-diagram, architecture-chooser, memory-architect, rag-architect, eval-generator, agent-design-writer, mlsdd-writer |
+
+Лимиты: 3200 (4 компактных), 4000 (22), 5000 (16), 7000 (explain); 8 ранних шаблонов без поля — берут `ABOP_RUN_MAX_TOKENS_TEMPLATE`.
+
+Проверка strict-совместимости всех шаблонов: `python scripts/check_templates.py skills/*/template.json` (все ключи из разрешённого набора,
+`additionalProperties:false`, `required` = все свойства, у массивов есть `items`).
 
 ## Как добавить шаблон новому навыку
 
 1. Создать `skills/<sid>/template.json` по формату выше. Проверить: `python -c "import json;json.load(open('skills/<sid>/template.json'))"`.
 2. Тест `tests/test_smoke_api.py` проверяет загрузку всех шаблонов и рендер.
-3. Раскатка: файлы в `/opt/abop/skills/…` на server-1 + рестарт `abop-webapi` (сид сработает при старте).
+3. Раскатка: файлы в `/opt/abop/skills/…` на server-1 + **пересборка образа** `abop-webapi` (Dockerfile.webapi копирует `skills/` в образ, простой `docker restart` новые файлы не увидит); сид сработает при старте.
 4. Проверить на реальном прогоне: в карточке находки поле `structured` и текст на доске.
 
 ## Проверено на проде (2026-09-27)

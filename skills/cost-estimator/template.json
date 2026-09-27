@@ -1,0 +1,268 @@
+{
+  "name": "Оценка стоимости user-flow (cost-estimator)",
+  "instruction": "По данным о flow, тарифам моделей и курсу из Data Plane разложи user-flow на LLM-вызовы: для каждого шага модель, вход (промпт + RAG-контекст + история) и выход в токенах, тариф ₽/1M и расчёт «токены × тариф = стоимость». Просуммируй per-flow, доведи до per-user/месяц с явным допущением о числе flow на пользователя, проверь, укладывается ли flow в лимит 5M токенов/сессия, и где резать, если нет. Тарифы и курс — только из источника с датой актуализации, не «по памяти»; нет тарифа или размера контекста — пиши пробел, не подставляй типовое значение. Отметь, где выход бесплатен (self-hosted) и не смешивай API- и self-hosted-стоимость.",
+  "json_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "flow",
+      "тарифы",
+      "шаги",
+      "итого_per_flow",
+      "per_user_месяц",
+      "лимит_сессии",
+      "варианты",
+      "пробелы_данных",
+      "допущения",
+      "итог"
+    ],
+    "properties": {
+      "flow": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "название",
+          "описание",
+          "шагов",
+          "источник"
+        ],
+        "properties": {
+          "название": {
+            "type": "string"
+          },
+          "описание": {
+            "type": "string",
+            "description": "что делает пользователь и агент"
+          },
+          "шагов": {
+            "type": "integer",
+            "description": "число LLM-вызовов"
+          },
+          "источник": {
+            "type": "string",
+            "description": "откуда взяты размеры контекста и число шагов"
+          }
+        }
+      },
+      "тарифы": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "модель",
+            "вход_руб_за_1m",
+            "выход_руб_за_1m",
+            "тип",
+            "источник",
+            "дата_актуализации"
+          ],
+          "properties": {
+            "модель": {
+              "type": "string"
+            },
+            "вход_руб_за_1m": {
+              "type": "string",
+              "description": "напр. «13 ₽» или «~0 (фикс GPU)»"
+            },
+            "выход_руб_за_1m": {
+              "type": "string"
+            },
+            "тип": {
+              "type": "string",
+              "enum": [
+                "api",
+                "self_hosted"
+              ]
+            },
+            "источник": {
+              "type": "string",
+              "description": "прайс/курс"
+            },
+            "дата_актуализации": {
+              "type": "string",
+              "description": "ГГГГ-ММ-ДД или «не удалось определить»"
+            }
+          }
+        },
+        "description": "использованные тарифы; только из источника"
+      },
+      "шаги": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "шаг",
+            "модель",
+            "вход_токенов",
+            "состав_входа",
+            "выход_токенов",
+            "стоимость",
+            "расчёт"
+          ],
+          "properties": {
+            "шаг": {
+              "type": "string",
+              "description": "название вызова"
+            },
+            "модель": {
+              "type": "string"
+            },
+            "вход_токенов": {
+              "type": "integer"
+            },
+            "состав_входа": {
+              "type": "string",
+              "description": "промпт / RAG-контекст / история — сколько чего"
+            },
+            "выход_токенов": {
+              "type": "integer"
+            },
+            "стоимость": {
+              "type": "string",
+              "description": "с валютой"
+            },
+            "расчёт": {
+              "type": "string",
+              "description": "напр. «12 000 × 13/1M + 800 × 25/1M = 0,176 ₽»"
+            }
+          }
+        },
+        "description": "разбивка per-flow по шагам"
+      },
+      "итого_per_flow": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "вход_токенов",
+          "выход_токенов",
+          "всего_токенов",
+          "стоимость",
+          "доля_выхода_в_стоимости"
+        ],
+        "properties": {
+          "вход_токенов": {
+            "type": "integer"
+          },
+          "выход_токенов": {
+            "type": "integer"
+          },
+          "всего_токенов": {
+            "type": "integer"
+          },
+          "стоимость": {
+            "type": "string"
+          },
+          "доля_выхода_в_стоимости": {
+            "type": "string",
+            "description": "% — сигнал output-heavy flow"
+          }
+        }
+      },
+      "per_user_месяц": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "flow_на_пользователя_в_месяц",
+          "стоимость",
+          "расчёт"
+        ],
+        "properties": {
+          "flow_на_пользователя_в_месяц": {
+            "type": "string",
+            "description": "число и откуда взято"
+          },
+          "стоимость": {
+            "type": "string"
+          },
+          "расчёт": {
+            "type": "string"
+          }
+        }
+      },
+      "лимит_сессии": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "лимит_токенов",
+          "всего_токенов_flow",
+          "укладывается",
+          "где_резать"
+        ],
+        "properties": {
+          "лимит_токенов": {
+            "type": "string",
+            "description": "5M по умолчанию, если в данных не задано иное"
+          },
+          "всего_токенов_flow": {
+            "type": "integer"
+          },
+          "укладывается": {
+            "type": "string",
+            "enum": [
+              "да",
+              "нет",
+              "не удалось определить"
+            ]
+          },
+          "где_резать": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "короче контекст, дистилляция памяти, дешевле модель — если не укладывается"
+          }
+        }
+      },
+      "варианты": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "вариант",
+            "стоимость_per_flow",
+            "стоимость_per_user_месяц",
+            "комментарий"
+          ],
+          "properties": {
+            "вариант": {
+              "type": "string",
+              "description": "напр. «API DeepSeek» vs «self-hosted Qwen»"
+            },
+            "стоимость_per_flow": {
+              "type": "string"
+            },
+            "стоимость_per_user_месяц": {
+              "type": "string"
+            },
+            "комментарий": {
+              "type": "string",
+              "description": "где выход бесплатен, риски"
+            }
+          }
+        },
+        "description": "сравнение архитектур/моделей; пусто, если один вариант"
+      },
+      "пробелы_данных": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "тарифы/контексты, которых нет в источнике"
+      },
+      "допущения": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "итог": {
+        "type": "string",
+        "description": "2–4 предложения: стоимость per-flow и per-user/месяц, укладывается ли в лимит, что передать в unit-economics-checker"
+      }
+    }
+  },
+  "max_tokens": 4000
+}
