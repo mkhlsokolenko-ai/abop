@@ -20,6 +20,66 @@ from pathlib import Path
 SKILLS_DIR = Path(os.environ.get("APE_SKILLS_DIR") or (Path(__file__).resolve().parent.parent / "skills"))
 
 
+_ALLOWED_KEYS = {"type", "properties", "required", "items", "enum", "additionalProperties", "description"}
+
+
+def fingerprint(raw: dict) -> str:
+    """Отпечаток файла шаблона (как лежит в репо) — маркер [repo:…] делает посев идемпотентным."""
+    return hashlib.sha1(json.dumps(raw, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:12]
+
+
+def validate_schema(schema: dict) -> list[str]:
+    """Strict-совместимость (vLLM xgrammar / OpenAI strict): только разрешённые ключи, у объектов
+    additionalProperties:false и required = все свойства, у массивов items. Возвращает список ошибок."""
+    errs: list[str] = []
+
+    def walk(node, path: str) -> None:
+        if not isinstance(node, dict):
+            errs.append(f"{path}: не объект"); return
+        bad = set(node) - _ALLOWED_KEYS
+        if bad:
+            errs.append(f"{path}: запрещённые ключи {sorted(bad)}")
+        t = node.get("type")
+        if t == "object":
+            if node.get("additionalProperties") is not False:
+                errs.append(f"{path}: нужен additionalProperties:false")
+            props = node.get("properties") or {}
+            if set(node.get("required") or []) != set(props):
+                errs.append(f"{path}: required должен перечислять все свойства")
+            for k, v in props.items():
+                walk(v, f"{path}.{k}")
+        elif t == "array":
+            if "items" not in node:
+                errs.append(f"{path}: массив без items")
+            else:
+                walk(node["items"], f"{path}[]")
+        elif t not in ("string", "integer", "number", "boolean"):
+            errs.append(f"{path}: недопустимый type {t!r}")
+    if not isinstance(schema, dict) or not (schema.get("properties") or {}):
+        return ["json_schema: нужен объект с properties"]
+    walk(schema, "$")
+    return errs[:20]
+
+
+def _card(sid: str, raw: dict) -> dict | None:
+    sch = raw.get("json_schema") or {}
+    if not isinstance(sch, dict) or not sch.get("properties"):
+        return None
+    return {"name": raw.get("name") or sid, "instruction": raw.get("instruction") or "",
+            "json_schema": sch, "max_tokens": int(raw.get("max_tokens") or 0) or None, "fingerprint": fingerprint(raw)}
+
+
+def load_one(sid: str) -> dict | None:
+    """Шаблон одного навыка из репо (для «сбросить к версии репо»)."""
+    p = SKILLS_DIR / sid / "template.json"
+    if not p.is_file():
+        return None
+    try:
+        return _card(sid, json.loads(p.read_text(encoding="utf-8")))
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def load_all() -> dict[str, dict]:
     """{sid: template} для всех навыков, у которых есть template.json (валидный JSON-объект со схемой)."""
     out: dict[str, dict] = {}
@@ -31,12 +91,22 @@ def load_all() -> dict[str, dict]:
             t = json.loads(p.read_text(encoding="utf-8"))
         except Exception:  # noqa: BLE001 — битый шаблон не должен ронять старт
             continue
-        sch = t.get("json_schema") or {}
-        if not isinstance(sch, dict) or not sch.get("properties"):
-            continue
-        out[sid] = {"name": t.get("name") or sid, "instruction": t.get("instruction") or "",
-                    "json_schema": sch, "max_tokens": int(t.get("max_tokens") or 0) or None, "fingerprint": hashlib.sha1(json.dumps(t, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:12]}
+        card = _card(sid, t)
+        if card:
+            out[sid] = card
     return out
+
+
+async def upsert(schema_store, sid: str, card: dict, *, editor: str = "repo", builtin: bool = True) -> dict:
+    """Записать шаблон в БД (источник правды в рантайме). builtin=True — управляется репо/импортом
+    (маркер [repo:<fingerprint>] в инструкции делает посев идемпотентным); builtin=False — ручная правка,
+    посев её не трогает."""
+    instr = (card.get("instruction") or "").rstrip()
+    if builtin and card.get("fingerprint"):
+        instr += "\n[repo:" + card["fingerprint"] + "]"
+    return await schema_store.save(sid, {"name": card.get("name") or sid, "json_schema": card["json_schema"],
+                                         "instruction": instr, "max_tokens": card.get("max_tokens")},
+                                   editor=editor, builtin=builtin)
 
 
 async def seed(schema_store) -> int:
@@ -49,12 +119,9 @@ async def seed(schema_store) -> int:
         if cur and not cur.get("builtin"):
             continue
         marker = "[repo:" + t["fingerprint"] + "]"
-        if cur and marker in (cur.get("instruction") or ""):
+        if cur and marker in (cur.get("instruction") or "") and (cur.get("max_tokens") or None) == t.get("max_tokens"):
             continue
-        mt = ("\n[max_tokens:" + str(t["max_tokens"]) + "]") if t.get("max_tokens") else ""
-        await schema_store.save(sid, {"name": t["name"], "json_schema": t["json_schema"],
-                                      "instruction": t["instruction"].rstrip() + mt + "\n" + marker},
-                                editor="repo", builtin=True)
+        await upsert(schema_store, sid, t, editor="repo", builtin=True)
         n += 1
     return n
 
@@ -83,8 +150,14 @@ def describe_for_prompt(template: dict) -> str:
     return "\n".join(lines[:60])
 
 
+def strip_markers(instruction: str) -> str:
+    """Инструкция без служебных маркеров [repo:…]/[max_tokens:…] — то, что видит модель и редактор."""
+    import re
+    return re.sub(r"\n?\[(repo|max_tokens):[^\]]*\]", "", instruction or "").rstrip()
+
+
 def max_tokens_of(template: dict) -> int | None:
-    """[max_tokens:N] из инструкции шаблона (сохранённого в БД) или поле max_tokens (из репо)."""
+    """Колонка max_tokens (БД) или маркер [max_tokens:N] в инструкции (старые посевы)."""
     import re
     if (template or {}).get("max_tokens"):
         return int(template["max_tokens"])

@@ -1211,25 +1211,85 @@ async def schema_template_get(tid: str, u: dict = Depends(user)) -> dict:
     return t
 
 
+@app.post("/api/schema-templates/import")
+async def schema_templates_import(body: dict, u: dict = Depends(user)) -> dict:
+    """Импорт шаблонов извлечения в БД (источник правды в рантайме) БЕЗ пересборки образа:
+    body {templates:[{id,name,instruction,json_schema,max_tokens}], source:"repo"|"manual", force:bool}.
+    source=repo → builtin (маркер отпечатка, посев идемпотентен); ручные (builtin=false) без force не перезаписываются.
+    Каждая схема проверяется на strict-совместимость. Admin-уровень."""
+    require_level(u, "admin")
+    import re as _re
+    items = (body or {}).get("templates") or []
+    if not isinstance(items, list) or not items or len(items) > 200:
+        raise HTTPException(422, "templates: список из 1..200 шаблонов")
+    source = str((body or {}).get("source") or "manual")
+    force = bool((body or {}).get("force"))
+    editor = u.get("name") or u.get("sub") or "dev"
+    imported, skipped, errors = [], [], {}
+    for raw in items:
+        tid = _re.sub(r"[^a-z0-9_-]", "", str((raw or {}).get("id") or "").strip().lower())
+        if not tid:
+            errors["?"] = ["нужен id (slug a-z0-9_-)"]; continue
+        errs = skill_templates.validate_schema((raw or {}).get("json_schema"))
+        if not (raw or {}).get("instruction"):
+            errs.append("нужна instruction")
+        if errs:
+            errors[tid] = errs; continue
+        cur = await schema_store.get(tid)
+        if cur and not cur.get("builtin") and not force:
+            skipped.append(tid); continue
+        card = {"name": raw.get("name") or tid, "instruction": raw.get("instruction"), "json_schema": raw["json_schema"],
+                "max_tokens": int(raw.get("max_tokens") or 0) or None,
+                "fingerprint": skill_templates.fingerprint({k: raw[k] for k in ("name", "instruction", "json_schema", "max_tokens") if k in raw})}
+        await skill_templates.upsert(schema_store, tid, card, editor=editor, builtin=(source == "repo"))
+        imported.append(tid)
+    await audit_store.record(editor, "schema_template.import", source, {"imported": len(imported), "skipped": len(skipped), "errors": len(errors)})
+    return {"imported": imported, "skipped": skipped, "errors": errors}
+
+
+@app.post("/api/schema-templates/{tid}/reset")
+async def schema_template_reset(tid: str, u: dict = Depends(user)) -> dict:
+    """Сбросить шаблон к версии из репозитория (skills/<id>/template.json внутри образа)."""
+    require_level(u, "admin")
+    card = skill_templates.load_one(tid)
+    if not card:
+        raise HTTPException(404, "в репозитории нет шаблона для этого навыка")
+    editor = u.get("name") or u.get("sub") or "dev"
+    out = await skill_templates.upsert(schema_store, tid, card, editor=editor, builtin=True)
+    await audit_store.record(editor, "schema_template.reset", tid, {})
+    return out
+
+
 @app.post("/api/schema-templates/{tid}")
 async def schema_template_save(tid: str, body: dict, u: dict = Depends(user)) -> dict:
-    """Создать/править шаблон извлечения (JSON Schema + инструкция-парсер). Навык ссылается на него
-    полем schema_template_id → ЛЛМ раскладывает данные строго по схеме. Admin-уровень."""
+    """Создать/править шаблон извлечения (JSON Schema + инструкция-парсер + max_tokens). Навык ссылается на него
+    полем schema_template_id → ЛЛМ раскладывает данные строго по схеме. Ручная правка снимает builtin:
+    посев из репо её больше не перекрывает (вернуть — /reset). Admin-уровень."""
     require_level(u, "admin")
     import re as _re
     tid = _re.sub(r"[^a-z0-9_-]", "", str(tid).strip().lower())
     if not tid:
         raise HTTPException(422, "нужен id шаблона (slug a-z0-9_-)")
-    sch = (body or {}).get("json_schema")
-    if sch is not None and not isinstance(sch, dict):
-        raise HTTPException(422, "json_schema должен быть объектом JSON Schema")
     existing = await schema_store.get(tid)
+    sch = (body or {}).get("json_schema")
+    if sch is None:
+        sch = (existing or {}).get("json_schema") or {}
+    if not isinstance(sch, dict):
+        raise HTTPException(422, "json_schema должен быть объектом JSON Schema")
+    errs = skill_templates.validate_schema(sch)
+    if errs:
+        raise HTTPException(422, "схема не strict-совместима: " + "; ".join(errs[:5]))
+    instr = (body or {}).get("instruction")
+    instr = skill_templates.strip_markers(instr if instr is not None else (existing or {}).get("instruction") or "")
+    mt = (body or {}).get("max_tokens")
+    mt = int(mt) if mt not in (None, "") else (existing or {}).get("max_tokens")
+    if mt is not None and not (256 <= mt <= 16000):
+        raise HTTPException(422, "max_tokens: 256..16000")
     editor = u.get("name") or u.get("sub") or "dev"
-    card = await schema_store.save(tid, {"name": (body or {}).get("name") or tid,
-                                         "json_schema": sch if sch is not None else (existing or {}).get("json_schema") or {},
-                                         "instruction": (body or {}).get("instruction") if (body or {}).get("instruction") is not None else (existing or {}).get("instruction") or ""},
-                                   editor=editor, builtin=bool(existing and existing.get("builtin")))
-    await audit_store.record(editor, "schema_template.save", tid, {"name": card.get("name")})
+    card = await schema_store.save(tid, {"name": (body or {}).get("name") or (existing or {}).get("name") or tid,
+                                         "json_schema": sch, "instruction": instr, "max_tokens": mt},
+                                   editor=editor, builtin=False)
+    await audit_store.record(editor, "schema_template.save", tid, {"name": card.get("name"), "was_builtin": bool(existing and existing.get("builtin"))})
     return card
 
 
@@ -3430,7 +3490,7 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
             _stid = _explicit if (_explicit and _explicit != "findings") else _sid
             _tpl = await schema_store.get(_stid) or (await schema_store.get(_explicit) if _explicit else None)
             if _tpl and (_tpl.get("json_schema") or {}).get("properties"):
-                _instr = (_tpl.get("instruction") or "").split("\n[repo:")[0].split("\n[max_tokens:")[0].rstrip()
+                _instr = skill_templates.strip_markers(_tpl.get("instruction") or "")
                 _skill_schemas[_sid] = {"response_format": schema_store.response_format(_tpl),
                                         "instruction": _instr + "\n\nПОЛЯ СХЕМЫ (что класть):\n" + skill_templates.describe_for_prompt(_tpl),
                                         "max_tokens": skill_templates.max_tokens_of(_tpl)}

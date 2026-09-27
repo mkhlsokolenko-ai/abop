@@ -147,3 +147,37 @@ def test_render_struct_generic():
     assert "пусто" not in txt
     # схема находок по умолчанию — прежний рендер
     assert "• обс" in runner._render_struct({"находки": [{"наблюдение": "обс", "запись": "r1"}], "итог": "и"})
+
+
+def test_schema_templates_persist_import_edit_reset(client):
+    """Шаблоны — персистентны в БД: импорт через API (без пересборки), max_tokens сохраняется,
+    ручная правка снимает builtin (посев не перекроет), reset возвращает версию репо."""
+    from server import skill_templates as st
+    repo = st.load_one("audit1c-rank")
+    assert repo and repo["max_tokens"] == 4000
+    # импорт «нового» шаблона с source=repo → builtin, max_tokens в карточке
+    tpl = {"id": "zz-test-import", "name": "Тест импорта", "instruction": "Извлеки поля только из данных.",
+           "json_schema": {"type": "object", "additionalProperties": False, "required": ["итог"],
+                           "properties": {"итог": {"type": "string"}}}, "max_tokens": 2500}
+    r = client.post("/api/schema-templates/import", json={"templates": [tpl], "source": "repo"})
+    assert r.status_code == 200 and r.json()["imported"] == ["zz-test-import"], r.text
+    got = client.get("/api/schema-templates/zz-test-import").json()
+    assert got["builtin"] and got["max_tokens"] == 2500 and "[repo:" in got["instruction"]
+    # невалидная схема (нет additionalProperties:false) → в errors, не пишется
+    bad = dict(tpl, id="zz-bad", json_schema={"type": "object", "required": ["a"], "properties": {"a": {"type": "string"}}})
+    r = client.post("/api/schema-templates/import", json={"templates": [bad]})
+    assert r.json()["imported"] == [] and "zz-bad" in r.json()["errors"]
+    # ручная правка → builtin False, маркеры вычищены, max_tokens меняется
+    r = client.post("/api/schema-templates/zz-test-import", json={"instruction": "Правка руками.", "max_tokens": 3000})
+    assert r.status_code == 200 and r.json()["builtin"] is False and r.json()["max_tokens"] == 3000
+    assert "[repo:" not in r.json()["instruction"]
+    # повторный импорт из репо без force ручную правку не трогает
+    r = client.post("/api/schema-templates/import", json={"templates": [tpl], "source": "repo"})
+    assert r.json()["skipped"] == ["zz-test-import"]
+    # реальный навык: правка руками, потом reset → версия репо (builtin, max_tokens 4000)
+    r = client.post("/api/schema-templates/audit1c-rank", json={"max_tokens": 2600})
+    assert r.json()["builtin"] is False and r.json()["max_tokens"] == 2600
+    r = client.post("/api/schema-templates/audit1c-rank/reset")
+    assert r.status_code == 200 and r.json()["builtin"] and r.json()["max_tokens"] == 4000
+    assert st.max_tokens_of(r.json()) == 4000
+    assert client.post("/api/schema-templates/nope-no-such/reset").status_code == 404

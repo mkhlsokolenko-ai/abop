@@ -65,12 +65,31 @@
 Проверка strict-совместимости всех шаблонов: `python scripts/check_templates.py skills/*/template.json` (все ключи из разрешённого набора,
 `additionalProperties:false`, `required` = все свойства, у массивов есть `items`).
 
-## Как добавить шаблон новому навыку
+## Персистентность: источник правды — БД
 
-1. Создать `skills/<sid>/template.json` по формату выше. Проверить: `python -c "import json;json.load(open('skills/<sid>/template.json'))"`.
-2. Тест `tests/test_smoke_api.py` проверяет загрузку всех шаблонов и рендер.
-3. Раскатка: файлы в `/opt/abop/skills/…` на server-1 + **пересборка образа** `abop-webapi` (Dockerfile.webapi копирует `skills/` в образ, простой `docker restart` новые файлы не увидит); сид сработает при старте.
-4. Проверить на реальном прогоне: в карточке находки поле `structured` и текст на доске.
+Рантайм читает шаблоны только из таблицы `schema_templates` (Postgres). Репозиторий — это seed и «версия по умолчанию»,
+а не то, что видит прогон. Поэтому:
+
+- **Колонки:** `id, name, json_schema, instruction, builtin, editor, updated_at, max_tokens`. `max_tokens` — колонка
+  (старые посевы держали маркер `[max_tokens:N]` в инструкции, он тоже понимается).
+- **builtin=true** — шаблон управляется репо/импортом (маркер `[repo:<отпечаток>]` в инструкции делает посев идемпотентным).
+  **builtin=false** — ручная правка: посев при старте и импорт без `force` её не трогают.
+- **Ручная правка** (`POST /api/schema-templates/{id}` с `name/instruction/json_schema/max_tokens`) снимает builtin,
+  валидирует схему на strict-совместимость (422 с перечнем ошибок), чистит служебные маркеры.
+- **Сброс к репо:** `POST /api/schema-templates/{id}/reset` (берёт `skills/<id>/template.json` из образа).
+- **Импорт без пересборки образа:** `POST /api/schema-templates/import` `{templates:[{id,name,instruction,json_schema,max_tokens}], source:"repo"|"manual", force}`
+  → `{imported, skipped, errors}`. Admin-уровень, до 200 шаблонов за вызов, каждый проверяется.
+- **CLI:** `python scripts/push_templates.py --base https://<abop> --user admin.abop --password '…' [--only a,b] [--force] [--dry-run]`
+  — читает `skills/*/template.json`, проверяет локально, логинится, импортирует. Пароль можно дать через `ABOP_ADMIN_PASSWORD`.
+
+## Как добавить или поменять шаблон
+
+1. Создать/править `skills/<sid>/template.json` по формату выше.
+2. Проверить: `python scripts/check_templates.py skills/<sid>/template.json` (та же логика, что в API).
+3. Тесты: `tests/test_smoke_api.py` (загрузка, посев, импорт/правка/сброс, рендер).
+4. Залить на стенд **без пересборки**: `python scripts/push_templates.py --base … --only <sid>`. Посев при следующей
+   пересборке образа ничего не перепишет (отпечаток совпадёт).
+5. Проверить на реальном прогоне: поле `structured` в карточке находки и текст на доске.
 
 ## Проверено на проде (2026-09-27)
 

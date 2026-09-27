@@ -21,12 +21,14 @@ CREATE TABLE IF NOT EXISTS schema_templates (
     instruction TEXT NOT NULL DEFAULT '',
     builtin     BOOLEAN NOT NULL DEFAULT false,
     editor      TEXT,
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    max_tokens  INTEGER
 );
+ALTER TABLE schema_templates ADD COLUMN IF NOT EXISTS max_tokens INTEGER;
 """
 
 _MEM: dict[str, dict] = {}
-_COLS = "id,name,json_schema,instruction,builtin,editor,updated_at"
+_COLS = "id,name,json_schema,instruction,builtin,editor,updated_at,max_tokens"
 
 
 def _has_pg() -> bool:
@@ -35,7 +37,8 @@ def _has_pg() -> bool:
 
 def _row(r) -> dict:
     return {"id": r[0], "name": r[1], "json_schema": r[2] or {}, "instruction": r[3] or "",
-            "builtin": bool(r[4]), "editor": r[5], "updated_at": r[6].isoformat() if r[6] else None}
+            "builtin": bool(r[4]), "editor": r[5], "updated_at": r[6].isoformat() if r[6] else None,
+            "max_tokens": int(r[7]) if len(r) > 7 and r[7] else None}
 
 
 async def init() -> None:
@@ -70,7 +73,8 @@ async def get(tid: str) -> dict | None:
 async def save(tid: str, spec: dict, editor: str = "dev", builtin: bool = False) -> dict:
     spec = spec or {}
     card = {"id": tid, "name": spec.get("name") or tid, "json_schema": spec.get("json_schema") or {},
-            "instruction": spec.get("instruction") or "", "builtin": builtin}
+            "instruction": spec.get("instruction") or "", "builtin": builtin,
+            "max_tokens": int(spec.get("max_tokens") or 0) or None}
     if not _has_pg():
         card["editor"] = editor
         _MEM[tid] = card
@@ -78,11 +82,12 @@ async def save(tid: str, spec: dict, editor: str = "dev", builtin: bool = False)
     from .db import _conn
     async with _conn() as conn:
         await conn.execute(
-            "INSERT INTO schema_templates (id,name,json_schema,instruction,builtin,editor,updated_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s,now()) "
+            "INSERT INTO schema_templates (id,name,json_schema,instruction,builtin,editor,updated_at,max_tokens) "
+            "VALUES (%s,%s,%s,%s,%s,%s,now(),%s) "
             "ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, json_schema=EXCLUDED.json_schema, "
-            "instruction=EXCLUDED.instruction, editor=EXCLUDED.editor, updated_at=now()",
-            (tid, card["name"], json.dumps(card["json_schema"]), card["instruction"], builtin, editor))
+            "instruction=EXCLUDED.instruction, builtin=EXCLUDED.builtin, editor=EXCLUDED.editor, updated_at=now(), "
+            "max_tokens=EXCLUDED.max_tokens",
+            (tid, card["name"], json.dumps(card["json_schema"]), card["instruction"], builtin, editor, card["max_tokens"]))
     return await get(tid)
 
 
