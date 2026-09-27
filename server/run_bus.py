@@ -262,19 +262,22 @@ class KafkaBus(PgBus):
         return out[:limit]
 
     async def next_job_hint(self) -> str | None:
+        """Дренирует топик заданий (подсказка воркерам). Один вызывающий (см. worker_loop); батч по 50,
+        чтобы при всплеске заданий с одним ключом партиции лаг не копился."""
         if not self._ok or self._consumer is None:
             return None
+        last = None
         try:
-            batch = await self._consumer.getmany(timeout_ms=1000, max_records=1)
+            batch = await self._consumer.getmany(timeout_ms=1000, max_records=50)
             for _tp, msgs in batch.items():
                 for m in msgs:
                     try:
-                        return json.loads(m.value.decode()).get("job_id")
+                        last = json.loads(m.value.decode()).get("job_id")
                     except Exception:  # noqa: BLE001
-                        return None
+                        continue
         except Exception as ex:  # noqa: BLE001
             log.warning("kafka consume failed: %s", ex)
-        return None
+        return last
 
     async def events_loop(self, handler) -> None:
         """Слушает abop.<система>.events (все системы, pattern) в consumer-group триггеров; handler(system, event, headers)
@@ -307,6 +310,7 @@ class KafkaBus(PgBus):
 
 
 _bus: PgBus | None = None
+_HINT_TASK = None   # единственная задача-подсказчик на процесс (см. worker_loop)
 
 
 def bus() -> PgBus:
@@ -366,12 +370,16 @@ async def worker_loop(worker_id: str, handler) -> None:
     async def _on_error(job, error):
         await b.publish_result(job, None, error=error)
 
-    if b.kind == "kafka":
+    global _HINT_TASK
+    if b.kind == "kafka" and _HINT_TASK is None:
+        # подсказка из Kafka лишь ускоряет реакцию; claim остаётся единственным арбитром.
+        # ОДНА задача на процесс (не на воркер): параллельные getmany на одном consumer aiokafka
+        # ломают коммиты → в топике заданий копится лаг, хотя PG-очередь обработана.
         async def _hinting():
             while True:
                 try:
                     await b.next_job_hint()
                 except Exception:  # noqa: BLE001
                     await asyncio.sleep(1)
-        asyncio.create_task(_hinting())
+        _HINT_TASK = asyncio.create_task(_hinting())
     await run_queue.worker_loop(worker_id, handler, on_done=_on_done, on_error=_on_error)
