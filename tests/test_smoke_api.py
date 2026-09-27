@@ -106,3 +106,44 @@ def test_run_queue_memory_roundtrip():
         assert got and got["id"] == job["id"]
         assert await run_queue.cancel(job["id"], "dev") is not None
     asyncio.run(flow())
+
+
+def test_skill_templates_load_and_strict_safe():
+    import json
+    from server import skill_templates as st
+    t = st.load_all()
+    for sid in ("audit1c-checks", "audit1c-explain", "invest1c-verdict", "mail-triage", "daily-plan", "client-letter", "bft-draft", "finance-report"):
+        assert sid in t, sid
+    for sid, tp in t.items():
+        s = json.dumps(tp["json_schema"], ensure_ascii=False)
+        assert '"$ref"' not in s and '"pattern"' not in s and '"format"' not in s, sid
+        assert tp["json_schema"].get("type") == "object" and tp["json_schema"].get("required"), sid
+        assert tp["instruction"], sid
+    desc = st.describe_for_prompt(t["audit1c-explain"])
+    assert "находки[].откуда.документы" in desc and "критично|существенно" in desc
+
+
+def test_skill_templates_seed_and_default_binding():
+    import asyncio
+    from server import schema_store, skill_templates as st
+
+    async def flow():
+        await st.seed(schema_store)              # идемпотентно (приложение могло посеять при старте)
+        ids = {t["id"] for t in await schema_store.all()}
+        assert len([i for i in ids if i in st.load_all()]) >= 16
+        n2 = await st.seed(schema_store)         # повторный посев без изменений — ничего не пишет
+        assert n2 == 0
+        tpl = await schema_store.get("audit1c-explain")
+        assert tpl and tpl["builtin"] and "[repo:" in tpl["instruction"]
+        rf = schema_store.response_format(tpl)
+        assert rf["type"] == "json_schema" and rf["json_schema"]["strict"]
+    asyncio.run(flow())
+
+
+def test_render_struct_generic():
+    from server import runner
+    txt = runner._render_struct({"резюме": "ок", "находки_x": [{"заголовок": "РТ-0002 без СФ", "ранг": "критично", "откуда": {"документы": ["РеализацияТоваровУслуг № РТ-0002"]}}], "пусто": []})
+    assert "резюме: ок" in txt and "• РТ-0002 без СФ" in txt and "ранг: критично" in txt and "документы" in txt
+    assert "пусто" not in txt
+    # схема находок по умолчанию — прежний рендер
+    assert "• обс" in runner._render_struct({"находки": [{"наблюдение": "обс", "запись": "r1"}], "итог": "и"})

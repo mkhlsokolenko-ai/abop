@@ -29,6 +29,7 @@ A_LEVELS = ["A0", "A1", "A2", "A3", "A4"]
 # данных (токены 8×), а не параллелизм. На единой карте RouteAI большой параллелизм упирается в троттлинг.
 # Backoff-ретрай — для устойчивости при 429/таймауте.
 _LLM_CONCURRENCY = max(1, int(os.getenv("ABOP_RUN_LLM_CONCURRENCY", "3")))
+_CUSTOM_MAX_TOKENS = max(800, int(os.getenv("ABOP_RUN_MAX_TOKENS_TEMPLATE", "3200")))   # лимит для навыков с подробной схемой шаблона
 _LLM_RETRIES = max(0, int(os.getenv("ABOP_RUN_LLM_RETRIES", "2")))       # ретраи при 429/таймауте
 _LLM_BACKOFF = float(os.getenv("ABOP_RUN_LLM_BACKOFF", "1.5"))           # база backoff, сек
 _LLM_TRUNCATE = os.getenv("ABOP_RUN_LLM_TRUNCATE", "1") != "0"
@@ -107,6 +108,40 @@ def _render_findings(struct: dict) -> str:
     body = "\n".join(lines) if lines else "расхождений не выявлено"
     itog = str(struct.get("итог") or "").strip()
     return body + (("\n— итог: " + itog) if itog else "")
+
+
+def _render_struct(struct: dict, depth: int = 0) -> str:
+    """Универсальный рендер структурированного ответа по кастомной схеме шаблона → читаемый текст доски:
+    скаляры «ключ: значение», списки объектов — маркированные строки из непустых полей, вложенность — отступом."""
+    if not isinstance(struct, dict):
+        return "(пустой ответ)"
+    if isinstance(struct.get("находки"), list):
+        return _render_findings(struct)
+    pad = "  " * depth
+    out: list[str] = []
+    for k, v in struct.items():
+        if v in (None, "", [], {}):
+            continue
+        if isinstance(v, dict):
+            out.append(f"{pad}{k}:")
+            out.append(_render_struct(v, depth + 1))
+        elif isinstance(v, list):
+            out.append(f"{pad}{k}:")
+            for it in v[:25]:
+                if isinstance(it, dict):
+                    _pref = ("заголовок", "название", "тема", "задача", "причина", "гипотеза", "наименование", "документ", "тип", "звено", "статья", "показатель", "сегмент", "параметр", "проверка", "id")
+                    hk = next((x for x in _pref if it.get(x) not in (None, "", [], {})), None) or next((kk for kk, vv in it.items() if isinstance(vv, str) and vv.strip()), None)
+                    head = str(it.get(hk)) if hk else ""
+                    rest = "; ".join(f"{kk}: {vv}" for kk, vv in it.items() if kk != hk and vv not in (None, "", [], {}) and not isinstance(vv, (dict, list)))
+                    out.append(f"{pad}• {head}" + (f" — {rest}" if rest else "") if head else f"{pad}• {rest}")
+                    for kk, vv in it.items():
+                        if isinstance(vv, (dict, list)) and vv:
+                            out.append(_render_struct({kk: vv}, depth + 2))
+                else:
+                    out.append(f"{pad}• {it}")
+        else:
+            out.append(f"{pad}{k}: {v}")
+    return "\n".join(out) if out else "(пустой ответ)"
 
 
 def _extract_json(raw: str) -> dict | None:
@@ -362,8 +397,10 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
             err = None
             for _attempt in range(_LLM_RETRIES + 1):
                 try:
+                    # кастомная (подробная) схема шаблона требует больше выходных токенов, иначе JSON обрежется
+                    _mt = (max(_LIM["max_tokens"], _CUSTOM_MAX_TOKENS) if (_custom and use_struct) else (_LIM["max_tokens"] if use_struct else _LIM["max_tokens_free"]))
                     resp = await chat_fn(messages=[{"role": "system", "content": _sys}, {"role": "user", "content": prompt}], profile="standard",
-                                         max_tokens=(_LIM["max_tokens"] if use_struct else _LIM["max_tokens_free"]),
+                                         max_tokens=_mt,
                                          response_format=_resp_fmt)
                     err = None
                     break
@@ -379,7 +416,7 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
                 if _STRUCTURED:
                     struct = _extract_json(raw)   # робастно: JSON даже из ```-забора/после преамбулы
                 if struct:
-                    txt = _render_findings(struct)
+                    txt = _render_struct(struct) if _custom else _render_findings(struct)
                 elif _STRUCTURED and raw and ('"наблюдени' in raw or '"находки"' in raw):
                     # JSON битый/обрезан (модель оборвала ответ по лимиту токенов) → салвадж наблюдений
                     # регэкспом, чтобы НИКОГДА не показывать сырой JSON в чате/отчёте.

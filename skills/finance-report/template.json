@@ -1,0 +1,21 @@
+{
+  "name": "Управленческий отчёт (finance-report)",
+  "instruction": "Подготовь управленческий отчёт за период из данных Data Plane: P&L и KPI, динамика MoM и YoY (абсолют и %), мост отклонений факт−план по компонентам (объём/цена/затраты — сумма компонентов равна полному отклонению), драйверы, сегменты, прогноз на факте с помеченными допущениями. Каждая цифра — со ссылкой на источник; отклонения объясняй драйверами, а не констатируй. Нет данных — так и пиши.",
+  "json_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["период", "pnl", "kpi", "динамика", "мост_отклонений", "сегменты", "прогноз", "риски", "источники", "итог"],
+    "properties": {
+      "период": {"type": "string"},
+      "pnl": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["статья", "факт", "план", "отклонение", "отклонение_процент", "источник"], "properties": {"статья": {"type": "string", "enum": ["выручка", "себестоимость", "валовая прибыль", "opex", "EBITDA", "EBIT", "чистая прибыль"]}, "факт": {"type": "string"}, "план": {"type": "string"}, "отклонение": {"type": "string"}, "отклонение_процент": {"type": "string"}, "источник": {"type": "string"}}}},
+      "kpi": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["показатель", "значение", "комментарий"], "properties": {"показатель": {"type": "string"}, "значение": {"type": "string"}, "комментарий": {"type": "string"}}}},
+      "динамика": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["статья", "mom_абс", "mom_процент", "yoy_абс", "yoy_процент"], "properties": {"статья": {"type": "string"}, "mom_абс": {"type": "string"}, "mom_процент": {"type": "string"}, "yoy_абс": {"type": "string"}, "yoy_процент": {"type": "string"}}}},
+      "мост_отклонений": {"type": "object", "additionalProperties": false, "required": ["полное_отклонение", "эффект_объёма", "эффект_цены_микса", "эффект_затрат", "сходится", "драйверы"], "properties": {"полное_отклонение": {"type": "string"}, "эффект_объёма": {"type": "string"}, "эффект_цены_микса": {"type": "string"}, "эффект_затрат": {"type": "string"}, "сходится": {"type": "boolean"}, "драйверы": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["компонент", "драйвер", "вклад"], "properties": {"компонент": {"type": "string"}, "драйвер": {"type": "string"}, "вклад": {"type": "string"}}}}}},
+      "сегменты": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["сегмент", "выручка", "маржа", "вклад_в_результат", "драйвер"], "properties": {"сегмент": {"type": "string"}, "выручка": {"type": "string"}, "маржа": {"type": "string"}, "вклад_в_результат": {"type": "string", "enum": ["тянет вверх", "тянет вниз", "нейтрально"]}, "драйвер": {"type": "string"}}}},
+      "прогноз": {"type": "object", "additionalProperties": false, "required": ["горизонт", "выручка", "ebitda", "основание", "допущения"], "properties": {"горизонт": {"type": "string"}, "выручка": {"type": "string"}, "ebitda": {"type": "string"}, "основание": {"type": "string", "description": "run-rate факта / воронка / известные события"}, "допущения": {"type": "array", "items": {"type": "string"}}}},
+      "риски": {"type": "array", "items": {"type": "string"}},
+      "источники": {"type": "array", "items": {"type": "string"}},
+      "итог": {"type": "string", "description": "3–5 предложений для менеджмента: что произошло, почему, чего ждать"}
+    }
+  }
+}

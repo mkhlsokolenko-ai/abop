@@ -1,0 +1,22 @@
+{
+  "name": "DCF-оценка (dcf-valuation)",
+  "instruction": "Построй DCF по данным Data Plane: допущения явно, прогноз FCF по драйверам, WACC через CAPM, терминальная стоимость двумя методами, мост EV→Equity, чувствительность WACC×g, результат — диапазон. Каждое число — со ссылкой на источник (id записи/поле); чего нет в данных — помечай «нет данных», не подставляй типовые значения молча. Проверь g < WACC.",
+  "json_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["база_потока", "допущения", "прогноз", "wacc", "терминальная_стоимость", "мост_ev_equity", "чувствительность", "диапазон_стоимости", "проверки", "источники", "итог"],
+    "properties": {
+      "база_потока": {"type": "string", "enum": ["FCFF", "FCFE"]},
+      "допущения": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["параметр", "значение", "источник"], "properties": {"параметр": {"type": "string", "enum": ["Rf", "beta", "ERP", "CRP", "Rd", "tax", "We", "Wd", "g", "горизонт_лет", "EBIT_маржа", "Capex_к_выручке", "dNWC"]}, "значение": {"type": "string"}, "источник": {"type": "string", "description": "id записи Data Plane или «нет данных»"}}}},
+      "прогноз": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["год", "выручка", "ebit", "da", "capex", "dnwc", "fcf", "драйвер"], "properties": {"год": {"type": "string"}, "выручка": {"type": "string"}, "ebit": {"type": "string"}, "da": {"type": "string"}, "capex": {"type": "string"}, "dnwc": {"type": "string"}, "fcf": {"type": "string"}, "драйвер": {"type": "string", "description": "объём×цена / клиенты×ARPU / темп сегмента"}}}},
+      "wacc": {"type": "object", "additionalProperties": false, "required": ["re", "rd_после_налога", "wacc", "расчёт"], "properties": {"re": {"type": "string"}, "rd_после_налога": {"type": "string"}, "wacc": {"type": "string"}, "расчёт": {"type": "string", "description": "формула с подставленными числами"}}},
+      "терминальная_стоимость": {"type": "object", "additionalProperties": false, "required": ["gordon", "exit_multiple", "расхождение", "комментарий"], "properties": {"gordon": {"type": "string"}, "exit_multiple": {"type": "string"}, "расхождение": {"type": "string", "description": "в %"}, "комментарий": {"type": "string"}}},
+      "мост_ev_equity": {"type": "object", "additionalProperties": false, "required": ["ev", "чистый_долг", "миноритарии", "преф", "equity", "на_акцию"], "properties": {"ev": {"type": "string"}, "чистый_долг": {"type": "string"}, "миноритарии": {"type": "string"}, "преф": {"type": "string"}, "equity": {"type": "string"}, "на_акцию": {"type": "string", "description": "или «нет данных о числе акций»"}}},
+      "чувствительность": {"type": "array", "description": "сетка WACC × g", "items": {"type": "object", "additionalProperties": false, "required": ["wacc", "g", "equity"], "properties": {"wacc": {"type": "string"}, "g": {"type": "string"}, "equity": {"type": "string"}}}},
+      "диапазон_стоимости": {"type": "object", "additionalProperties": false, "required": ["нижняя", "базовая", "верхняя", "валюта"], "properties": {"нижняя": {"type": "string"}, "базовая": {"type": "string"}, "верхняя": {"type": "string"}, "валюта": {"type": "string"}}},
+      "проверки": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["проверка", "результат"], "properties": {"проверка": {"type": "string", "enum": ["g < WACC", "g ≤ рост экономики", "Capex ≈ D&A в терминальном году", "TV два метода сходятся", "все числа из источника"]}, "результат": {"type": "string", "enum": ["ок", "нарушено", "нет данных"]}}}},
+      "источники": {"type": "array", "items": {"type": "string"}, "description": "id записей Data Plane, использованных в расчёте"},
+      "итог": {"type": "string"}
+    }
+  }
+}

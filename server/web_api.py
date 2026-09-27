@@ -29,7 +29,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, assembly, audit_store, cachebus, charts, clients, compute, contract_store, dataplane_store, families_store, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, report_store, run_cache_store, run_store, runner, safety, schema_store, skill_store, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, assembly, audit_store, cachebus, charts, clients, compute, contract_store, dataplane_store, families_store, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, report_store, run_cache_store, run_store, runner, safety, schema_store, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
@@ -1815,6 +1815,12 @@ async def _startup() -> None:
     await report_store.seed_if_empty()   # шаблоны отчётов в БД (вид меняется без передеплоя)
     await schema_store.init()
     await schema_store.seed_if_empty()   # шаблоны извлечения (JSON Schema) — структура данных из БД
+    try:                                  # подробные шаблоны навыков из репо (skills/<sid>/template.json) → builtin
+        _n = await skill_templates.seed(schema_store)
+        if _n:
+            obs.log_event("info", "skill_templates.seeded", count=_n)
+    except Exception as _ex:  # noqa: BLE001
+        obs.log_event("warning", "skill_templates.seed_failed", error=str(_ex)[:200])
     await pipeline_store.init()          # цепочки агентов (линейный конвейер, выход→контекст)
     await trigger_store.init()
     await reglament_store.init()
@@ -3406,12 +3412,12 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
     try:
         _ov = await skill_store.all()
         for _sid in set(s for s in _skills if s):
-            _stid = ((_ov.get(_sid) or {}).get("patch") or {}).get("schema_template_id")
-            if _stid:
-                _tpl = await schema_store.get(_stid)
-                if _tpl and (_tpl.get("json_schema") or {}).get("properties"):
-                    _skill_schemas[_sid] = {"response_format": schema_store.response_format(_tpl),
-                                            "instruction": _tpl.get("instruction") or ""}
+            _stid = ((_ov.get(_sid) or {}).get("patch") or {}).get("schema_template_id") or _sid   # явная привязка из UI, иначе шаблон навыка по имени
+            _tpl = await schema_store.get(_stid)
+            if _tpl and (_tpl.get("json_schema") or {}).get("properties"):
+                _skill_schemas[_sid] = {"response_format": schema_store.response_format(_tpl),
+                                        "instruction": (_tpl.get("instruction") or "").split("\n[repo:")[0].rstrip()
+                                        + "\n\nПОЛЯ СХЕМЫ (что класть):\n" + skill_templates.describe_for_prompt(_tpl)}
     except Exception:  # noqa: BLE001 — схемы опциональны, не валим прогон
         _skill_schemas = {}
     result = await runner.run_live(agent, contract, ape.skill_safety,
