@@ -497,6 +497,19 @@ export async function mount(root, ctx) {
     else { await note("Не удалось сохранить цепочку — попробуйте собрать вручную («🔗 Цепочки» под полем ввода).", { notice: { icon: "⚠" } }); render(); }
   }
 
+  // прогресс прогона (очередь → статус задания): фаза + навыки «3/7 · сейчас: audit1c-explain (42 с)»
+  function progressText(pr) {
+    if (!pr) return "работает";
+    const sk = pr.skills || {}; const ids = Object.keys(sk);
+    const done = ids.filter((k) => sk[k].state === "done" || sk[k].state === "error").length;
+    const now = ids.filter((k) => sk[k].state === "running");
+    const tot = pr.total || ids.length;
+    let t = esc(pr.phase || "работает");
+    if (tot) t += ` · навыки ${done}/${tot}`;
+    if (now.length) t += ` · сейчас: ${now.map(esc).join(", ")}`;
+    return t;
+  }
+
   // ── HITL: очередь над композером + карточки прогонов. Превью → решение строго по hitl_id (D-C3) ──
   async function loadHitlQueue() { try { const q = await api(A_AG + "/hitl"); hitlQueue = Array.isArray(q) ? q : []; } catch { hitlQueue = []; } renderHitlBar(); }
   function renderHitlBar() {
@@ -753,7 +766,7 @@ export async function mount(root, ctx) {
           let j; try { j = await api(M + "/threads/" + cur.id + "/run-job/" + encodeURIComponent(r.job_id) + "?agent_id=" + encodeURIComponent(agentId)); } catch (e) { status(`связь с ABOP прервалась, повторяю… (${humanError(e)})`); continue; }
           if (j.done) { res = j; break; }
           const sec = Math.round((Date.now() - t0) / 1000);
-          status(j.status === "queued" ? `в очереди · впереди ${Math.max(0, (j.position || 1) - 1)} · ${sec} с` : `агент «${esc(agentNm)}» работает · ${sec} с`);
+          status(j.status === "queued" ? `в очереди · впереди ${Math.max(0, (j.position || 1) - 1)} · ${sec} с` : `агент «${esc(agentNm)}» ${progressText((j.progress || {}).run)} · ${sec} с`);
         }
         finish(res || { ok: false, error: "прогон не завершился за 15 минут — проверьте журнал прогонов позже" });
       }

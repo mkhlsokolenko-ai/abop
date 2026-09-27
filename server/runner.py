@@ -314,7 +314,7 @@ def run_agent(agent: dict, contract: dict, safety_of) -> dict:
 async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_sources,
                    load_body, chat_fn, blocked_entities=None, knowledge_fn=None,
                    findings_context=None, user_context="", skill_schemas=None, should_cancel=None,
-                   tool_loop=None, actor: str = "", trace_id: str = "") -> dict:
+                   tool_loop=None, actor: str = "", trace_id: str = "", on_progress=None) -> dict:
     """НАСТОЯЩИЙ прогон: governance-каркас (run_agent) + для каждого навыка с data-scope
     собирает РЕАЛЬНЫЕ данные из canonical store (data_query) и прогоняет их через LLM
     (тело навыка = методика) → находки на доску. Числа — только из данных (анти-галлюцинация).
@@ -328,8 +328,27 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
     skills = [n for n in (graph.get("nodes") or []) if n.get("kind") == "skill"]  # УЗЛЫ (несут per-node output)
     sem = asyncio.Semaphore(_LLM_CONCURRENCY)  # rate-limiter: не больше N одновременных вызовов к RouteAI
 
+    async def _notify(sid: str, state: str, **kw) -> None:
+        """Прогресс навыка наружу (очередь → статус задания → UI). Ошибка колбэка прогон не ломает."""
+        if not on_progress:
+            return
+        try:
+            r = on_progress(sid, state, **kw)
+            if asyncio.iscoroutine(r):
+                await r
+        except Exception:  # noqa: BLE001
+            pass
+
     async def _analyze(node):
         sid = node.get("skill") or node.get("id")
+        await _notify(sid, "running")
+        out = await _analyze_inner(node, sid)
+        if out:
+            await _notify(sid, "error" if out.get("error") else "done", ms=out.get("ms"),
+                          tokens=int(out.get("input_tokens") or 0) + int(out.get("output_tokens") or 0))
+        return out
+
+    async def _analyze_inner(node, sid):
         # флаг output: узел графа ПЕРЕКРЫВАЕТ дефолт навыка (safety_of) — это тумблер «структурный/
         # рассуждения» при заведении агента (задаёт лимит токенов: freeform ⇒ max_tokens_free).
         _out = node.get("output") or (safety_of(sid) or {}).get("output", "structured")

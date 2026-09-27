@@ -3503,6 +3503,25 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
     if job_id:
         run_queue.CURRENT_JOB.set(job_id)
     fam_key = access.scope_key(family=agent.get("family"))
+    # Прогресс прогона для UI (фаза + навыки) — через очередь, если прогон идёт заданием
+    import datetime as _pdt
+    _skill_nodes = [n.get("skill") or n.get("id") for n in ((agent.get("graph") or {}).get("nodes") or []) if n.get("kind") == "skill"]
+    _prog: dict = {"phase": "данные", "total": len(_skill_nodes), "skills": {}, "started_at": _pdt.datetime.now(_pdt.timezone.utc).isoformat()}
+
+    async def _push_progress(phase: str | None = None) -> None:
+        if phase:
+            _prog["phase"] = phase
+        if job_id:
+            try:
+                await run_queue.set_progress(job_id, _prog)
+            except Exception:  # noqa: BLE001
+                pass
+
+    async def _on_skill_progress(sid: str, state: str, **kw) -> None:
+        cur = _prog["skills"].get(sid) or {}
+        _prog["skills"][sid] = {**cur, "state": state, **{k: v for k, v in kw.items() if v is not None}}
+        await _push_progress()
+    await _push_progress("данные")
     blocked, data_denied = await _gate_agent_data(agent, fam_key, started_by)  # ABAC на данных
     # КЭШ результатов (multi-user): тот же агент+данные+конфиг → отдаём сохранённый вывод без LLM/доставки.
     _cache_key = None
@@ -3540,6 +3559,7 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
     # Свежесть эфемерных источников: перед прогоном сами гоним рецепты почты/REST, чтобы агент читал
     # актуальные письма/вложения без ручного data_run (владелец 2026-09-24: «надо гонять рецепт»). Best-effort.
     await _refresh_source_data(agent)
+    await _push_progress("проверки данных")
     # Детерминированные находки/расследования считаем ДО прогона (истина, считает КОД) — чтобы навыки в LLM
     # их ОБЪЯСНЯЛИ (grounded), а не искали заново на сэмпле-дайджесте (иначе LLM ложно пишет «расхождений нет»).
     _skills = [n.get("skill") for n in (agent.get("graph") or {}).get("nodes", [])]
@@ -3574,6 +3594,7 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
                                         "delivery": _tpl.get("delivery") or None, "template_id": _tpl.get("id")}
     except Exception:  # noqa: BLE001 — схемы опциональны, не валим прогон
         _skill_schemas = {}
+    await _push_progress("навыки")
     result = await runner.run_live(agent, contract, ape.skill_safety,
                                    data_query=ape.data_query,
                                    skill_sources=ape.skill_datasources_resolved,
@@ -3584,7 +3605,9 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
                                    findings_context=_ctx, user_context=user_context,
                                    should_cancel=(lambda: run_queue.cancel_requested(job_id)) if job_id else None,
                                    tool_loop=skill_tools.tool_loop, actor=started_by,
-                                   trace_id=(obs.current_trace_id() if hasattr(obs, "current_trace_id") else "") or "")
+                                   trace_id=(obs.current_trace_id() if hasattr(obs, "current_trace_id") else "") or "",
+                                   on_progress=_on_skill_progress)
+    await _push_progress("доставка и отчёт")
     # Структурированные ответы навыков (по шаблонам) — отдельно: ниже findings подменяются детерминированными
     result["skill_outputs"] = [{"skill": f.get("skill"), "structured": f.get("structured"), "model": f.get("model")}
                                for f in (result.get("findings") or []) if isinstance(f, dict) and f.get("skill") and isinstance(f.get("structured"), dict)]

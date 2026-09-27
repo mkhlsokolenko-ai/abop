@@ -104,6 +104,12 @@ def test_run_queue_memory_roundtrip():
         assert job["status"] == "queued"
         got = await run_queue.get(job["id"])
         assert got and got["id"] == job["id"]
+        # прогресс прогона: фаза + навыки → в статусе задания (checkpoint.run, чекпоинт цепочки не трогаем)
+        await run_queue.set_checkpoint(job["id"], {"step": 1, "steps_total": 2, "steps": []})
+        await run_queue.set_progress(job["id"], {"phase": "навыки", "total": 3, "skills": {"audit1c-rank": {"state": "running"}}})
+        pub = run_queue.public(await run_queue.get(job["id"]))
+        assert pub["progress"]["run"]["phase"] == "навыки" and pub["progress"]["run"]["skills"]["audit1c-rank"]["state"] == "running"
+        assert pub["progress"]["steps_total"] == 2   # чекпоинт цепочки сохранён
         assert await run_queue.cancel(job["id"], "dev") is not None
     asyncio.run(flow())
 

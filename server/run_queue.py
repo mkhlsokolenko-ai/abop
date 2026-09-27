@@ -249,6 +249,21 @@ async def heartbeat(job_id: str) -> bool:
     return not (r and r[0])
 
 
+async def set_progress(job_id: str, progress: dict) -> None:
+    """Прогресс ОДНОГО прогона (фаза, навыки: running/done/error, тайминги) — виден в статусе задания,
+    чтобы UI показывал не спиннер, а «навыки 3/7 · сейчас: audit1c-explain». Хранится в checkpoint.run
+    (JSONB-merge: чекпоинт цепочки не трогаем)."""
+    if not _has_pg():
+        j = _MEM.get(job_id)
+        if j:
+            j["checkpoint"] = {**(j.get("checkpoint") or {}), "run": progress}
+        return
+    from .db import _conn
+    async with _conn() as conn:
+        await conn.execute("UPDATE run_jobs SET checkpoint = COALESCE(checkpoint, '{}'::jsonb) || %s::jsonb WHERE id=%s",
+                           (json.dumps({"run": progress}, ensure_ascii=False), job_id))
+
+
 async def set_checkpoint(job_id: str, checkpoint: dict) -> None:
     """Сохранить прогресс (цепочка: пройденные шаги) — виден в статусе, переживает рестарт воркера."""
     if not _has_pg():
@@ -464,7 +479,8 @@ def public(job: dict, position_: int = 0) -> dict:
             "created_at": job.get("created_at"), "started_at": job.get("started_at"), "finished_at": job.get("finished_at"),
             "cancel_requested": bool(job.get("cancel_requested")), "attempts": job.get("attempts", 0),
             "progress": {"step": cp.get("step"), "steps_total": cp.get("steps_total"),
-                         "steps_done": len(cp.get("steps") or []), "awaiting_hitl": cp.get("hitl_ids") or []} if cp else None}
+                         "steps_done": len(cp.get("steps") or []), "awaiting_hitl": cp.get("hitl_ids") or [],
+                         "run": cp.get("run")} if cp else None}
 
 
 async def worker_loop(worker_id: str, handler, *, on_done=None, on_error=None) -> None:

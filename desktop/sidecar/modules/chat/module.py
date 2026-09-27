@@ -255,7 +255,7 @@ def run_job_status(thread_id: int, job_id: str, agent_id: str = "") -> dict:
         return {"ok": True, "done": True, "run": summary}
     if st in ("failed", "cancelled"):
         return {"ok": False, "done": True, "status": st, "error": j.get("error") or ("прогон отменён" if st == "cancelled" else "прогон не выполнен")}
-    return {"ok": True, "done": False, "status": st, "position": j.get("position") or 0}
+    return {"ok": True, "done": False, "status": st, "position": j.get("position") or 0, "progress": j.get("progress")}
 
 
 @router.post("/threads/{thread_id}/run-job/{job_id}/cancel")
