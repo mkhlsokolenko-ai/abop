@@ -22,13 +22,15 @@ CREATE TABLE IF NOT EXISTS schema_templates (
     builtin     BOOLEAN NOT NULL DEFAULT false,
     editor      TEXT,
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    max_tokens  INTEGER
+    max_tokens  INTEGER,
+    delivery    JSONB
 );
 ALTER TABLE schema_templates ADD COLUMN IF NOT EXISTS max_tokens INTEGER;
+ALTER TABLE schema_templates ADD COLUMN IF NOT EXISTS delivery JSONB;
 """
 
 _MEM: dict[str, dict] = {}
-_COLS = "id,name,json_schema,instruction,builtin,editor,updated_at,max_tokens"
+_COLS = "id,name,json_schema,instruction,builtin,editor,updated_at,max_tokens,delivery"
 
 
 def _has_pg() -> bool:
@@ -38,7 +40,8 @@ def _has_pg() -> bool:
 def _row(r) -> dict:
     return {"id": r[0], "name": r[1], "json_schema": r[2] or {}, "instruction": r[3] or "",
             "builtin": bool(r[4]), "editor": r[5], "updated_at": r[6].isoformat() if r[6] else None,
-            "max_tokens": int(r[7]) if len(r) > 7 and r[7] else None}
+            "max_tokens": int(r[7]) if len(r) > 7 and r[7] else None,
+            "delivery": (r[8] if len(r) > 8 and isinstance(r[8], dict) and r[8] else None)}
 
 
 async def init() -> None:
@@ -74,7 +77,8 @@ async def save(tid: str, spec: dict, editor: str = "dev", builtin: bool = False)
     spec = spec or {}
     card = {"id": tid, "name": spec.get("name") or tid, "json_schema": spec.get("json_schema") or {},
             "instruction": spec.get("instruction") or "", "builtin": builtin,
-            "max_tokens": int(spec.get("max_tokens") or 0) or None}
+            "max_tokens": int(spec.get("max_tokens") or 0) or None,
+            "delivery": spec.get("delivery") if isinstance(spec.get("delivery"), dict) and spec.get("delivery") else None}
     if not _has_pg():
         card["editor"] = editor
         _MEM[tid] = card
@@ -82,12 +86,13 @@ async def save(tid: str, spec: dict, editor: str = "dev", builtin: bool = False)
     from .db import _conn
     async with _conn() as conn:
         await conn.execute(
-            "INSERT INTO schema_templates (id,name,json_schema,instruction,builtin,editor,updated_at,max_tokens) "
-            "VALUES (%s,%s,%s,%s,%s,%s,now(),%s) "
+            "INSERT INTO schema_templates (id,name,json_schema,instruction,builtin,editor,updated_at,max_tokens,delivery) "
+            "VALUES (%s,%s,%s,%s,%s,%s,now(),%s,%s) "
             "ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, json_schema=EXCLUDED.json_schema, "
             "instruction=EXCLUDED.instruction, builtin=EXCLUDED.builtin, editor=EXCLUDED.editor, updated_at=now(), "
-            "max_tokens=EXCLUDED.max_tokens",
-            (tid, card["name"], json.dumps(card["json_schema"]), card["instruction"], builtin, editor, card["max_tokens"]))
+            "max_tokens=EXCLUDED.max_tokens, delivery=EXCLUDED.delivery",
+            (tid, card["name"], json.dumps(card["json_schema"]), card["instruction"], builtin, editor, card["max_tokens"],
+             json.dumps(card["delivery"], ensure_ascii=False) if card["delivery"] else None))
     return await get(tid)
 
 

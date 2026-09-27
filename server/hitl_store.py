@@ -98,6 +98,32 @@ async def list_pending() -> list[dict]:
     return [dict(zip(keys, r)) for r in rows]
 
 
+async def update_payload(item_id: str, patch: dict) -> None:
+    """Дописать поля в payload заявки (id команды в шине, результат коннектора) — без смены state."""
+    if not _has_pg():
+        if item_id in _MEM:
+            _MEM[item_id]["payload"] = {**(_MEM[item_id].get("payload") or {}), **patch}
+        return
+    from .db import _conn
+    async with _conn() as conn:
+        await conn.execute("UPDATE hitl_items SET payload = payload || %s::jsonb WHERE id=%s",
+                           (json.dumps(patch, ensure_ascii=False), item_id))
+
+
+async def find_by_command(command_id: str) -> dict | None:
+    """Заявка, чья команда ушла в шину под этим id (ответ коннектора command.done/failed → карточка)."""
+    if not command_id:
+        return None
+    if not _has_pg():
+        return next((v for v in _MEM.values() if (v.get("payload") or {}).get("command_id") == command_id), None)
+    from .db import _conn
+    async with _conn() as conn:
+        cur = await conn.execute("SELECT id FROM hitl_items WHERE payload->>'command_id' = %s ORDER BY created_at DESC LIMIT 1",
+                                 (command_id,))
+        r = await cur.fetchone()
+    return await get(r[0]) if r else None
+
+
 async def decide(item_id: str, state: str, decided_by: str, reason: str = "") -> None:
     if not _has_pg():
         if item_id in _MEM:

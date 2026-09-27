@@ -181,3 +181,79 @@ def test_schema_templates_persist_import_edit_reset(client):
     assert r.status_code == 200 and r.json()["builtin"] and r.json()["max_tokens"] == 4000
     assert st.max_tokens_of(r.json()) == 4000
     assert client.post("/api/schema-templates/nope-no-such/reset").status_code == 404
+
+
+def test_delivery_render_commands_from_template():
+    """Секция delivery шаблона → команды коннектора из structured-ответа: фильтр по рангу, подстановки,
+    списки маркерами, корень через $., превью без скриптов."""
+    from server import delivery as dl, skill_templates as st
+    spec = st.load_one("audit1c-explain")["delivery"]
+    assert not dl.validate_delivery(spec)
+    struct = {"резюме_для_главбуха": "две критичные", "итог": "и",
+              "находки": [{"id": "A", "ранг": "критично", "заголовок": "РТ-0008 без себестоимости", "что_не_сходится": "нет Дт 90.02",
+                           "откуда": {"документы": ["РТ-0008 от 2024-08-15"], "проводки": ["Дт 62 Кт 90.01 236 000,00 ₽"], "доказательство": "нет 90.02"},
+                           "чем_грозит": "завышена прибыль", "норма": {"статья": "ФСБУ 5/2019 п.15", "цитата": "…", "источник": "ФСБУ"},
+                           "последствия": ["уточнёнка"], "что_проверить": ["проводку"], "статус": "факт"},
+                          {"id": "C", "ранг": "формально", "заголовок": "дубль", "что_не_сходится": "x", "откуда": {"документы": [], "проводки": [], "доказательство": ""},
+                           "чем_грозит": "", "норма": {"статья": "", "цитата": "", "источник": ""}, "последствия": [], "что_проверить": [], "статус": "гипотеза"}]}
+    cmds = dl.build_commands(spec, struct, skill="audit1c-explain")
+    assert len(cmds) == 1 and cmds[0]["system"] == "redmine" and cmds[0]["type"] == "issue.create"
+    p = cmds[0]["payload"]
+    assert p["subject"] == "Аудит 1С · критично · A · РТ-0008 без себестоимости"
+    assert "- РТ-0008 от 2024-08-15" in p["description"] and "- Дт 62 Кт 90.01 236 000,00 ₽" in p["description"]
+    assert "Резюме для главбуха: две критичные" in p["description"] and "ФСБУ 5/2019 п.15" in p["description"]
+    assert cmds[0]["source"] == {"skill": "audit1c-explain", "item": "A"}
+    html = dl.preview_html(cmds[0])
+    assert "redmine · issue.create" in html and "<pre" in html and "<script" not in html
+    # rank: одна сводная команда (без each), список рейтинга маркерами
+    rk = st.load_one("audit1c-rank")["delivery"]
+    c2 = dl.build_commands(rk, {"порог_существенности": {"сумма": "100 000 ₽", "как_выведен": "медиана"},
+                                "рейтинг": [{"место": 1, "id": "B", "ранг": "критично"}], "топ_3_действия": ["выставить СФ"], "итог": "и"})
+    assert len(c2) == 1 and "порог 100 000 ₽" in c2[0]["payload"]["subject"] and "- выставить СФ" in c2[0]["payload"]["description"]
+    assert dl.validate_delivery({"system": "redmine"}) and dl.validate_delivery({"system": "redmine", "type": "x", "payload": {}, "foo": 1})
+
+
+def test_delivery_templates_make_hitl_preview_and_take_connector_result(client):
+    """Прогон → structured-ответ навыка → HITL-заявка «команда» с превью (наружу ничего) → approve публикует
+    (шина в тестах не подключена → 503, честно) → ответ коннектора command.done ложится в заявку."""
+    import asyncio
+    from server import hitl_store, systems_store, web_api
+    from server import delivery as dl
+
+    async def flow():
+        await systems_store.save("redmine", {"kind": "rest", "base_url": "http://x", "scope": []})
+        agent = {"id": "ag-tpl", "name": "Аудитор", "family": "finance"}
+        result = {"run_id": "run-1", "delivery": [], "skill_outputs": [{"skill": "audit1c-rank", "structured": {
+            "порог_существенности": {"сумма": "100 000 ₽", "как_выведен": "медиана"},
+            "рейтинг": [{"место": 1, "id": "B", "ранг": "критично", "сумма_влияния": "210 000 ₽", "риск": "налоговый", "охват": 1, "обоснование": "СФ"}],
+            "топ_3_действия": ["выставить СФ"], "итог": "и"}}]}
+        from server import skill_templates as st
+        schemas = {"audit1c-rank": {"delivery": st.load_one("audit1c-rank")["delivery"]}}
+        await web_api._deliver_templates(agent, result, "tester", schemas)
+        d = result["delivery"]
+        assert len(d) == 1 and d[0]["mode"] == "awaiting_hitl" and d[0]["channel"] == "redmine" and d[0]["hitl_id"]
+        assert "порог 100 000 ₽" in d[0]["subject"]
+        # «только в чат» → наружу ничего
+        r2 = {"delivery": [], "skill_outputs": result["skill_outputs"]}
+        await web_api._deliver_templates(agent, r2, "tester", schemas, deliver_filter="chat")
+        assert r2["delivery"] == []
+        return d[0]["hitl_id"]
+    hid = asyncio.run(flow())
+    it = client.get(f"/api/hitl/{hid}").json()
+    assert it["kind"] == "command" and it["system"] == "redmine" and it["type"] == "issue.create"
+    assert "порог 100 000 ₽" in it["subject"] and "<pre" in it["html"] and it["state"] == "pending"
+    assert any(q["id"] == hid for q in client.get("/api/hitl/queue").json()["queue"])
+    r = client.post(f"/api/hitl/{hid}/approve", json={"decision": "approve"})
+    assert r.status_code == 503   # шина не подключена — команду некуда публиковать; заявка остаётся pending
+    assert client.get(f"/api/hitl/{hid}").json()["state"] == "pending"
+
+    async def feedback():
+        await hitl_store.update_payload(hid, {"command_id": "cmd-42"})
+        await web_api._on_command_result("redmine", {"type": "command.done", "payload": {"command_id": "cmd-42", "command_type": "issue.create",
+                                                                                          "result": {"issue_id": 7, "url": "http://x/issues/7"}, "ms": 120}})
+        await web_api._on_command_result("redmine", {"type": "command.done", "payload": {"command_id": "no-such"}})
+    asyncio.run(feedback())
+    it = client.get(f"/api/hitl/{hid}").json()
+    assert it["result_state"] == "done" and it["result"]["url"] == "http://x/issues/7" and it["command_id"] == "cmd-42"
+    r = client.post(f"/api/hitl/{hid}/approve", json={"decision": "reject"})
+    assert r.status_code == 200 and r.json()["state"] == "rejected"

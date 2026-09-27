@@ -19,6 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+from server.delivery import validate_delivery  # noqa: E402
 from server.skill_templates import validate_schema  # noqa: E402
 
 
@@ -50,11 +51,11 @@ def main() -> int:
         if only and sid not in only:
             continue
         raw = json.loads(p.read_text(encoding="utf-8"))
-        errs = validate_schema(raw.get("json_schema"))
+        errs = validate_schema(raw.get("json_schema")) + validate_delivery(raw.get("delivery"))
         if errs or not raw.get("instruction"):
             bad[sid] = errs or ["нужна instruction"]
             continue
-        items.append({"id": sid, **{k: raw[k] for k in ("name", "instruction", "json_schema", "max_tokens") if k in raw}})
+        items.append({"id": sid, **{k: raw[k] for k in ("name", "instruction", "json_schema", "max_tokens", "delivery") if k in raw}})
     print(f"локально валидны: {len(items)}, с ошибками: {len(bad)}")
     for sid, errs in bad.items():
         print("  FAIL", sid, "|", "; ".join(errs[:3]))

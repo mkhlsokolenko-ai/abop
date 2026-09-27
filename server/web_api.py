@@ -29,7 +29,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, assembly, audit_store, cachebus, charts, clients, compute, contract_store, dataplane_store, families_store, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, report_store, run_cache_store, run_store, runner, safety, schema_store, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, assembly, audit_store, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, families_store, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, report_store, run_cache_store, run_store, runner, safety, schema_store, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
@@ -1233,6 +1233,7 @@ async def schema_templates_import(body: dict, u: dict = Depends(user)) -> dict:
         errs = skill_templates.validate_schema((raw or {}).get("json_schema"))
         if not (raw or {}).get("instruction"):
             errs.append("нужна instruction")
+        errs += delivery_mod.validate_delivery((raw or {}).get("delivery"))
         if errs:
             errors[tid] = errs; continue
         cur = await schema_store.get(tid)
@@ -1240,7 +1241,8 @@ async def schema_templates_import(body: dict, u: dict = Depends(user)) -> dict:
             skipped.append(tid); continue
         card = {"name": raw.get("name") or tid, "instruction": raw.get("instruction"), "json_schema": raw["json_schema"],
                 "max_tokens": int(raw.get("max_tokens") or 0) or None,
-                "fingerprint": skill_templates.fingerprint({k: raw[k] for k in ("name", "instruction", "json_schema", "max_tokens") if k in raw})}
+                "delivery": raw.get("delivery") if isinstance(raw.get("delivery"), dict) and raw.get("delivery") else None,
+                "fingerprint": skill_templates.fingerprint({k: raw[k] for k in ("name", "instruction", "json_schema", "max_tokens", "delivery") if k in raw})}
         await skill_templates.upsert(schema_store, tid, card, editor=editor, builtin=(source == "repo"))
         imported.append(tid)
     await audit_store.record(editor, "schema_template.import", source, {"imported": len(imported), "skipped": len(skipped), "errors": len(errors)})
@@ -1285,9 +1287,13 @@ async def schema_template_save(tid: str, body: dict, u: dict = Depends(user)) ->
     mt = int(mt) if mt not in (None, "") else (existing or {}).get("max_tokens")
     if mt is not None and not (256 <= mt <= 16000):
         raise HTTPException(422, "max_tokens: 256..16000")
+    dl = (body or {}).get("delivery") if "delivery" in (body or {}) else (existing or {}).get("delivery")
+    dl = dl if isinstance(dl, dict) and dl else None
+    if dl and delivery_mod.validate_delivery(dl):
+        raise HTTPException(422, "delivery: " + "; ".join(delivery_mod.validate_delivery(dl)))
     editor = u.get("name") or u.get("sub") or "dev"
     card = await schema_store.save(tid, {"name": (body or {}).get("name") or (existing or {}).get("name") or tid,
-                                         "json_schema": sch, "instruction": instr, "max_tokens": mt},
+                                         "json_schema": sch, "instruction": instr, "max_tokens": mt, "delivery": dl},
                                    editor=editor, builtin=False)
     await audit_store.record(editor, "schema_template.save", tid, {"name": card.get("name"), "was_builtin": bool(existing and existing.get("builtin"))})
     return card
@@ -3152,6 +3158,55 @@ async def _deliver_out_nodes(agent: dict, result: dict, actor: str, deliver_filt
     result["delivery"] = deliveries
 
 
+async def _deliver_templates(agent: dict, result: dict, actor: str, skill_schemas: dict, deliver_filter: str = "") -> None:
+    """Результат навыка → В СИСТЕМУ: секция delivery шаблона собирает команды коннектора из structured-ответа,
+    каждая становится HITL-заявкой с превью того, что уйдёт (ABOP — платформа запуска, результат живёт в системе).
+    После «да» оператора команда публикуется в шину; ответ коннектора (command.done/failed) возвращается в заявку."""
+    if deliver_filter == "chat" or not skill_schemas:
+        return
+    fam = agent.get("family") or ""
+    fam_key = access.scope_key(family=fam)
+    run_id = result.get("run_id") or (result.get("verdict") or {}).get("run_id") or ""
+    deliveries = list(result.get("delivery") or [])
+    made = 0
+    for so in result.get("skill_outputs") or []:
+        sid = so.get("skill") or ""
+        spec = (skill_schemas.get(sid) or {}).get("delivery")
+        if not spec:
+            continue
+        if deliver_filter and deliver_filter != spec.get("system"):
+            continue
+        cmds = delivery_mod.build_commands(spec, so.get("structured") or {}, skill=sid)
+        if not cmds:
+            continue
+        sysrec = await systems_store.get(spec["system"])
+        ok, reason = access.can_reach_system(fam_key, sysrec) if sysrec else (False, "системы нет в реестре")
+        if not ok:
+            await access.audit_denial(actor, fam_key, spec["system"], "deliver:" + str(spec.get("type")), reason)
+            deliveries.append({"node": "tpl:" + sid, "title": f"{spec['system']}/{spec['type']} × {len(cmds)}", "channel": spec["system"],
+                               "to": spec["system"], "mode": "denied", "result": f"⛔ доступ к «{spec['system']}» закрыт (ABAC): {reason}"})
+            continue
+        for cmd in cmds[:20]:
+            item = await hitl_store.create(
+                run_id=str(run_id), agent_id=agent.get("id") or "", family=fam, node="tpl:" + sid, title=cmd["title"],
+                channel="command", to_addr=cmd["system"] + "/" + cmd["type"],
+                payload={"kind": "command", "system": cmd["system"], "type": cmd["type"], "payload": cmd["payload"],
+                         "actor": actor, "trace_id": obs.current_trace_id(), "agent_name": agent.get("name"),
+                         "source": cmd.get("source"), "html": delivery_mod.preview_html(cmd),
+                         "job_id": run_queue.CURRENT_JOB.get()},
+                requested_by=actor)
+            deliveries.append({"node": "tpl:" + sid, "title": cmd["title"], "channel": cmd["system"], "to": cmd["system"] + "/" + cmd["type"],
+                               "format": "command", "mode": "awaiting_hitl", "hitl_id": item["id"],
+                               "subject": str((cmd["payload"] or {}).get("subject") or (cmd["payload"] or {}).get("title") or "")[:200],
+                               "result": f"ожидает подтверждения оператора (заявка {item['id']})"})
+            made += 1
+        await audit_store.record(actor, "agent.deliver", agent.get("id"),
+                                 {"channel": spec["system"], "type": spec["type"], "mode": "awaiting_hitl", "skill": sid, "count": len(cmds)}, severity="info")
+    if made or len(deliveries) != len(result.get("delivery") or []):
+        result["delivery"] = deliveries
+        obs.inc("abop_delivery_commands_total", float(made), system="templates")
+
+
 # ─── Multi-user: per-user rate-limit + идемпотентность (дедуп двойных сабмитов) ───
 import asyncio as _aio
 import time as _time
@@ -3493,7 +3548,8 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
                 _instr = skill_templates.strip_markers(_tpl.get("instruction") or "")
                 _skill_schemas[_sid] = {"response_format": schema_store.response_format(_tpl),
                                         "instruction": _instr + "\n\nПОЛЯ СХЕМЫ (что класть):\n" + skill_templates.describe_for_prompt(_tpl),
-                                        "max_tokens": skill_templates.max_tokens_of(_tpl)}
+                                        "max_tokens": skill_templates.max_tokens_of(_tpl),
+                                        "delivery": _tpl.get("delivery") or None, "template_id": _tpl.get("id")}
     except Exception:  # noqa: BLE001 — схемы опциональны, не валим прогон
         _skill_schemas = {}
     result = await runner.run_live(agent, contract, ape.skill_safety,
@@ -3507,6 +3563,9 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
                                    should_cancel=(lambda: run_queue.cancel_requested(job_id)) if job_id else None,
                                    tool_loop=skill_tools.tool_loop, actor=started_by,
                                    trace_id=(obs.current_trace_id() if hasattr(obs, "current_trace_id") else "") or "")
+    # Структурированные ответы навыков (по шаблонам) — отдельно: ниже findings подменяются детерминированными
+    result["skill_outputs"] = [{"skill": f.get("skill"), "structured": f.get("structured"), "model": f.get("model")}
+                               for f in (result.get("findings") or []) if isinstance(f, dict) and f.get("skill") and isinstance(f.get("structured"), dict)]
     # Петля прогон→канва: прикрепляем детерминированные находки (истина, не LLM).
     if "audit1c-checks" in _skills:
         if _det_findings_err:
@@ -3571,6 +3630,10 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
         await _deliver_out_nodes(agent, result, started_by, deliver_filter=deliver_filter)
     except Exception as ex:  # noqa: BLE001 — доставка опциональна, прогон не падает
         result["delivery_error"] = f"{type(ex).__name__}: {ex}"
+    try:
+        await _deliver_templates(agent, result, started_by, _skill_schemas, deliver_filter=deliver_filter)
+    except Exception as ex:  # noqa: BLE001
+        result["delivery_error"] = (result.get("delivery_error") or "") + f" templates: {type(ex).__name__}: {ex}"
     result["started_by"] = started_by
     # Least-privilege манифест агента (ABAC): какие системы реестра доступны его семье, Qdrant-тенант,
     # и какие сущности закрыты на пути данных (система вне scope).
@@ -3913,7 +3976,26 @@ async def bus_publish(body: dict, u: dict = Depends(user)) -> dict:
 
 
 async def _bus_event_handler(system_id: str, event: dict, headers: dict) -> None:
+    await _on_command_result(system_id, event)
     await triggers.on_bus_event(system_id, event, execute_agent_run, headers)
+
+
+async def _on_command_result(system_id: str, event: dict) -> None:
+    """command.done/failed от коннектора → результат (id/ссылка или ошибка) в HITL-заявку, из которой команда ушла."""
+    et = str((event or {}).get("type") or "")
+    if et not in ("command.done", "command.failed"):
+        return
+    p = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+    item = await hitl_store.find_by_command(str(p.get("command_id") or ""))
+    if not item:
+        return
+    state = "done" if et == "command.done" else "failed"
+    await hitl_store.update_payload(item["id"], {"result_state": state, "result": p.get("result") if state == "done" else {"error": p.get("error")},
+                                                 "result_ms": p.get("ms"), "result_system": system_id})
+    await audit_store.record("connector", "command." + state, item["id"], {"system": system_id, "type": p.get("command_type"),
+                                                                            "result": str(p.get("result") or p.get("error"))[:200]},
+                             severity="info" if state == "done" else "warn")
+    obs.inc("abop_command_result_total", state=state, system=system_id)
 
 
 # ═══════════════ ЦЕПОЧКИ АГЕНТОВ (Pipelines): линейный конвейер выход→контекст ═══════════════
@@ -4209,11 +4291,16 @@ async def hitl_item(item_id: str, u: dict = Depends(user)) -> dict:
         raise HTTPException(403, "нет доступа к семье заявки")
     payload = item.get("payload") or {}
     cfg = payload.get("cfg") or {}
+    cp = payload.get("payload") if payload.get("kind") == "command" and isinstance(payload.get("payload"), dict) else {}
     return {"id": item.get("id"), "state": item.get("state"), "agent_id": item.get("agent_id"),
             "agent_name": payload.get("agent_name"), "title": item.get("title"), "channel": item.get("channel"),
-            "to": item.get("to_addr"), "format": cfg.get("format"), "subject": cfg.get("subject") or cfg.get("title"),
+            "to": item.get("to_addr"), "format": cfg.get("format") or ("command" if cp else None),
+            "subject": cfg.get("subject") or cfg.get("title") or cp.get("subject") or cp.get("title"),
             "html": (payload.get("html") or "")[:20000], "created_at": item.get("created_at"),
-            "requested_by": item.get("requested_by")}
+            "requested_by": item.get("requested_by"),
+            "kind": payload.get("kind") or "report", "system": payload.get("system"), "type": payload.get("type"),
+            "command_id": payload.get("command_id"), "result_state": payload.get("result_state"),
+            "result": payload.get("result"), "source": payload.get("source")}
 
 
 @app.post("/api/hitl/{item_id}/approve")
@@ -4261,6 +4348,7 @@ async def hitl_approve(item_id: str, body: dict = None, u: dict = Depends(user))
                                             payload.get("payload") if isinstance(payload.get("payload"), dict) else {},
                                             actor=actor, trace_id=str(payload.get("trace_id") or obs.current_trace_id()))
         await hitl_store.decide(item_id, "approved", actor, reason)
+        await hitl_store.update_payload(item_id, {"command_id": (res.get("command") or {}).get("id"), "topic": res.get("topic")})
         await audit_store.record(actor, "hitl.approve", item_id, {"agent_id": item.get("agent_id"), "channel": "command",
                                                                   "topic": res.get("topic"), "command_id": (res.get("command") or {}).get("id")})
         obs.inc("abop_hitl_total", decision="approve")

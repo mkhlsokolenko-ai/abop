@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from server.delivery import validate_delivery  # noqa: E402
 from server.skill_templates import validate_schema  # noqa: E402
 
 ok = True
@@ -19,7 +20,7 @@ for p in sys.argv[1:]:
             if not t.get(k):
                 errs.append(f"нет {k}")
         if t.get("json_schema"):
-            errs += validate_schema(t["json_schema"])
+            errs += validate_schema(t["json_schema"]) + validate_delivery(t.get("delivery"))
             if not (400 <= len(json.dumps(t["json_schema"], ensure_ascii=False)) <= 12000):
                 errs.append("размер схемы вне 400..12000")
         mt = t.get("max_tokens")

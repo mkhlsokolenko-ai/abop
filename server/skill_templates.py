@@ -66,7 +66,9 @@ def _card(sid: str, raw: dict) -> dict | None:
     if not isinstance(sch, dict) or not sch.get("properties"):
         return None
     return {"name": raw.get("name") or sid, "instruction": raw.get("instruction") or "",
-            "json_schema": sch, "max_tokens": int(raw.get("max_tokens") or 0) or None, "fingerprint": fingerprint(raw)}
+            "json_schema": sch, "max_tokens": int(raw.get("max_tokens") or 0) or None,
+            "delivery": raw.get("delivery") if isinstance(raw.get("delivery"), dict) and raw.get("delivery") else None,
+            "fingerprint": fingerprint(raw)}
 
 
 def load_one(sid: str) -> dict | None:
@@ -105,7 +107,8 @@ async def upsert(schema_store, sid: str, card: dict, *, editor: str = "repo", bu
     if builtin and card.get("fingerprint"):
         instr += "\n[repo:" + card["fingerprint"] + "]"
     return await schema_store.save(sid, {"name": card.get("name") or sid, "json_schema": card["json_schema"],
-                                         "instruction": instr, "max_tokens": card.get("max_tokens")},
+                                         "instruction": instr, "max_tokens": card.get("max_tokens"),
+                                         "delivery": card.get("delivery")},
                                    editor=editor, builtin=builtin)
 
 
@@ -119,7 +122,8 @@ async def seed(schema_store) -> int:
         if cur and not cur.get("builtin"):
             continue
         marker = "[repo:" + t["fingerprint"] + "]"
-        if cur and marker in (cur.get("instruction") or "") and (cur.get("max_tokens") or None) == t.get("max_tokens"):
+        if (cur and marker in (cur.get("instruction") or "") and (cur.get("max_tokens") or None) == t.get("max_tokens")
+                and (cur.get("delivery") or None) == (t.get("delivery") or None)):
             continue
         await upsert(schema_store, sid, t, editor="repo", builtin=True)
         n += 1

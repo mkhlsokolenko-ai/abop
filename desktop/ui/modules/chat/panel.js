@@ -229,7 +229,7 @@ export async function mount(root, ctx) {
   // ── карточка прогона реального агента ABOP (находки / доставка / HITL) ──
   function runCard(s) {
     const fnd = (s.findings || []).map((t) => `<div style="font-size:12.5px;color:var(--ink);border-left:2px solid var(--accent);padding-left:10px;margin:4px 0">${esc(cleanFinding(t).slice(0, 400))}</div>`).join("");
-    const dl = (s.delivery || []).map((d) => { const wait = d.mode === "awaiting_hitl"; const mode = wait ? "ожидает вашего подтверждения" : d.mode === "real" ? "отправлено" : d.mode === "dry_run" ? "черновик (без отправки)" : d.mode === "denied" ? "доступ закрыт" : esc(d.mode || ""); return `<div style="font-size:11.5px;color:${wait ? "var(--warn-ink)" : d.mode === "denied" ? "var(--danger-ink)" : "var(--ink-2)"}">${CH_ICON(d.channel)} ${esc(d.channel)}${d.to ? " → " + esc(d.to) : ""} · ${mode}${d.result && d.mode === "real" ? ` <span style="color:var(--ink-3)">${esc(String(d.result).slice(0, 90))}</span>` : ""}</div>`; }).join("");
+    const dl = (s.delivery || []).map((d) => { const wait = d.mode === "awaiting_hitl"; const mode = wait ? "ожидает вашего подтверждения" : d.mode === "real" ? "отправлено" : d.mode === "dry_run" ? "черновик (без отправки)" : d.mode === "denied" ? "доступ закрыт" : esc(d.mode || ""); return `<div style="font-size:11.5px;color:${wait ? "var(--warn-ink)" : d.mode === "denied" ? "var(--danger-ink)" : "var(--ink-2)"}">${CH_ICON(d.channel)} ${esc(d.channel)}${d.to ? " → " + esc(d.to) : ""}${d.subject ? " · «" + esc(String(d.subject).slice(0, 80)) + "»" : ""} · ${mode}${d.hitl_id && s.cmd_results && s.cmd_results[d.hitl_id] ? ` <span style="color:${s.cmd_results[d.hitl_id].ok ? "var(--ok-ink)" : "var(--danger-ink)"}">${esc(s.cmd_results[d.hitl_id].text)}</span>` : ""}${d.result && d.mode === "real" ? ` <span style="color:var(--ink-3)">${esc(String(d.result).slice(0, 90))}</span>` : ""}</div>`; }).join("");
     const waits = (s.delivery || []).filter((d) => d.mode === "awaiting_hitl");
     const hitlIds = waits.map((d) => d.hitl_id).filter(Boolean);
     const verd = s.verdict && s.verdict.within_envelope != null ? `<span style="font-family:var(--mono);font-size:11px;color:${s.verdict.within_envelope ? "var(--ok-ink)" : "var(--danger-ink)"}">конверт: ${s.verdict.within_envelope ? "в рамках" : "превышен"}${s.verdict.autonomy_used ? " · " + esc(s.verdict.autonomy_used) : ""}</span>` : "";
@@ -532,9 +532,10 @@ export async function mount(root, ctx) {
     if (!it || it.ok === false) { toast("Заявка уже обработана или недоступна", "warn"); loadHitlQueue(); return; }
     if (legacy) it.body = "Предпросмотр содержимого недоступен в этой версии ABOP Desktop — обновите приложение. Подтверждение отправит отчёт агента в указанный канал.";
     const fields = [["Агент", it.agent_name || agentName(it.agent_id, it.agent_id)], ["Канал", (CH_ICON(it.channel) + " " + (it.channel || ""))], ["Адресат", it.to || "—"]];
+    if (it.kind === "command") { fields[1] = ["Действие", `${it.system || ""} · ${it.type || ""}`]; fields[2] = ["Куда", it.to || it.system || "—"]; if (it.source && it.source.skill) fields.push(["Навык", it.source.skill + (it.source.item ? " · " + it.source.item : "")]); }
     if (it.subject) fields.push(["Тема", it.subject]);
-    if (it.format) fields.push(["Формат", it.format]);
-    const ok = await ctx.gate({ title: it.title || "Внешнее действие", kicker: "подтверждение · governance", fields, html: it.html ? sanitize(it.html) : "", body: it.html ? "" : (it.body || "Содержимое не приложено."), allowLabel: "Подтвердить и отправить", denyLabel: "Отклонить", note: "Отправится только после вашего подтверждения. Персональные данные замаскированы." });
+    if (it.format && it.kind !== "command") fields.push(["Формат", it.format]);
+    const ok = await ctx.gate({ title: it.title || "Внешнее действие", kicker: "подтверждение · governance", fields, html: it.html ? sanitize(it.html) : "", body: it.html ? "" : (it.body || "Содержимое не приложено."), allowLabel: it.kind === "command" ? "Подтвердить и выполнить в системе" : "Подтвердить и отправить", denyLabel: "Отклонить", note: it.kind === "command" ? "Команда уйдёт в шину и её исполнит коннектор системы. Номер/ссылка вернутся в карточку прогона." : "Отправится только после вашего подтверждения. Персональные данные замаскированы." });
     await decideHitl(ids, ok ? "approve" : "reject", btn);
   }
   function sanitize(html) {   // превью отчёта: убираем скрипты/обработчики, остальное показываем как есть
@@ -543,15 +544,37 @@ export async function mount(root, ctx) {
   async function decideHitl(ids, decision, btn) {
     if (btn) { btn.disabled = true; btn.textContent = "…"; }
     let n = 0, last = "", err = "";
+    const commands = [];
     for (const id of ids) {
-      try { const r = await api(A_AG + "/hitl/" + encodeURIComponent(id) + "/approve", { method: "POST", body: JSON.stringify({ decision }) }); n++; const d = (r && (r.delivery || (r.result && r.result.delivery))); if (d) last = d; }
+      try { const r = await api(A_AG + "/hitl/" + encodeURIComponent(id) + "/approve", { method: "POST", body: JSON.stringify({ decision }) }); n++; const rr = (r && r.result) || r || {}; const d = rr.delivery; if (d) last = d; if (decision === "approve" && rr.command_id) commands.push(id); }
       catch (e) { err = humanError(e); }
     }
+    if (commands.length) watchCommandResults(commands);
     if (n) toast(decision === "approve" ? `✓ Подтверждено: ${n}${last ? " · " + String(last).slice(0, 80) : ""}` : `⃠ Отклонено: ${n}`, decision === "approve" ? "ok" : "");
     if (err) toast(err, "danger");
     // отметить карточки прогонов в чате
     messages.forEach((m) => { const ra = m.meta && m.meta.run_agent; if (ra && (ra.delivery || []).some((d) => ids.includes(d.hitl_id))) { ra.hitl_done = decision; ra.hitl_result = last; } });
     render(); await loadHitlQueue();
+  }
+  // результат коннектора по команде: опрашиваем заявку до 90 с (command.done/failed приходит из шины)
+  async function watchCommandResults(ids) {
+    const started = Date.now();
+    const pending = new Set(ids);
+    while (pending.size && Date.now() - started < 90000) {
+      await new Promise((r) => setTimeout(r, 4000));
+      for (const id of Array.from(pending)) {
+        let it = null; try { it = await api(A_AG + "/hitl/" + encodeURIComponent(id)); } catch { continue; }
+        if (!it || !it.result_state) continue;
+        pending.delete(id);
+        const res = it.result || {};
+        const ok = it.result_state === "done";
+        const ref = res.url || (res.issue_id ? "#" + res.issue_id : "") || (res.page_id ? "стр. " + res.page_id : "") || "";
+        const text = ok ? `✓ выполнено${ref ? ": " + ref : ""}` : `✗ ошибка коннектора: ${String(res.error || "").slice(0, 120)}`;
+        messages.forEach((m) => { const ra = m.meta && m.meta.run_agent; if (ra && (ra.delivery || []).some((d) => d.hitl_id === id)) { ra.cmd_results = ra.cmd_results || {}; ra.cmd_results[id] = { ok, text, url: res.url || "" }; } });
+        toast(text, ok ? "ok" : "danger");
+        render();
+      }
+    }
   }
   async function decideDelivery(btn, decision) {
     const wrap = btn.closest("[data-hitl]");
