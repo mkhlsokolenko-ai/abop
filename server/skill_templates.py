@@ -35,7 +35,7 @@ def load_all() -> dict[str, dict]:
         if not isinstance(sch, dict) or not sch.get("properties"):
             continue
         out[sid] = {"name": t.get("name") or sid, "instruction": t.get("instruction") or "",
-                    "json_schema": sch, "fingerprint": hashlib.sha1(json.dumps(t, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:12]}
+                    "json_schema": sch, "max_tokens": int(t.get("max_tokens") or 0) or None, "fingerprint": hashlib.sha1(json.dumps(t, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:12]}
     return out
 
 
@@ -51,8 +51,9 @@ async def seed(schema_store) -> int:
         marker = "[repo:" + t["fingerprint"] + "]"
         if cur and marker in (cur.get("instruction") or ""):
             continue
+        mt = ("\n[max_tokens:" + str(t["max_tokens"]) + "]") if t.get("max_tokens") else ""
         await schema_store.save(sid, {"name": t["name"], "json_schema": t["json_schema"],
-                                      "instruction": t["instruction"].rstrip() + "\n" + marker},
+                                      "instruction": t["instruction"].rstrip() + mt + "\n" + marker},
                                 editor="repo", builtin=True)
         n += 1
     return n
@@ -80,3 +81,12 @@ def describe_for_prompt(template: dict) -> str:
                 walk(v["items"], prefix + k + "[].", depth + 1)
     walk(sch, "", 0)
     return "\n".join(lines[:60])
+
+
+def max_tokens_of(template: dict) -> int | None:
+    """[max_tokens:N] из инструкции шаблона (сохранённого в БД) или поле max_tokens (из репо)."""
+    import re
+    if (template or {}).get("max_tokens"):
+        return int(template["max_tokens"])
+    m = re.search(r"\[max_tokens:(\d+)\]", (template or {}).get("instruction") or "")
+    return int(m.group(1)) if m else None

@@ -115,11 +115,16 @@ def _render_struct(struct: dict, depth: int = 0) -> str:
     скаляры «ключ: значение», списки объектов — маркированные строки из непустых полей, вложенность — отступом."""
     if not isinstance(struct, dict):
         return "(пустой ответ)"
-    if isinstance(struct.get("находки"), list):
-        return _render_findings(struct)
+    _f = struct.get("находки")
+    if (isinstance(_f, list) and depth == 0 and set(struct.keys()) <= {"находки", "итог", "_truncated"}
+            and (not _f or any(isinstance(x, dict) and x.get("наблюдение") for x in _f))):
+        return _render_findings(struct)   # дефолтная схема находок; шаблонные «находки» с другими полями — общий рендер
     pad = "  " * depth
     out: list[str] = []
     for k, v in struct.items():
+        if k == "_truncated":
+            out.append(f"{pad}⚠ ответ модели обрезан по лимиту токенов — показана завершённая часть")
+            continue
         if v in (None, "", [], {}):
             continue
         if isinstance(v, dict):
@@ -144,6 +149,47 @@ def _render_struct(struct: dict, depth: int = 0) -> str:
     return "\n".join(out) if out else "(пустой ответ)"
 
 
+def _repair_json(s: str) -> dict | None:
+    """Обрезанный JSON → валидный: откатываемся к последнему завершённому элементу и закрываем
+    открытые массивы/объекты. Теряется только незавершённый хвост, а не весь ответ навыка."""
+    s = (s or "").strip()
+    if not s.startswith("{"):
+        return None
+    for cut in range(len(s), max(0, len(s) - 4000), -1):
+        frag = s[:cut].rstrip().rstrip(",")
+        stack, instr, esc, bad = [], False, False, False
+        for ch in frag:
+            if instr:
+                if esc:
+                    esc = False
+                elif ch == "\\":
+                    esc = True
+                elif ch == '"':
+                    instr = False
+                continue
+            if ch == '"':
+                instr = True
+            elif ch in "{[":
+                stack.append("}" if ch == "{" else "]")
+            elif ch in "}]":
+                if stack and stack[-1] == ch:
+                    stack.pop()
+                else:
+                    bad = True
+                    break
+        if bad or instr:
+            continue
+        cand = frag + "".join(reversed(stack))
+        try:
+            o = json.loads(cand)
+        except Exception:  # noqa: BLE001
+            continue
+        if isinstance(o, dict):
+            o["_truncated"] = True
+            return o
+    return None
+
+
 def _extract_json(raw: str) -> dict | None:
     """Достаём JSON-объект из ответа модели, даже если он в ```-заборе или после преамбулы.
     Self-host модели (Qwen) часто не держат response_format строго → оборачивают JSON в текст
@@ -158,7 +204,14 @@ def _extract_json(raw: str) -> dict | None:
             s = s.strip()
     i, j = s.find("{"), s.rfind("}")
     if i < 0 or j <= i:
-        return None
+        return _repair_json(s[i:]) if i >= 0 else None
+    try:
+        o = json.loads(s[i:j + 1])
+        return o if isinstance(o, dict) else None
+    except Exception:  # noqa: BLE001 — обрезанный по max_tokens JSON: чиним, сохраняя завершённые элементы
+        rep = _repair_json(s[i:])
+        if rep is not None:
+            return rep
     try:
         o = json.loads(s[i:j + 1])
         return o if isinstance(o, dict) else None
@@ -398,7 +451,7 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
             for _attempt in range(_LLM_RETRIES + 1):
                 try:
                     # кастомная (подробная) схема шаблона требует больше выходных токенов, иначе JSON обрежется
-                    _mt = (max(_LIM["max_tokens"], _CUSTOM_MAX_TOKENS) if (_custom and use_struct) else (_LIM["max_tokens"] if use_struct else _LIM["max_tokens_free"]))
+                    _mt = (max(_LIM["max_tokens"], int((_custom or {}).get("max_tokens") or 0), _CUSTOM_MAX_TOKENS) if (_custom and use_struct) else (_LIM["max_tokens"] if use_struct else _LIM["max_tokens_free"]))
                     resp = await chat_fn(messages=[{"role": "system", "content": _sys}, {"role": "user", "content": prompt}], profile="standard",
                                          max_tokens=_mt,
                                          response_format=_resp_fmt)

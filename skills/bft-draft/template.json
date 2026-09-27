@@ -4,23 +4,216 @@
   "json_schema": {
     "type": "object",
     "additionalProperties": false,
-    "required": ["задача", "название", "цель", "контекст", "роли", "функциональные_требования", "нефункциональные_требования", "критерии_приёмки", "границы", "открытые_вопросы", "готовность_к_публикации"],
+    "required": [
+      "задача",
+      "название",
+      "цель",
+      "контекст",
+      "роли",
+      "функциональные_требования",
+      "нефункциональные_требования",
+      "критерии_приёмки",
+      "границы",
+      "открытые_вопросы",
+      "готовность_к_публикации"
+    ],
     "properties": {
-      "задача": {"type": "object", "additionalProperties": false, "required": ["id", "тема", "автор", "источник"], "properties": {"id": {"type": "string"}, "тема": {"type": "string"}, "автор": {"type": "string"}, "источник": {"type": "string", "description": "Redmine/почта/иное"}}},
-      "название": {"type": "string", "description": "название БФТ, до 100 символов"},
-      "цель": {"type": "string", "description": "зачем это нужно бизнесу, 1–3 предложения"},
-      "контекст": {"type": "string", "description": "откуда задача, что уже есть, ограничения"},
-      "роли": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["роль", "что_делает"], "properties": {"роль": {"type": "string"}, "что_делает": {"type": "string"}}}},
+      "задача": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "тема",
+          "автор",
+          "источник"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "тема": {
+            "type": "string"
+          },
+          "автор": {
+            "type": "string"
+          },
+          "источник": {
+            "type": "string",
+            "description": "Redmine/почта/иное"
+          }
+        }
+      },
+      "название": {
+        "type": "string",
+        "description": "название БФТ, до 100 символов"
+      },
+      "цель": {
+        "type": "string",
+        "description": "зачем это нужно бизнесу, 1–3 предложения"
+      },
+      "контекст": {
+        "type": "string",
+        "description": "откуда задача, что уже есть, ограничения"
+      },
+      "роли": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "роль",
+            "что_делает"
+          ],
+          "properties": {
+            "роль": {
+              "type": "string"
+            },
+            "что_делает": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "функциональные_требования": {
         "type": "array",
-        "items": {"type": "object", "additionalProperties": false, "required": ["id", "требование", "приоритет", "основание"],
-                  "properties": {"id": {"type": "string", "description": "FR-1, FR-2…"}, "требование": {"type": "string", "description": "«Система должна…» — проверяемая формулировка"}, "приоритет": {"type": "string", "enum": ["must", "should", "could"]}, "основание": {"type": "string", "description": "фраза задачи, из которой следует требование, или «уточнить»"}}}
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "требование",
+            "приоритет",
+            "основание"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "FR-1, FR-2…"
+            },
+            "требование": {
+              "type": "string",
+              "description": "«Система должна…» — проверяемая формулировка"
+            },
+            "приоритет": {
+              "type": "string",
+              "enum": [
+                "must",
+                "should",
+                "could"
+              ]
+            },
+            "основание": {
+              "type": "string",
+              "description": "фраза задачи, из которой следует требование, или «уточнить»"
+            }
+          }
+        }
       },
-      "нефункциональные_требования": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["тип", "требование"], "properties": {"тип": {"type": "string", "enum": ["производительность", "безопасность", "совместимость", "надёжность", "удобство", "аудит"]}, "требование": {"type": "string"}}}},
-      "критерии_приёмки": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["id", "дано", "когда", "тогда"], "properties": {"id": {"type": "string", "description": "AC-1…"}, "дано": {"type": "string"}, "когда": {"type": "string"}, "тогда": {"type": "string"}}}},
-      "границы": {"type": "object", "additionalProperties": false, "required": ["входит", "не_входит"], "properties": {"входит": {"type": "array", "items": {"type": "string"}}, "не_входит": {"type": "array", "items": {"type": "string"}}}},
-      "открытые_вопросы": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["вопрос", "кому"], "properties": {"вопрос": {"type": "string"}, "кому": {"type": "string"}}}},
-      "готовность_к_публикации": {"type": "string", "enum": ["черновик", "к согласованию"], "description": "к согласованию — если открытых must-вопросов нет"}
+      "нефункциональные_требования": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "тип",
+            "требование"
+          ],
+          "properties": {
+            "тип": {
+              "type": "string",
+              "enum": [
+                "производительность",
+                "безопасность",
+                "совместимость",
+                "надёжность",
+                "удобство",
+                "аудит"
+              ]
+            },
+            "требование": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "критерии_приёмки": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "дано",
+            "когда",
+            "тогда"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "AC-1…"
+            },
+            "дано": {
+              "type": "string"
+            },
+            "когда": {
+              "type": "string"
+            },
+            "тогда": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "границы": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "входит",
+          "не_входит"
+        ],
+        "properties": {
+          "входит": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "не_входит": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "открытые_вопросы": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "вопрос",
+            "кому"
+          ],
+          "properties": {
+            "вопрос": {
+              "type": "string"
+            },
+            "кому": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "готовность_к_публикации": {
+        "type": "string",
+        "enum": [
+          "черновик",
+          "к согласованию"
+        ],
+        "description": "к согласованию — если открытых must-вопросов нет"
+      }
     }
-  }
+  },
+  "max_tokens": 4000
 }

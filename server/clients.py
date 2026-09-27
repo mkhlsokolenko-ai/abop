@@ -133,8 +133,14 @@ async def chat(
                 "output_tokens": int(usage.get("completion_tokens", 0)),
                 "finish_reason": choice.get("finish_reason", ""),
             }
-        except Exception as e:  # noqa: BLE001 — каскад: падаем к следующей модели
+        except Exception as e:  # noqa: BLE001 — каскад: падаем к следующей модели, но НЕ молча
             last_err = e
+            try:
+                from . import observability as _obs
+                _obs.log_event("warning", "llm.cascade_fallback", model=m, base_url=base_url, error=f"{type(e).__name__}: {str(e)[:160]}")
+                _obs.inc("abop_llm_fallback_total", model=m)
+            except Exception:  # noqa: BLE001
+                pass
             continue
 
     raise RuntimeError(f"Все модели каскада {cascade} недоступны: {last_err}")

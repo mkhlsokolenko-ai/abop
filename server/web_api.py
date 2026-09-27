@@ -1867,7 +1867,20 @@ async def _refresh_llm_override() -> None:
     """Подтянуть self-host LLM-override из admin_config (PG) → инжект в clients (переживает рестарт)."""
     try:
         cfg = (await admin_store.all()).get("llmOverride") or {}
-        clients.set_llm_override(cfg if isinstance(cfg, dict) else {})
+        cfg = cfg if isinstance(cfg, dict) else {}
+        base = str(cfg.get("base_url") or "").rstrip("/")
+        if base and base != (settings.local_llm_base_url or "").rstrip("/"):
+            # override указывает не на env-бокс: проверим, жив ли он, иначе молчаливый откат всего каскада в RouteAI
+            import httpx as _hx
+            try:
+                async with _hx.AsyncClient(timeout=6) as _c:
+                    _ok = (await _c.get(base + "/models")).status_code == 200
+            except Exception:  # noqa: BLE001
+                _ok = False
+            if not _ok:
+                obs.log_event("warning", "llm.override_unreachable", base_url=base, fallback=settings.local_llm_base_url)
+                cfg = {}
+        clients.set_llm_override(cfg)
     except Exception:  # noqa: BLE001
         pass
 
@@ -3412,12 +3425,15 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
     try:
         _ov = await skill_store.all()
         for _sid in set(s for s in _skills if s):
-            _stid = ((_ov.get(_sid) or {}).get("patch") or {}).get("schema_template_id") or _sid   # явная привязка из UI, иначе шаблон навыка по имени
-            _tpl = await schema_store.get(_stid)
+            # явная привязка из UI приоритетна, но «findings» (общий дефолт) не перебивает подробный шаблон навыка
+            _explicit = ((_ov.get(_sid) or {}).get("patch") or {}).get("schema_template_id") or ""
+            _stid = _explicit if (_explicit and _explicit != "findings") else _sid
+            _tpl = await schema_store.get(_stid) or (await schema_store.get(_explicit) if _explicit else None)
             if _tpl and (_tpl.get("json_schema") or {}).get("properties"):
+                _instr = (_tpl.get("instruction") or "").split("\n[repo:")[0].split("\n[max_tokens:")[0].rstrip()
                 _skill_schemas[_sid] = {"response_format": schema_store.response_format(_tpl),
-                                        "instruction": (_tpl.get("instruction") or "").split("\n[repo:")[0].rstrip()
-                                        + "\n\nПОЛЯ СХЕМЫ (что класть):\n" + skill_templates.describe_for_prompt(_tpl)}
+                                        "instruction": _instr + "\n\nПОЛЯ СХЕМЫ (что класть):\n" + skill_templates.describe_for_prompt(_tpl),
+                                        "max_tokens": skill_templates.max_tokens_of(_tpl)}
     except Exception:  # noqa: BLE001 — схемы опциональны, не валим прогон
         _skill_schemas = {}
     result = await runner.run_live(agent, contract, ape.skill_safety,
