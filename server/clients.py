@@ -44,6 +44,16 @@ def inflight_stats() -> dict:
 # Задаётся POST /api/admin/llm → инжектится сюда; переживает рестарт (хранится в admin_config → PG).
 # Задел под мультиноду: named-инстансы {name: {base_url, model, api_key}} → per-agent роутинг later.
 _LLM_OVERRIDE: dict = {}   # {base_url, model, api_key} — перекрывает settings.local_llm_* если задан
+_LLM_TIMEOUT = max(30, int(os.getenv("ABOP_LLM_TIMEOUT", "120")))               # облачный каскад
+_LOCAL_LLM_TIMEOUT = max(30, int(os.getenv("ABOP_LOCAL_LLM_TIMEOUT", "300")))   # свой бокс: длинные схемы (explain 7000 ток.)
+
+
+def _timeout_for(base_url: str) -> int:
+    """Свой бокс отвечает дольше облака (генерация 5–7 тыс. токенов под нагрузкой) — иначе ReadTimeout
+    молча откатывает каскад в RouteAI (платно)."""
+    b = (base_url or "").rstrip("/")
+    locals_ = {(settings.local_llm_base_url or "").rstrip("/"), str((_LLM_OVERRIDE or {}).get("base_url") or "").rstrip("/")} - {""}
+    return _LOCAL_LLM_TIMEOUT if b in locals_ else _LLM_TIMEOUT
 
 
 def set_llm_override(cfg: dict | None) -> None:
@@ -110,7 +120,7 @@ async def chat(
         try:
             # admission control: глобальный лимит одновременных вызовов к LLM (защита бокса)
             async with _admission():
-                async with httpx.AsyncClient(timeout=120) as cli:
+                async with httpx.AsyncClient(timeout=_timeout_for(base_url)) as cli:
                     r = await cli.post(
                         f"{base_url}/chat/completions",
                         headers={"Authorization": f"Bearer {api_key}"},
@@ -171,7 +181,7 @@ async def chat_stream(
             payload["chat_template_kwargs"] = {"enable_thinking": False}
         try:
             async with _admission():
-                async with httpx.AsyncClient(timeout=120) as cli:
+                async with httpx.AsyncClient(timeout=_timeout_for(base_url)) as cli:
                     async with cli.stream("POST", f"{base_url}/chat/completions",
                                           headers={"Authorization": f"Bearer {api_key}"},
                                           json=payload) as r:
