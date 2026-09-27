@@ -261,6 +261,29 @@ def suggest_pipeline(q: str) -> dict:
     return _req("POST", "/api/pipelines/suggest", {"q": q}, timeout=90)
 
 
+def run_report_pdf(run_id: str, template: str = "") -> bytes:
+    """PDF-отчёт прогона по шаблону (ABOP рендерит) — байты файла."""
+    q = "?format=pdf" + ("&template=" + urllib.request.quote(template) if template else "")
+    url = config.ABOP.rstrip("/") + "/api/runs/" + urllib.request.quote(run_id) + "/report" + q
+    headers = {}
+    tok = auth.token()
+    if tok:
+        headers["Authorization"] = "Bearer " + tok
+    req = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=180) as r:
+            return r.read()
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", "replace")
+        try:
+            detail = json.loads(detail).get("detail", detail)
+        except Exception:  # noqa: BLE001
+            pass
+        raise AbopError(e.code, str(detail)[:400]) from None
+    except Exception as e:  # noqa: BLE001
+        raise AbopError(0, f"{type(e).__name__}: {e}") from None
+
+
 def hitl_item(item_id: str) -> dict:
     """Превью HITL-заявки: канал/адресат/тема/html письма — показать человеку ДО approve."""
     return _req("GET", "/api/hitl/" + urllib.request.quote(item_id), timeout=20)

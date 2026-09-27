@@ -244,7 +244,7 @@ export async function mount(root, ctx) {
         <span class="hitl-head">🛡 Агент подготовил внешнее действие — нужно ваше решение</span>
         <span style="font-size:11.5px;color:var(--ink-2)">${waits.map((d) => `${CH_ICON(d.channel)} ${esc(d.title || d.channel)}${d.to ? " → " + esc(d.to) : ""}`).join(" · ")}</span>
         <span style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn ok hitlOk">Посмотреть и подтвердить</button><button type="button" class="btn hitlNo">Отклонить</button></span></div>`) : ""}
-      <button type="button" class="btn sm mkRecurring" data-agent="${esc(s.agent_id || "")}" data-name="${esc(name)}" style="align-self:flex-start;margin-top:2px">🔁 Сделать регулярной</button></div>`;
+      <span style="display:flex;gap:8px;flex-wrap:wrap;margin-top:2px"><button type="button" class="btn sm mkRecurring" data-agent="${esc(s.agent_id || "")}" data-name="${esc(name)}">🔁 Сделать регулярной</button>${s.run_id ? `<button type="button" class="btn sm runPdf" data-run="${esc(s.run_id)}" title="Отчёт прогона по шаблону — PDF в «Загрузки»">📄 Отчёт PDF</button>` : ""}</span></div>`;
   }
   // карточка результата цепочки — из данных (D-H3), legacy-строка HTML тоже поддерживается
   function pipelineHTML(pr) {
@@ -314,6 +314,7 @@ export async function mount(root, ctx) {
     });
     $("col").querySelectorAll("[data-edit]").forEach((e) => e.onclick = () => { $("inp").value = messages[+e.dataset.edit].content; $("inp").focus(); });
     $("col").querySelectorAll(".codecopy").forEach((b) => b.onclick = () => { const code = b.closest("span").parentElement.querySelector(".codebody"); navigator.clipboard.writeText(code ? code.textContent : ""); const o = b.textContent; b.textContent = "✓"; setTimeout(() => b.textContent = o, 1200); });
+    $("col").querySelectorAll(".runPdf").forEach((b) => b.onclick = async () => { b.disabled = true; const t = b.textContent; b.textContent = "…"; try { const r = await api(A_AG + "/report/" + encodeURIComponent(b.dataset.run), { method: "POST", body: JSON.stringify({}) }); if (r && r.ok) toast(`📄 Отчёт сохранён: ${r.path}`, "ok"); else toast(humanError(r), "danger"); } catch (e) { toast(humanError(e), "danger"); } b.disabled = false; b.textContent = t; });
     $("col").querySelectorAll(".hitlOk").forEach((b) => b.onclick = () => decideDelivery(b, "approve"));
     $("col").querySelectorAll(".hitlNo").forEach((b) => b.onclick = () => decideDelivery(b, "reject"));
     $("col").querySelectorAll(".mkRecurring").forEach((b) => b.onclick = () => recurringModal(b.dataset.agent, b.dataset.name));

@@ -2928,6 +2928,27 @@ def _report_context(agent: dict, result: dict) -> dict:
             body = f"<pre>{esc((f.get('text') or '')[:2500])}</pre>"
         sk_rows.append(f"<div class='sk'><h3>{esc(f.get('skill'))}</h3>{body}</div>")
     skills_html = "".join(sk_rows)
+    # 3b) Структурированные ответы навыков по шаблонам извлечения (result.skill_outputs) — таблицы/списки;
+    #     общий блок {{skills}} и адресные {{skill_<sid>}} (дефисы → подчёркивания) для кейс-шаблонов.
+    per_skill: dict[str, str] = {}
+    so_rows = []
+    _names = {}
+    try:
+        _names = {sid: t.get("name") for sid, t in skill_templates.load_all().items()}
+    except Exception:  # noqa: BLE001
+        _names = {}
+    for so in result.get("skill_outputs") or []:
+        sid = str(so.get("skill") or "")
+        st = so.get("structured")
+        if not sid or not isinstance(st, dict):
+            continue
+        block = report_store.struct_html(st)
+        if not block:
+            continue
+        per_skill["skill_" + sid.replace("-", "_")] = block
+        so_rows.append(f"<div class='sk'><h3>{esc(_names.get(sid) or sid)}</h3>{block}</div>")
+    if so_rows:
+        skills_html = "".join(so_rows)
 
     # by_class бейджи (аудит)
     bc = (result.get("findings_summary") or {}).get("by_class") or {}
@@ -2951,7 +2972,8 @@ def _report_context(agent: dict, result: dict) -> dict:
             "findings": findings_html,
             "investigations": investigations_html,
             "skills": skills_html,
-            "deliveries": dls or "<div class='dl'>—</div>"}
+            "deliveries": dls or "<div class='dl'>—</div>",
+            **per_skill}
 
 
 def _build_report_html(agent: dict, result: dict) -> str:
@@ -4189,6 +4211,31 @@ async def run_get(run_id: str, u: dict = Depends(user)) -> dict:
     if not r:
         raise HTTPException(404, "нет такого прогона")
     return r
+
+
+@app.get("/api/runs/{run_id}/report")
+async def run_report(run_id: str, template: str = "", format: str = "html", u: dict = Depends(user)):
+    """Отчёт прогона по шаблону (reports/<id>.html → БД report_templates): HTML или PDF по требованию.
+    template пусто → авто-выбор по форме результата (audit1c/invest/digest/default). PDF — рендерер ABOP (Gotenberg)."""
+    run = await _run_visible(run_id, u)
+    ag = await agent_store.get(run.get("agent_id") or "") or {"id": run.get("agent_id"), "name": run.get("agent_name") or run.get("agent_id")}
+    import re as _re
+    tid = _re.sub(r"[^a-z0-9_-]", "", str(template or "").lower()) or _auto_template_id(run)
+    tpl = await report_store.get(tid) or await report_store.get("default")
+    if not tpl:
+        raise HTTPException(404, "нет шаблона отчёта")
+    html_doc = report_store.render(tpl, _report_context(ag, run))
+    if str(format).lower() != "pdf":
+        from fastapi.responses import HTMLResponse
+        return HTMLResponse(html_doc)
+    from fastapi.responses import FileResponse
+    out = await _asyncio.to_thread(ape._t_pdf_render, {"html": html_doc, "name": f"abop_{run['run_id']}_{tid}"})
+    m = _re.search(r"PDF готов:\s*(\S+)", str(out or ""))
+    if not m:
+        raise HTTPException(502, f"PDF не собран: {str(out)[:200]}")
+    await audit_store.record(u.get("name") or u.get("sub") or "dev", "run.report_pdf", run["run_id"], {"template": tid})
+    _fn = _re.sub(r"[^\w-]+", "_", str(ag.get("name") or "abop")) + "_" + str(run["run_id"]) + ".pdf"
+    return FileResponse(m.group(1), media_type="application/pdf", filename=_fn)
 
 
 @app.get("/api/runs/{run_id}/metrics")

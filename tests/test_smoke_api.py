@@ -257,3 +257,37 @@ def test_delivery_templates_make_hitl_preview_and_take_connector_result(client):
     assert it["result_state"] == "done" and it["result"]["url"] == "http://x/issues/7" and it["command_id"] == "cmd-42"
     r = client.post(f"/api/hitl/{hid}/approve", json={"decision": "reject"})
     assert r.status_code == 200 and r.json()["state"] == "rejected"
+
+
+def test_report_templates_from_repo_and_run_report_html(client):
+    """PDF/HTML-отчёт по шаблону: шаблоны из reports/ сеются в БД, структурированные ответы навыков
+    попадают в {{skills}} и {{skill_<sid>}}, GET /api/runs/{id}/report отдаёт HTML по кейс-шаблону."""
+    import asyncio
+    from server import report_store, run_store
+    files = report_store.load_files()
+    assert {"default", "audit1c", "invest", "digest"} <= set(files) and "{{skill_audit1c_rank}}" in files["audit1c"]["html"]
+    tpls = {t["id"]: t for t in client.get("/api/report-templates").json()["templates"]}
+    assert tpls["audit1c"]["builtin"] and "{{skill_audit1c_explain}}" in tpls["audit1c"]["html"] and ".tbl" in tpls["audit1c"]["css"]
+    html = report_store.struct_html({"порог_существенности": {"сумма": "100 000 ₽", "как_выведен": "медиана"},
+                                     "рейтинг": [{"место": 1, "id": "B", "ранг": "критично", "сумма_влияния": "210 000 ₽"}],
+                                     "топ_3_действия": ["выставить СФ", "проверить договор"], "итог": "и" * 130})
+    assert "<table class='tbl'>" in html and "<th>ранг</th>" in html and "<li>выставить СФ</li>" in html and "class='lead'" in html
+    assert "<script" not in report_store.struct_html({"x": "<script>alert(1)</script>"})
+
+    async def mk():
+        return await run_store.save({"agent_id": "ag-rep", "verdict": {"ok": True, "autonomy_used": "A1"}, "waves": [[]],
+                                     "findings": [{"класс": "A", "проверка": "нет СФ", "описание": "РТ-0002"}],
+                                     "findings_summary": {"total": 1, "by_class": {"A": 1, "B": 0, "C": 0, "D": 0}},
+                                     "skill_outputs": [{"skill": "audit1c-rank", "structured": {"порог_существенности": {"сумма": "100 000 ₽", "как_выведен": "медиана"},
+                                                                                                 "рейтинг": [{"место": 1, "id": "A", "ранг": "критично"}], "топ_3_действия": ["выставить СФ"], "итог": "ок"}}],
+                                     "delivery": [{"channel": "redmine", "to": "redmine/issue.create", "mode": "awaiting_hitl"}]})
+    saved = asyncio.run(mk())
+    rid = saved.get("id") or saved.get("run_id")
+    r = client.get(f"/api/runs/{rid}/report")
+    assert r.status_code == 200 and "text/html" in r.headers["content-type"]
+    body = r.text
+    assert "Ранжирование по существенности" in body and "<th>ранг</th>" in body and "выставить СФ" in body and "нет СФ" in body
+    assert "{{" not in body   # все плейсхолдеры подставлены (пустые → пусто)
+    r2 = client.get(f"/api/runs/{rid}/report?template=digest")
+    assert r2.status_code == 200 and "Задачи и сводка" in r2.text and "<th>ранг</th>" in r2.text
+    assert client.get("/api/runs/no-such-run/report").status_code == 404

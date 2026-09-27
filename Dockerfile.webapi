@@ -13,6 +13,7 @@ RUN pip install --upgrade pip && pip install \
 COPY server ./server
 COPY cli ./cli
 COPY skills ./skills
+COPY reports ./reports
 COPY webapp ./webapp
 COPY demo ./demo
 COPY desktop/ui ./desktop/ui

@@ -141,6 +141,26 @@ def runs(agent_id: str = ""):
         return _err(e)
 
 
+class ReportIn(BaseModel):
+    template: str = ""
+
+
+@router.post("/report/{run_id}")
+def run_report(run_id: str, body: ReportIn | None = None):
+    """PDF-отчёт прогона по шаблону → файл в «Загрузки» пользователя (путь в ответе)."""
+    import re
+    from pathlib import Path
+    try:
+        data = abop.run_report_pdf(run_id, (body.template if body else "") or "")
+    except abop.AbopError as e:
+        return _err(e)
+    d = Path.home() / "Downloads"
+    d = d if d.exists() else Path.home()
+    p = d / (re.sub(r"[^\w\-.]+", "_", f"abop_{run_id}")[:80] + ".pdf")
+    p.write_bytes(data)
+    return {"ok": True, "path": str(p), "bytes": len(data)}
+
+
 @router.get("/hitl")
 def hitl_queue():
     """Очередь HITL-подтверждений (действия наружу ждут человека)."""

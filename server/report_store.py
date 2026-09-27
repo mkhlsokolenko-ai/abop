@@ -11,10 +11,15 @@ report_templates{id, name, html, css, pdf_options JSONB, builtin, editor, update
 """
 from __future__ import annotations
 
+import html as _html
 import json
+import os
 import re
+from pathlib import Path
 
 from .config import settings
+
+REPORTS_DIR = Path(os.environ.get("APE_REPORTS_DIR") or (Path(__file__).resolve().parent.parent / "reports"))
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS report_templates (
@@ -187,17 +192,84 @@ _SEED = [
 ]
 
 
+def load_files() -> dict[str, dict]:
+    """Шаблоны из репо `reports/<id>.html` + `_base.css` + `index.json` (имена/pdf_options). Пусто — нет папки."""
+    out: dict[str, dict] = {}
+    if not REPORTS_DIR.is_dir():
+        return out
+    css = (REPORTS_DIR / "_base.css").read_text(encoding="utf-8") if (REPORTS_DIR / "_base.css").is_file() else _BASE_CSS
+    meta = {}
+    if (REPORTS_DIR / "index.json").is_file():
+        try:
+            meta = json.loads((REPORTS_DIR / "index.json").read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            meta = {}
+    for p in sorted(REPORTS_DIR.glob("*.html")):
+        tid = p.stem
+        if tid.startswith("_"):
+            continue
+        m = meta.get(tid) or {}
+        out[tid] = {"name": m.get("name") or tid, "html": p.read_text(encoding="utf-8"), "css": css,
+                    "pdf_options": m.get("pdf_options") or {"format": "A4", "orientation": "portrait"}}
+    return out
+
+
 async def seed_if_empty() -> None:
-    """Досев/освежение встроенных шаблонов из кода. Наши builtin-шаблоны (editor='seed') обновляем при
-    каждом старте — так «канонический вид» едет с кодом; пользовательские правки (editor≠'seed') не трогаем."""
+    """Досев/освежение встроенных шаблонов: из репо `reports/` (источник по умолчанию), иначе из кода.
+    builtin-шаблоны (editor='seed') обновляем при старте, если содержимое изменилось; пользовательские
+    правки (editor≠'seed' / builtin=false) не трогаем — в рантайме источник правды БД."""
     try:
         cur = {t["id"]: t for t in await all()}
-        for tid, name, html in _SEED:
+        files = load_files()
+        seeds = ({tid: files[tid] for tid in files} if files else
+                 {tid: {"name": name, "html": html, "css": _BASE_CSS, "pdf_options": {"format": "A4", "orientation": "portrait"}}
+                  for tid, name, html in _SEED})
+        for tid, spec in seeds.items():
             ex = cur.get(tid)
             if ex and not (ex.get("builtin") and (ex.get("editor") in (None, "seed"))):
                 continue             # шаблон отредактирован пользователем — не перезатираем
-            await save(tid, {"name": name, "html": html, "css": _BASE_CSS,
-                             "pdf_options": {"format": "A4", "orientation": "portrait"}},
-                       editor="seed", builtin=True)
+            if ex and ex.get("html") == spec["html"] and ex.get("css") == spec["css"] and ex.get("name") == spec["name"]:
+                continue
+            await save(tid, spec, editor="seed", builtin=True)
     except Exception:  # noqa: BLE001
         pass
+
+
+def struct_html(obj, depth: int = 0) -> str:
+    """Структурированный ответ навыка (по шаблону извлечения) → HTML: объект — строки «ключ: значение»,
+    список объектов — таблица (колонки = скалярные поля), список строк — маркированный список. Экранируется всё."""
+    esc = lambda x: _html.escape(str(x if x is not None else ""))  # noqa: E731
+    if obj in (None, "", [], {}):
+        return ""
+    if isinstance(obj, dict):
+        if depth == 0 and obj.get("_truncated"):
+            obj = {k: v for k, v in obj.items() if k != "_truncated"}
+        rows = []
+        for k, v in obj.items():
+            if v in (None, "", [], {}):
+                continue
+            if isinstance(v, (dict, list)):
+                rows.append(f"<div class='kv'><b>{esc(k)}</b>{struct_html(v, depth + 1)}</div>")
+            else:
+                cls = "lead" if depth == 0 and isinstance(v, str) and len(v) > 120 else "kv"
+                rows.append(f"<div class='{cls}'>" + (f"<b>{esc(k)}:</b> " if cls == "kv" else f"<b>{esc(k)}.</b> ") + esc(v) + "</div>")
+        return "".join(rows)
+    if isinstance(obj, list):
+        import builtins
+        if obj and builtins.all(isinstance(x, dict) for x in obj):   # модульная all() — список шаблонов
+            cols: list[str] = []
+            for it in obj:
+                for k, v in it.items():
+                    if k not in cols and not isinstance(v, (dict, list)):
+                        cols.append(k)
+            cols = cols[:8]
+            head = "".join(f"<th>{esc(c)}</th>" for c in cols)
+            body = []
+            for it in obj[:60]:
+                tds = "".join(f"<td>{esc(it.get(c))}</td>" for c in cols)
+                nested = "".join(f"<div class='kv'><b>{esc(k)}</b>{struct_html(v, depth + 1)}</div>"
+                                 for k, v in it.items() if isinstance(v, (dict, list)) and v)
+                body.append(f"<tr>{tds}</tr>" + (f"<tr><td colspan='{len(cols)}'>{nested}</td></tr>" if nested else ""))
+            return f"<table class='tbl'><tr>{head}</tr>{''.join(body)}</table>"
+        return "<ul>" + "".join(f"<li>{struct_html(x, depth + 1) if isinstance(x, (dict, list)) else esc(x)}</li>" for x in obj[:80]) + "</ul>"
+    return esc(obj)

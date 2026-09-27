@@ -186,12 +186,13 @@ def _run_summary(agent_id: str, run: dict) -> dict:
     findings = [ (b.get("text") or "") for b in (run.get("board") or []) if b.get("kind") == "finding" ]
     # hitl_id обязателен: подтверждение в чате идёт строго по заявке (D-C3), а не «всё pending агента»
     delivery = [ {"channel": d.get("channel"), "to": d.get("to"), "mode": d.get("mode"),
-                  "hitl_id": d.get("hitl_id"), "title": d.get("title"), "result": (d.get("result") or "")[:200]}
+                  "hitl_id": d.get("hitl_id"), "title": d.get("title"), "subject": d.get("subject"),
+                  "result": (d.get("result") or "")[:200]}
                  for d in (run.get("delivery") or []) ]
     return {
         "agent_id": agent_id,
         "agent_name": (run.get("agent") or {}).get("name") if isinstance(run.get("agent"), dict) else run.get("agent_name"),
-        "run_id": run.get("run_id"),
+        "run_id": run.get("run_id") or run.get("id") or (run.get("saved") or {}).get("id"),
         "trace_id": run.get("trace_id"),
         "cached": run.get("cached"),
         "findings": findings[:8],
