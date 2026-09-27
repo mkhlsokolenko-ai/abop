@@ -9,7 +9,7 @@
     --blue:#3b82f6; --blueBg:#0c1728; --blueLine:#26517e;
     --green:#22c55e; --greenBg:#0a1c12; --greenLine:#1e6d3b;
     --violet:#8b5cf6; --violetBg:#150e26; --violetLine:#59379e;
-    --amber:#f59e0b; --cyan:#22d3ee; --ink:#e7eef8; --ink2:#9db1c6; --ink3:#5c6f82;
+    --amber:#f59e0b; --cyan:#22d3ee; --cyanBg:#08202a; --cyanLine:#1c6a7e; --ink:#e7eef8; --ink2:#9db1c6; --ink3:#5c6f82;
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font-family:'Segoe UI','Inter',system-ui,sans-serif;font-size:12px;padding:22px}
@@ -24,10 +24,11 @@
   .tgt.blue{border-color:var(--blueLine);background:linear-gradient(180deg,var(--blueBg),var(--panel2))}
   .tgt.green{border-color:var(--greenLine);background:linear-gradient(180deg,var(--greenBg),var(--panel2))}
   .tgt.violet{border-color:var(--violetLine);background:linear-gradient(180deg,var(--violetBg),var(--panel2))}
+  .tgt.cyan{border-color:var(--cyanLine);background:linear-gradient(180deg,var(--cyanBg),var(--panel2))}
   .hd{display:flex;align-items:baseline;gap:9px;margin:0 0 10px}
   .hd .t{font-size:17px;font-weight:800}
   .hd .m{font-size:11px;color:var(--ink3);font-family:'Consolas',monospace}
-  .blue .t{color:#79b0f4}.green .t{color:#63d78a}.violet .t{color:#b199ef}
+  .blue .t{color:#79b0f4}.green .t{color:#63d78a}.violet .t{color:#b199ef}.cyan .t{color:#7ee3f2}
   .sec{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink3);margin:0 0 6px}
   .grid{display:grid;gap:7px}
   .g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:repeat(3,1fr)}.g4{grid-template-columns:repeat(4,1fr)}.g5{grid-template-columns:repeat(5,1fr)}
@@ -38,7 +39,7 @@
   .row{display:flex;gap:10px}
   .chips{display:flex;flex-wrap:wrap;gap:4px}
   .chip{font-size:9.5px;padding:2px 7px;border-radius:999px;border:1px solid var(--line);background:#0a0f18;color:var(--ink2);font-family:'Consolas',monospace}
-  .chip.b{border-color:var(--blueLine);color:#8cc0f7}.chip.g{border-color:var(--greenLine);color:#77dd9a}.chip.v{border-color:var(--violetLine);color:#bfaef2}
+  .chip.b{border-color:var(--blueLine);color:#8cc0f7}.chip.g{border-color:var(--greenLine);color:#77dd9a}.chip.v{border-color:var(--violetLine);color:#bfaef2}.chip.c{border-color:var(--cyanLine);color:#8fe6f3}
   .li{font-size:11px;color:var(--ink2);line-height:1.65}.li b{color:var(--ink)}
   .side .st{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink3);margin:0 0 6px}
   .dom{font-size:10.5px;color:#79b0f4;font-family:'Consolas',monospace;line-height:1.7}
@@ -50,7 +51,11 @@
   .commbox .cd{font-size:9.5px;color:var(--ink3);line-height:1.35;margin-top:2px}
   .bridge{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;flex:0 0 128px;text-align:center}
   .arw{color:var(--green);font-weight:800;font-size:12px}
-  .arw.up{color:var(--violet)}.arw.dn{color:var(--amber)}
+  .arw.up{color:var(--violet)}.arw.dn{color:var(--amber)}.arw.bus{color:var(--cyan)}
+  .buslane{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:10.5px;color:var(--ink2)}
+  .buslane .st{padding:3px 8px;border-radius:6px;border:1px solid var(--line);background:#0a0f18;font-family:'Consolas',monospace;font-size:9.5px;color:var(--ink)}
+  .buslane .st.c{border-color:var(--cyanLine);color:#8fe6f3}.buslane .st.a{border-color:#5a4410;color:#f2c25a}
+  .buslane .ar{color:var(--cyan);font-weight:800}
   .tag{font-size:9px;padding:2px 6px;border-radius:5px;background:#0a0f18;border:1px solid var(--line);color:var(--ink3);font-family:'Consolas',monospace}
   .flows{margin-top:14px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
   .flows .ft-h{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--ink3);margin-bottom:9px}
@@ -63,7 +68,7 @@
 <body>
 <div class="wrap">
   <h1>ABOP — Архитектура платформы</h1>
-  <p class="sub">Инженерная платформа для сборки и управления ИИ-агентами · десктоп-чат как рабочая среда пользователя · self-host LLM (данные не выходят наружу)</p>
+  <p class="sub">Инженерная платформа для сборки и управления ИИ-агентами · десктоп-чат как рабочая среда пользователя · self-host LLM на GPU-боксе (данные не выходят наружу) · шина Redpanda + коннектор-воркер на server-2: результат навыка уходит в систему только после HITL-превью</p>
 
   <div class="cols">
     <!-- ЛЕВАЯ КОЛОНКА: легенда / домены / коммуникация -->
@@ -74,23 +79,27 @@
         <div class="leg-row"><span class="ln" style="border-color:var(--violet)"></span>LLM-инференс</div>
         <div class="leg-row"><span class="ln" style="border-color:var(--ink3)"></span>внутр. сеть</div>
         <div class="leg-row"><span class="ln" style="border-color:var(--amber);border-top-style:dashed"></span>управление</div>
+        <div class="leg-row"><span class="ln" style="border-color:var(--cyan)"></span>шина Redpanda (Kafka, SASL)</div>
       </div>
       <div class="card">
         <div class="st">Эндпоинты</div>
-        <div class="dom">:8091 /api/*<br>/api/chat · /runs<br>/agents · /match<br>/skills · /families<br>/data/* · /identity/*<br>/report-templates<br>/schema-templates<br>/triggers · /admin/*<br>/desktop-ui-bundle</div>
+        <div class="dom">:8091 /api/*<br>/api/chat · /runs<br>/runs?async · /runs/jobs<br>/runs/{id}/report<br>/agents · /match<br>/hitl · /hitl/{id}<br>/skills · /families<br>/data/* · /identity/*<br>/report-templates<br>/schema-templates<br>/bus · /bus/dlq<br>/triggers · /admin/*<br>/desktop-ui-bundle</div>
       </div>
       <div class="card">
         <div class="st">Коммуникация между таргетами</div>
         <div class="commbox"><div class="ct">Desktop → ABOP</div><div class="cd">REST/SSE под JWT пользователя (RBAC/ABAC). Сайдкар — прокси к /api/*</div></div>
         <div class="commbox"><div class="ct">Sidecar → ABOP (UI)</div><div class="cd">/desktop-ui-bundle при старте (server-side, без PNA) → отдаёт UI с 127.0.0.1/ui</div></div>
         <div class="commbox"><div class="ct">ABOP → Self-host LLM</div><div class="cd">chat/embed по OpenAI-совместимому API, admission-control</div></div>
-        <div class="commbox"><div class="ct">ABOP → системы</div><div class="cd">доставка результата OUT-узлами ТОЛЬКО под HITL</div></div>
+        <div class="commbox"><div class="ct">ABOP → шина → коннектор → системы</div><div class="cd">команды навыков (delivery шаблона) — ТОЛЬКО после HITL-превью → abop.&lt;система&gt;.commands → коннектор (server-2) → Redmine/BookStack/Mailpit/1С</div></div>
+        <div class="commbox"><div class="ct">Системы → шина → ABOP</div><div class="cd">command.done|failed и события систем → abop.&lt;система&gt;.events → результат в заявку / триггеры агентов; сбои → abop.dlq</div></div>
+        <div class="commbox"><div class="ct">ABOP → системы (OUT)</div><div class="cd">отчёт целиком OUT-узлами (почта/BookStack/PDF по шаблону) — под HITL</div></div>
       </div>
       <div class="card">
         <div class="st">Деплой-таргеты</div>
         <div class="leg-row"><span class="dot" style="background:var(--blue)"></span>ABOP Web API · сервер</div>
         <div class="leg-row"><span class="dot" style="background:var(--green)"></span>ABOP Desktop · юзер</div>
-        <div class="leg-row"><span class="dot" style="background:var(--violet)"></span>Self-host LLM · GPU</div>
+        <div class="leg-row"><span class="dot" style="background:var(--violet)"></span>Self-host LLM · GPU-бокс</div>
+        <div class="leg-row"><span class="dot" style="background:var(--cyan)"></span>server-2 · шина + коннектор</div>
       </div>
     </div>
 
@@ -121,8 +130,9 @@
           <div class="sec">Чат — среда управления</div>
           <div class="box hl" style="margin-bottom:6px"><div class="bt">🧭 Дерево решений</div><div class="bd">запрос → подбор агента (лексика+семантика) → «куда результат: чат/Redmine/почта» → запуск</div></div>
           <div class="grid g2">
-            <div class="box"><div class="bt">▶ Прогон в треде</div><div class="bd">находки · доставка · HITL-карточка</div></div>
-            <div class="box"><div class="bt">🔁 Расписания</div><div class="bd">крон + уведомления</div></div>
+            <div class="box"><div class="bt">▶ Карточка прогона</div><div class="bd">находки · доставка · «✓ выполнено: ссылка» · Отчёт PDF</div></div>
+            <div class="box hl"><div class="bt">🛡 HITL-очередь + превью</div><div class="bd">Действие / Куда / Навык / Тема → «да» → команда в шину</div></div>
+            <div class="box"><div class="bt">🔁 Расписания · цепочки</div><div class="bd">крон + уведомления · авто-цепочки</div></div>
             <div class="box"><div class="bt">🖇 Файлы · OCR</div><div class="bd">pdf/docx/xlsx · RapidOCR</div></div>
             <div class="box"><div class="bt">🗄 SQLite</div><div class="bd">треды · вложения</div></div>
           </div>
@@ -135,6 +145,8 @@
           <div class="arw" style="color:var(--ink3)">⇄</div>
           <div class="tag">/api/chat</div>
           <div class="tag">/runs · /match</div>
+          <div class="tag">/hitl/{id}</div>
+          <div class="tag">/runs/{id}/report</div>
           <div class="tag">/desktop-ui-bundle</div>
         </div>
 
@@ -153,6 +165,10 @@
                   <div class="box"><div class="bt">admission · кэш</div><div class="bd">rate-limit · идемпотентность</div></div>
                   <div class="box"><div class="bt">Верификация</div><div class="bd">авто-конверт · бейдж</div></div>
                   <div class="box"><div class="bt">Provenance</div><div class="bd">откуда данные · трасса</div></div>
+                  <div class="box hl"><div class="bt">Очередь run_jobs</div><div class="bd">Postgres SKIP LOCKED · 4 воркера · async API · цепочки/HITL через очередь</div></div>
+                  <div class="box hl"><div class="bt">RunBus · tool-calling</div><div class="bd">pg | kafka · инструменты навыков · publish_command_governed</div></div>
+                  <div class="box hl"><div class="bt">delivery.py</div><div class="bd">structured-ответ → команды коннектора → HITL-заявки канала command</div></div>
+                  <div class="box"><div class="bt">safety.py</div><div class="bd">system/user разделение · санитизация недоверенных данных · auth fail-closed</div></div>
                 </div>
               </div>
               <div class="card">
@@ -161,8 +177,8 @@
               </div>
               <div class="card">
                 <div class="sec">Schema-driven (шаблоны в БД)</div>
-                <div class="chips"><span class="chip b">report_templates · вид отчёта</span><span class="chip b">schema_templates · структура данных</span></div>
-                <div class="bd" style="color:var(--ink3);font-size:9.5px;margin-top:5px">меняешь шаблон в БД → меняется вывод/отчёт без передеплоя</div>
+                <div class="chips"><span class="chip b">schema_templates · skills/&lt;sid&gt;/template.json</span><span class="chip b">json_schema · instruction · max_tokens · delivery</span><span class="chip b">report_templates · reports/&lt;id&gt;.html</span><span class="chip b">{{skills}} · {{skill_&lt;sid&gt;}}</span></div>
+                <div class="bd" style="color:var(--ink3);font-size:9.5px;margin-top:5px">51/56 навыков со схемой (vLLM xgrammar) · delivery = куда уходит результат · правка в UI / POST /schema-templates/import без пересборки · отчёт: default · audit1c · invest · digest</div>
               </div>
               <div class="card">
                 <div class="sec">Планировщик</div>
@@ -197,7 +213,7 @@
               </div>
               <div class="card">
                 <div class="sec">Фронт + наблюдаемость</div>
-                <div class="chips"><span class="chip b">webapp buildless-React</span><span class="chip b">/desktop-ui</span><span class="chip">Prometheus</span><span class="chip">Grafana</span><span class="chip">langfuse</span></div>
+                <div class="chips"><span class="chip b">webapp/src buildless (build.py)</span><span class="chip b">/desktop-ui</span><span class="chip">Prometheus: webapi · redpanda · connector</span><span class="chip">Grafana abop-overview (26 панелей)</span><span class="chip">langfuse</span><span class="chip">CI smoke</span></div>
               </div>
             </div>
           </div>
@@ -207,16 +223,25 @@
       <!-- НИЖНЯЯ ПОЛОСА: LLM + системы + SSO -->
       <div class="row" style="gap:14px">
         <div class="tgt violet" style="flex:0 0 268px">
-          <div class="hd violet"><span class="t">Self-host LLM</span><span class="m">Vast · GPU</span></div>
+          <div class="hd violet"><span class="t">GPU-бокс: vLLM Qwen3-30B</span><span class="m">Vast · L40S · self-host</span></div>
           <div class="grid" style="gap:6px">
-            <div class="box hl"><div class="bt">Qwen3-30B-A3B FP8</div><div class="bd">chat · chat_stream (генерация)</div></div>
-            <div class="box"><div class="bt">BGE-M3</div><div class="bd">эмбеддинги · семантич. подбор</div></div>
-            <div class="box"><div class="bt">reranker · Qdrant</div><div class="bd">RAG / нормы (sLAVA)</div></div>
+            <div class="box hl"><div class="bt">Qwen3-30B-A3B-Instruct FP8</div><div class="bd">vLLM · OpenAI-совместимый /v1 · response_format json_schema (xgrammar) · <span style="font-family:'Consolas',monospace">local/qwen3-30b-a3b</span></div></div>
+            <div class="box"><div class="bt">Каскад</div><div class="bd">local → RouteAI (qwen/deepseek) как fallback · llm.cascade_fallback · override /api/admin/llm</div></div>
+            <div class="box"><div class="bt">BGE-M3 · reranker · Qdrant</div><div class="bd">эмбеддинги · семантич. подбор · RAG / нормы (sLAVA)</div></div>
           </div>
-          <div class="chip v" style="margin-top:7px">≈ 0 ₽/вызов · данные не наружу</div>
+          <div class="chip v" style="margin-top:7px">0 ₽/вызов · данные не наружу</div>
+        </div>
+        <div class="tgt cyan" style="flex:0 0 330px">
+          <div class="hd cyan"><span class="t">server-2: шина + коннектор</span><span class="m">Redpanda · abop-connector</span></div>
+          <div class="grid" style="gap:6px">
+            <div class="box hl"><div class="bt">Redpanda (Kafka, SASL SCRAM)</div><div class="bd">топики на каждую систему реестра: <span style="font-family:'Consolas',monospace">abop.&lt;система&gt;.commands</span> · <span style="font-family:'Consolas',monospace">abop.&lt;система&gt;.events</span> · abop.runs.requests/results · <b>abop.dlq</b></div></div>
+            <div class="box hl"><div class="bt">Коннектор-воркер</div><div class="bd">читает *.commands · адаптеры redmine/issue.create · bookstack/page.publish · mailpit/email.send · 1c/export.request · дедуп по id (SQLite) · ретраи → DLQ · секреты систем только здесь</div></div>
+            <div class="box"><div class="bt">Ответ</div><div class="bd">command.done|failed → *.events → результат в HITL-заявку (ссылка) · события систем → триггеры агентов (ABAC по семье)</div></div>
+          </div>
+          <div class="chips" style="margin-top:7px"><span class="chip c">healthz/metrics :9105</span><span class="chip c">DRY_RUN=1 — ничего наружу</span></div>
         </div>
         <div class="card" style="flex:1">
-          <div class="sec">Рабочие системы — доставка результата (под HITL) + входные данные (Data Plane)</div>
+          <div class="sec">Рабочие системы — доставка результата (через коннектор, под HITL) + входные данные (Data Plane)</div>
           <div class="grid g5">
             <div class="box"><div class="bt">🎫 Redmine</div><div class="bd">issue · задачи</div></div>
             <div class="box"><div class="bt">✉ Mailpit/SMTP</div><div class="bd">email · почта</div></div>
@@ -229,6 +254,7 @@
             <div class="box"><div class="bt">🗃 Postgres</div><div class="bd">persist</div></div>
             <div class="box hl"><div class="bt">🧩 Identity Map</div><div class="bd">агент адресен</div></div>
           </div>
+          <div class="buslane"><span class="st">навык · template.json → delivery</span><span class="ar">→</span><span class="st a">HITL-превью: Действие · Куда · Навык · Тема</span><span class="ar">→ «да» →</span><span class="st c">abop.&lt;система&gt;.commands</span><span class="ar">→</span><span class="st c">коннектор (server-2)</span><span class="ar">→</span><span class="st">Redmine / BookStack / Mailpit / 1С</span><span class="ar">→</span><span class="st c">command.done → abop.&lt;система&gt;.events</span><span class="ar">→</span><span class="st">API: «✓ выполнено: ссылка» в карточке · триггеры</span></div>
         </div>
       </div>
 
@@ -240,8 +266,11 @@
           <div class="flow"><span class="num">2</span><span class="ft"><b>Подбор:</b> текст → /api/agents/match (лексика+семантика) → «куда результат?»</span></div>
           <div class="flow"><span class="num">3</span><span class="ft"><b>Прогон:</b> Data Plane → runner (grounded, self-host Qwen) → находки по схеме из БД</span></div>
           <div class="flow"><span class="num">4</span><span class="ft"><b>Governance:</b> конверт автономии + HITL → внешнее действие только после подтверждения</span></div>
-          <div class="flow"><span class="num">5</span><span class="ft"><b>Доставка:</b> OUT-узлы → Redmine/почта/BookStack по шаблону отчёта; агент адресен (Identity Map)</span></div>
-          <div class="flow"><span class="num">6</span><span class="ft"><b>Аудит:</b> provenance-трасса + метрики/логи в Grafana/langfuse; расписания через планировщик</span></div>
+          <div class="flow"><span class="num">5</span><span class="ft"><b>Доставка результата навыка:</b> delivery шаблона → команды коннектора → HITL-заявка с превью (система/действие, тема, описание) → «да» → abop.&lt;система&gt;.commands → коннектор (server-2) → Redmine/BookStack/Mailpit/1С</span></div>
+          <div class="flow"><span class="num">6</span><span class="ft"><b>Обратно по шине:</b> command.done|failed → abop.&lt;система&gt;.events → результат (issue_id, url) в заявку → «✓ выполнено: ссылка» в карточке; сбои → abop.dlq; события систем → триггеры агентов (ABAC по семье)</span></div>
+          <div class="flow"><span class="num">7</span><span class="ft"><b>Отчёт:</b> OUT-узлы (почта/BookStack/PDF) и GET /runs/{id}/report?template=&amp;format=pdf по reports/&lt;id&gt;.html с {{skills}} / {{skill_&lt;sid&gt;}}; агент адресен (Identity Map)</span></div>
+          <div class="flow"><span class="num">8</span><span class="ft"><b>Очередь:</b> POST /runs?async → run_jobs (SKIP LOCKED) → воркеры; цепочки и HITL-возобновление через очередь; нагрузка 20×3: 4 воркера ≈ 16,9 прогона/мин</span></div>
+          <div class="flow"><span class="num">9</span><span class="ft"><b>Аудит:</b> provenance-трасса + метрики webapi/Redpanda/коннектора в Prometheus → Grafana abop-overview (секция «Шина и коннектор»), langfuse; расписания через планировщик</span></div>
         </div>
       </div>
     </div>
