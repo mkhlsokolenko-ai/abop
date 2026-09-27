@@ -197,7 +197,7 @@ def load_files() -> dict[str, dict]:
     out: dict[str, dict] = {}
     if not REPORTS_DIR.is_dir():
         return out
-    css = (REPORTS_DIR / "_base.css").read_text(encoding="utf-8") if (REPORTS_DIR / "_base.css").is_file() else _BASE_CSS
+    css = (REPORTS_DIR / "base.css").read_text(encoding="utf-8") if (REPORTS_DIR / "base.css").is_file() else _BASE_CSS
     meta = {}
     if (REPORTS_DIR / "index.json").is_file():
         try:
@@ -206,7 +206,7 @@ def load_files() -> dict[str, dict]:
             meta = {}
     for p in sorted(REPORTS_DIR.glob("*.html")):
         tid = p.stem
-        if tid.startswith("_"):
+        if tid.startswith("_") or tid == "base":
             continue
         m = meta.get(tid) or {}
         out[tid] = {"name": m.get("name") or tid, "html": p.read_text(encoding="utf-8"), "css": css,
