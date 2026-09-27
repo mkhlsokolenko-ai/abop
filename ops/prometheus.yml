@@ -1,5 +1,7 @@
-# Prometheus scrape-конфиг для ABOP (Observability Фаза 0).
+# Prometheus scrape-конфиг для ABOP (Observability Фаза 0 + шина Блока 3).
 # ABOP Web API отдаёт метрики на /metrics (формат Prometheus) — см. server/observability.py.
+# Redpanda (сервер-2, admin API :9644/public_metrics) и коннектор-воркер (:9105/metrics) —
+# порты открыты в DOCKER-USER только для сервера-1.
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
@@ -12,3 +14,22 @@ scrape_configs:
         labels:
           service: abop-webapi
           env: prod
+
+  - job_name: redpanda
+    metrics_path: /public_metrics
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['201.51.5.24:9644']
+        labels:
+          service: redpanda
+          env: prod
+          node: server-2
+
+  - job_name: abop-connector
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['201.51.5.24:9105']
+        labels:
+          service: abop-connector
+          env: prod
+          node: server-2

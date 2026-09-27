@@ -38,3 +38,9 @@
 - Новый адаптер = функция `async def f(payload) -> dict` + запись в `ADAPTERS[(система, тип)]`; временные ошибки — `raise Transient(...)`.
 - Повторная доставка одной команды (ребаланс, рестарт) не создаёт дубля: id хранится в `/data/connector.sqlite`.
 - DLQ читается `GET /api/bus/dlq` (support+); чтобы переиграть команду — опубликовать её заново с новым id.
+
+## Наблюдаемость (Grafana, 27.09)
+
+Prometheus сервера-1 (`ops/prometheus.yml`) собирает три цели: `abop-webapi` (:8091/metrics), `redpanda` (сервер-2 :9644/public_metrics, admin API Redpanda; порт опубликован Docker и открыт в DOCKER-USER только для сервера-1) и `abop-connector` (сервер-2 :9105/metrics; INPUT-правила: только сервер-1 и loopback). Дашборд `abop-overview` получил секцию «Шина (Redpanda · сервер-2) и коннектор-воркер»: брокер/коннектор up, команд исполнено/с ошибкой, DLQ (ABOP + коннектор), максимальный лаг консьюмеров по топикам `abop.*`, сообщения/с по топикам и событиям систем, команды по типам, записи/чтения и p99 брокера, память/диск/недореплицированные партиции. Метрики самого ABOP по шине: `abop_bus_messages_total{topic}`, `abop_bus_events_total{system}`, `abop_bus_errors_total`, `abop_bus_dlq_total{source}`; коннектора: `abop_connector_{consumed,done,failed,dlq,duplicate}`, `abop_connector_commands_total{kind}`.
+
+⚠️ У `redpanda start` этой версии нет флага `--admin-addr` (контейнер уходит в рестарт-цикл) — admin API и так слушает 0.0.0.0:9644 внутри контейнера, достаточно `-p 9644:9644`.
