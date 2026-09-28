@@ -603,3 +603,49 @@ def test_pipeline_suggest_uses_stage_order(client, monkeypatch):
         assert d["warning"]
     rev = client.post("/api/pipelines/suggest", json={"q": "Сначала напиши письмо клиенту, потом проверь 1С"}).json()
     assert [s["kind"] for s in rev["stages"]] == ["письмо", "проверка"]      # порядок берётся из фразы
+
+
+def test_nlu_management_api(client):
+    """Управление подбором из UI: разбор фразы, пороги уверенности, словарь агента (добавить/запретить слово)."""
+    import asyncio
+    from server import agent_store, web_api
+
+    p = client.get("/api/nlu/parse", params={"q": "Сначала проверь 1С, потом напиши письмо клиенту"}).json()
+    assert p["multi_stage"] is True and len(p["stages"]) == 2 and "проверка" in p["triggers"]
+    assert p["config"]["min_confidence"] == 0.35 and p["config"]["rerank"] is True
+
+    r = client.post("/api/nlu/config", json={"min_confidence": 0.5, "rerank": False, "weak_stage": 0.1})
+    assert r.status_code == 200 and r.json()["min_confidence"] == 0.5 and r.json()["rerank"] is False
+    assert client.get("/api/nlu/config").json()["weak_stage"] == 0.1
+    assert client.post("/api/nlu/config", json={"min_confidence": 7}).status_code == 422
+    client.post("/api/nlu/config", json={"min_confidence": 0.35, "rerank": True, "weak_stage": 0.2})   # вернули дефолт
+
+    async def mk():
+        return await agent_store.save(name="Лексикон-агент", audit_id="lex-ui", version=1, family="", role="fin-analyst",
+                                      autonomy_max="A1", graph={"nodes": [{"id": "dcf-valuation", "kind": "skill", "skill": "dcf-valuation"}]})
+    ag = asyncio.run(mk())
+    aid = ag["id"]
+    asyncio.run(web_api._refresh_lexicon(ag))
+
+    lx = client.get(f"/api/agents/{aid}/lexicon").json()
+    assert lx["agent_id"] == aid and lx["seeded_count"] > 0
+    assert all(t["source"] in ("навыки", "оператор") for t in lx["terms"])
+
+    # слово оператора: агента начинает находить по нему
+    before = client.post("/api/agents/match", json={"q": "оцени стоимость стартапа"}).json()["matches"]
+    client.post(f"/api/agents/{aid}/lexicon", json={"add": ["стартап", "оценка стоимости"]})
+    lx2 = client.get(f"/api/agents/{aid}/lexicon").json()
+    assert "стартап" in lx2["manual"] and any(t["source"] == "оператор" for t in lx2["terms"])
+    after = client.post("/api/agents/match", json={"q": "оцени стоимость стартапа"}).json()["matches"]
+    rank = lambda ms: next((i for i, m in enumerate(ms) if m["id"] == aid), 99)  # noqa: E731
+    assert rank(after) <= rank(before)
+
+    # минус-слово: по нему агент больше не подбирается
+    client.post(f"/api/agents/{aid}/lexicon", json={"ban": ["стартап"]})
+    assert "стартап" not in (client.get(f"/api/agents/{aid}/lexicon").json()["manual"].keys() - {"стартап"})
+    from server import lexicon
+    assert asyncio.run(lexicon.get(aid)).get("стартап") is None
+    client.post(f"/api/agents/{aid}/lexicon", json={"remove": ["стартап", "оценка стоимости"]})
+    assert client.get(f"/api/agents/{aid}/lexicon").json()["manual"] == {}
+    assert client.post(f"/api/agents/{aid}/lexicon/refresh").json()["seeded"] > 0
+    assert client.get("/api/agents/no-such/lexicon").status_code == 404

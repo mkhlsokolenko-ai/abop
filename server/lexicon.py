@@ -22,9 +22,13 @@ CREATE TABLE IF NOT EXISTS agent_lexicon (
     agent_id   TEXT PRIMARY KEY,
     terms      JSONB NOT NULL DEFAULT '{}'::jsonb,
     doc_hash   TEXT,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    manual     JSONB NOT NULL DEFAULT '{}'::jsonb
 );
+ALTER TABLE agent_lexicon ADD COLUMN IF NOT EXISTS manual JSONB NOT NULL DEFAULT '{}'::jsonb;
 """
+MANUAL_WEIGHT = 4.0     # слово, добавленное человеком, весит больше засеянного из навыка
+MANUAL_BAN = -1.0       # «минус-слово»: агент не должен подбираться по нему
 
 _MEM: dict[str, dict] = {}
 _BODY_CHARS = 1500     # тела навыков режем: нужен словарь, а не полный текст
@@ -88,29 +92,65 @@ def doc_hash(agent: dict) -> str:
 
 
 async def get(agent_id: str) -> dict:
+    """Итоговый словарь: засеянный из навыков + ручные правки оператора (минус-слова убираются)."""
+    seeded, manual = await parts(agent_id)
+    return merge(seeded, manual)
+
+
+async def parts(agent_id: str) -> tuple[dict, dict]:
+    """(из навыков, ручные) — раздельно, чтобы UI показывал происхождение слова."""
     if not _has_pg():
-        return dict((_MEM.get(agent_id) or {}).get("terms") or {})
+        row = _MEM.get(agent_id) or {}
+        return dict(row.get("terms") or {}), dict(row.get("manual") or {})
     from .db import _conn
     async with _conn() as conn:
-        cur = await conn.execute("SELECT terms FROM agent_lexicon WHERE agent_id=%s", (agent_id,))
+        cur = await conn.execute("SELECT terms, manual FROM agent_lexicon WHERE agent_id=%s", (agent_id,))
         r = await cur.fetchone()
-    return dict(r[0] or {}) if r else {}
+    return (dict(r[0] or {}), dict(r[1] or {})) if r else ({}, {})
+
+
+def merge(seeded: dict, manual: dict) -> dict:
+    """Ручные слова перекрывают засеянные; вес MANUAL_BAN убирает слово из подбора совсем."""
+    out = dict(seeded or {})
+    for t, w in (manual or {}).items():
+        if float(w) <= 0:
+            out.pop(t, None)
+        else:
+            out[t] = float(w)
+    return out
+
+
+async def set_manual(agent_id: str, manual: dict) -> dict:
+    """Сохранить ручные термины (UI). Возвращает итоговый словарь."""
+    if not _has_pg():
+        row = _MEM.setdefault(agent_id, {"terms": {}, "manual": {}})
+        row["manual"] = dict(manual or {})
+        return merge(row.get("terms") or {}, row["manual"])
+    from .db import _conn
+    async with _conn() as conn:
+        await conn.execute(
+            "INSERT INTO agent_lexicon (agent_id, terms, manual, updated_at) VALUES (%s,'{}'::jsonb,%s,now()) "
+            "ON CONFLICT (agent_id) DO UPDATE SET manual=EXCLUDED.manual, updated_at=now()",
+            (agent_id, json.dumps(manual or {}, ensure_ascii=False)))
+    seeded, man = await parts(agent_id)
+    return merge(seeded, man)
 
 
 async def all_terms() -> dict[str, dict]:
-    """{agent_id: {лексема: вес}} — весь словарь подстановки (его питают все заведённые агенты)."""
+    """{agent_id: {лексема: вес}} — весь словарь подстановки (навыки + ручные правки оператора)."""
     if not _has_pg():
-        return {k: dict(v.get("terms") or {}) for k, v in _MEM.items()}
+        return {k: merge(v.get("terms") or {}, v.get("manual") or {}) for k, v in _MEM.items()}
     from .db import _conn
     async with _conn() as conn:
-        cur = await conn.execute("SELECT agent_id, terms FROM agent_lexicon")
+        cur = await conn.execute("SELECT agent_id, terms, manual FROM agent_lexicon")
         rows = await cur.fetchall()
-    return {r[0]: dict(r[1] or {}) for r in rows}
+    return {r[0]: merge(dict(r[1] or {}), dict(r[2] or {})) for r in rows}
 
 
 async def save(agent_id: str, terms: dict, dh: str = "") -> None:
     if not _has_pg():
-        _MEM[agent_id] = {"terms": terms, "doc_hash": dh}
+        row = _MEM.setdefault(agent_id, {"terms": {}, "manual": {}})
+        row.update({"terms": terms, "doc_hash": dh})
         return
     from .db import _conn
     async with _conn() as conn:

@@ -2312,7 +2312,7 @@ const SETTINGS = {
     { label: 'Общие креды', value: 'используются 2 арендаторами', badge: 'shared', ok: false },
     { label: 'BYO-креды', value: 'arendator-b · собственный ERP', badge: 'BYO', ok: true }
   ],
-  'Память': [], 'Шина': [], 'Биллинг': [
+  'Память': [], 'Подбор': [], 'Шина': [], 'Биллинг': [
     { label: 'Недельная квота', value: '1 240 ₽ из 4 000 ₽', badge: '31%', ok: true },
     { label: 'Дороже всех', value: 'dcf-valuation · 0.14 ₽ за вызов', badge: 'per-node', ok: false },
     { label: 'Аудит-след', value: '100% перешагов с провенансом', badge: 'полный', ok: true }
@@ -4799,6 +4799,44 @@ class Component extends DCLogic {
       applyLlm: () => { if (!(s.llmEndpointDraft || '').trim()) { this.showToast('Укажите эндпоинт http://IP:PORT/v1'); return; } this.setLlmEndpoint((s.llmEndpointDraft || '').trim(), (s.llmModelDraft || '').trim()); },
       resetLlm: () => this.setLlmEndpoint('', ''),
       isConnTab: s.settingsTab === 'Подключения',
+      isNluTab: s.settingsTab === 'Подбор',
+      nluQuery: s.nluQuery || '',
+      setNluQuery: (e) => this.setState({ nluQuery: e.target.value }),
+      tryNluGo: () => this.tryNlu(),
+      nluBusy: !!s.nluBusy,
+      nluMinConf: String((s.nluCfg && s.nluCfg.min_confidence) != null ? s.nluCfg.min_confidence : 0.35),
+      nluWeak: String((s.nluCfg && s.nluCfg.weak_stage) != null ? s.nluCfg.weak_stage : 0.2),
+      nluRerank: !!(s.nluCfg && s.nluCfg.rerank),
+      nluRerankLabel: (s.nluCfg && s.nluCfg.rerank) ? 'модель уточняет подбор' : 'только словарь, без модели',
+      setNluMinConf: (e) => this.saveNluCfg({ min_confidence: parseFloat(e.target.value) }),
+      setNluWeak: (e) => this.saveNluCfg({ weak_stage: parseFloat(e.target.value) }),
+      toggleNluRerank: () => this.saveNluCfg({ rerank: !(s.nluCfg && s.nluCfg.rerank) }),
+      nluConfOpts: ['0.2', '0.35', '0.5', '0.65'].map(function(v){ return { value: v, label: v }; }),
+      nluWeakOpts: ['0.1', '0.2', '0.3'].map(function(v){ return { value: v, label: v }; }),
+      nluStages: (((s.nluSuggest && s.nluSuggest.stages) || (s.nluParse && s.nluParse.stages)) || []).map(function(st){
+        return { order: st.order, kind: st.kind || '—', text: String(st.text || '').slice(0, 64),
+                 trigger: st.trigger || '—', before: (st.before || []).join(' '), after: (st.after || []).join(' '),
+                 agent: st.agent_name || '—', score: (st.score == null ? '' : Number(st.score).toFixed(2)),
+                 fg: (st.score == null || st.score >= 0.35) ? 'var(--w70)' : 'var(--warn-ink)',
+                 picked: st.picked_by || '' }; }),
+      nluLexemes: ((s.nluParse && s.nluParse.lexemes) || []).join(' · '),
+      nluChain: (((s.nluSuggest && s.nluSuggest.steps) || []).map(function(x){ return x.agent_name; })).join(' → '),
+      nluConfidence: (s.nluSuggest && s.nluSuggest.confidence != null) ? Number(s.nluSuggest.confidence).toFixed(2) : '',
+      nluWarning: (s.nluSuggest && s.nluSuggest.warning) || '',
+      nluDeliver: (s.nluSuggest && s.nluSuggest.deliver) || '',
+      nluAgentOpts: [{ value: '', label: 'выберите агента' }].concat(((s.nluAgents || []).map(function(a){ return { value: a.id, label: (a.name || a.id) }; }))),
+      nluLexAgent: s.nluLexAgent || '',
+      pickLexAgent: (e) => this.loadAgentLexicon(e.target.value),
+      nluLexTerms: ((s.nluLex && s.nluLex.terms) || []).map(function(t){
+        return { term: t.term, weight: t.weight, manual: t.source === 'оператор',
+                 bg: t.source === 'оператор' ? 'rgba(99,102,241,.18)' : 'var(--w6)',
+                 drop: () => this.editAgentLexicon('remove', t.term) }; }, this),
+      nluLexInfo: s.nluLex ? ((s.nluLex.seeded_count || 0) + ' слов из навыков · всего ' + (s.nluLex.total || 0)) : '',
+      nluWord: s.nluWord || '',
+      setNluWord: (e) => this.setState({ nluWord: e.target.value }),
+      addNluWord: () => this.editAgentLexicon('add', s.nluWord),
+      banNluWord: () => this.editAgentLexicon('ban', s.nluWord),
+      refreshNluLex: () => this.refreshAgentLexicon(),
       isBusTab: s.settingsTab === 'Шина',
       busReload: () => this.loadBus(),
       busLoading: !!s.busLoading,
@@ -4944,7 +4982,7 @@ class Component extends DCLogic {
         }
       })),
       settingsTabs: Object.keys(SETTINGS).map(t => ({
-        label: t, pick: () => { this.setState({ settingsTab: t }); if (t === 'Шина') this.loadBus(); },
+        label: t, pick: () => { this.setState({ settingsTab: t }); if (t === 'Шина') this.loadBus(); if (t === 'Подбор') this.loadNlu(); },
         bg: s.settingsTab === t ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : 'transparent',
         fg: s.settingsTab === t ? 'var(--ink)' : 'var(--w55)'
       })),
@@ -5442,6 +5480,56 @@ class Component extends DCLogic {
     this.setState({ reglamentMsg:'Строю граф (иерархия + кросс-цитирование)…' });
     fetch('/api/reglament/graph/build',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tenant:tenant})})
       .then(function(r){return r.json();}).then(function(d){ self.setState({ reglamentMsg:'Граф: узлов '+(d.nodes||0)+' · иерархия '+(d.hierarchy_edges||0)+' · кросс-цитирование '+(d.xcite_edges||0) }); }).catch(function(){ self.setState({ reglamentMsg:'Ошибка графа' }); });
+  }
+  // Подбор по фразе: пороги уверенности, песочница разбора, словарь лексем агента.
+  loadNlu() {
+    var self = this;
+    fetch('/api/nlu/config').then(function(r){ return r.ok ? r.json() : null; }).then(function(c){ if (c) self.setState({ nluCfg: c }); }).catch(function(){});
+    fetch('/api/agents').then(function(r){ return r.ok ? r.json() : { agents: [] }; }).then(function(d){ self.setState({ nluAgents: d.agents || [] }); }).catch(function(){});
+  }
+  saveNluCfg(patch) {
+    var self = this, cur = this.state.nluCfg || {};
+    var body = { min_confidence: cur.min_confidence, weak_stage: cur.weak_stage, rerank: cur.rerank };
+    for (var k in patch) body[k] = patch[k];
+    fetch('/api/nlu/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      .then(function(r){ return r.json().then(function(j){ return { ok: r.ok, j: j }; }); })
+      .then(function(res){ if (!res.ok) { self.showToast('Пороги: ' + (res.j.detail || 'не удалось')); return; } self.setState({ nluCfg: res.j }); self.showToast('Пороги подбора сохранены'); })
+      .catch(function(){ self.showToast('ABOP недоступен'); });
+  }
+  tryNlu() {
+    var self = this, q = (this.state.nluQuery || '').trim();
+    if (!q) { this.showToast('Введите фразу — покажу разбор и цепочку'); return; }
+    this.setState({ nluBusy: true });
+    fetch('/api/nlu/parse?q=' + encodeURIComponent(q)).then(function(r){ return r.ok ? r.json() : null; }).then(function(p){ self.setState({ nluParse: p }); }).catch(function(){});
+    fetch('/api/pipelines/suggest', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ q: q }) })
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(s){ self.setState({ nluSuggest: s, nluBusy: false }); })
+      .catch(function(){ self.setState({ nluBusy: false }); self.showToast('ABOP недоступен'); });
+  }
+  loadAgentLexicon(id) {
+    var self = this;
+    if (!id) { this.setState({ nluLex: null, nluLexAgent: '' }); return; }
+    this.setState({ nluLexAgent: id });
+    fetch('/api/agents/' + encodeURIComponent(id) + '/lexicon').then(function(r){ return r.ok ? r.json() : null; }).then(function(d){ self.setState({ nluLex: d }); }).catch(function(){});
+  }
+  editAgentLexicon(op, word) {
+    var self = this, id = this.state.nluLexAgent, body = {};
+    if (!id || !(word || '').trim()) return;
+    body[op] = [String(word).trim()];
+    fetch('/api/agents/' + encodeURIComponent(id) + '/lexicon', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      .then(function(r){ return r.json().then(function(j){ return { ok: r.ok, j: j }; }); })
+      .then(function(res){ if (!res.ok) { self.showToast('Словарь: ' + (res.j.detail || 'не удалось')); return; }
+        self.setState({ nluWord: '' }); self.loadAgentLexicon(id);
+        self.showToast(op === 'add' ? 'Слово добавлено — агента будут находить по нему' : (op === 'ban' ? 'Слово запрещено для этого агента' : 'Правка снята')); })
+      .catch(function(){ self.showToast('ABOP недоступен'); });
+  }
+  refreshAgentLexicon() {
+    var self = this, id = this.state.nluLexAgent;
+    if (!id) return;
+    fetch('/api/agents/' + encodeURIComponent(id) + '/lexicon/refresh', { method: 'POST' })
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(d){ self.showToast(d ? ('Словарь пересобран из навыков: ' + d.seeded + ' слов') : 'Не удалось'); self.loadAgentLexicon(id); })
+      .catch(function(){ self.showToast('ABOP недоступен'); });
   }
   // Шина (Redpanda): состояние, топики систем, хвост топика, DLQ с отметками разбора (повтор/списание).
   loadBus() {

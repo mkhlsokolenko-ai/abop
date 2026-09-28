@@ -636,7 +636,22 @@ async def admin_rbac(u: dict = Depends(user)) -> dict:
 # persistence-localstorage-hole. Отсутствующие ключи ⇒ клиент берёт свой дефолт (сид в state).
 # tree/assignments — карта процессов (области ответственности агентов), авторится в RBAC-редакторе.
 _ADMIN_CONFIG_KEYS = {"modelCfg", "defaultProfile", "tenantMode", "quotaLimit", "quotaPolicy",
-                      "escThresholds", "tree", "assignments", "tokenQuota"}
+                      "escThresholds", "tree", "assignments", "tokenQuota", "nluConfig"}
+
+# пороги подбора: правятся в UI (Настройки → Подбор), живут в admin_config.nluConfig
+_NLU_DEFAULTS = {"min_confidence": 0.35, "weak_stage": 0.2, "rerank": True, "max_stages": 6}
+
+
+async def nlu_config() -> dict:
+    try:
+        cfg = (await admin_store.all()).get("nluConfig") or {}
+    except Exception:  # noqa: BLE001
+        cfg = {}
+    out = dict(_NLU_DEFAULTS)
+    for k, v in (cfg if isinstance(cfg, dict) else {}).items():
+        if k in out and isinstance(v, type(out[k])):
+            out[k] = v
+    return out
 
 
 @app.get("/api/admin/config")
@@ -4442,6 +4457,103 @@ async def _rerank_chain(q: str, stage_rows: list[dict], cands: list[dict], ids: 
         return ids, reason + " · модель недоступна, подбор по словарю", False
 
 
+@app.get("/api/nlu/parse")
+async def nlu_parse(q: str = "", u: dict = Depends(user)) -> dict:
+    """Разбор фразы для песочницы в UI: лексемы, этапы, триггер и его окружение. Ничего не запускает."""
+    return {"q": q, **nlu.describe(q), "triggers": sorted(set(nlu.TRIGGERS.values())), "config": await nlu_config()}
+
+
+@app.get("/api/nlu/config")
+async def nlu_config_get(u: dict = Depends(user)) -> dict:
+    return await nlu_config()
+
+
+@app.post("/api/nlu/config")
+async def nlu_config_set(body: dict, u: dict = Depends(user)) -> dict:
+    """Пороги подбора: ниже min_confidence — предупреждение, weak_stage — «слабый шаг», rerank — уточнять ли моделью."""
+    require_level(u, "admin")
+    cur = await nlu_config()
+    for k in ("min_confidence", "weak_stage"):
+        if k in (body or {}):
+            try:
+                v = float(body[k])
+            except Exception:  # noqa: BLE001
+                raise HTTPException(422, f"{k}: число 0..1")
+            if not 0.0 <= v <= 1.0:
+                raise HTTPException(422, f"{k}: число 0..1")
+            cur[k] = v
+    if "rerank" in (body or {}):
+        cur["rerank"] = bool(body["rerank"])
+    if "max_stages" in (body or {}):
+        cur["max_stages"] = max(2, min(12, int(body["max_stages"])))
+    actor = u.get("name") or u.get("sub") or "dev"
+    await admin_store.save("nluConfig", cur, editor=actor)
+    await audit_store.record(actor, "nlu.config", "nluConfig", cur)
+    return cur
+
+
+@app.get("/api/agents/{agent_id}/lexicon")
+async def agent_lexicon_get(agent_id: str, u: dict = Depends(user)) -> dict:
+    """Слова, по которым агента находят: засеянные из навыков и ручные правки оператора."""
+    ag = await agent_store.get(agent_id)
+    if not ag:
+        raise HTTPException(404, "нет такого агента")
+    if not can_see_family(u, ag.get("family")):
+        raise HTTPException(403, "агент другого отдела")
+    seeded, manual = await lexicon.parts(agent_id)
+    if not seeded:
+        seeded = await _refresh_lexicon(ag)
+    merged = lexicon.merge(seeded, manual)
+    top = sorted(merged.items(), key=lambda kv: -kv[1])[:60]
+    return {"agent_id": agent_id, "agent_name": ag.get("name"),
+            "terms": [{"term": t, "weight": round(float(w), 2),
+                       "source": ("оператор" if t in manual else "навыки")} for t, w in top],
+            "manual": manual, "seeded_count": len(seeded), "total": len(merged)}
+
+
+@app.post("/api/agents/{agent_id}/lexicon")
+async def agent_lexicon_set(agent_id: str, body: dict, u: dict = Depends(user)) -> dict:
+    """Правка словаря из UI: {add:["слово",…], ban:["слово",…], remove:["слово",…]} — добавить, запретить, снять правку.
+    Слова нормализуются тем же стеммером, что и запрос, иначе правка не сработает. manager+."""
+    require_level(u, "manager")
+    ag = await agent_store.get(agent_id)
+    if not ag:
+        raise HTTPException(404, "нет такого агента")
+    if not can_see_family(u, ag.get("family")):
+        raise HTTPException(403, "агент другого отдела")
+    _, manual = await lexicon.parts(agent_id)
+    manual = dict(manual)
+    for w in ((body or {}).get("add") or []):
+        for t in nlu.tokens(str(w)):
+            manual[t] = lexicon.MANUAL_WEIGHT
+    for w in ((body or {}).get("ban") or []):
+        for t in nlu.tokens(str(w)):
+            manual[t] = lexicon.MANUAL_BAN
+    for w in ((body or {}).get("remove") or []):
+        for t in nlu.tokens(str(w)):
+            manual.pop(t, None)
+    if len(manual) > 200:
+        raise HTTPException(422, "слишком много ручных слов (максимум 200)")
+    merged = await lexicon.set_manual(agent_id, manual)
+    actor = u.get("name") or u.get("sub") or "dev"
+    await audit_store.record(actor, "agent.lexicon", agent_id, {"manual": len(manual)})
+    return {"agent_id": agent_id, "manual": manual, "total": len(merged)}
+
+
+@app.post("/api/agents/{agent_id}/lexicon/refresh")
+async def agent_lexicon_refresh(agent_id: str, u: dict = Depends(user)) -> dict:
+    """Пересобрать словарь из описаний навыков (после правки навыка или шаблона). manager+."""
+    require_level(u, "manager")
+    ag = await agent_store.get(agent_id)
+    if not ag:
+        raise HTTPException(404, "нет такого агента")
+    if not can_see_family(u, ag.get("family")):
+        raise HTTPException(403, "агент другого отдела")
+    await lexicon.save(agent_id, {}, "")        # сбрасываем отпечаток, чтобы пересчёт точно прошёл
+    terms = await _refresh_lexicon(ag)
+    return {"agent_id": agent_id, "seeded": len(terms)}
+
+
 @app.post("/api/pipelines/suggest")
 async def pipeline_suggest(body: dict, u: dict = Depends(user)) -> dict:
     """Авто-сборка цепочки под задачу (#5, гибрид): семантический матчер даёт кандидатов → LLM собирает
@@ -4490,15 +4602,16 @@ async def pipeline_suggest(body: dict, u: dict = Depends(user)) -> dict:
                                "alternatives": alts})
     if len(stage_rows) >= 2:
         ids = [r["agent_id"] for r in stage_rows]
+        cfg = await nlu_config()
         conf = round(min(min(r["score"], 1.0) for r in stage_rows), 3)
-        weak = [r for r in stage_rows if r["score"] < 0.2]
+        weak = [r for r in stage_rows if r["score"] < cfg["weak_stage"]]
         amb = [r for r in stage_rows if r.get("ambiguous")]
-        low = conf < 0.35 or bool(weak)
+        low = conf < cfg["min_confidence"] or bool(weak)
         deliver = next((r["channel"] for r in reversed(stage_rows) if r.get("channel")), "chat")
         name = ("Цепочка: " + " → ".join(str(r.get("kind") or r.get("trigger") or "шаг") for r in stage_rows))[:60]
         reason = "разбор фразы: " + " → ".join(f'{r["order"]}. {r.get("kind") or "шаг"}' for r in stage_rows)
         reranked = False
-        if low:   # низкая уверенность → реранк моделью среди уже отобранных кандидатов этапа
+        if low and cfg.get("rerank"):   # низкая уверенность → реранк моделью среди кандидатов этапа
             ids, reason, reranked = await _rerank_chain(q, stage_rows, cands, ids, reason)
         nm = {c["id"]: c.get("name") for c in cands}
         for r, aid in zip(stage_rows, ids):          # этапы и шаги обязаны совпадать в UI

@@ -31,6 +31,15 @@ async def main() -> int:
             "!!document.querySelector(\"input[aria-label='Поиск по журналу прогонов']\") "
             "&& !!document.querySelector(\"select[aria-label='Фильтр по вердикту']\") "
             "&& !!document.querySelector(\"select[aria-label='Фильтр по периоду']\")")
+        # настройки → «Подбор»: пороги, песочница разбора фразы, словарь лексем агента
+        await pg.evaluate("location.hash='#settings'"); await pg.wait_for_timeout(1800)
+        tab = pg.locator("button:has-text('Подбор')").first
+        if await tab.count():
+            await tab.click(); await pg.wait_for_timeout(1200)
+            t = await pg.evaluate("document.body.innerText")
+            checks["settings_nlu"] = ("Проверить фразу" in t and "Слова, по которым находят агента" in t)
+        else:
+            checks["settings_nlu"] = False
         await pg.evaluate("location.hash='#agents'"); await pg.wait_for_timeout(1500)
         checks["agents_screen"] = "Агенты" in await pg.evaluate("document.body.innerText")
         await pg.evaluate("location.hash='#canvas'"); await pg.wait_for_timeout(2500)

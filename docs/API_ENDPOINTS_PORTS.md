@@ -134,6 +134,11 @@
 | GET / POST | `/api/pipelines` | Цепочки агентов (список / создать) | user |
 | DELETE | `/api/pipelines/{pid}` | Удалить цепочку | user |
 | POST | `/api/pipelines/{pid}/run` | Запуск цепочки; `?async=1` → 202, шаги через очередь, HITL-пауза `awaiting_hitl` | user |
+| GET | `/api/nlu/parse?q=` | Разбор фразы для песочницы: лексемы, этапы, триггер и окружение | user |
+| GET/POST | `/api/nlu/config` | Пороги подбора: `min_confidence`, `weak_stage`, `rerank` (POST — admin) | user / admin |
+| GET | `/api/agents/{id}/lexicon` | Слова, по которым находят агента (из навыков + ручные) | user |
+| POST | `/api/agents/{id}/lexicon` | `{add, ban, remove}` — правка словаря из UI | manager+ |
+| POST | `/api/agents/{id}/lexicon/refresh` | Пересобрать словарь из описаний навыков | manager+ |
 | POST | `/api/pipelines/suggest` | Разбор фразы на этапы (лексемы, триггер, окружение) → агент на каждый этап по словарю лексем; `steps`, `stages`, `parse`, `confidence`, `low_confidence`, `warning`, `reranked` | user |
 
 ### 2.7 Шина (Redpanda)
