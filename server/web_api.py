@@ -3092,6 +3092,32 @@ def _report_context(agent: dict, result: dict) -> dict:
     if so_rows:
         skills_html = "".join(so_rows)
 
+    # 3c) Врезка «Главное»: резюме навыка (для главбуха/заказчика) выносится наверх отчёта. Раньше оно
+    #     лежало внутри карточки навыка и терялось между находками — отчёт читался как перечень строк.
+    _SUM_KEYS = ("резюме", "итог", "вывод", "главное", "рекомендаци")
+    summary_bits = []
+    for so in result.get("skill_outputs") or []:
+        st = so.get("structured")
+        if not isinstance(st, dict):
+            continue
+        for k, vv in st.items():
+            if any(p in str(k).lower() for p in _SUM_KEYS) and isinstance(vv, str) and len(vv.strip()) > 40:
+                summary_bits.append(esc(vv.strip()))
+                break
+    summary_html = ("<div class='lead'>" + "</div><div class='lead'>".join(summary_bits[:3]) + "</div>") if summary_bits else ""
+
+    # 3d) Недобор схемы — в отчёт, а не в лог: получатель должен видеть, что навык не заполнил поле,
+    #     иначе пустая секция выглядит как «нарушений нет».
+    miss_rows = []
+    for so in result.get("skill_outputs") or []:
+        ms = [m for m in (so.get("schema_miss") or []) if not str(m).startswith("_")]
+        cut = "_обрезан_по_лимиту" in (so.get("schema_miss") or [])
+        if ms or cut:
+            miss_rows.append("<div class='dl'>" + esc(so.get("skill"))
+                             + (": не заполнено — " + esc(", ".join(ms)) if ms else "")
+                             + (" · ответ обрезан по лимиту токенов" if cut else "") + "</div>")
+    schema_notes_html = ("<h2>Замечания к сбору данных</h2>" + "".join(miss_rows)) if miss_rows else ""
+
     # by_class бейджи (аудит)
     bc = (result.get("findings_summary") or {}).get("by_class") or {}
     by_class_html = ""
@@ -3105,7 +3131,8 @@ def _report_context(agent: dict, result: dict) -> dict:
                + (f" · волн {len(result.get('waves') or [])}" if result.get("waves") else ""))
     dls = "".join(f"<div class='dl'>{esc(d.get('channel'))} → {esc(d.get('to') or '—')} · {esc(d.get('mode'))}</div>"
                   for d in (result.get("delivery") or []))
-    return {"title": esc(agent.get("name") or "Отчёт агента ABOP"), "agent": esc(agent.get("name") or ""),
+    return {"summary": summary_html, "schema_notes": schema_notes_html,
+            "title": esc(agent.get("name") or "Отчёт агента ABOP"), "agent": esc(agent.get("name") or ""),
             "date": _dtm.datetime.now().strftime("%d.%m.%Y %H:%M"), "verdict": verdict,
             "findings_total": (result.get("findings_summary") or {}).get("total") or len(struct),
             "investigations_total": (result.get("investigations_summary") or {}).get("total") or len(result.get("investigations") or []),
