@@ -3892,6 +3892,9 @@ def _t_email_send(a):
     msg = EmailMessage()
     msg["From"] = "abop-auditor@demo.local"; msg["To"] = to; msg["Subject"] = subject
     msg.set_content(body or "Отчёт во вложении.")
+    _html = str(a.get("html") or "").strip()
+    if _html:
+        msg.add_alternative(_html, subtype="html")   # почтовик покажет отчёт вёрсткой
     if att:
         p = att if os.path.isabs(att) else os.path.join("ape_work", os.path.basename(att))
         if os.path.isfile(p):
@@ -3985,6 +3988,9 @@ def _t_yandex_email(a):
     msg["To"] = to
     msg["Subject"] = subject
     msg.set_content(body or "Отчёт во вложении.")
+    _html = str(a.get("html") or "").strip()
+    if _html:
+        msg.add_alternative(_html, subtype="html")   # почтовик покажет отчёт вёрсткой
     if att:
         p = att if os.path.isabs(att) else os.path.join("ape_work", os.path.basename(att))
         if os.path.isfile(p):

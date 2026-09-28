@@ -433,9 +433,14 @@ function renderLink(state) {
   if (!pill) return;
   if (state.ok) { pill.hidden = true; return; }
   pill.hidden = false;
+  // причина молчания сервера пишется прямо в плашке: без неё «нет связи» одинаково выглядит
+  // и при таймауте, и при чужом адресе, и при 500 — чинить наугад невозможно.
+  const why = String(state.error || "").replace(/^AbopError:\s*/, "").slice(0, 120);
   if (txt) txt.textContent = state.engine === false
     ? "Движок приложения не отвечает — перезапустите ABOP"
-    : ("Нет связи с ABOP" + (state.url ? " (" + String(state.url).replace(/^https?:\/\//, "") + ")" : "") + " — запуск агентов недоступен, история чата на месте");
+    : ("Нет связи с ABOP" + (state.url ? " (" + String(state.url).replace(/^https?:\/\//, "") + ")" : "")
+       + (why ? " — " + why : " — запуск агентов недоступен, история чата на месте"));
+  if (txt) txt.title = why ? "Ответ сервера: " + why : "";
 }
 function markOffline(e) {
   const st = e && typeof e === "object" ? Number(e.status || 0) : 0;
@@ -449,7 +454,7 @@ async function pingLink(manual) {
   if (ok && !linkOk) { toast("Связь с ABOP восстановлена", "ok"); reloadAll(); }
   if (!ok && manual) toast(engine ? "ABOP всё ещё недоступен" : "Движок приложения не отвечает", "warn");
   linkOk = ok;
-  renderLink({ ok, engine, url: h && h.abop_url });
+  renderLink({ ok, engine, url: h && h.abop_url, error: h && h.abop_error });
   return ok;
 }
 

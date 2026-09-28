@@ -3209,10 +3209,21 @@ def _build_report_html(agent: dict, result: dict) -> str:
 
 
 def _html_to_text(h: str) -> str:
+    """HTML отчёта - читаемый текст письма. Стили и скрипты вырезаются ВМЕСТЕ с содержимым: иначе в тело
+    письма уезжал весь CSS отчёта (body{font-family:...}) и получатель видел служебную разметку."""
+    import html as _h
     import re as _re
-    t = _re.sub(r"<br\s*/?>", "\n", h or "")
-    t = _re.sub(r"</(li|p|h1|h2|h3)>", "\n", t)
+    t = _re.sub(r"(?is)<(style|script|head|svg)[^>]*>.*?</\1>", " ", h or "")
+    t = _re.sub(r"(?is)<!--.*?-->", " ", t)
+    t = _re.sub(r"(?i)<br\s*/?>", "\n", t)
+    t = _re.sub(r"(?i)</(li|p|h1|h2|h3|div|tr)>", "\n", t)
+    t = _re.sub(r"(?i)<li[^>]*>", "- ", t)
+    t = _re.sub(r"(?i)</t[dh]>", " | ", t)
+    t = _re.sub(r"(?i)</(table|ul|ol|h4|section|figure)>", "\n", t)
+    t = _re.sub(r"(?i)</(span|strong|b|em|dt|dd|small|code)>", " ", t)
     t = _re.sub(r"<[^>]+>", "", t)
+    t = _h.unescape(t)
+    t = "\n".join(_re.sub(r"[ \t]{2,}", " ", ln).strip(" |") for ln in t.splitlines())
     return _re.sub(r"\n{3,}", "\n\n", t).strip()
 
 
@@ -3248,9 +3259,11 @@ async def _send_channel(cfg: dict, agent_name: str, html_report: str, real: bool
                 att = m.group(1) if m else ""
             body_txt = "Отчёт агента ABOP во вложении." if att else _html_to_text(html_report)[:4000]
             fn = ape._t_yandex_email if channel == "yandex" else ape._t_email_send
-            return await loop.run_in_executor(None, fn,
-                {"to": cfg.get("to") or "audit@demo.local", "subject": title,
-                 "body": body_txt, "attachment": att, "run": rf})
+            args = {"to": cfg.get("to") or "audit@demo.local", "subject": title,
+                    "body": body_txt, "attachment": att, "run": rf}
+            if not att:
+                args["html"] = html_report      # письмо-отчёт вёрсткой, текст - запасной вариант
+            return await loop.run_in_executor(None, fn, args)
         if channel == "yougile":
             return await loop.run_in_executor(None, ape._t_yougile_task,
                 {"title": title, "description": _html_to_text(html_report)[:6000],
