@@ -1854,6 +1854,21 @@
             <span style="padding:6px 12px;border-radius:9px;background:var(--w5);border:1px solid var(--w12);color:var(--w75);font-family:JetBrains Mono,monospace;font-size:12px;">автономия {{ runData.autonomy }}</span>
             <sc-if value="{{ runData.timingText }}" hint-placeholder-val="{{ false }}"><span style="padding:6px 12px;border-radius:9px;background:rgba(99,102,241,.1);border:1px solid rgba(99,102,241,.24);color:var(--acc-ink);font-family:JetBrains Mono,monospace;font-size:12px;">⏱ {{ runData.timingText }}</span></sc-if>
           </div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;border-radius:12px;background:var(--w4);border:1px solid var(--w10);">
+            <span style="font-size:12.5px;color:var(--w62);">Сравнить с предыдущим прогоном этого агента — что изменилось в находках</span>
+            <div style="flex:1;"></div>
+            <button sc-camel-on-click="{{ runDiffGo }}" style="padding:7px 12px;border:1px solid var(--w14);border-radius:9px;background:var(--w5);color:var(--ink);font-size:12px;font-weight:600;">⇄ Сравнить</button>
+          </div>
+          <sc-if value="{{ runDiff }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;gap:6px;padding:12px 14px;border-radius:12px;background:var(--w3);border:1px solid var(--w8);">
+              <span style="font-family:JetBrains Mono,monospace;font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:var(--w62);">сравнение с {{ runDiff.base }}</span>
+              <span style="font-size:12.5px;color:var(--ink);">{{ runDiff.head }}</span>
+              <span style="font-family:JetBrains Mono,monospace;font-size:11.5px;color:var(--w55);">{{ runDiff.cost }}</span>
+              <sc-for list="{{ runDiff.rows }}" as="d" hint-placeholder-count="3">
+                <div style="font-size:12px;line-height:1.45;color:{{ d.fg }};">{{ d.text }}</div>
+              </sc-for>
+            </div>
+          </sc-if>
           <sc-if value="{{ runData.hasFindings }}" hint-placeholder-val="{{ false }}"><div style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:12px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.28);"><span style="font-size:15px;font-weight:700;color:var(--warn-ink);">{{ runData.findingsTotal }} находок</span><span style="font-family:JetBrains Mono,monospace;font-size:12px;color:var(--w70);">{{ runData.findingsLine }}</span><button sc-camel-on-click="{{ openRunFindings }}" style="margin-left:auto;padding:7px 12px;border:1px solid rgba(129,140,248,.35);border-radius:9px;background:rgba(99,102,241,.14);color:var(--acc-ink2);font-size:12px;font-weight:700;">Карточки находок ▸</button></div></sc-if>
           <div style="display:flex;flex-direction:column;gap:6px;"><span style="font-family:JetBrains Mono,monospace;font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:var(--w62);">доска прогона (реальные шаги)</span>
             <sc-for list="{{ runData.board }}" as="b" hint-placeholder-count="3"><div style="padding:8px 10px;border-radius:8px;background:var(--w3);font-size:12px;color:var(--w70);line-height:1.4;">{{ b.text }}</div></sc-for>
@@ -4336,6 +4351,30 @@ class Component extends DCLogic {
       conformanceSummaryText: (s.conformance ? ('соответствует ' + ((s.conformance.summary||{}).ok||0) + ' · расхождений ' + ((s.conformance.summary||{}).drift||0)) : ''),
       conformanceRows: ((s.conformance && s.conformance.report) || []).map(function(x){ var st=x.status||''; var ok=st==='соответствует'; var no=st.indexOf('нет')===0; return { label:(x.label||'').slice(0,42), status:st, mark:(ok?'✓':no?'✗':'⚠'), bg:(ok?'rgba(16,185,129,.1)':no?'rgba(239,68,68,.1)':'rgba(245,158,11,.1)'), fg:(ok?'var(--ok-ink)':no?'var(--err-ink)':'var(--warn-ink)'), reg:(x.reglament_op||'').slice(0,70), sim:(x.sim!=null?String(x.sim):'') }; }),
       runInModalGo: () => this.runInModal(), closeRunResult: () => this.closeRunResult(),
+      runDiffGo: () => this.loadRunDiff(), runDiffBusy: !!s.runDiffBusy,
+      runDiff: (function(){
+        var d = s.runDiff; if (!d) return null;
+        var f = d['находки'] || {}, inv = d['расследования'] || {}, m = d['метрики'] || {}, was = m['было'] || {}, now = m['стало'] || {};
+        var rows = [], add = function(list, pref, fg, lim){ (list || []).slice(0, lim).forEach(function(x){
+          rows.push({ text: pref + (x['класс'] ? x['класс'] + ' · ' : '') + (x['проверка'] || x.id) + (x['сумма'] ? ' · ' + x['сумма'] : ''), fg: fg }); }); };
+        add(f['добавились'], '+ появилась: ', 'var(--warn-ink)', 8);
+        add(f['ушли'], '− пропала: ', 'var(--w55)', 8);
+        (f['изменились'] || []).slice(0, 8).forEach(function(x){
+          rows.push({ text: '~ изменилась ' + x.id + ': ' + (x['поля'] || []).join(', ') + ' (' + ((x['было'] || {})['сумма'] || '—') + ' → ' + ((x['стало'] || {})['сумма'] || '—') + ')', fg: 'var(--acc-ink)' }); });
+        add(inv['добавились'], '+ расследование: ', 'var(--warn-ink)', 4);
+        add(inv['ушли'], '− расследование: ', 'var(--w55)', 4);
+        if (!rows.length) rows.push({ text: 'находки и расследования совпадают', fg: 'var(--ok-ink)' });
+        var sk = d['навыки'] || {};
+        return { base: d.base_run_id,
+                 head: 'находок было ' + (f['всего_было'] || 0) + ', стало ' + (f['всего_стало'] || 0)
+                       + ' · навыков общих ' + ((sk['общие'] || []).length)
+                       + ((sk['только_сейчас'] || []).length ? ' · новые: ' + sk['только_сейчас'].join(', ') : '')
+                       + ((sk['только_раньше'] || []).length ? ' · пропали: ' + sk['только_раньше'].join(', ') : ''),
+                 cost: '₽ ' + (was.rub != null ? was.rub : '—') + ' → ' + (now.rub != null ? now.rub : '—')
+                       + ' · команд ' + (was.commands || 0) + ' → ' + (now.commands || 0)
+                       + (now.skipped ? ' · пропусков доставки ' + now.skipped : ''),
+                 rows: rows };
+      })(),
       runData: (function(){ var lr=s.lastRun; if(!lr) return null; var v=lr.verdict||{}; var fs=lr.findings_summary||null; var bc=(fs&&fs.by_class)||{}; return { waves:(lr.waves||[]).length, verdictOk:!!v.ok, verdictLabel:(v.ok?'вердикт пройден':'есть замечания'), autonomy:v.autonomy_used||'—', findingsTotal:(fs?fs.total:null), hasFindings:!!fs, findingsLine:(fs?('A'+(bc.A||0)+' · B'+(bc.B||0)+' · C'+(bc.C||0)+' · D'+(bc.D||0)):''), board:(lr.board||[]).slice(0,10).map(function(b){ return {text:(b.text||'').slice(0,160)}; }), findingsRows:(lr.findings||[]).slice(0,12).map(function(f){ var nr=(f['нормы_rag']||f.norms_rag||[]); var cls=f['класс']||f.class||''; return { cls:cls, clsBg:(cls==='A'?'rgba(239,68,68,.14)':cls==='B'?'rgba(245,158,11,.14)':cls==='C'?'rgba(99,102,241,.14)':'rgba(52,211,153,.14)'), clsFg:(cls==='A'?'var(--err-ink)':cls==='B'?'var(--warn-ink)':cls==='C'?'var(--acc-ink)':'var(--ok-ink)'), check:(f['проверка']||f.op||'').slice(0,60), desc:(f['описание']||'').slice(0,130), norm:(nr.length?(nr[0]||'').replace('[закон/норма] ','').slice(0,150):''), hasNorm:nr.length>0 }; }), normsEnriched:(lr.norms_enriched||0), runId:(lr.run_id||''),
         traceId:(lr.trace_id||''), timingText:(function(){ var tm=((lr.run_metrics||{}).timings)||{}; if(!tm.total_ms) return ''; var s=tm.total_ms+' мс всего'; if(tm.slowest&&tm.slowest.skill) s+=' · дольше всех: '+tm.slowest.skill+' '+tm.slowest.ms+' мс'; return s; })(), hasSoftErrors:!!((lr.soft_errors||[]).length), softErrorRows:(lr.soft_errors||[]).map(function(x){ return { stage:(x.stage||''), error:(x.error||'').slice(0,240) }; }),
         hasDelivery:!!((lr.delivery||[]).length), deliveryRows:(lr.delivery||[]).map(function(d){ return { channel:(d.channel||''), to:(d.to!=null?String(d.to):''), mode:(d.mode||'dry_run'), real:(d.mode==='real'), title:(d.title||''), result:(d.result||'').slice(0,220), modeBg:(d.mode==='real'?'rgba(245,158,11,.16)':'rgba(99,102,241,.14)'), modeFg:(d.mode==='real'?'var(--warn-ink)':'var(--acc-ink)'), modeLabel:(d.mode==='real'?'РЕАЛЬНО отправлено':'dry_run (превью)') }; }),
@@ -5121,12 +5160,25 @@ class Component extends DCLogic {
     this.buildAndRun(goal);
   }
 
+  // Сравнение прогонов: что в находках появилось/ушло/изменилось против предыдущего прогона агента.
+  loadRunDiff() {
+    var self = this, lr = this.state.lastRun;
+    if (!lr || !(lr.run_id || lr.id)) { this.showToast('Сначала откройте прогон'); return; }
+    this.setState({ runDiffBusy: true });
+    fetch('/api/runs/' + encodeURIComponent(lr.run_id || lr.id) + '/diff')
+      .then(function(r){ return r.json().then(function(j){ return { ok: r.ok, j: j || {} }; }); })
+      .then(function(res){
+        if (!res.ok) { self.setState({ runDiffBusy: false }); self.showToast('Сравнение: ' + (res.j.detail || 'не удалось')); return; }
+        self.setState({ runDiff: res.j, runDiffBusy: false });
+      }).catch(function(){ self.setState({ runDiffBusy: false }); self.showToast('ABOP недоступен'); });
+  }
+
   openRun(id) {
     var self = this;
     fetch('/api/runs/' + encodeURIComponent(id)).then(function(r){ return r.ok ? r.json() : null; }).then(function(run){
       if (!run) { self.showToast('Прогон не найден'); return; }
       run.run_id = run.run_id || run.id || id;
-      self.setState({ lastRun: run, screen: 'canvas', lens: 'run', startedOnce: true, pct: 100, playing: false, stopped: false, runReadOnly: true, modal: 'runresult', runBusy: false });
+      self.setState({ lastRun: run, runDiff: null, screen: 'canvas', lens: 'run', startedOnce: true, pct: 100, playing: false, stopped: false, runReadOnly: true, modal: 'runresult', runBusy: false });
       self.route('canvas');
     }).catch(function(){ self.showToast('ABOP недоступен'); });
   }

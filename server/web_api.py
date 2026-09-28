@@ -4367,6 +4367,85 @@ async def run_get(run_id: str, u: dict = Depends(user)) -> dict:
     return r
 
 
+def _diff_key(x: dict) -> str:
+    """Стабильный ключ находки/расследования для сравнения прогонов: id движка, иначе проверка+документ."""
+    if not isinstance(x, dict):
+        return ""
+    rid = str(x.get("id") or "").strip()
+    if rid:
+        return rid
+    doc = x.get("документ") if isinstance(x.get("документ"), dict) else {}
+    return (str(x.get("проверка") or x.get("симптом") or "") + "|" + str(doc.get("Номер") or doc.get("номер") or ""))[:160]
+
+
+def _diff_view(x: dict) -> dict:
+    """Что показываем в диффе по одной находке (и по чему считаем «изменилась»)."""
+    doc = x.get("документ") if isinstance(x.get("документ"), dict) else {}
+    return {"id": _diff_key(x), "класс": x.get("класс") or "", "серьёзность": x.get("серьёзность") or "",
+            "проверка": str(x.get("проверка") or x.get("симптом") or "")[:160],
+            "сумма": str(x.get("сумма") or x.get("Сумма") or (x.get("сверка") or {}).get("разница_₽") or ""),
+            "документ": str(doc.get("Номер") or doc.get("номер") or "")[:60]}
+
+
+def _diff_side(run: dict) -> dict:
+    items = {}
+    for f in (run.get("findings") or []):
+        if isinstance(f, dict) and (f.get("проверка") or f.get("наблюдение")):
+            items[_diff_key(f)] = _diff_view(f)
+    invs = {}
+    for iv in (run.get("investigations") or []):
+        if isinstance(iv, dict) and iv.get("id"):
+            invs[_diff_key(iv)] = _diff_view(iv)
+    cost = ((run.get("run_metrics") or {}).get("cost") or {})
+    tim = ((run.get("run_metrics") or {}).get("timings") or {})
+    dl = run.get("delivery") or []
+    return {"findings": items, "investigations": invs,
+            "skills": sorted({s.get("skill") for s in (run.get("skill_outputs") or []) if s.get("skill")}),
+            "metrics": {"rub": cost.get("rub"), "models": sorted((cost.get("by_model") or {}).keys()),
+                        "total_ms": tim.get("total_ms"), "llm_ms_total": tim.get("llm_ms_total"),
+                        "commands": len([d for d in dl if d.get("mode") == "awaiting_hitl"]),
+                        "skipped": len([d for d in dl if d.get("mode") == "skipped"])}}
+
+
+def _diff_pair(a: dict, b: dict, key: str) -> dict:
+    """a — база (старый прогон), b — текущий. Возвращает появилось/ушло/изменилось."""
+    A, B = a[key], b[key]
+    added = [B[k] for k in B if k not in A]
+    gone = [A[k] for k in A if k not in B]
+    changed = []
+    for k in B:
+        if k in A and A[k] != B[k]:
+            changed.append({"id": k, "было": A[k], "стало": B[k],
+                            "поля": sorted(f for f in B[k] if A[k].get(f) != B[k].get(f) and f != "id")})
+    return {"добавились": added, "ушли": gone, "изменились": changed,
+            "всего_было": len(A), "всего_стало": len(B)}
+
+
+@app.get("/api/runs/{run_id}/diff")
+async def run_diff(run_id: str, vs: str = "", u: dict = Depends(user)) -> dict:
+    """Сравнение двух прогонов: что в находках появилось, что ушло, что изменилось (класс/сумма/серьёзность),
+    плюс навыки и метрики. `vs` пусто → предыдущий прогон того же агента (регресс после правок шаблонов)."""
+    cur = await _run_visible(run_id, u)
+    base_id = vs.strip()
+    if not base_id:
+        prev = [r for r in await run_store.list_runs(agent_id=cur.get("agent_id"), limit=50)
+                if (r.get("id") or r.get("run_id")) != (cur.get("run_id") or run_id)]
+        if not prev:
+            raise HTTPException(404, "нет более раннего прогона этого агента — сравнивать не с чем")
+        base_id = prev[0].get("id") or prev[0].get("run_id")
+    base = await _run_visible(base_id, u)
+    A, B = _diff_side(base), _diff_side(cur)
+    same_skills = sorted(set(A["skills"]) & set(B["skills"]))
+    return {"run_id": cur.get("run_id") or run_id, "base_run_id": base.get("run_id") or base_id,
+            "agent_id": cur.get("agent_id"), "base_agent_id": base.get("agent_id"),
+            "created_at": {"base": base.get("created_at"), "current": cur.get("created_at")},
+            "находки": _diff_pair(A, B, "findings"),
+            "расследования": _diff_pair(A, B, "investigations"),
+            "навыки": {"общие": same_skills, "только_сейчас": sorted(set(B["skills"]) - set(A["skills"])),
+                       "только_раньше": sorted(set(A["skills"]) - set(B["skills"]))},
+            "метрики": {"было": A["metrics"], "стало": B["metrics"]}}
+
+
 @app.get("/api/runs/{run_id}/report")
 async def run_report(run_id: str, template: str = "", format: str = "html", u: dict = Depends(user)):
     """Отчёт прогона по шаблону (reports/<id>.html → БД report_templates): HTML или PDF по требованию.

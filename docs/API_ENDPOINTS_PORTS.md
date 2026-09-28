@@ -126,6 +126,7 @@
 | GET | `/api/runs` | Журнал прогонов (ABAC; `?agent_id=`, `?limit=1..500`) | user/ABAC |
 | GET | `/api/runs/{run_id}` | Полный прогон: findings/investigations/delivery/soft_errors/trace/`skill_outputs`/trace_id | user |
 | GET | `/api/runs/{run_id}/metrics` | RunMetrics (`abop.run_metrics/1.0`) | user |
+| GET | `/api/runs/{run_id}/diff?vs=` | Сравнение прогонов: находки и расследования (появились/ушли/изменились), навыки, метрики; без `vs` — предыдущий прогон агента | user |
 | GET | `/api/runs/{run_id}/report` | Отчёт прогона по шаблону: `?template=<id>&format=html|pdf` (default/audit1c/invest/digest; PDF через рендерер ABOP) | user |
 | GET | `/api/runs/{run_id}/stream` | SSE-стрим прогона (501 — контракт зафиксирован, не реализован) | user |
 | GET | `/api/billing` | Реальные токены/₽ по прогонам (ABAC) + квота | user/ABAC |

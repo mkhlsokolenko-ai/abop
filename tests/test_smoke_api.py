@@ -436,3 +436,38 @@ def test_template_forces_structured_over_freeform_default():
     assert seen == [True], seen          # схема ушла в модель (strict structured output)
     run(node_output="freeform")
     assert seen == [True, False], seen    # явный выбор «рассуждения» на узле: схему не навязываем
+
+
+def test_run_diff_between_two_runs(client):
+    """Сравнение прогонов: что в находках появилось, ушло и изменилось, плюс навыки и метрики.
+    Без ?vs берётся предыдущий прогон того же агента — регресс после правки шаблонов виден сразу."""
+    import asyncio
+    from server import run_store
+
+    def mk(findings, rub, skills):
+        return {"agent_id": "ag-diff", "verdict": {"ok": True, "autonomy_used": "A1"}, "waves": [[]],
+                "findings": findings, "skill_outputs": [{"skill": s, "structured": {}} for s in skills],
+                "run_metrics": {"cost": {"rub": rub, "by_model": {"local/qwen3-30b-a3b": 1}}, "timings": {"total_ms": 1000}},
+                "delivery": [{"mode": "awaiting_hitl"}]}
+
+    base = asyncio.run(run_store.save(mk(
+        [{"id": "A1", "класс": "A", "серьёзность": "высокая", "проверка": "нет себестоимости", "сумма": "236000"},
+         {"id": "B2", "класс": "B", "серьёзность": "средняя", "проверка": "нет счёта-фактуры", "сумма": "194000"}],
+        0.0, ["audit1c-checks", "audit1c-rank"])))
+    cur = asyncio.run(run_store.save(mk(
+        [{"id": "A1", "класс": "A", "серьёзность": "высокая", "проверка": "нет себестоимости", "сумма": "999000"},
+         {"id": "C3", "класс": "C", "серьёзность": "низкая", "проверка": "дубль контрагента", "сумма": ""}],
+        0.0, ["audit1c-checks", "audit1c-rank", "audit1c-explain"])))
+    rid_b, rid_c = base.get("id") or base.get("run_id"), cur.get("id") or cur.get("run_id")
+
+    d = client.get(f"/api/runs/{rid_c}/diff?vs={rid_b}").json()
+    f = d["находки"]
+    assert [x["id"] for x in f["добавились"]] == ["C3"] and [x["id"] for x in f["ушли"]] == ["B2"]
+    assert len(f["изменились"]) == 1 and f["изменились"][0]["id"] == "A1" and f["изменились"][0]["поля"] == ["сумма"]
+    assert f["всего_было"] == 2 and f["всего_стало"] == 2
+    assert d["навыки"]["только_сейчас"] == ["audit1c-explain"] and "audit1c-checks" in d["навыки"]["общие"]
+    assert d["метрики"]["стало"]["commands"] == 1 and d["метрики"]["было"]["rub"] == 0.0
+    # без vs — предыдущий прогон того же агента
+    d2 = client.get(f"/api/runs/{rid_c}/diff").json()
+    assert d2["base_run_id"] == rid_b
+    assert client.get(f"/api/runs/{rid_b}/diff?vs=no-such-run").status_code == 404
