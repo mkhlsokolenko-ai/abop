@@ -21,7 +21,9 @@ export async function api(path, opts = {}) {
     r = await fetch(API + path, { headers: { "Content-Type": "application/json" }, ...opts });
   } catch (e) {
     if (e && e.name === "AbortError") throw e;
-    throw new ApiError(0, "движок недоступен", null);
+    const _off = new ApiError(0, "движок недоступен", null);
+    try { markOffline(_off); } catch { /* индикатор не критичен */ }
+    throw _off;
   }
   const txt = await r.text();
   let data = null;
@@ -30,7 +32,9 @@ export async function api(path, opts = {}) {
     const detail = (data && (data.error || data.detail || data.message)) || txt.slice(0, 200) || r.statusText;
     const st = (data && Number(data.status)) || r.status;
     if (st === 401) queueAuthRefresh();
-    throw new ApiError(st, String(detail), data);
+    const _err = new ApiError(st, String(detail), data);
+    if (st === 502 || st === 503 || st === 504) { try { markOffline(_err); } catch { /* индикатор не критичен */ } }
+    throw _err;
   }
   return data;
 }
@@ -420,6 +424,35 @@ async function waitEngine() {
   }
 }
 
+// ── состояние связи с ABOP: честная деградация вместо пустых панелей ──────────────────────
+// Локальный движок приложения может быть жив, а сервер — нет: тогда история чата и настройки доступны,
+// а запуск агентов и очередь подтверждений — нет. Показываем это в шапке, а не в каждой ошибке.
+let linkOk = true, linkTimer = null;
+function renderLink(state) {
+  const pill = $("linkPill"), txt = $("linkText");
+  if (!pill) return;
+  if (state.ok) { pill.hidden = true; return; }
+  pill.hidden = false;
+  if (txt) txt.textContent = state.engine === false
+    ? "Движок приложения не отвечает — перезапустите ABOP"
+    : ("Нет связи с ABOP" + (state.url ? " (" + String(state.url).replace(/^https?:\/\//, "") + ")" : "") + " — запуск агентов недоступен, история чата на месте");
+}
+function markOffline(e) {
+  const st = e && typeof e === "object" ? Number(e.status || 0) : 0;
+  if (!(st === 0 || st === 502 || st === 503 || st === 504)) return;
+  if (linkOk) { linkOk = false; renderLink({ ok: false }); }
+}
+async function pingLink(manual) {
+  let h = null, engine = true;
+  try { h = await api("/api/health"); } catch { engine = false; }
+  const ok = !!(h && h.ok && h.abop !== false);
+  if (ok && !linkOk) { toast("Связь с ABOP восстановлена", "ok"); reloadAll(); }
+  if (!ok && manual) toast(engine ? "ABOP всё ещё недоступен" : "Движок приложения не отвечает", "warn");
+  linkOk = ok;
+  renderLink({ ok, engine, url: h && h.abop_url });
+  return ok;
+}
+
 async function boot() {
   const lg = $("apeLogo"); if (lg) lg.innerHTML = apeLogo(30);
   initTheme();
@@ -439,6 +472,12 @@ async function boot() {
     else if (e.ctrlKey && (e.key === "n" || e.key === "N")) { e.preventDefault(); loadModule("chat", { newChat: true }); }
   });
   const pb = $("cmdBtn"); if (pb) pb.onclick = openPalette;
+  const lr = $("linkRetry"); if (lr) lr.onclick = () => pingLink(true);
+  await pingLink();
+  if (linkTimer) clearInterval(linkTimer);
+  linkTimer = setInterval(() => pingLink(), 20000);   // офлайн виден сам, без действий пользователя
+  window.addEventListener("online", () => pingLink());
+  window.addEventListener("offline", () => { linkOk = false; renderLink({ ok: false }); });
 }
 
 boot();
