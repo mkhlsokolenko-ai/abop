@@ -190,6 +190,18 @@ def _repair_json(s: str) -> dict | None:
     return None
 
 
+def _schema_miss(struct: dict | None, custom: dict | None) -> list[str]:
+    """Каких обязательных полей схемы шаблона нет в ответе (или ответ обрезан).
+    Пустой список = ответ строго в схеме. Нужно, чтобы недобор было видно, а не «как-то отрендерилось»."""
+    if not isinstance(struct, dict) or not custom:
+        return []
+    sch = ((custom.get("response_format") or {}).get("json_schema") or {}).get("schema") or {}
+    miss = [k for k in (sch.get("required") or []) if k not in struct]
+    if struct.get("_truncated"):
+        miss.append("_обрезан_по_лимиту")
+    return miss
+
+
 def _extract_json(raw: str) -> dict | None:
     """Достаём JSON-объект из ответа модели, даже если он в ```-заборе или после преамбулы.
     Self-host модели (Qwen) часто не держат response_format строго → оборачивают JSON в текст
@@ -480,6 +492,7 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
             # при перегрузе RouteAI ждём и повторяем, а не отдаём «LLM недоступен». Качество без изменений.
             resp = None
             err = None
+            miss = []
             for _attempt in range(_LLM_RETRIES + 1):
                 try:
                     # кастомная (подробная) схема шаблона требует больше выходных токенов, иначе JSON обрежется
@@ -494,12 +507,34 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
                     if _attempt < _LLM_RETRIES:
                         await asyncio.sleep(_LLM_BACKOFF * (_attempt + 1))  # 1.5с, 3с, …
             struct = None
+            miss: list = []
             if resp is not None:
                 raw = (resp.get("text") or "").strip()
                 model = resp.get("model", "")
                 tin, tout = int(resp.get("input_tokens") or 0), int(resp.get("output_tokens") or 0)
                 if _STRUCTURED:
                     struct = _extract_json(raw)   # робастно: JSON даже из ```-забора/после преамбулы
+                # Схема — контракт навыка: недобор полей ломает и отчёт, и доставку (поле подстановки
+                # окажется пустым). Один повтор с бОльшим лимитом и требованием короче — дешевле, чем
+                # прогон с дырявым результатом; что осталось не заполнено, честно помечаем.
+                miss = _schema_miss(struct, _custom if use_struct else None)
+                if miss:
+                    try:
+                        async with sem:
+                            _resp2 = await chat_fn(
+                                messages=[{"role": "system", "content": _sys},
+                                          {"role": "user", "content": prompt + "\n\nОБЯЗАТЕЛЬНО заполни поля: "
+                                           + ", ".join(m for m in miss if not m.startswith("_"))
+                                           + ". Списки делай короче, но схему соблюди полностью."}],
+                                profile="standard", max_tokens=int(_mt * 1.6), response_format=_resp_fmt)
+                        _s2 = _extract_json((_resp2.get("text") or "").strip())
+                        _m2 = _schema_miss(_s2, _custom)
+                        tin += int(_resp2.get("input_tokens") or 0)
+                        tout += int(_resp2.get("output_tokens") or 0)
+                        if _s2 is not None and len(_m2) < len(miss):
+                            struct, miss, model = _s2, _m2, _resp2.get("model", model)
+                    except Exception as _ex:  # noqa: BLE001 — повтор необязателен, прогон не валим
+                        pass
                 if struct:
                     txt = _render_struct(struct) if _custom else _render_findings(struct)
                 elif _STRUCTURED and raw and ('"наблюдени' in raw or '"находки"' in raw):
@@ -517,6 +552,8 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
             tin += int(tc.get("input_tokens") or 0); tout += int(tc.get("output_tokens") or 0)
         return {"skill": sid, "entities": entities, "model": model, "text": txt,
                 "structured": struct, "input_tokens": tin, "output_tokens": tout, "ms": ms, "error": err,
+                "schema_miss": miss if resp is not None else [],
+                "template_id": (_custom or {}).get("template_id") or "",
                 "tool_calls": tool_calls}
 
     # навыки — параллельно, но с rate-limit (семафор): батч по _LLM_CONCURRENCY к RouteAI

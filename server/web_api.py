@@ -1472,6 +1472,10 @@ def _overlay_skill(card: dict, ov: dict | None) -> dict:
         card["version"] = ov.get("version")
         card["editor"] = ov.get("editor")
         card["edited_at"] = ov.get("updated_at")
+        # какой шаблон извлечения реально применяется к навыку: без этого поля привязка видна только
+        # в UI, и сверка «ответ в схеме» шла не с той схемой (мы так потеряли 4 поля у разбора почты)
+        if patch.get("schema_template_id"):
+            card["schema_template_id"] = patch["schema_template_id"]
     else:
         card["version"] = "v1.0"
         card["editor"] = None
@@ -3815,7 +3819,8 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
                                    on_progress=_on_skill_progress)
     await _push_progress("доставка и отчёт")
     # Структурированные ответы навыков (по шаблонам) — отдельно: ниже findings подменяются детерминированными
-    result["skill_outputs"] = [{"skill": f.get("skill"), "structured": f.get("structured"), "model": f.get("model")}
+    result["skill_outputs"] = [{"skill": f.get("skill"), "structured": f.get("structured"), "model": f.get("model"),
+                                "template_id": f.get("template_id") or "", "schema_miss": f.get("schema_miss") or []}
                                for f in (result.get("findings") or []) if isinstance(f, dict) and f.get("skill") and isinstance(f.get("structured"), dict)]
     # Петля прогон→канва: прикрепляем детерминированные находки (истина, не LLM).
     if "audit1c-checks" in _skills:
