@@ -897,6 +897,20 @@
               </div>
             </div>
 
+            <div style="display: flex; align-items: center; gap: 14px; padding: 12px 18px; border-radius: 14px; background: {{ llmBg }}; border: 1px solid {{ llmBorder }}; flex-wrap: wrap;">
+              <span style="width: 8px; height: 8px; flex: none; border-radius: 9999px; background: {{ llmDot }};"></span>
+              <span style="font-size: 12.5px; font-weight: 600;">{{ llmHead }}</span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--w50);">{{ llmNote }}</span>
+              <sc-if value="{{ llmWarn }}" hint-placeholder-val="{{ false }}">
+                <span style="font-size: 12px; font-weight: 600; color: var(--warn-ink);">{{ llmWarn }}</span>
+              </sc-if>
+              <div style="flex: 1;"></div>
+              <sc-if value="{{ llmGpu }}" hint-placeholder-val="{{ false }}">
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--w55);">{{ llmGpu }}</span>
+              </sc-if>
+              <button sc-camel-on-click="{{ llmReload }}" style="padding: 7px 12px; border: 1px solid var(--w14); border-radius: 9px; background: var(--w5); color: var(--ink); font-size: 11.5px; font-weight: 600;">Проверить</button>
+            </div>
+
             <sc-if value="{{ firstRun }}" hint-placeholder-val="{{ false }}">
               <div style="padding: 32px; border-radius: 16px; background: var(--w5); border: 1px solid var(--w10); backdrop-filter: blur(16px); display: flex; gap: 32px; align-items: flex-start; flex-wrap: wrap;">
                 <dc-import name="Ape" state="idle" size="72" hint-size="72px,95px"></dc-import>
@@ -3902,6 +3916,22 @@ class Component extends DCLogic {
 
       isSecurity: s.screen === 'security',
       noRunYet: s.screen === 'canvas' && s.lens === 'run' && !s.startedOnce,
+      llmHead: (function(){ var L = s.llmStatus; if (!L) return 'модель: …'; return 'модель: ' + (L.active || '—') + (L.free ? ' · 0 ₽ за прогон' : ''); })(),
+      llmNote: (function(){ var L = s.llmStatus; if (!L) return ''; var h = (L.local || {}).health || {};
+        if (!L.self_hosted) return 'облачный каскад: ' + (L.cascade || []).slice(0, 2).join(' → ');
+        if (!h.configured) return 'свой бокс не задан — работает облако';
+        return 'свой бокс ' + (h.ok ? 'доступен' : 'НЕ отвечает') + ' · ' + ((L.local || {}).base_url || '') + ((L.local || {}).override ? ' · задан из UI' : ' · из .env'); })(),
+      llmWarn: (function(){ var L = s.llmStatus; if (!L) return ''; var h = (L.local || {}).health || {}, f = L.fallback || {};
+        if (h.configured && !h.ok) return 'прогоны уходят в облако (платно): ' + (h.error || 'бокс недоступен');
+        if (f.total) return 'откатов на облако: ' + f.total + ((f.last || {}).at ? ' · последний ' + String(f.last.at).replace('T', ' ').slice(0, 16) : ''); return ''; })(),
+      llmDot: (function(){ var L = s.llmStatus; if (!L) return 'var(--w30)'; var h = (L.local || {}).health || {};
+        if (h.configured && !h.ok) return 'var(--danger-ink)'; if ((L.fallback || {}).total) return 'var(--warn-ink)'; return 'var(--ok-ink)'; })(),
+      llmBg: (function(){ var L = s.llmStatus; if (!L) return 'var(--w5)'; var h = (L.local || {}).health || {};
+        if (h.configured && !h.ok) return 'rgba(239,68,68,.08)'; if ((L.fallback || {}).total) return 'rgba(245,158,11,.08)'; return 'var(--w5)'; })(),
+      llmBorder: (function(){ var L = s.llmStatus; if (!L) return 'var(--w10)'; var h = (L.local || {}).health || {};
+        if (h.configured && !h.ok) return 'rgba(239,68,68,.28)'; if ((L.fallback || {}).total) return 'rgba(245,158,11,.28)'; return 'var(--w10)'; })(),
+      llmGpu: (function(){ var g = (s.llmStatus || {}).gpu; if (!g) return ''; return 'GPU: $' + g.credit + (g.dph_running ? ' · $' + g.dph_running + '/ч' : '') + (g.hours_left ? ' · ~' + g.hours_left + ' ч' : ''); })(),
+      llmReload: () => { this.loadLlmStatus(); this.showToast('Проверяю модель и бокс…'); },
       isOverview: s.screen === 'overview', isIngress: s.screen === 'ingress', ingBusy: s.ingestBusy, notBusy: !s.ingestBusy, ingOk: !!(s.ingestResult && s.ingestResult.accepted), ingErrors: (s.ingestResult && !s.ingestResult.accepted) ? s.ingestResult.errors : null, ingCard: (s.ingestResult && s.ingestResult.accepted) ? s.ingestResult.intake : null, ingHasContracts: (s.contracts||[]).length>0, ingContracts: (s.contracts||[]).map((c) => ({ audit_id:c.audit_id, family:c.family||'—', autonomy:c.autonomy||'A?', segment:c.segment||'—', skillsLine:((c.skills||[]).length)+' навыков', open: () => this.openContractInCanvas(c.audit_id) })), ingOpenFirst: () => { var r=s.ingestResult; if(r&&r.accepted&&r.audit_id) this.openContractInCanvas(r.audit_id); }, onIngestFile: (e) => { var f=e.target.files&&e.target.files[0]; if(!f) return; var rd=new FileReader(); rd.onload=()=>this.ingestBundle(String(rd.result)); rd.readAsText(f); }, isRuns: s.screen === 'canvas' && s.lens === 'run' && s.startedOnce, isSkills: s.screen === 'skills',
       isData: s.screen === 'data', isCanvas: s.screen === 'canvas' && s.lens === 'build',
       isPassport: s.screen === 'canvas' && s.lens === 'envelope', ppHas: !!s.agentPassport, pp: s.agentPassport || null,
@@ -4597,6 +4627,14 @@ class Component extends DCLogic {
 
       isAuthTab: s.settingsTab === 'Авторизация',
       isModelsTab: s.settingsTab === 'Модели',
+      llmNote: (function(){ var L = s.llmStatus; if (!L) return 'состояние модели: …'; var h = (L.local || {}).health || {};
+        return 'модель ' + (L.active || '—') + (L.free ? ' · 0 ₽ за прогон' : '') + (h.configured ? ' · свой бокс ' + (h.ok ? 'доступен' : 'НЕ отвечает') : ' · свой бокс не задан'); })(),
+      llmWarn: (function(){ var L = s.llmStatus; if (!L) return ''; var h = (L.local || {}).health || {}, f = L.fallback || {};
+        if (h.configured && !h.ok) return 'прогоны уходят в облако: ' + (h.error || 'бокс недоступен');
+        if (f.total) return 'откатов на облако: ' + f.total; return ''; })(),
+      llmDot: (function(){ var L = s.llmStatus; if (!L) return 'var(--w55)'; var h = (L.local || {}).health || {};
+        if (h.configured && !h.ok) return 'var(--danger-ink)'; if ((L.fallback || {}).total) return 'var(--warn-ink)'; return 'var(--ok-ink)'; })(),
+      llmGpu: (function(){ var g = (s.llmStatus || {}).gpu; if (!g) return ''; return 'GPU $' + g.credit + (g.hours_left ? ' · ~' + g.hours_left + ' ч' : ''); })(),
       llmActiveModel: ((s.modelsInfo && s.modelsInfo.local && s.modelsInfo.local.model) || '—'),
       llmActiveBase: ((s.modelsInfo && s.modelsInfo.local && s.modelsInfo.local.base_url) || 'не задан'),
       llmOverrideLabel: ((s.modelsInfo && s.modelsInfo.local && s.modelsInfo.local.override) ? 'override (UI)' : 'из .env'),
@@ -5263,10 +5301,16 @@ class Component extends DCLogic {
     fetch('/api/systems').then(function(r){ return r.ok ? r.json() : null; }).then(function(d){ if (d && d.systems) self.setState({ systemsList: d.systems }); }).catch(function(){});
     self.loadModels();
   }
+  // Состояние модели для баннера Обзора и настроек: доступность своего бокса, откаты на облако, тариф, GPU.
+  loadLlmStatus() {
+    var self = this;
+    fetch('/api/llm/status').then(function(r){ return r.ok ? r.json() : null; }).then(function(d){ if (d) self.setState({ llmStatus: d }); }).catch(function(){});
+  }
   // РЕАЛЬНЫЕ модели из cascade (.env / override), не хардкод — для инспектора узла и настроек LLM.
   loadModels() {
     var self = this;
     fetch('/api/models').then(function(r){ return r.ok ? r.json() : null; }).then(function(d){ if (d && d.profiles) self.setState({ modelsInfo: d }); }).catch(function(){});
+    self.loadLlmStatus();
   }
   // 1-клик: переключить self-host LLM-эндпоинт (бокс) без правки .env/рестарта.
   setLlmEndpoint(base_url, model) {

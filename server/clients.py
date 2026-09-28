@@ -66,7 +66,38 @@ def llm_active() -> dict:
     o = _LLM_OVERRIDE
     return {"base_url": o.get("base_url") or settings.local_llm_base_url,
             "model": o.get("model") or settings.local_llm_model,
-            "override": bool(o.get("base_url"))}
+            "override": bool(o.get("override") if "override" in o else o.get("base_url"))}
+
+
+_LAST_FALLBACK: dict = {}     # последний откат каскада: {at, model, error} — для баннера в UI
+_HEALTH: dict = {}            # кэш проверки своего бокса: {at, ok, base_url, ms, error}
+
+
+def last_fallback() -> dict:
+    """Последний откат каскада (своя модель не ответила → облако). Пусто — откатов не было."""
+    return dict(_LAST_FALLBACK)
+
+
+async def local_health(ttl: float = 60.0) -> dict:
+    """Доступен ли свой LLM-бокс (GET {base}/models). Результат кэшируется на ttl секунд — эндпоинт
+    статуса дёргает UI часто, а бокс не должен получать лишние запросы."""
+    import time as _t
+    act = llm_active()
+    base = (act.get("base_url") or "").rstrip("/")
+    if not base:
+        return {"configured": False, "ok": False, "base_url": None}
+    now = _t.time()
+    if _HEALTH.get("base_url") == base and (now - float(_HEALTH.get("at") or 0)) < ttl:
+        return {k: v for k, v in _HEALTH.items() if k != "at"} | {"configured": True, "cached": True}
+    t0 = _t.perf_counter()
+    try:
+        async with httpx.AsyncClient(timeout=5) as cli:
+            r = await cli.get(base + "/models")
+        ok, err = r.status_code == 200, "" if r.status_code == 200 else f"HTTP {r.status_code}"
+    except Exception as ex:  # noqa: BLE001
+        ok, err = False, f"{type(ex).__name__}: {str(ex)[:120]}"
+    _HEALTH.update({"at": now, "ok": ok, "base_url": base, "ms": round((_t.perf_counter() - t0) * 1000), "error": err})
+    return {"configured": True, "ok": ok, "base_url": base, "ms": _HEALTH["ms"], "error": err}
 
 
 def _route(model: str) -> tuple[str, str, str]:
@@ -149,6 +180,9 @@ async def chat(
                 from . import observability as _obs
                 _obs.log_event("warning", "llm.cascade_fallback", model=m, base_url=base_url, error=f"{type(e).__name__}: {str(e)[:160]}")
                 _obs.inc("abop_llm_fallback_total", model=m)
+                import datetime as _dt
+                _LAST_FALLBACK.update({"at": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"),
+                                       "model": m, "error": f"{type(e).__name__}: {str(e)[:160]}"})
             except Exception:  # noqa: BLE001
                 pass
             continue

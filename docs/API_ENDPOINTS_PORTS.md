@@ -61,6 +61,7 @@
 | Метод | Путь | Назначение | Доступ |
 |---|---|---|---|
 | GET | `/api/health` | Живость + счётчики (семьи/навыки/адаптеры) | open |
+| GET | `/api/llm/status` | Состояние модели: активная и каскад, свой бокс (доступен/нет, override или .env), откаты на облако (сколько + последний), тариф за прогон, остаток GPU (если задан `VAST_API_KEY`) | user |
 | GET | `/api/models` | Реальные каскады по профилям (`standard/research/code`, `active` = первая модель) + `local` (base_url/model/override/configured) | open |
 | GET | `/api/admin/llm` | Текущий self-host LLM-эндпоинт (env + override) | user |
 | POST | `/api/admin/llm` | Override бокса без рестарта: `{base_url, model?, api_key?}`; пустой `base_url` → сброс на env; хранится в `admin_config`, разлетается по репликам | manager+ |
@@ -262,3 +263,5 @@ docker rm -f abop-webapi; docker run -d --name abop-webapi --network host --memo
 cd /opt/abop && docker compose -f ops/docker-compose.observability.yml up -d
 ```
 **Коннектор-воркер (server-2):** образ из `connector/` (`EXPOSE 9105`, том `/data`), env `/opt/abop-connector/systems.env`, том `abop_connector` — см. [`CONNECTOR_WORKER.md`](CONNECTOR_WORKER.md) и [`DEPLOY.md` §6б](DEPLOY.md).
+
+> `VAST_API_KEY` (необязательно, в `/opt/abop/.env`): включает блок остатка на арендованном GPU в `/api/llm/status` и баннере Обзора (кредит, ставка в час, часов до нуля; кэш 10 мин). Без ключа блок просто не показывается.

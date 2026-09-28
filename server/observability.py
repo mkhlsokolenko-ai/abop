@@ -56,6 +56,11 @@ def observe(name: str, val: float, **labels) -> None:
     h["buckets"]["+Inf"] += 1
 
 
+def counter_total(name: str) -> float:
+    """Сумма счётчика по всем лейблам (in-process) — для статусных ручек UI."""
+    return float(sum(v for (n, _), v in _counters.items() if n == name))
+
+
 def _fmt_labels(labels) -> str:
     if not labels:
         return ""

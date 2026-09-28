@@ -310,3 +310,20 @@ def test_bus_dlq_ack_and_replay(client):
     assert r.status_code == 503   # PgBus в тестах: повторить некуда
     b = client.get("/api/bus").json()
     assert "systems" in b and "bus" in b
+
+
+def test_llm_status_banner(client):
+    """Состояние модели для баннера: активная модель, каскад, тариф, доступность своего бокса, откаты."""
+    r = client.get("/api/llm/status")
+    assert r.status_code == 200
+    d = r.json()
+    assert d["active"] and isinstance(d["cascade"], list) and "self_hosted" in d
+    assert d["cost_per_1k_rub"] is not None and isinstance(d["free"], bool)
+    assert "health" in d["local"] and "total" in d["fallback"]
+    assert d["gpu"] is None or "credit" in d["gpu"]   # GPU-блок только если задан ключ в окружении
+    from server import clients, observability as obs
+    obs.inc("abop_llm_fallback_total", model="local/qwen3-30b-a3b")
+    clients._LAST_FALLBACK.update({"at": "2026-09-27T12:00:00+00:00", "model": "local/qwen3-30b-a3b", "error": "ReadTimeout: "})
+    d2 = client.get("/api/llm/status").json()
+    assert d2["fallback"]["total"] >= 1 and d2["fallback"]["last"]["model"] == "local/qwen3-30b-a3b"
+    assert obs.counter_total("abop_llm_fallback_total") >= 1

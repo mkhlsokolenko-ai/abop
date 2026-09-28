@@ -236,6 +236,58 @@ def health() -> dict:
             "adapters": sorted(ape.SOURCE_ADAPTERS)}
 
 
+_GPU_CACHE: dict = {}
+
+
+async def _gpu_credit() -> dict | None:
+    """Остаток на арендованном GPU (Vast), если задан VAST_API_KEY в окружении сервера. Кэш 10 мин,
+    любая ошибка → None (блок в UI просто не показывается). Ключ наружу не отдаём."""
+    key = os.getenv("VAST_API_KEY") or ""
+    if not key:
+        return None
+    import time as _t
+    if _GPU_CACHE.get("at") and _t.time() - _GPU_CACHE["at"] < 600:
+        return _GPU_CACHE.get("data")
+    data = None
+    try:
+        import httpx as _hx
+        async with _hx.AsyncClient(timeout=8) as cli:
+            r = await cli.get("https://console.vast.ai/api/v0/users/current/", headers={"Authorization": "Bearer " + key})
+            if r.status_code == 200:
+                u = r.json() or {}
+                data = {"credit": round(float(u.get("credit") or 0), 2), "provider": "vast"}
+        if data is not None:
+            async with _hx.AsyncClient(timeout=8) as cli:
+                r = await cli.get("https://console.vast.ai/api/v0/instances/", headers={"Authorization": "Bearer " + key})
+                if r.status_code == 200:
+                    ins = [i for i in ((r.json() or {}).get("instances") or []) if str(i.get("label") or "").startswith("ape-") or str(i.get("label") or "").startswith("abop-")]
+                    dph = round(sum(float(i.get("dph_total") or 0) for i in ins if (i.get("actual_status") == "running")), 3)
+                    data.update({"instances": [{"id": i.get("id"), "label": i.get("label"), "status": i.get("actual_status"), "dph": round(float(i.get("dph_total") or 0), 3)} for i in ins],
+                                 "dph_running": dph, "hours_left": (round(data["credit"] / dph, 1) if dph else None)})
+    except Exception:  # noqa: BLE001 — внешний сервис не должен ломать статус
+        data = None
+    _GPU_CACHE.update({"at": _t.time(), "data": data})
+    return data
+
+
+@app.get("/api/llm/status")
+async def llm_status(u: dict = Depends(user)) -> dict:
+    """Состояние модели для баннера: активный профиль и модель, свой бокс (доступен/нет, override или .env),
+    откаты каскада на облако (сколько и последний), тариф прогона, остаток на GPU (если ключ задан)."""
+    act = clients.llm_active()
+    casc = settings.cascade_for("standard")
+    active = casc[0] if casc else None
+    health = await clients.local_health()
+    fb_total = obs.counter_total("abop_llm_fallback_total") if hasattr(obs, "counter_total") else 0.0
+    from .pricing import cost_rub as _cost
+    rub_1k = _cost(active or "", 1000, 1000) if active else None
+    return {"active": active, "cascade": casc, "self_hosted": bool(active and str(active).startswith("local/")),
+            "local": {**act, "health": health},
+            "fallback": {"total": int(fb_total), "last": clients.last_fallback()},
+            "cost_per_1k_rub": rub_1k, "free": rub_1k == 0,
+            "gpu": await _gpu_credit()}
+
+
 @app.get("/api/models")
 def models() -> dict:
     """РЕАЛЬНЫЕ модели по профилям (из cascade в .env) — чтобы UI показывал фактическую модель узла,
