@@ -26,6 +26,11 @@ async def main() -> int:
             "landmarks": await pg.evaluate("!!document.querySelector('[role=main]') && !!document.querySelector('[role=banner]')"),
             "theme_attr": await pg.evaluate("['light','dark'].includes(document.documentElement.getAttribute('data-theme'))"),
         }
+        # журнал прогонов: поиск и фильтры (вердикт/период) на Обзоре
+        checks["runs_filter"] = await pg.evaluate(
+            "!!document.querySelector(\"input[aria-label='Поиск по журналу прогонов']\") "
+            "&& !!document.querySelector(\"select[aria-label='Фильтр по вердикту']\") "
+            "&& !!document.querySelector(\"select[aria-label='Фильтр по периоду']\")")
         await pg.evaluate("location.hash='#agents'"); await pg.wait_for_timeout(1500)
         checks["agents_screen"] = "Агенты" in await pg.evaluate("document.body.innerText")
         await pg.evaluate("location.hash='#canvas'"); await pg.wait_for_timeout(2500)

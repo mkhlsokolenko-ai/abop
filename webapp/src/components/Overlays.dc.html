@@ -321,6 +321,29 @@
             <textarea value="{{ ov.skillDesc }}" onChange="{{ ov.setSkillDesc }}" rows="3" style="padding: 11px 13px; border-radius: 11px; border: 2px solid var(--w12); background: var(--s60); color: var(--ink); font-size: 13px; line-height: 1.5; resize: vertical;" style-focus="border-color: #6366f1;"></textarea>
           </label>
 
+          <sc-if value="{{ ov.skillTpl }}" hint-placeholder-val="{{ false }}">
+            <div style="display: flex; flex-direction: column; gap: 9px; padding: 14px 16px; border-radius: 12px; background: rgba(99,102,241,.07); border: 1px solid rgba(99,102,241,.25);">
+              <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w38);">шаблон результата</span>
+                <span style="font-size: 12.5px; font-weight: 600; color: var(--ink);">{{ ov.skillTpl.name }}</span>
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: {{ ov.skillTpl.sourceFg }};">{{ ov.skillTpl.source }}</span>
+                <div style="flex: 1;"></div>
+                <sc-if value="{{ ov.skillTpl.canReset }}" hint-placeholder-val="{{ false }}">
+                  <button onClick="{{ ov.skillTpl.reset }}" title="Вернуть схему к версии из репозитория" style="padding: 6px 11px; border: 1px solid var(--w14); border-radius: 9px; background: var(--w5); color: var(--w70); font-size: 11.5px; font-weight: 600;">Вернуть версию репо</button>
+                </sc-if>
+              </div>
+              <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                <sc-for list="{{ ov.skillTpl.fields }}" as="fl" hint-placeholder-count="6">
+                  <span title="{{ fl.type }}" style="padding: 3px 9px; border-radius: 8px; background: var(--w6); border: 1px solid var(--w10); font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w70);">{{ fl.name }}</span>
+                </sc-for>
+              </div>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w45);">{{ ov.skillTpl.limit }}</span>
+              <sc-if value="{{ ov.skillTpl.delivery }}" hint-placeholder-val="{{ false }}">
+                <span style="font-size: 12px; color: var(--warn-ink);">⇢ {{ ov.skillTpl.delivery }} — уйдёт только после подтверждения человеком</span>
+              </sc-if>
+            </div>
+          </sc-if>
+
           <div style="display: flex; flex-direction: column; gap: 10px;">
             <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w38);">воркфлоу агента</span>
             <sc-for list="{{ ov.flowSteps }}" as="fs" hint-placeholder-count="4">
