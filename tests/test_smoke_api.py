@@ -219,6 +219,31 @@ def test_delivery_render_commands_from_template():
     assert dl.validate_delivery({"system": "redmine"}) and dl.validate_delivery({"system": "redmine", "type": "x", "payload": {}, "foo": 1})
 
 
+def test_delivery_for_all_demo_cases():
+    """Доставка по шаблонам покрывает четыре демо-кейса: аудит → задачи Redmine, инвест → страница вики,
+    дайджест → письмо, БФТ → задача. Проверяем целевую систему, тип команды и что подстановки заполнены."""
+    from server import delivery as dl, skill_templates as st
+    want = {"audit1c-explain": ("redmine", "issue.create"), "audit1c-rank": ("redmine", "issue.create"),
+            "invest1c-verdict": ("bookstack", "page.publish"), "client-letter": ("mailpit", "email.send"),
+            "bft-draft": ("redmine", "issue.create")}
+    for sid, (sys_, typ) in want.items():
+        spec = (st.load_one(sid) or {}).get("delivery")
+        assert spec and not dl.validate_delivery(spec), sid
+        assert (spec["system"], spec["type"]) == (sys_, typ), sid
+    # письмо: адрес и тема берутся из ответа навыка, тело собирается списками
+    cmds = dl.build_commands(st.load_one("client-letter")["delivery"],
+                             {"кому": "client@demo.local", "тема": "Статус", "приветствие": "Добрый день!",
+                              "в_работе": [{"задача": "счёт", "статус": "в процессе"}], "план_на_сегодня": ["проверить"],
+                              "сроки": [{"что": "оплата", "когда": "30.09"}], "нужно_от_вас": ["подтвердить"],
+                              "подпись": "ABOP", "текст_письма": "Проверяем.", "требуется_подтверждение": True}, skill="client-letter")
+    assert len(cmds) == 1 and cmds[0]["payload"]["to"] == "client@demo.local" and cmds[0]["payload"]["subject"] == "Статус"
+    assert "- проверить" in cmds[0]["payload"]["body"] and "задача: счёт" in cmds[0]["payload"]["body"]
+    # страница вики: book_id остаётся числом (не подстановка), заголовок и markdown — из полей
+    c2 = dl.build_commands(st.load_one("invest1c-verdict")["delivery"],
+                           {"заключения": [{"id": "INV-1", "существенность": "критично"}], "требуется_подтверждение": True, "итог": "разрыв"}, skill="invest1c-verdict")
+    assert c2[0]["payload"]["book_id"] == 1 and "разрыв" in c2[0]["payload"]["title"] and "- id: INV-1" in c2[0]["payload"]["markdown"]
+
+
 def test_delivery_templates_make_hitl_preview_and_take_connector_result(client):
     """Прогон → structured-ответ навыка → HITL-заявка «команда» с превью (наружу ничего) → approve публикует
     (шина в тестах не подключена → 503, честно) → ответ коннектора command.done ложится в заявку."""
