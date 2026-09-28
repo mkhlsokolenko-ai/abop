@@ -3094,16 +3094,28 @@ def _report_context(agent: dict, result: dict) -> dict:
 
     # 3c) Врезка «Главное»: резюме навыка (для главбуха/заказчика) выносится наверх отчёта. Раньше оно
     #     лежало внутри карточки навыка и терялось между находками — отчёт читался как перечень строк.
-    _SUM_KEYS = ("резюме", "итог", "вывод", "главное", "рекомендаци")
-    summary_bits = []
+    # приоритет: адресное резюме («для главбуха») → вывод/главное → общий итог. Технические навыки
+    # (загрузка снапшота, построение графа) во врезку не идут: их «итог» — про механику, а не про суть.
+    _SUM_KEYS = ("резюме", "вывод", "главное", "рекомендаци", "итог")
+    _TECH_SKILLS = ("extract", "graph-build", "checks", "load", "snapshot")
+    ranked = []
     for so in result.get("skill_outputs") or []:
         st = so.get("structured")
-        if not isinstance(st, dict):
+        sid = str(so.get("skill") or "")
+        if not isinstance(st, dict) or any(p in sid for p in _TECH_SKILLS):
             continue
         for k, vv in st.items():
-            if any(p in str(k).lower() for p in _SUM_KEYS) and isinstance(vv, str) and len(vv.strip()) > 40:
-                summary_bits.append(esc(vv.strip()))
-                break
+            kl = str(k).lower()
+            if not (isinstance(vv, str) and len(vv.strip()) > 40):
+                continue
+            for rank, p in enumerate(_SUM_KEYS):
+                if p in kl:
+                    ranked.append((rank - (5 if "для_" in kl else 0), len(ranked), esc(vv.strip())))
+                    break
+            else:
+                continue
+            break
+    summary_bits = [x[2] for x in sorted(ranked)]
     summary_html = ("<div class='lead'>" + "</div><div class='lead'>".join(summary_bits[:3]) + "</div>") if summary_bits else ""
 
     # 3d) Недобор схемы — в отчёт, а не в лог: получатель должен видеть, что навык не заполнил поле,
@@ -4251,7 +4263,12 @@ async def bus_dlq(limit: int = 30, u: dict = Depends(user)) -> dict:
         k = dlq_store.key_of(it.get("partition") or 0, it.get("offset") or 0)
         v = it.get("value") if isinstance(it.get("value"), dict) else {}
         src = str(v.get("source_topic") or (it.get("headers") or {}).get("source-topic") or "")
-        out.append({**it, "key_id": k, "source_topic": src, "error": str(v.get("error") or (it.get("headers") or {}).get("error") or "")[:400],
+        # система часто отвечает ошибкой в виде целой HTML-страницы: оператору в очереди ошибок нужен
+        # текст, а не разметка, иначе карточка DLQ забивается тегами и сути не видно
+        _e = str(v.get("error") or (it.get("headers") or {}).get("error") or "")
+        if "<" in _e and ">" in _e:
+            _e = _html_to_text(_e)
+        out.append({**it, "key_id": k, "source_topic": src, "error": _e[:400],
                     "trace_id": v.get("trace_id") or (it.get("headers") or {}).get("x-trace-id") or "",
                     "replayable": src.endswith(".commands") and isinstance(v.get("payload"), dict) and bool((v.get("payload") or {}).get("system")),
                     "ack": acks.get(k)})

@@ -289,7 +289,17 @@ def _card_html(it: dict, esc) -> str:
     nk = pick(_NORM_KEYS)
     norm = ""
     if nk and nk not in used:
-        norm = f"<div class='cnorm'>{esc(it[nk])}</div>"
+        nv = it[nk]
+        # норма бывает объектом {статья, цитата, источник}: без разбора в отчёт уезжал питоновский
+        # словарь с кавычками — именно это читалось как «сырьё», а не как ссылка на норму
+        if isinstance(nv, dict):
+            _st = " · ".join(str(nv.get(k2)) for k2 in ("статья", "источник") if nv.get(k2))
+            _ct = str(nv.get("цитата") or "")
+            norm = f"<div class='cnorm'>{esc(_st or nv)}</div>" + (f"<div class='cf'>{esc(_ct)}</div>" if _ct else "")
+        elif isinstance(nv, list):
+            norm = "<div class='cnorm'>" + esc(" · ".join(str(x) for x in nv if not isinstance(x, (dict, list)))) + "</div>"
+        else:
+            norm = f"<div class='cnorm'>{esc(nv)}</div>"
         used.add(nk)
     body = []
     for k, v in it.items():
