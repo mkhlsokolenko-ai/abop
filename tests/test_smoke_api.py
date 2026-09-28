@@ -635,13 +635,16 @@ def test_nlu_management_api(client):
     before = client.post("/api/agents/match", json={"q": "оцени стоимость стартапа"}).json()["matches"]
     client.post(f"/api/agents/{aid}/lexicon", json={"add": ["стартап", "оценка стоимости"]})
     lx2 = client.get(f"/api/agents/{aid}/lexicon").json()
-    assert "стартап" in lx2["manual"] and any(t["source"] == "оператор" for t in lx2["terms"])
+    assert "стартап" in lx2["manual"]
+    assert lx2["terms"][0]["source"] == "оператор"          # ручные слова видны сразу, а не в хвосте
+    assert {"стартап"} <= {t["term"] for t in lx2["terms"] if t["source"] == "оператор"}
     after = client.post("/api/agents/match", json={"q": "оцени стоимость стартапа"}).json()["matches"]
     rank = lambda ms: next((i for i, m in enumerate(ms) if m["id"] == aid), 99)  # noqa: E731
     assert rank(after) <= rank(before)
 
     # минус-слово: по нему агент больше не подбирается
     client.post(f"/api/agents/{aid}/lexicon", json={"ban": ["стартап"]})
+    assert any(t["term"] == "стартап" and t["source"] == "запрещено" for t in client.get(f"/api/agents/{aid}/lexicon").json()["terms"])
     assert "стартап" not in (client.get(f"/api/agents/{aid}/lexicon").json()["manual"].keys() - {"стартап"})
     from server import lexicon
     assert asyncio.run(lexicon.get(aid)).get("стартап") is None

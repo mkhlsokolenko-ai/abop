@@ -4504,10 +4504,15 @@ async def agent_lexicon_get(agent_id: str, u: dict = Depends(user)) -> dict:
     if not seeded:
         seeded = await _refresh_lexicon(ag)
     merged = lexicon.merge(seeded, manual)
-    top = sorted(merged.items(), key=lambda kv: -kv[1])[:60]
-    return {"agent_id": agent_id, "agent_name": ag.get("name"),
-            "terms": [{"term": t, "weight": round(float(w), 2),
-                       "source": ("оператор" if t in manual else "навыки")} for t, w in top],
+    # ручные слова всегда сверху и всегда видимы: оператор должен видеть свою правку, а не искать её в хвосте
+    rows = [{"term": t, "weight": round(float(w), 2), "source": "оператор"}
+            for t, w in sorted(manual.items(), key=lambda kv: -kv[1]) if float(w) > 0]
+    banned = [{"term": t, "weight": 0.0, "source": "запрещено"} for t, w in manual.items() if float(w) <= 0]
+    seen = {r["term"] for r in rows} | {r["term"] for r in banned}
+    rows += banned
+    rows += [{"term": t, "weight": round(float(w), 2), "source": "навыки"}
+             for t, w in sorted(merged.items(), key=lambda kv: -kv[1]) if t not in seen][:60]
+    return {"agent_id": agent_id, "agent_name": ag.get("name"), "terms": rows,
             "manual": manual, "seeded_count": len(seeded), "total": len(merged)}
 
 
