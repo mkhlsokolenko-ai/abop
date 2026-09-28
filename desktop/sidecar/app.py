@@ -106,10 +106,29 @@ def _startup() -> None:
 
 
 # ── ядро: здоровье, аутентификация, список модулей ──
+_ABOP_PING: dict = {"at": 0.0, "ok": False, "error": ""}
+
+
+def _abop_state() -> dict:
+    """Доступен ли сам ABOP (сервер), а не только локальный сайдкар. Кэш 8 с — UI пингует часто."""
+    import time as _t
+    from . import abop_client as _abop
+    if _t.time() - float(_ABOP_PING.get("at") or 0) < 8:
+        return {"ok": _ABOP_PING["ok"], "error": _ABOP_PING["error"]}
+    try:
+        _abop.health()
+        _ABOP_PING.update({"at": _t.time(), "ok": True, "error": ""})
+    except Exception as ex:  # noqa: BLE001 — офлайн не ошибка приложения, это состояние
+        _ABOP_PING.update({"at": _t.time(), "ok": False, "error": str(ex)[:200]})
+    return {"ok": _ABOP_PING["ok"], "error": _ABOP_PING["error"]}
+
+
 @app.get("/api/health")
 def health() -> dict:
+    st = _abop_state()
     return {"ok": True, "app": config.APP_NAME, "version": config.APP_VERSION,
-            "authed": bool(auth.token())}
+            "authed": bool(auth.token()), "abop": st["ok"], "abop_error": st["error"],
+            "abop_url": config.ABOP}
 
 
 @app.get("/api/modules")
