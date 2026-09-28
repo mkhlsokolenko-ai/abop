@@ -29,7 +29,12 @@ docker rm -f "$IMG" >/dev/null 2>&1 || true
 docker run -d --name "$IMG" --network host --restart unless-stopped \
   --env-file "$ENVF" -v "$VOL":/root/.ape "$IMG" >/dev/null
 
-sleep 5
+# контейнер поднимает схемы и сид шаблонов дольше 5 с: ждём до 60 с, иначе каждый деплой
+# заканчивался ложным «health-check не прошёл» при живом сервисе
+for i in $(seq 1 30); do
+  curl -sf http://127.0.0.1:8091/api/health >/dev/null && break
+  sleep 2
+done
 if curl -sf http://127.0.0.1:8091/api/health >/dev/null; then
   echo "[deploy] health-ok"
 else

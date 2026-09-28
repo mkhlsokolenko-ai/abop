@@ -235,6 +235,76 @@ async def seed_if_empty() -> None:
         pass
 
 
+# Поля-заголовки карточки: чем назвать находку, если навык не дал явного заголовка.
+_TITLE_KEYS = ("заголовок", "название", "тема", "истори", "сценарий", "вопрос", "роль", "симптом", "id")
+# Короткие пометки, которые выносим бейджами в шапку карточки, а не абзацем.
+_BADGE_KEYS = ("id", "класс", "ранг", "статус", "критичность", "приоритет", "уверенность", "сумма",
+               "существенность", "частота", "ценность", "срочность")
+_NORM_KEYS = ("норма", "основание", "статья")
+
+
+def _wordy(items: list, cols: list) -> bool:
+    """Список объектов «многословный»? Тогда таблица нечитаема: длинные пояснения схлопываются
+    в ячейки и отчёт выглядит поверхностным, хотя данные на месте."""
+    if len(cols) > 5:
+        return True
+    long_vals = 0
+    total = 0
+    for it in items[:20]:
+        for v in it.values():
+            if isinstance(v, str):
+                total += 1
+                if len(v) > 110:
+                    long_vals += 1
+            elif isinstance(v, (dict, list)) and v:
+                long_vals += 1
+                total += 1
+    return bool(total) and long_vals / total > 0.25
+
+
+def _card_html(it: dict, esc) -> str:
+    """Одна находка карточкой: заголовок, бейджи, норма, затем поля абзацами."""
+    def pick(keys):
+        # порядок важен: «заголовок» должен побеждать «id», иначе карточка называется «A»
+        for p in keys:
+            for k in it:
+                if p in str(k).lower() and it[k] not in (None, "", [], {}):
+                    return k
+        return None
+
+    used = set()
+    tk = pick(_TITLE_KEYS)
+    head = esc(it.get(tk)) if tk else ""
+    if tk:
+        used.add(tk)
+    badges = []
+    for k in list(it):
+        kl = str(k).lower()
+        v = it[k]
+        if k in used or isinstance(v, (dict, list)) or v in (None, "", [], {}):
+            continue
+        if any(p in kl for p in _BADGE_KEYS) and len(str(v)) <= 40:
+            badges.append(f"<span class='cb'>{esc(k)}: {esc(v)}</span>")
+            used.add(k)
+    nk = pick(_NORM_KEYS)
+    norm = ""
+    if nk and nk not in used:
+        norm = f"<div class='cnorm'>{esc(it[nk])}</div>"
+        used.add(nk)
+    body = []
+    for k, v in it.items():
+        if k in used or v in (None, "", [], {}):
+            continue
+        if isinstance(v, (dict, list)):
+            body.append(f"<div class='cf'><b>{esc(k)}</b>{struct_html(v, 2)}</div>")
+        else:
+            body.append(f"<div class='cf'><b>{esc(k)}:</b> {esc(v)}</div>")
+    return ("<div class='fcard'>"
+            + (f"<div class='ch'>{head}</div>" if head else "")
+            + (f"<div class='cbs'>{''.join(badges)}</div>" if badges else "")
+            + norm + "".join(body) + "</div>")
+
+
 def struct_html(obj, depth: int = 0) -> str:
     """Структурированный ответ навыка (по шаблону извлечения) → HTML: объект — строки «ключ: значение»,
     список объектов — таблица (колонки = скалярные поля), список строк — маркированный список. Экранируется всё."""
@@ -262,6 +332,8 @@ def struct_html(obj, depth: int = 0) -> str:
                 for k, v in it.items():
                     if k not in cols and not isinstance(v, (dict, list)):
                         cols.append(k)
+            if _wordy(obj, cols):
+                return "".join(_card_html(it, esc) for it in obj[:60])
             cols = cols[:8]
             head = "".join(f"<th>{esc(c)}</th>" for c in cols)
             body = []
