@@ -543,3 +543,63 @@ def test_auth_login_returns_refresh_and_refresh_endpoint_exists(client, monkeypa
     assert r2.status_code == 200 and r2.json()["access_token"] and r2.json()["refresh_token"] == "rt-1"
     assert client.post("/api/auth/refresh", json={}).status_code == 422
     assert web_api  # ссылка на модуль, чтобы не потерять импорт при рефакторинге
+
+
+def test_nlu_stages_and_lexicon_matching():
+    """Разбор фразы: нормализация лексем, этапы по маркерам и перечислению, триггер с окружением."""
+    from server import lexicon, nlu
+
+    assert nlu.stem("проверь") == nlu.stem("проверить")            # формы слова сходятся
+    assert nlu.stem("отчёты") == nlu.stem("отчет") == "отчет"
+    assert nlu.stem("1С".lower()) == "1с" and nlu.stem("НДС".lower()) == "ндс"   # короткие не режем
+
+    sts = nlu.split_stages("Сначала проверь данные 1С за квартал, потом подготовь заключение для главбуха")
+    assert [s.order for s in sts] == [1, 2] and sts[0].kind == "проверка" and sts[1].kind == "подготовка"
+    assert "1с" in sts[0].after and "главбух" in sts[1].after
+    assert "снача" not in sts[0].before and "потом" not in sts[1].before   # маркеры порядка — не лексемы
+    assert sts[1].channel == "email"                                       # адресат после триггера
+
+    multi = nlu.split_stages("Проверь 1С, найди расхождения, объясни их и подготовь заключение в вики")
+    assert len(multi) == 4 and multi[-1].channel == "bookstack"
+    assert [s.kind for s in multi] == ["проверка", "анализ", "объяснение", "подготовка"]
+    one = nlu.split_stages("проверь 1С за квартал")                         # хвост без триггера не рвёт этап
+    assert len(one) == 1 and "кварт" in one[0].after
+
+    agent = {"id": "a1", "name": "Аудитор данных в 1С", "role": "auditor-1c", "family": "audit",
+             "graph": {"nodes": [{"kind": "skill", "skill": "audit1c-checks"}, {"kind": "out", "out": {"channel": "email"}}]}}
+    terms = lexicon.build(agent, skills={"audit1c-checks": ("Проверки аудита 1С", "расхождения по НДС и документам")})
+    assert terms and lexicon.score(nlu.lexemes("проверь 1С"), terms) > 0.3
+    assert lexicon.score(nlu.lexemes("напиши письмо клиенту"), terms) < 0.15   # чужая задача не липнет
+    assert lexicon.doc_hash(agent) == lexicon.doc_hash(dict(agent))            # отпечаток стабилен
+
+
+def test_pipeline_suggest_uses_stage_order(client, monkeypatch):
+    """Цепочка собирается по этапам фразы: порядок шагов = порядок этапов, при низкой уверенности — предупреждение."""
+    import asyncio
+    from server import agent_store, lexicon, web_api
+
+    async def mk():
+        for name, role, skill, ch in (("Аудитор 1С", "auditor-1c", "audit1c-checks", "email"),
+                                      ("Коммуникатор", "comms", "client-letter", "email")):
+            a = await agent_store.save(name=name, audit_id="nlu-" + role, version=1, family="", role=role,
+                                       autonomy_max="A1", graph={"nodes": [
+                                           {"id": skill, "kind": "skill", "skill": skill},
+                                           {"id": "out", "kind": "out", "out": {"channel": ch}}]})
+            await web_api._refresh_lexicon(a)
+    asyncio.run(mk())
+
+    async def no_llm(**kw):
+        raise RuntimeError("LLM отключён в тесте")
+    monkeypatch.setattr(web_api.clients, "chat", no_llm)
+
+    r = client.post("/api/pipelines/suggest", json={"q": "Сначала проверь 1С, потом напиши письмо клиенту"})
+    d = r.json()
+    assert r.status_code == 200 and len(d["steps"]) == 2
+    assert [s["order"] for s in d["stages"]] == [1, 2]
+    assert d["stages"][0]["kind"] == "проверка" and d["stages"][1]["kind"] == "письмо"
+    assert "confidence" in d and isinstance(d["low_confidence"], bool)
+    assert d["parse"]["multi_stage"] is True
+    if d["low_confidence"]:
+        assert d["warning"]
+    rev = client.post("/api/pipelines/suggest", json={"q": "Сначала напиши письмо клиенту, потом проверь 1С"}).json()
+    assert [s["kind"] for s in rev["stages"]] == ["письмо", "проверка"]      # порядок берётся из фразы

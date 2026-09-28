@@ -29,7 +29,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, assembly, audit_store, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, report_store, run_cache_store, run_store, runner, safety, schema_store, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, assembly, audit_store, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, report_store, run_cache_store, run_store, runner, safety, schema_store, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
@@ -2002,6 +2002,12 @@ async def _startup() -> None:
         await dlq_store.init()
     except Exception as _ex:  # noqa: BLE001
         obs.log_event("warning", "dlq_store.init_failed", error=str(_ex)[:200])
+    try:
+        await lexicon.init()
+        agent_store.on_save(_refresh_lexicon)      # каждый новый агент приносит свои лексемы
+        _asyncio.create_task(_reseed_lexicons())   # словарь подстановки живёт от заведённых агентов
+    except Exception as _ex:  # noqa: BLE001
+        obs.log_event("warning", "lexicon.init_failed", error=str(_ex)[:200])
     await _backfill_dataplane_from_files()  # одноразовый перенос ~/.ape → PG (сохранить демо-рецепты)
     await _refresh_dataplane_cache()  # инжект рецептов/коннекторов из PG в ape
     # LLM-override (эндпоинт бокса из UI) — восстановить из PG при старте, инжектить в clients
@@ -2575,6 +2581,36 @@ async def agent_check(body: dict, u: dict = Depends(user)) -> dict:
             "autonomy_max": check["autonomy_max"], "hitl_count": check["hitl_count"]}
 
 
+async def _refresh_lexicon(agent: dict) -> dict:
+    """Словарь лексем агента из описаний его навыков (шаблон + карточка + тело SKILL.md)."""
+    try:
+        tpls = {}
+        for n in (agent.get("graph") or {}).get("nodes") or []:
+            sid = n.get("skill")
+            if sid and sid not in tpls:
+                t = await schema_store.get(sid)
+                if t:
+                    tpls[sid] = {"name": t.get("name"), "instruction": skill_templates.strip_markers(t.get("instruction") or "")}
+        return await lexicon.refresh(agent, skills=ape.SKILLS, body_of=ape.load_skill_body, templates=tpls)
+    except Exception as _ex:  # noqa: BLE001 — подбор не должен падать из-за словаря
+        obs.log_event("warning", "lexicon.refresh_failed", agent=agent.get("id"), error=str(_ex)[:160])
+        return {}
+
+
+async def _reseed_lexicons() -> None:
+    """Засевка словарей по всем агентам (старт сервера и после массовых правок навыков)."""
+    n = 0
+    try:
+        for b in await agent_store.list_for(None):
+            full = await agent_store.get(b["id"])
+            if full and await _refresh_lexicon(full):
+                n += 1
+    except Exception as _ex:  # noqa: BLE001
+        obs.log_event("warning", "lexicon.reseed_failed", error=str(_ex)[:160])
+        return
+    obs.log_event("info", "lexicon.reseeded", agents=n)
+
+
 def _agent_match_doc(a: dict) -> str:
     """Текст-документ агента для матча: имя + семья + роль + названия/описания его навыков."""
     parts = [a.get("name") or "", a.get("family") or "", a.get("role") or ""]
@@ -2616,16 +2652,19 @@ async def agents_match(body: dict, u: dict = Depends(user)) -> dict:
     if not agents:
         return {"matches": []}
     ql = q.lower()
-    qtokens = set(t for t in re.split(r"[^\wа-яё]+", ql) if len(t) > 2)
+    qterms = nlu.lexemes(q)          # нормализованные лексемы: «проверь» и «проверка» — одна основа
     docs = {a["id"]: _agent_match_doc(a) for a in agents}
-    # лексика: доля слов агента, встреченных в запросе + бонус за вхождение имени
+    # лексика: совпадение со СЛОВАРЁМ агента (засеян из описаний его навыков) + бонус за имя;
+    # словарь пустой (новый агент) → фолбэк на слова документа, чтобы подбор не молчал
+    lexmap = await lexicon.all_terms()
     lex = {}
     for a in agents:
-        dl = docs[a["id"]].lower()
-        dtokens = set(t for t in re.split(r"[^\wа-яё]+", dl) if len(t) > 2)
-        inter = len(qtokens & dtokens)
+        terms = lexmap.get(a["id"]) or {}
+        if not terms:
+            terms = lexicon.build(a, skills=ape.SKILLS, templates={})
+        sc = lexicon.score(qterms, terms) * 4.0
         name_hit = 2 if (a.get("name") or "").lower() in ql else 0
-        lex[a["id"]] = inter + name_hit
+        lex[a["id"]] = sc + name_hit
     # семантика (best-effort): эмбеддим запрос + документы агентов (кэш по документу)
     sem = {a["id"]: 0.0 for a in agents}
     try:
@@ -4375,6 +4414,34 @@ async def pipeline_run(pid: str, body: dict, u: dict = Depends(user),
     return JSONResponse({"pipeline": pid, "name": p.get("name"), "steps": out_steps}, status_code=201)
 
 
+async def _rerank_chain(q: str, stage_rows: list[dict], cands: list[dict], ids: list[str], reason: str):
+    """Низкая уверенность детерминированного подбора → модель выбирает из УЖЕ отобранных кандидатов
+    на каждый этап. Порядок этапов не трогаем: он задан фразой."""
+    import json as _json
+    lines = []
+    for r in stage_rows:
+        opts = [{"id": r["agent_id"], "name": r["agent_name"]}] + [{"id": a["id"], "name": a["name"]} for a in (r.get("alternatives") or [])]
+        lines.append(f'этап {r["order"]} ({r.get("kind") or "шаг"}, «{r["text"][:70]}»): ' +
+                     "; ".join(f'{o["id"]}={o["name"]}' for o in opts))
+    prompt = ("Для каждого этапа задачи выбери ОДНОГО агента из предложенных на этот этап. Порядок этапов менять нельзя.\n"
+              'Ответ строго JSON: {"pick":{"1":"<id>","2":"<id>"}}\n\nЗАДАЧА: ' + q + "\n\n" + "\n".join(lines))
+    try:
+        resp = await clients.chat(messages=[{"role": "user", "content": prompt}], profile="standard", max_tokens=300)
+        txt = resp.get("text") or ""
+        i, j = txt.find("{"), txt.rfind("}")
+        pick = (_json.loads(txt[i:j + 1]) if i >= 0 and j > i else {}).get("pick") or {}
+        out = []
+        for r in stage_rows:
+            allowed = {r["agent_id"]} | {a["id"] for a in (r.get("alternatives") or [])}
+            chosen = str(pick.get(str(r["order"])) or "")
+            out.append(chosen if chosen in allowed else r["agent_id"])
+        if out and out != ids:
+            return out, reason + " · уточнено моделью", True
+        return ids, reason + " · модель подтвердила", True
+    except Exception:  # noqa: BLE001 — модель недоступна: остаёмся на детерминированном подборе
+        return ids, reason + " · модель недоступна, подбор по словарю", False
+
+
 @app.post("/api/pipelines/suggest")
 async def pipeline_suggest(body: dict, u: dict = Depends(user)) -> dict:
     """Авто-сборка цепочки под задачу (#5, гибрид): семантический матчер даёт кандидатов → LLM собирает
@@ -4383,9 +4450,77 @@ async def pipeline_suggest(body: dict, u: dict = Depends(user)) -> dict:
     q = str((body or {}).get("q") or "").strip()
     if not q:
         return {"steps": []}
-    cands = (await agents_match(body, u)).get("matches", [])[:5]
+    cands = (await agents_match(body, u)).get("matches", [])[:8]
+    if not cands:
+        return {"steps": [], "reason": "нет подходящих агентов в вашем отделе"}
+    # ── детерминированный разбор: этапы фразы задают ПОРЯДОК шагов, модель его не меняет ──
+    parsed = nlu.describe(q)
+    stages = nlu.split_stages(q)
+    lexmap = await lexicon.all_terms()
+
+    def _pick(stage) -> list[dict]:
+        """Кандидаты на этап по словарю лексем, от лучшего к худшему."""
+        out = []
+        for c in cands:
+            terms = lexmap.get(c["id"]) or {}
+            sc = lexicon.score(stage.terms, terms) if terms else 0.0
+            out.append({"id": c["id"], "name": c.get("name"), "score": round(sc, 3), "channels": c.get("channels") or []})
+        return sorted(out, key=lambda x: -x["score"])
+
+    stage_rows: list[dict] = []
+    if len(stages) > 1:
+        used: set[str] = set()
+        carry: set[str] = set()          # предмет предыдущего этапа: «объясни их» ссылается на него
+        for st in stages:
+            own = st.terms - {st.trigger}
+            if len(own) < 1:
+                st.before = list(set(st.before) | carry)     # местоимение/пустое окружение → контекст выше
+            else:
+                carry = own
+            ranked = _pick(st)
+            best = next((r for r in ranked if r["id"] not in used), ranked[0] if ranked else None)
+            if not best:
+                continue
+            alts = [r for r in ranked if r["id"] != best["id"]][:2]
+            used.add(best["id"])
+            top_alt = alts[0]["score"] if alts else 0.0
+            stage_rows.append({**st.as_dict(), "agent_id": best["id"], "agent_name": best["name"],
+                               "score": best["score"], "margin": round(max(0.0, best["score"] - top_alt), 3),
+                               "ambiguous": bool(best["score"] > 0 and top_alt > 0 and (best["score"] - top_alt) / best["score"] < 0.1),
+                               "alternatives": alts})
+    if len(stage_rows) >= 2:
+        ids = [r["agent_id"] for r in stage_rows]
+        conf = round(min(min(r["score"], 1.0) for r in stage_rows), 3)
+        weak = [r for r in stage_rows if r["score"] < 0.2]
+        amb = [r for r in stage_rows if r.get("ambiguous")]
+        low = conf < 0.35 or bool(weak)
+        deliver = next((r["channel"] for r in reversed(stage_rows) if r.get("channel")), "chat")
+        name = ("Цепочка: " + " → ".join(str(r.get("kind") or r.get("trigger") or "шаг") for r in stage_rows))[:60]
+        reason = "разбор фразы: " + " → ".join(f'{r["order"]}. {r.get("kind") or "шаг"}' for r in stage_rows)
+        reranked = False
+        if low:   # низкая уверенность → реранк моделью среди уже отобранных кандидатов этапа
+            ids, reason, reranked = await _rerank_chain(q, stage_rows, cands, ids, reason)
+        nm = {c["id"]: c.get("name") for c in cands}
+        for r, aid in zip(stage_rows, ids):          # этапы и шаги обязаны совпадать в UI
+            if r["agent_id"] != aid:
+                r["agent_id"], r["agent_name"], r["picked_by"] = aid, nm.get(aid, aid), "модель"
+            else:
+                r.setdefault("picked_by", "словарь")
+        warn = ""
+        if weak:
+            warn = ("Слабый подбор на шагах: " + ", ".join(f'{r["order"]} ({r.get("kind") or "шаг"})' for r in weak)
+                    + " — проверьте перед запуском")
+        elif low:
+            warn = "Уверенность подбора низкая — проверьте шаги перед запуском"
+        elif amb:
+            warn = ("Равные кандидаты на шагах: " + ", ".join(str(r["order"]) for r in amb) + " — можно заменить агента")
+        return {"steps": [{"agent_id": i, "agent_name": nm.get(i, i)} for i in ids],
+                "name": name, "deliver": deliver, "reason": reason,
+                "confidence": conf, "low_confidence": bool(low), "ambiguous": bool(amb), "reranked": reranked,
+                "warning": warn, "stages": stage_rows, "parse": parsed}
     if len(cands) < 2:
-        return {"steps": [], "reason": "для цепочки нужно 2+ подходящих агента"}
+        return {"steps": [], "reason": "для цепочки нужно 2+ подходящих агента", "parse": parsed}
+    cands = cands[:5]
     lines = "\n".join(
         f'- id={c["id"]} · {c.get("name")} · семья={c.get("family")} · роль={c.get("role") or "—"} · каналы={c.get("channels") or []}'
         for c in cands)

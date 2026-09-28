@@ -134,7 +134,7 @@
 | GET / POST | `/api/pipelines` | Цепочки агентов (список / создать) | user |
 | DELETE | `/api/pipelines/{pid}` | Удалить цепочку | user |
 | POST | `/api/pipelines/{pid}/run` | Запуск цепочки; `?async=1` → 202, шаги через очередь, HITL-пауза `awaiting_hitl` | user |
-| POST | `/api/pipelines/suggest` | Авто-сборка цепочки под задачу | user |
+| POST | `/api/pipelines/suggest` | Разбор фразы на этапы (лексемы, триггер, окружение) → агент на каждый этап по словарю лексем; `steps`, `stages`, `parse`, `confidence`, `low_confidence`, `warning`, `reranked` | user |
 
 ### 2.7 Шина (Redpanda)
 | Метод | Путь | Назначение | Доступ |

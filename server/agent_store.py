@@ -62,6 +62,26 @@ async def next_version(audit_id: str) -> int:
         return int((await cur.fetchone())[0])
 
 
+_ON_SAVE = []   # хуки после сохранения агента (словарь лексем и т.п.); ошибки хука не ломают сохранение
+
+
+def on_save(fn) -> None:
+    """Подписка на сохранение агента: сервер пересчитывает словарь лексем нового агента."""
+    if fn not in _ON_SAVE:
+        _ON_SAVE.append(fn)
+
+
+async def _fire_saved(row: dict) -> None:
+    import asyncio
+    for fn in list(_ON_SAVE):
+        try:
+            r = fn(row)
+            if asyncio.iscoroutine(r):
+                await r
+        except Exception:  # noqa: BLE001
+            pass
+
+
 async def save(*, name: str, audit_id: str, version: int, graph: dict,
                autonomy_max: str, created_by: str = "dev",
                family: str = "", role: str = "", transitions=None, source: str = "contract",
@@ -75,6 +95,7 @@ async def save(*, name: str, audit_id: str, version: int, graph: dict,
         import datetime as _dt
         row["created_at"] = _dt.datetime.now(_dt.timezone.utc).isoformat()
         _MEM[aid] = row
+        await _fire_saved(row)
         return row
     from .db import _conn
     async with _conn() as conn:
@@ -84,7 +105,9 @@ async def save(*, name: str, audit_id: str, version: int, graph: dict,
             (aid, name, audit_id, version, autonomy_max, json.dumps(graph),
              family, role, json.dumps(transitions or []), source, created_by,
              json.dumps(verification) if verification is not None else None))
-    return await get(aid) or row
+    out = await get(aid) or row
+    await _fire_saved(out)
+    return out
 
 
 async def latest(audit_id: str) -> dict | None:
@@ -121,7 +144,9 @@ async def save_draft(*, name: str, audit_id: str, graph: dict, autonomy_max: str
             await conn.execute(
                 "UPDATE agent_versions SET graph=%s, autonomy_max=%s, name=%s, family=%s, role=%s WHERE id=%s",
                 (json.dumps(graph), autonomy_max, name, family, role, aid))
-        return await get(aid) or {"id": aid, "version": version}
+        out = await get(aid) or {"id": aid, "version": version}
+        await _fire_saved(out)
+        return out
     version = await next_version(audit_id)
     return await save(name=name, audit_id=audit_id, version=version, graph=graph,
                       autonomy_max=autonomy_max, created_by=created_by, family=family, role=role)

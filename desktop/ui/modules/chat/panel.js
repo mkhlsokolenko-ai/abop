@@ -475,16 +475,26 @@ export async function mount(root, ctx) {
     messages.pop();
     const steps = (r && r.steps) || [];
     if (steps.length < 2) { await note("Под эту задачу цепочка не нужна — хватит одного агента (кнопки выше).", { notice: { icon: "💡" } }); render(); return; }
-    await note("предложена цепочка", { chain_suggest: { steps, name: (r && r.name) || "Авто-цепочка", deliver: (r && r.deliver) || "chat", reason: (r && r.reason) || "", task } });
+    await note("предложена цепочка", { chain_suggest: { steps, name: (r && r.name) || "Авто-цепочка", deliver: (r && r.deliver) || "chat", reason: (r && r.reason) || "", task,
+      stages: (r && r.stages) || [], confidence: (r && r.confidence), low: !!(r && r.low_confidence), warning: (r && r.warning) || "", reranked: !!(r && r.reranked) } });
     render(); scrollDown(true);
   }
   function chainSuggestHTML(cs) {
     const i = messages.findIndex((m) => m.meta && m.meta.chain_suggest === cs);
     const chain = cs.steps.map((s) => esc(s.agent_name || agentName(s.agent_id))).join(" → ");
+    // разбор фразы: этап → действие → агент. Порядок шагов взят из самой формулировки задачи.
+    const stages = (cs.stages || []).map((st) => `<div style="display:flex;gap:8px;align-items:baseline;font-size:11.5px;color:var(--ink-2)">
+        <span style="font-family:var(--mono);color:var(--ink-3);min-width:14px">${st.order}.</span>
+        <span style="flex:1;min-width:0"><b>${esc(st.kind || "шаг")}</b> · «${esc(String(st.text || "").slice(0, 60))}» → ${esc(st.agent_name || "")}</span>
+        <span style="font-family:var(--mono);color:${st.score >= 0.35 ? "var(--ink-3)" : "var(--warn-ink)"}">${(st.score ?? 0).toFixed(2)}</span>
+      </div>`).join("");
+    const conf = cs.confidence == null ? "" : `<span style="font-family:var(--mono);font-size:11px;color:${cs.low ? "var(--warn-ink)" : "var(--ok-ink)"}">уверенность ${Number(cs.confidence).toFixed(2)}${cs.reranked ? " · уточнено моделью" : ""}</span>`;
     return `<div style="display:flex;flex-direction:column;gap:9px">
       <div style="font-size:13px;color:var(--ink)">🔗 Предлагаю цепочку: <b>${chain}</b></div>
+      ${stages ? `<div style="display:flex;flex-direction:column;gap:3px;padding:8px 10px;border-radius:9px;background:var(--panel);border:1px solid var(--line)">${stages}</div>` : ""}
+      ${cs.warning ? `<div style="font-size:11.5px;color:var(--warn-ink);font-weight:600">⚠ ${esc(cs.warning)}</div>` : ""}
       ${cs.reason ? `<div style="font-size:11.5px;color:var(--ink-3)">${esc(cs.reason)}</div>` : ""}
-      <div style="font-size:11.5px;color:var(--ink-2)">результат → <b>${esc(DELIVER_LABEL[cs.deliver] || cs.deliver)}</b></div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="font-size:11.5px;color:var(--ink-2)">результат → <b>${esc(DELIVER_LABEL[cs.deliver] || cs.deliver)}</b></span>${conf}</div>
       <button type="button" class="btn primary chainRun" data-i="${i}" style="align-self:flex-start">▶ Собрать и запустить</button></div>`;
   }
   async function saveAndRunChain(cs) {
