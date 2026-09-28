@@ -17,6 +17,7 @@
 | [INSTRUKCIYA_ZAPUSK_AGENTA.md](INSTRUKCIYA_ZAPUSK_AGENTA.md) | Пошаговая инструкция для не-технического пользователя: как собрать и запустить агента |
 | [GUIDE_SBORKA_AGENTOV.md](GUIDE_SBORKA_AGENTOV.md) | Полный гайд: от пустого места до агента, приносящего ценность (навыки, данные, доставка) |
 | [CONNECTORS_REAL_PO.md](CONNECTORS_REAL_PO.md) | Как перевести агента с демо-стенда на реальные системы заказчика (почта, трекер, вики, БД) |
+| [DEMO_SCENARIY_2026-09-28.md](DEMO_SCENARIY_2026-09-28.md) | Сценарий демо на 20 минут: четыре кейса, тайминг, чек-лист, план Б |
 | [DEMO_GID_2_MENEDZHERSKIH_KEISA.md](DEMO_GID_2_MENEDZHERSKIH_KEISA.md) | Гайд-сценарий демо: веб-расследование invest1c + два менеджерских кейса (десктоп → веб) |
 | [DEMO_KEISY_ZADACHI.md](DEMO_KEISY_ZADACHI.md) | Два кейса на канве для показа: «Дайджест задач» и БФТ на реальных сервисах стенда |
 | [PRODUCT_BACKLOG.md](PRODUCT_BACKLOG.md) | Ранжированный продуктовый бэклог; Tier 0–3 закрыты, остаток — XL «после PMF» |
