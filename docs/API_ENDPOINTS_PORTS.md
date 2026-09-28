@@ -170,6 +170,7 @@
 |---|---|---|---|
 | GET | `/api/runs/{run_id}/findings` | Карточки находок прогона (участки, тип, сумма, цепочка с разрывом, объяснение, норма, разметка) + метрики | user |
 | POST | `/api/runs/{run_id}/findings/{finding_id}/label` | Слепая разметка: `{decision: confirmed|rejected|unsure, manual_miss, comment}` | user |
+| DELETE | `/api/runs/{run_id}/findings/{finding_id}/label` | Снять экспертную разметку (ошибочная метка не искажает метрики пилота) | manager+ |
 | DELETE | `/api/runs/{run_id}/findings/{finding_id}/label` | Снять разметку | user |
 | GET | `/api/findings?limit=&runs=&agent_id=` | Журнал пилота по последним прогонам аудитора/следователя + метрики | user/ABAC |
 | GET | `/api/audit1c/norms/{name}` | Текст нормы из справочника `demo/audit1c/norms` | user |

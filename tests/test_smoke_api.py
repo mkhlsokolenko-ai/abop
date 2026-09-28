@@ -471,3 +471,35 @@ def test_run_diff_between_two_runs(client):
     d2 = client.get(f"/api/runs/{rid_c}/diff").json()
     assert d2["base_run_id"] == rid_b
     assert client.get(f"/api/runs/{rid_b}/diff?vs=no-such-run").status_code == 404
+
+
+def test_report_includes_expert_labels(client):
+    """Экспертная разметка находок попадает в отчёт: сводка метрик против порогов и статусы находок.
+    Без разметки секция пустая (плейсхолдеры не рендерятся мусором)."""
+    import asyncio
+    from server import finding_store, run_store
+
+    run = {"agent_id": "audit1c-holding-2026.v9", "verdict": {"ok": True, "autonomy_used": "A1"}, "waves": [[]],
+           "findings": [{"id": "A1", "класс": "A", "серьёзность": "высокая", "проверка": "Реализация без списания себестоимости",
+                         "описание": "РТ-0008", "сумма": 236000},
+                        {"id": "B2", "класс": "B", "серьёзность": "средняя", "проверка": "Реализация без счёта-фактуры выданного",
+                         "описание": "РТ-0002", "сумма": 194000}],
+           "findings_summary": {"total": 2, "by_class": {"A": 1, "B": 1, "C": 0, "D": 0}}}
+    saved = asyncio.run(run_store.save(run))
+    rid = saved.get("id") or saved.get("run_id")
+    html_no_labels = client.get(f"/api/runs/{rid}/report?template=audit1c").text
+    assert "Размечено:" not in html_no_labels and "{{" not in html_no_labels
+
+    asyncio.run(finding_store.set_label(rid, "A1", expert="эксперт", decision="confirmed", manual_miss=True, comment="вручную не увидели"))
+    asyncio.run(finding_store.set_label(rid, "B2", expert="эксперт", decision="rejected", manual_miss=False, comment=""))
+    html = client.get(f"/api/runs/{rid}/report?template=audit1c").text
+    assert "Экспертная разметка (слепая проверка)" in html and "Размечено:</b> 2 из 2" in html
+    assert "подтверждено 1" in html and "отклонено 1" in html
+    assert "Точность значимых" in html and "«Вручную бы не нашли»" in html
+    assert "подтверждена экспертом" in html and "отклонена экспертом" in html and "вручную бы не нашли" in html
+    assert "{{" not in html
+    # снятие разметки: ошибочная метка не остаётся в метриках пилота навсегда
+    r = client.delete(f"/api/runs/{rid}/findings/A1/label")
+    assert r.status_code == 200 and r.json()["removed"] is True
+    assert client.delete(f"/api/runs/{rid}/findings/A1/label").json()["removed"] is False
+    assert "Размечено:</b> 1 из 2" in client.get(f"/api/runs/{rid}/report?template=audit1c").text

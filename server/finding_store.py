@@ -69,6 +69,17 @@ async def delete_label(run_id: str, finding_id: str) -> bool:
     return getattr(cur, "rowcount", 0) > 0
 
 
+async def delete_label(run_id: str, finding_id: str) -> bool:
+    """Снять разметку с находки (ошиблись, пере-размечаем слепую выборку). True — метка была."""
+    if not _has_pg():
+        return _MEM.pop((run_id, finding_id), None) is not None
+    from .db import _conn
+    async with _conn() as conn:
+        cur = await conn.execute("DELETE FROM finding_labels WHERE run_id=%s AND finding_id=%s RETURNING finding_id",
+                                 (run_id, finding_id))
+        return bool(await cur.fetchone())
+
+
 async def labels_for_runs(run_ids: list[str]) -> dict[str, dict[str, dict]]:
     """{run_id: {finding_id: label}}"""
     out: dict[str, dict[str, dict]] = {rid: {} for rid in run_ids}

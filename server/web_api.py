@@ -3032,6 +3032,52 @@ def _report_context(agent: dict, result: dict) -> dict:
             **per_skill}
 
 
+async def _labels_ctx(run: dict) -> dict:
+    """Экспертная разметка находок (слепая, из интерфейса пилота) → плейсхолдеры отчёта:
+    {{разметка_сводка}} (метрики пилота против порогов) и {{разметка}} (находки со статусом).
+    Пусто → плейсхолдеры пустые, секция отчёта не рендерится."""
+    import html as _h
+    rid = run.get("run_id") or run.get("id") or ""
+    if not rid:
+        return {"разметка": "", "разметка_сводка": ""}
+    try:
+        labels = (await finding_store.labels_for_runs([rid])).get(rid, {})
+        cards = findings.cards_for_run(run, labels)
+    except Exception:  # noqa: BLE001 — разметка опциональна, отчёт не валим
+        return {"разметка": "", "разметка_сводка": ""}
+    marked = [c for c in cards if c.get("label")]
+    if not marked:
+        return {"разметка": "", "разметка_сводка": ""}
+    m = findings.pilot_metrics(cards)
+    esc = lambda x: _h.escape(str(x if x is not None else ""))  # noqa: E731
+    th = m.get("thresholds") or {}
+    chip = lambda ok: "#0a7c66" if ok else "#b45309"  # noqa: E731
+    summary = ("<h2>Экспертная разметка (слепая проверка)</h2>"
+               "<div class='kv'><b>Размечено:</b> " + esc(m["labeled"]) + " из " + esc(m["total"])
+               + " · подтверждено " + esc(m["confirmed"]) + " · отклонено " + esc(m["rejected"])
+               + (" · без решения " + esc(m["unsure"]) if m.get("unsure") else "") + "</div>"
+               + "<div class='kv'><b>Точность значимых:</b> <span style='color:" + chip(m.get("precision_ok"))
+               + "'>" + (esc(m["precision"]) + " %" if m.get("precision") is not None else "—")
+               + "</span> (порог " + esc(th.get("precision")) + " %)</div>"
+               + "<div class='kv'><b>Межучастковые расхождения:</b> <span style='color:" + chip(m.get("cross_ok"))
+               + "'>" + (esc(m["cross_share"]) + " %" if m.get("cross_share") is not None else "—")
+               + "</span> (порог " + esc(th.get("cross_share")) + " %)</div>"
+               + "<div class='kv'><b>«Вручную бы не нашли»:</b> <span style='color:" + chip(m.get("manual_miss_ok"))
+               + "'>" + esc(m["manual_miss"]) + "</span> (порог " + esc(th.get("manual_miss")) + ")</div>")
+    _ru = {"confirmed": "подтверждена экспертом", "rejected": "отклонена экспертом", "unsure": "под вопросом"}
+    rows = []
+    for c in marked[:60]:
+        lb = c.get("label") or {}
+        dec = _ru.get(str(lb.get("decision") or ""), str(lb.get("decision") or ""))
+        rows.append("<div class='fnd'>" + (f"<span class='cls'>{esc(c.get('cls'))}</span>" if c.get("cls") else "")
+                    + f"<b>{esc(str(c.get('check') or '')[:200])}</b>"
+                    + (f" — {esc(c.get('amount_text'))}" if c.get("amount_text") else "")
+                    + f"<span class='norm'>{esc(dec)}"
+                    + (" · вручную бы не нашли" if lb.get("manual_miss") else "")
+                    + (f" · {esc(str(lb.get('comment'))[:200])}" if lb.get("comment") else "") + "</span></div>")
+    return {"разметка": "".join(rows), "разметка_сводка": summary}
+
+
 def _build_report_html(agent: dict, result: dict) -> str:
     """Детерминированный HTML-отчёт из результата прогона (находки A/B/C/D, цепочки-расследования,
     результаты навыков). Используется OUT-узлом для доставки (PDF/BookStack/почта)."""
@@ -3166,7 +3212,7 @@ async def _deliver_out_nodes(agent: dict, result: dict, actor: str, deliver_filt
         tpl = await report_store.get(tid) or await report_store.get("default")
         if not tpl:
             return html_report
-        return report_store.render(tpl, _report_context(agent, result))
+        return report_store.render(tpl, {**_report_context(agent, result), **(await _labels_ctx(result))})
     # Сквозной ID: агент действует «от имени» пользователя — подмешиваем его аккаунты в системах
     # (Redmine assignee, почта). Так задача назначается на него, письмо адресно. Best-effort.
     idsys = {}
@@ -3958,6 +4004,17 @@ async def run_findings(run_id: str, u: dict = Depends(user)) -> dict:
             "items": cards, "metrics": findings.pilot_metrics(cards)}
 
 
+@app.delete("/api/runs/{run_id}/findings/{finding_id}/label")
+async def run_finding_label_delete(run_id: str, finding_id: str, u: dict = Depends(user)) -> dict:
+    """Снять экспертную разметку с находки (ошибочная метка не должна навсегда искажать метрики пилота). manager+."""
+    require_level(u, "manager")
+    run = await _run_visible(run_id, u)
+    ok = await finding_store.delete_label(run["run_id"], finding_id)
+    actor = u.get("name") or u.get("sub") or "dev"
+    await audit_store.record(actor, "finding.label.delete", f"{run['run_id']}/{finding_id}", {"existed": ok})
+    return {"ok": True, "removed": ok}
+
+
 @app.post("/api/runs/{run_id}/findings/{finding_id}/label")
 async def run_finding_label(run_id: str, finding_id: str, body: dict, u: dict = Depends(user)) -> dict:
     """Слепая разметка эксперта в интерфейсе: decision confirmed|rejected|unsure, manual_miss (вручную бы не нашли), comment.
@@ -4457,7 +4514,7 @@ async def run_report(run_id: str, template: str = "", format: str = "html", u: d
     tpl = await report_store.get(tid) or await report_store.get("default")
     if not tpl:
         raise HTTPException(404, "нет шаблона отчёта")
-    html_doc = report_store.render(tpl, _report_context(ag, run))
+    html_doc = report_store.render(tpl, {**_report_context(ag, run), **(await _labels_ctx(run))})
     if str(format).lower() != "pdf":
         from fastapi.responses import HTMLResponse
         return HTMLResponse(html_doc)
