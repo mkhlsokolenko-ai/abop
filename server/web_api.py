@@ -3104,17 +3104,21 @@ def _report_context(agent: dict, result: dict) -> dict:
         sid = str(so.get("skill") or "")
         if not isinstance(st, dict) or any(p in sid for p in _TECH_SKILLS):
             continue
+        best = None
         for k, vv in st.items():
             kl = str(k).lower()
             if not (isinstance(vv, str) and len(vv.strip()) > 40):
                 continue
             for rank, p in enumerate(_SUM_KEYS):
                 if p in kl:
-                    ranked.append((rank - (5 if "для_" in kl else 0), len(ranked), esc(vv.strip())))
+                    # внутри навыка выбираем ЛУЧШЕЕ поле, а не первое по порядку: у пояснений аудита
+                    # «итог» идёт раньше «резюме_для_главбуха», и врезка получалась про порядок работ
+                    r = rank - (5 if "для_" in kl else 0)
+                    if best is None or r < best[0]:
+                        best = (r, esc(vv.strip()))
                     break
-            else:
-                continue
-            break
+        if best:
+            ranked.append((best[0], len(ranked), best[1]))
     summary_bits = [x[2] for x in sorted(ranked)]
     summary_html = ("<div class='lead'>" + "</div><div class='lead'>".join(summary_bits[:3]) + "</div>") if summary_bits else ""
 
