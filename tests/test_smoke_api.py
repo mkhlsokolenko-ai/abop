@@ -652,3 +652,39 @@ def test_nlu_management_api(client):
     assert client.get(f"/api/agents/{aid}/lexicon").json()["manual"] == {}
     assert client.post(f"/api/agents/{aid}/lexicon/refresh").json()["seeded"] > 0
     assert client.get("/api/agents/no-such/lexicon").status_code == 404
+
+
+def test_user_stories_skill_registered_and_delivers():
+    """Новый навык «Истории и сценарии»: есть в каталоге, у него шаблон со схемой и доставкой в вики."""
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
+    import ape
+    from server import delivery as dl, skill_templates as st
+
+    assert "user-stories" in ape.SKILLS and ape.SKILLS["user-stories"][0] == "Истории и сценарии"
+    assert ape.skill_safety("user-stories")["mode"] == "write"
+    assert ape.AGENT_FAMILIES["management"]["members"]["story-analyst"][1] == ["user-stories", "to-tickets"]
+    assert len(ape.load_skill_body("user-stories")) > 500        # методика на месте
+
+    tpl = st.load_one("user-stories")
+    props = tpl["json_schema"]["properties"]
+    assert {"роли", "боли", "истории", "сценарии", "пробелы", "итог"} <= set(props)
+    assert props["истории"]["items"]["properties"]["критерии_приёмки"]["items"]["properties"].keys() >= {"дано", "когда", "тогда"}
+    assert not dl.validate_delivery(tpl["delivery"]) and tpl["delivery"]["system"] == "bookstack"
+
+    struct = {"роли": [{"роль": "бухгалтер клиента", "что_делает": "оплачивает счета", "основание": "интервью 1"}],
+              "боли": [{"роль": "бухгалтер клиента", "боль": "не видит статус оплаты", "источник": "«никто не подтверждает»", "частота": "27 % обращений"}],
+              "истории": [{"id": "US-1", "роль": "бухгалтер клиента", "хочу": "видеть статус счёта", "чтобы": "не писать в поддержку",
+                           "критерии_приёмки": [{"дано": "счёт оплачен", "когда": "открываю кабинет", "тогда": "вижу статус «оплачен»"}],
+                           "ценность": "высокая", "частота": "27 %", "обоснование": "вторая тема обращений"}],
+              "сценарии": [{"id": "UC-1", "название": "Проверка статуса", "история": "US-1", "действующее_лицо": "бухгалтер клиента",
+                            "предусловие": "есть доступ", "основной_поток": ["входит", "открывает счета", "видит статус"],
+                            "альтернативные_потоки": ["оплата частичная"], "исключения": ["нет доступа"], "результат": "статус известен"}],
+              "пробелы": [{"чего_не_хватает": "SLA отражения оплаты", "кому_задать": "бухгалтерии"}],
+              "итог": "начать со статусов счетов"}
+    cmds, skipped = dl.split_skipped(dl.build_commands(tpl["delivery"], struct, skill="user-stories"))
+    assert len(cmds) == 1 and not skipped
+    md = cmds[0]["payload"]["markdown"]
+    assert "US-1" in md and "UC-1" in md and "бухгалтер клиента" in md
+    assert "начать со статусов счетов" in cmds[0]["payload"]["title"]
