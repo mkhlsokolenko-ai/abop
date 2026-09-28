@@ -2579,7 +2579,7 @@ class Component extends DCLogic {
             if (j.status === 'done' && j.run) { var run = j.run; run.run_id = j.run_id || run.run_id; done(run); return; }
             if (j.status === 'failed' || j.status === 'cancelled') { failed(j.status === 'cancelled' ? 'прогон отменён' : (j.error || 'ошибка прогона')); return; }
             var pr = (j.progress || {}).run, ptxt = 'выполняется';
-            if (pr) { var sk = pr.skills || {}, ids = Object.keys(sk), dn = ids.filter(function(k){ return sk[k].state === 'done' || sk[k].state === 'error'; }).length, nw = ids.filter(function(k){ return sk[k].state === 'running'; }), tot = pr.total || ids.length; ptxt = (pr.phase || 'выполняется') + (tot ? ' · навыки ' + dn + '/' + tot : '') + (nw.length ? ' · сейчас: ' + nw.join(', ') : ''); }
+            if (pr) { var sk = pr.skills || {}, ids = Object.keys(sk), dn = ids.filter(function(k){ return ['done','error','skipped'].indexOf(sk[k].state) > -1; }).length, nw = ids.filter(function(k){ return sk[k].state === 'running'; }), tot = pr.total || ids.length; ptxt = (pr.phase || 'выполняется') + (tot ? ' · навыки ' + dn + '/' + tot : '') + (nw.length ? ' · сейчас: ' + nw.join(', ') : ''); }
             self.setState({ runProgress: (j.status === 'queued' ? ('в очереди · впереди ' + Math.max(0, (j.position || 1) - 1)) : ptxt) + ' · ' + sec + ' с' + (j.cancel_requested ? ' · отмена запрошена' : '') });
             if (sec > 900) { failed('прогон не завершился за 15 минут — проверьте журнал позже'); return; }
             setTimeout(tick, 2500);

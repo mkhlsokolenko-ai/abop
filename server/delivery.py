@@ -22,7 +22,8 @@ import re
 from typing import Any
 
 _VAR = re.compile(r"\{\{\s*(#?)\s*([^{}]+?)\s*\}\}")
-_ALLOWED = {"system", "type", "each", "where", "limit", "title", "payload"}
+_ONLY_VAR = re.compile(r"^\s*\{\{\s*#?\s*[^{}]+?\s*\}\}\s*$")   # поле целиком = одна подстановка
+_ALLOWED = {"system", "type", "each", "where", "limit", "title", "payload", "require"}
 
 
 def validate_delivery(d: Any) -> list[str]:
@@ -42,6 +43,12 @@ def validate_delivery(d: Any) -> list[str]:
         errs.append("delivery.where: {поле: [допустимые значения]}")
     if d.get("limit") is not None and not (isinstance(d["limit"], int) and 1 <= d["limit"] <= 50):
         errs.append("delivery.limit: 1..50")
+    if d.get("require") is not None and not (isinstance(d["require"], list) and all(isinstance(x, str) for x in d["require"])):
+        errs.append("delivery.require: список обязательных ключей payload")
+    if isinstance(d.get("require"), list) and isinstance(d.get("payload"), dict):
+        miss = [k for k in d["require"] if k not in d["payload"]]
+        if miss:
+            errs.append(f"delivery.require: ключей нет в payload: {miss}")
     p = d.get("payload")
     if not isinstance(p, dict) or not p:
         errs.append("delivery.payload: объект полей команды (строки с {{подстановками}})")
@@ -114,17 +121,34 @@ def build_commands(spec: dict, struct: dict, *, skill: str = "") -> list[dict]:
         arr = _get(struct, spec["each"])
         items = [x for x in arr if isinstance(x, dict)] if isinstance(arr, list) else []
     items = [x for x in items if _passes(x, spec.get("where"))][: int(spec.get("limit") or 10)]
+    # Обязательные поля: явный require + поля, чьё значение в шаблоне ЦЕЛИКОМ одна подстановка
+    # (например "to": "{{кому}}"): пусто в ответе навыка — отправлять нечего, команду не создаём,
+    # иначе коннектор получит битую команду и уронит её в DLQ («payload.to пустой»).
+    tpl_payload = spec.get("payload") or {}
+    required = {k for k in (spec.get("require") or []) if k in tpl_payload}
+    required |= {k for k, v in tpl_payload.items() if isinstance(v, str) and _ONLY_VAR.match(v)}
     out: list[dict] = []
+    skipped: list[dict] = []
     for it in items:
-        payload = {k: (render(v, it, struct) if isinstance(v, str) else v) for k, v in (spec.get("payload") or {}).items()}
+        payload = {k: (render(v, it, struct) if isinstance(v, str) else v) for k, v in tpl_payload.items()}
         payload = {k: v for k, v in payload.items() if v not in ("", None)}
-        if not payload:
+        miss = sorted(k for k in required if k not in payload)
+        if miss or not payload:
+            skipped.append({"reason": ("пустые обязательные поля: " + ", ".join(miss)) if miss else "нечего отправлять",
+                            "item": _scalar(it.get("id") or "")[:80] if isinstance(it, dict) and it is not struct else ""})
             continue
         title = render(spec.get("title") or "", it, struct).strip() or f"{spec['system']}/{spec['type']}"
         ref = _scalar(it.get("id") or it.get("заголовок") or it.get("название") or "") if it is not struct else ""
         out.append({"system": spec["system"], "type": spec["type"], "payload": payload, "title": title[:200],
                     "source": {"skill": skill, "item": ref[:80]}})
+    if skipped:
+        out.append({"_skipped": skipped, "system": spec["system"], "type": spec["type"]})
     return out
+
+
+def split_skipped(cmds: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Разделить результат build_commands на команды и пропуски (пустые обязательные поля)."""
+    return [c for c in cmds if not c.get("_skipped")], [s for c in cmds if c.get("_skipped") for s in c["_skipped"]]
 
 
 def preview_html(cmd: dict) -> str:

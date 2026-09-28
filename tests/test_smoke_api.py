@@ -352,3 +352,87 @@ def test_llm_status_banner(client):
     d2 = client.get("/api/llm/status").json()
     assert d2["fallback"]["total"] >= 1 and d2["fallback"]["last"]["model"] == "local/qwen3-30b-a3b"
     assert obs.counter_total("abop_llm_fallback_total") >= 1
+
+
+def test_runner_context_only_skill_runs_and_skips_are_reported():
+    """Навык без объявленного data-scope (письмо/БФТ) выполняется по контексту задачи, а не выпадает молча;
+    навык с источниками, но без данных в store, отмечается как «пропущен» в прогрессе."""
+    import asyncio
+    from server import runner
+
+    agent = {"id": "ag-ctx", "name": "Тест", "family": "management", "graph": {"nodes": [
+        {"id": "client-letter", "kind": "skill", "skill": "client-letter"},
+        {"id": "mail-triage", "kind": "skill", "skill": "mail-triage"}], "edges": []}}
+    contract = {"audit_id": "t-ctx", "autonomy_level": "A1", "criticality": "T3", "metrics": {}}
+    seen: list = []
+
+    async def chat_fn(**kw):
+        return {"text": '{"кому":"c@x","тема":"Статус","приветствие":"Добрый день!","в_работе":[],"план_на_сегодня":["шаг"],'
+                        '"сроки":[],"нужно_от_вас":[],"подпись":"ABOP","текст_письма":"Готово.","требуется_подтверждение":true}',
+                "model": "local/test", "input_tokens": 10, "output_tokens": 20}
+
+    async def flow():
+        return await runner.run_live(
+            agent, contract, lambda sid: {"mode": "write", "output": "structured"},
+            data_query=lambda e, limit=0: [],                     # store пуст
+            skill_sources=lambda sid: ([] if sid == "client-letter" else [{"entity": "email"}]),
+            load_body=lambda sid: "методика", chat_fn=chat_fn,
+            user_context="Собери дайджест и напиши письмо заказчику",
+            on_progress=lambda sid, state, **kw: seen.append((sid, state)))
+    res = asyncio.run(flow())
+    got = {sid: st for sid, st in seen}
+    assert got["client-letter"] in ("done", "error"), seen        # без данных, но с контекстом — выполнился
+    assert got["mail-triage"] == "skipped", seen                  # объявил источник, данных нет — пропущен
+    letters = [f for f in res["findings"] if f.get("skill") == "client-letter"]
+    assert letters and isinstance(letters[0].get("structured"), dict) and letters[0]["structured"]["тема"] == "Статус"
+
+
+def test_delivery_skips_command_with_empty_required_field():
+    """Навык не дал адрес/тему — команда не создаётся (иначе коннектор упадёт «payload.to пустой» в DLQ),
+    причина видна отдельной записью пропуска."""
+    from server import delivery as dl, skill_templates as st
+    spec = st.load_one("client-letter")["delivery"]
+    empty = {"кому": "", "тема": "", "приветствие": "", "в_работе": [], "план_на_сегодня": [], "сроки": [],
+             "нужно_от_вас": [], "подпись": "", "текст_письма": "", "требуется_подтверждение": False}
+    cmds, skipped = dl.split_skipped(dl.build_commands(spec, empty, skill="client-letter"))
+    assert cmds == [] and skipped and "to" in skipped[0]["reason"] and "subject" in skipped[0]["reason"]
+    ok, sk2 = dl.split_skipped(dl.build_commands(spec, {**empty, "кому": "c@x", "тема": "Статус", "текст_письма": "ок"}, skill="client-letter"))
+    assert len(ok) == 1 and ok[0]["payload"]["to"] == "c@x" and not sk2
+    # явный require валидируется на несуществующие ключи
+    assert dl.validate_delivery({"system": "mailpit", "type": "email.send", "payload": {"to": "x"}, "require": ["subject"]})
+    assert not dl.validate_delivery({"system": "mailpit", "type": "email.send", "payload": {"to": "{{кому}}"}, "require": ["to"]})
+
+
+def test_template_forces_structured_over_freeform_default():
+    """Навык, помеченный в коде как «документ» (client-letter), при наличии шаблона извлечения отвечает
+    по схеме — иначе доставка и секции отчёта не собираются. Явный freeform на узле шаблон не перебивает."""
+    import asyncio
+    from server import runner, skill_templates as st
+
+    tpl = st.load_one("client-letter")
+    schema = {"response_format": {"type": "json_schema", "json_schema": {"name": "t", "strict": True, "schema": tpl["json_schema"]}},
+              "instruction": tpl["instruction"], "max_tokens": None, "delivery": tpl["delivery"], "force_struct": True}
+    seen = []
+
+    async def chat_fn(**kw):
+        seen.append(bool(kw.get("response_format")))
+        return {"text": '{"кому":"c@x","тема":"Т","приветствие":"","в_работе":[],"план_на_сегодня":[],"сроки":[],'
+                        '"нужно_от_вас":[],"подпись":"","текст_письма":"Готово.","требуется_подтверждение":false}',
+                "model": "local/test", "input_tokens": 5, "output_tokens": 5}
+
+    def run(node_output=None):
+        node = {"id": "client-letter", "kind": "skill", "skill": "client-letter"}
+        if node_output:
+            node["output"] = node_output
+        agent = {"id": "ag-f", "name": "Т", "family": "management", "graph": {"nodes": [node], "edges": []}}
+        return asyncio.run(runner.run_live(agent, {"audit_id": "t", "autonomy_level": "A1", "criticality": "T3", "metrics": {}},
+                                          lambda sid: {"mode": "write", "output": "freeform"},   # дефолт кода — документ
+                                          data_query=lambda e, limit=0: [], skill_sources=lambda sid: [],
+                                          load_body=lambda sid: "методика", chat_fn=chat_fn,
+                                          user_context="Письмо заказчику", skill_schemas={"client-letter": schema}))
+    res = run()
+    f = [x for x in res["findings"] if x.get("skill") == "client-letter"][0]
+    assert isinstance(f.get("structured"), dict) and f["structured"]["кому"] == "c@x"   # шаблон применён
+    assert seen == [True], seen          # схема ушла в модель (strict structured output)
+    run(node_output="freeform")
+    assert seen == [True, False], seen    # явный выбор «рассуждения» на узле: схему не навязываем

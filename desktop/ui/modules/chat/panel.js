@@ -501,12 +501,14 @@ export async function mount(root, ctx) {
   function progressText(pr) {
     if (!pr) return "работает";
     const sk = pr.skills || {}; const ids = Object.keys(sk);
-    const done = ids.filter((k) => sk[k].state === "done" || sk[k].state === "error").length;
+    const done = ids.filter((k) => ["done", "error", "skipped"].includes(sk[k].state)).length;
+    const skipped = ids.filter((k) => sk[k].state === "skipped").length;
     const now = ids.filter((k) => sk[k].state === "running");
     const tot = pr.total || ids.length;
     let t = esc(pr.phase || "работает");
     if (tot) t += ` · навыки ${done}/${tot}`;
     if (now.length) t += ` · сейчас: ${now.map(esc).join(", ")}`;
+    if (skipped) t += ` · пропущено: ${skipped}`;
     return t;
   }
 

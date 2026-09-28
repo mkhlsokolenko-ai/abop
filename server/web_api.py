@@ -3254,7 +3254,11 @@ async def _deliver_templates(agent: dict, result: dict, actor: str, skill_schema
             continue
         if deliver_filter and deliver_filter != spec.get("system"):
             continue
-        cmds = delivery_mod.build_commands(spec, so.get("structured") or {}, skill=sid)
+        cmds, skipped = delivery_mod.split_skipped(delivery_mod.build_commands(spec, so.get("structured") or {}, skill=sid))
+        for sk in skipped[:5]:   # видно в карточке прогона: почему команда не собралась (навыку нечего отправлять)
+            deliveries.append({"node": "tpl:" + sid, "title": f"{spec['system']}/{spec['type']} — не собрано", "channel": spec["system"],
+                               "to": spec["system"] + "/" + spec["type"], "mode": "skipped",
+                               "result": "навык не дал данных для команды: " + str(sk.get("reason") or "")})
         if not cmds:
             continue
         sysrec = await systems_store.get(spec["system"])
@@ -3647,8 +3651,13 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
                 _skill_schemas[_sid] = {"response_format": schema_store.response_format(_tpl),
                                         "instruction": _instr + "\n\nПОЛЯ СХЕМЫ (что класть):\n" + skill_templates.describe_for_prompt(_tpl),
                                         "max_tokens": skill_templates.max_tokens_of(_tpl),
-                                        "delivery": _tpl.get("delivery") or None, "template_id": _tpl.get("id")}
-    except Exception:  # noqa: BLE001 — схемы опциональны, не валим прогон
+                                        "delivery": _tpl.get("delivery") or None, "template_id": _tpl.get("id"),
+                                        # шаблон извлечения конкретнее дефолта формата из кода (письмо/БФТ помечены
+                                        # «документ»), но НЕ перебивает явный выбор «рассуждения» в UI навыка
+                                        "force_struct": ((_ov.get(_sid) or {}).get("patch") or {}).get("output") != "freeform"}
+        obs.log_event("info", "skill_schemas.bound", count=len(_skill_schemas), skills=sorted(_skill_schemas))
+    except Exception as _ex:  # noqa: BLE001 — схемы опциональны, не валим прогон, но НЕ молча
+        obs.log_event("warning", "skill_schemas.bind_failed", error=f"{type(_ex).__name__}: {str(_ex)[:200]}")
         _skill_schemas = {}
     await _push_progress("навыки")
     result = await runner.run_live(agent, contract, ape.skill_safety,

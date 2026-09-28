@@ -351,7 +351,11 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
     async def _analyze_inner(node, sid):
         # флаг output: узел графа ПЕРЕКРЫВАЕТ дефолт навыка (safety_of) — это тумблер «структурный/
         # рассуждения» при заведении агента (задаёт лимит токенов: freeform ⇒ max_tokens_free).
-        _out = node.get("output") or (safety_of(sid) or {}).get("output", "structured")
+        # приоритет формата вывода: явный флаг узла (тумблер при сборке агента) → шаблон извлечения навыка
+        # (structured: из него собираются доставка и секции отчёта) → дефолт навыка из кода/правки UI
+        _out = (node.get("output")
+                or ("structured" if (skill_schemas.get(sid) or {}).get("force_struct") else None)
+                or (safety_of(sid) or {}).get("output", "structured"))
         entities = []
         for ds in (skill_sources(sid) or []):
             e = ds.get("entity")
@@ -368,8 +372,15 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
                 data[e] = await asyncio.to_thread(data_query, e, limit=_LIM["rows"])   # файловый Data Plane — не блокируем loop
             except Exception:  # noqa: BLE001
                 data[e] = []
-        if not any(data.values()):
-            return None  # навык без данных в store — LLM-анализ не запускаем
+        if not entities:
+            # навык БЕЗ объявленного data-scope (письмо, БФТ, отчёт) работает по КОНТЕКСТУ: находки прогона,
+            # задача пользователя, контекст цепочки. Без контекста запускать нечего — честно помечаем пропуск.
+            if not (findings_context or (user_context or "").strip()):
+                await _notify(sid, "skipped", reason="нет данных и контекста")
+                return None
+        elif not any(data.values()):
+            await _notify(sid, "skipped", reason="нет данных в store")
+            return None  # навык объявил источники, но в store пусто — LLM-анализ не запускаем
         # ДАЙДЖЕСТ вместо полного дампа: точный объём + разбивка по типам (весь scope) + ограниченный
         # сэмпл записей. Даёт LLM ситуативную осведомлённость без раздувания токенов (детект-находки —
         # у детерминир. движка). Резко режет стоимость/время (было ~100k токенов/вызов на полном дампе).
@@ -441,7 +452,9 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
         # Schema-driven: навык ссылается на шаблон извлечения (JSON Schema из БД) → его инструкция +
         # response_format перекрывают дефолт. ЛЛМ раскладывает данные строго по схеме из БД.
         _custom = skill_schemas.get(sid)
-        _resp_fmt = _RESPONSE_FORMAT if _STRUCTURED else None
+        # freeform (документ/проза) — БЕЗ схемы: раньше дефолтная схема находок навязывалась и навыку-документу
+        # (письмо, план, БФТ), из-за чего он возвращал {находки, итог} вместо своего результата
+        _resp_fmt = _RESPONSE_FORMAT if (_STRUCTURED and use_struct) else None
         if _custom and use_struct:
             prompt = _head + "ЗАДАЧА (парсер): " + (_custom.get("instruction") or _task_verb) + \
                      " Верни СТРОГО JSON по заданной схеме. Только из " + _src + ", ничего не выдумывай."
