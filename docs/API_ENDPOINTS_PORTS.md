@@ -73,6 +73,7 @@
 | Метод | Путь | Назначение | Доступ |
 |---|---|---|---|
 | POST | `/api/auth/login` | Прокси-логин к Keycloak по username/password → JWT | open |
+| POST | `/api/auth/refresh` | `{refresh_token}` → новый `access_token` (Keycloak отдаёт access на 5 минут, refresh на 30); веб обновляет сессию сам и повторяет запрос, получивший 401 | открыт |
 | GET | `/api/me` | Текущий пользователь (роль/отдел/уровень) | user |
 | GET | `/api/me/scenarios` / POST | Пер-юзер черновики сценариев канвы (PG) | user |
 | GET | `/api/identity/me` | Сквозной профиль: мастер-UID + department/roles + аккаунты в системах | user |

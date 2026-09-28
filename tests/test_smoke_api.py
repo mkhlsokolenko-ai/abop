@@ -503,3 +503,43 @@ def test_report_includes_expert_labels(client):
     assert r.status_code == 200 and r.json()["removed"] is True
     assert client.delete(f"/api/runs/{rid}/findings/A1/label").json()["removed"] is False
     assert "Размечено:</b> 1 из 2" in client.get(f"/api/runs/{rid}/report?template=audit1c").text
+
+
+def test_auth_login_returns_refresh_and_refresh_endpoint_exists(client, monkeypatch):
+    """Вход отдаёт refresh_token и срок жизни, есть /api/auth/refresh: без этого сессия веба жила 5 минут
+    и всё превращалось в 401 («сервер недоступен»)."""
+    import httpx
+    from server import web_api
+
+    class _R:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            # токен-заглушка с полезной нагрузкой {"preferred_username": "u"}
+            return {"access_token": "eyJhbGciOiJub25lIn0.eyJwcmVmZXJyZWRfdXNlcm5hbWUiOiJ1In0.",
+                    "refresh_token": "rt-1", "expires_in": 300, "refresh_expires_in": 1800}
+
+    class _C:
+        def __init__(self, *a, **kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, data=None):
+            assert "openid-connect/token" in url
+            return _R()
+
+    monkeypatch.setattr(httpx, "AsyncClient", _C)
+    r = client.post("/api/auth/login", json={"username": "u", "password": "p"})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["access_token"] and d["refresh_token"] == "rt-1" and d["expires_in"] == 300
+    r2 = client.post("/api/auth/refresh", json={"refresh_token": "rt-1"})
+    assert r2.status_code == 200 and r2.json()["access_token"] and r2.json()["refresh_token"] == "rt-1"
+    assert client.post("/api/auth/refresh", json={}).status_code == 422
+    assert web_api  # ссылка на модуль, чтобы не потерять импорт при рефакторинге
