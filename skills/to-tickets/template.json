@@ -302,5 +302,39 @@
       }
     }
   },
-  "max_tokens": 5000
+  "max_tokens": 5000,
+  "inputs": {
+    "required": [
+      {
+        "from": "context",
+        "note": "список действий или решений: из сверки плана и факта, встречи, историй"
+      }
+    ],
+    "optional": [
+      {
+        "from": "skill",
+        "skill": "roadmap-fact",
+        "path": "решения",
+        "fields": [
+          "что_сделать",
+          "кому",
+          "срок"
+        ]
+      },
+      {
+        "from": "skill",
+        "skill": "user-stories",
+        "path": "истории",
+        "fields": [
+          "id",
+          "роль"
+        ]
+      }
+    ]
+  },
+  "produces": {
+    "path": "тикеты",
+    "key": "id",
+    "join": "тикет"
+  }
 }

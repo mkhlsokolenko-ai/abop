@@ -4,30 +4,197 @@
   "json_schema": {
     "type": "object",
     "additionalProperties": false,
-    "required": ["документы_по_типам", "рёбра_основание", "план_счетов", "организации", "контрагенты", "связность", "аномалии_извлечения", "итог"],
+    "required": [
+      "документы_по_типам",
+      "рёбра_основание",
+      "план_счетов",
+      "организации",
+      "контрагенты",
+      "связность",
+      "аномалии_извлечения",
+      "итог"
+    ],
     "properties": {
-      "документы_по_типам": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["тип", "количество"], "properties": {"тип": {"type": "string"}, "количество": {"type": "integer"}}}},
+      "документы_по_типам": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "тип",
+            "количество"
+          ],
+          "properties": {
+            "тип": {
+              "type": "string"
+            },
+            "количество": {
+              "type": "integer"
+            }
+          }
+        }
+      },
       "рёбра_основание": {
-        "type": "object", "additionalProperties": false, "required": ["всего", "по_виду"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "всего",
+          "по_виду"
+        ],
         "properties": {
-          "всего": {"type": "integer"},
-          "по_виду": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["от", "к", "количество"], "properties": {"от": {"type": "string"}, "к": {"type": "string"}, "количество": {"type": "integer"}}}}
+          "всего": {
+            "type": "integer"
+          },
+          "по_виду": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "от",
+                "к",
+                "количество"
+              ],
+              "properties": {
+                "от": {
+                  "type": "string"
+                },
+                "к": {
+                  "type": "string"
+                },
+                "количество": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
         }
       },
-      "план_счетов": {"type": "object", "additionalProperties": false, "required": ["счетов", "ключевые_коды"], "properties": {"счетов": {"type": "integer"}, "ключевые_коды": {"type": "array", "items": {"type": "string"}}}},
-      "организации": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["наименование", "ИНН"], "properties": {"наименование": {"type": "string"}, "ИНН": {"type": "string"}}}},
-      "контрагенты": {"type": "object", "additionalProperties": false, "required": ["всего", "с_ИНН", "дублей_по_ИНН"], "properties": {"всего": {"type": "integer"}, "с_ИНН": {"type": "integer"}, "дублей_по_ИНН": {"type": "integer"}}},
+      "план_счетов": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "счетов",
+          "ключевые_коды"
+        ],
+        "properties": {
+          "счетов": {
+            "type": "integer"
+          },
+          "ключевые_коды": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "организации": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "наименование",
+            "ИНН"
+          ],
+          "properties": {
+            "наименование": {
+              "type": "string"
+            },
+            "ИНН": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "контрагенты": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "всего",
+          "с_ИНН",
+          "дублей_по_ИНН"
+        ],
+        "properties": {
+          "всего": {
+            "type": "integer"
+          },
+          "с_ИНН": {
+            "type": "integer"
+          },
+          "дублей_по_ИНН": {
+            "type": "integer"
+          }
+        }
+      },
       "связность": {
-        "type": "object", "additionalProperties": false, "required": ["цепочечных_документов", "с_основанием", "оценка", "комментарий"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "цепочечных_документов",
+          "с_основанием",
+          "оценка",
+          "комментарий"
+        ],
         "properties": {
-          "цепочечных_документов": {"type": "integer", "description": "СФ и платежи — те, у кого должно быть основание"},
-          "с_основанием": {"type": "integer"},
-          "оценка": {"type": "string", "enum": ["связный", "частичные_разрывы", "массовые_разрывы"]},
-          "комментарий": {"type": "string"}
+          "цепочечных_документов": {
+            "type": "integer",
+            "description": "СФ и платежи — те, у кого должно быть основание"
+          },
+          "с_основанием": {
+            "type": "integer"
+          },
+          "оценка": {
+            "type": "string",
+            "enum": [
+              "связный",
+              "частичные_разрывы",
+              "массовые_разрывы"
+            ]
+          },
+          "комментарий": {
+            "type": "string"
+          }
         }
       },
-      "аномалии_извлечения": {"type": "array", "items": {"type": "string"}, "description": "пустые справочники, документы без организации/контрагента, подозрительно малое число записей"},
-      "итог": {"type": "string"}
+      "аномалии_извлечения": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "пустые справочники, документы без организации/контрагента, подозрительно малое число записей"
+      },
+      "итог": {
+        "type": "string"
+      }
     }
+  },
+  "inputs": {
+    "required": [
+      {
+        "from": "skill",
+        "skill": "audit1c-extract",
+        "path": "сущности",
+        "fields": [
+          "id",
+          "тип"
+        ]
+      },
+      {
+        "from": "data",
+        "entity": "doc1c",
+        "fields": [
+          "id",
+          "ДокументОснование",
+          "Проводки"
+        ]
+      }
+    ]
+  },
+  "produces": {
+    "path": "документы_по_типам",
+    "key": "тип",
+    "join": "типдокумента"
   }
 }

@@ -9,6 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from server.delivery import validate_delivery  # noqa: E402
+from server.skill_contract import field_warnings, validate_contract  # noqa: E402
 from server.skill_templates import validate_schema  # noqa: E402
 
 ok = True
@@ -23,6 +24,8 @@ for p in sys.argv[1:]:
             errs += validate_schema(t["json_schema"]) + validate_delivery(t.get("delivery"))
             if not (400 <= len(json.dumps(t["json_schema"], ensure_ascii=False)) <= 12000):
                 errs.append("размер схемы вне 400..12000")
+        # контракт навыка: вход, выход и сквозной ключ — по ним считается покрытие при сборке
+        errs += validate_contract(t)
         mt = t.get("max_tokens")
         if mt is not None and not (1500 <= int(mt) <= 8000):
             errs.append("max_tokens вне 1500..8000")

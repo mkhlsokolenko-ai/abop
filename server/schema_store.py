@@ -29,10 +29,13 @@ ALTER TABLE schema_templates ADD COLUMN IF NOT EXISTS max_tokens INTEGER;
 ALTER TABLE schema_templates ADD COLUMN IF NOT EXISTS delivery JSONB;
 -- слоты: какой предмет работы навык обязан получить до запуска (проект, контрагент, период)
 ALTER TABLE schema_templates ADD COLUMN IF NOT EXISTS slots JSONB;
+-- контракт навыка: что нужно на входе и что он отдаёт (по какому ключу соединяется)
+ALTER TABLE schema_templates ADD COLUMN IF NOT EXISTS inputs JSONB;
+ALTER TABLE schema_templates ADD COLUMN IF NOT EXISTS produces JSONB;
 """
 
 _MEM: dict[str, dict] = {}
-_COLS = "id,name,json_schema,instruction,builtin,editor,updated_at,max_tokens,delivery,slots"
+_COLS = "id,name,json_schema,instruction,builtin,editor,updated_at,max_tokens,delivery,slots,inputs,produces"
 
 
 def _has_pg() -> bool:
@@ -44,7 +47,9 @@ def _row(r) -> dict:
             "builtin": bool(r[4]), "editor": r[5], "updated_at": r[6].isoformat() if r[6] else None,
             "max_tokens": int(r[7]) if len(r) > 7 and r[7] else None,
             "delivery": (r[8] if len(r) > 8 and isinstance(r[8], dict) and r[8] else None),
-            "slots": (r[9] if len(r) > 9 and isinstance(r[9], list) else [])}
+            "slots": (r[9] if len(r) > 9 and isinstance(r[9], list) else []),
+            "inputs": (r[10] if len(r) > 10 and isinstance(r[10], dict) else {}),
+            "produces": (r[11] if len(r) > 11 and isinstance(r[11], (dict, list)) else {})}
 
 
 async def init() -> None:
@@ -82,7 +87,9 @@ async def save(tid: str, spec: dict, editor: str = "dev", builtin: bool = False)
             "instruction": spec.get("instruction") or "", "builtin": builtin,
             "max_tokens": int(spec.get("max_tokens") or 0) or None,
             "delivery": spec.get("delivery") if isinstance(spec.get("delivery"), dict) and spec.get("delivery") else None,
-            "slots": spec.get("slots") if isinstance(spec.get("slots"), list) else []}
+            "slots": spec.get("slots") if isinstance(spec.get("slots"), list) else [],
+            "inputs": spec.get("inputs") if isinstance(spec.get("inputs"), dict) else {},
+            "produces": spec.get("produces") if isinstance(spec.get("produces"), (dict, list)) else {}}
     if not _has_pg():
         card["editor"] = editor
         _MEM[tid] = card
@@ -90,14 +97,17 @@ async def save(tid: str, spec: dict, editor: str = "dev", builtin: bool = False)
     from .db import _conn
     async with _conn() as conn:
         await conn.execute(
-            "INSERT INTO schema_templates (id,name,json_schema,instruction,builtin,editor,updated_at,max_tokens,delivery,slots) "
-            "VALUES (%s,%s,%s,%s,%s,%s,now(),%s,%s,%s) "
+            "INSERT INTO schema_templates (id,name,json_schema,instruction,builtin,editor,updated_at,max_tokens,delivery,slots,inputs,produces) "
+            "VALUES (%s,%s,%s,%s,%s,%s,now(),%s,%s,%s,%s,%s) "
             "ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, json_schema=EXCLUDED.json_schema, "
             "instruction=EXCLUDED.instruction, builtin=EXCLUDED.builtin, editor=EXCLUDED.editor, updated_at=now(), "
-            "max_tokens=EXCLUDED.max_tokens, delivery=EXCLUDED.delivery, slots=EXCLUDED.slots",
+            "max_tokens=EXCLUDED.max_tokens, delivery=EXCLUDED.delivery, slots=EXCLUDED.slots, "
+            "inputs=EXCLUDED.inputs, produces=EXCLUDED.produces",
             (tid, card["name"], json.dumps(card["json_schema"]), card["instruction"], builtin, editor, card["max_tokens"],
              json.dumps(card["delivery"], ensure_ascii=False) if card["delivery"] else None,
-             json.dumps(card["slots"], ensure_ascii=False) if card["slots"] else None))
+             json.dumps(card["slots"], ensure_ascii=False) if card["slots"] else None,
+             json.dumps(card["inputs"], ensure_ascii=False) if card["inputs"] else None,
+             json.dumps(card["produces"], ensure_ascii=False) if card["produces"] else None))
     return await get(tid)
 
 

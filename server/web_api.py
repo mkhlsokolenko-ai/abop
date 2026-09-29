@@ -30,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, assembly, audit_store, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, report_store, run_cache_store, run_store, runner, safety, schema_store, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, assembly, audit_store, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, report_store, run_cache_store, run_store, runner, safety, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
@@ -1394,9 +1394,18 @@ async def schema_template_save(tid: str, body: dict, u: dict = Depends(user)) ->
     for _s in sl:
         if not isinstance(_s, dict) or not _s.get("name") or not _s.get("entity"):
             raise HTTPException(422, "слот описывается объектом с полями name и entity")
+    # контракт навыка: чем кормить и что отдаёт. Проверяем до сохранения, иначе сборка агента
+    # получит описание, по которому нельзя посчитать покрытие входов.
+    inp = (body or {}).get("inputs") if "inputs" in (body or {}) else (existing or {}).get("inputs")
+    prod = (body or {}).get("produces") if "produces" in (body or {}) else (existing or {}).get("produces")
+    inp = inp if isinstance(inp, dict) else {}
+    prod = prod if isinstance(prod, (dict, list)) else {}   # навык может отдавать несколько списков
+    _cerr = skill_contract.validate_contract({"inputs": inp, "produces": prod, "json_schema": sch, "slots": sl})
+    if _cerr:
+        raise HTTPException(422, "контракт навыка: " + "; ".join(_cerr[:5]))
     card = await schema_store.save(tid, {"name": (body or {}).get("name") or (existing or {}).get("name") or tid,
                                          "json_schema": sch, "instruction": instr, "max_tokens": mt,
-                                         "delivery": dl, "slots": sl},
+                                         "delivery": dl, "slots": sl, "inputs": inp, "produces": prod},
                                    editor=editor, builtin=False)
     await audit_store.record(editor, "schema_template.save", tid, {"name": card.get("name"), "was_builtin": bool(existing and existing.get("builtin"))})
     return card
@@ -4822,6 +4831,59 @@ async def skill_slots(sid: str, u: dict = Depends(user)) -> dict:
     tpl = await schema_store.get(tid) or await schema_store.get(sid) or {}
     slots = tpl.get("slots") or (tpl.get("spec") or {}).get("slots") or []
     return {"skill": sid, "template_id": tpl.get("id") or tid, "slots": slots}
+
+
+@app.get("/api/skills/{sid}/contract")
+async def skill_contract_get(sid: str, u: dict = Depends(user)) -> dict:
+    """Контракт навыка: чем кормить (inputs), что отдаёт (produces), какой предмет уточнять (slots).
+
+    По нему сборка агента считает покрытие входов, а планировщик цепочки понимает, можно ли поставить
+    навык после другого. До контракта вход навыка был описан только прозой в инструкции."""
+    if sid not in ape.SKILLS:
+        raise HTTPException(404, "нет навыка")
+    ov = ((await skill_store.get(sid)) or {}).get("patch") or {}
+    tid = ov.get("schema_template_id") or sid
+    tpl = await schema_store.get(tid) or await schema_store.get(sid) or {}
+    inputs = tpl.get("inputs") or {}
+    ds = []
+    try:
+        ds = [d.get("entity") for d in (ape.skill_datasources_resolved(sid) or []) if d.get("entity")]
+    except Exception:  # noqa: BLE001 — область данных опциональна
+        ds = []
+    return {"skill": sid, "template_id": tpl.get("id") or tid,
+            "inputs": inputs, "produces": tpl.get("produces") or {}, "slots": tpl.get("slots") or [],
+            "delivery": tpl.get("delivery") or None, "entities": ds,
+            "has_schema": bool((tpl.get("json_schema") or {}).get("properties")),
+            "errors": skill_contract.validate_contract(tpl),
+            "field_hints": skill_contract.field_warnings(tpl)}
+
+
+@app.get("/api/catalog/coverage")
+async def catalog_coverage(u: dict = Depends(user)) -> dict:
+    """Готовность каталога к сборке: у скольких навыков есть схема, контракт входа, область данных,
+    слоты и доставка. Отчёт, по которому видно, что ещё предстоит привести к единому виду."""
+    tpls = {t["id"]: t for t in await schema_store.all()}
+    ov = await skill_store.all()
+    rows, totals = [], {"всего": 0, "схема": 0, "вход": 0, "выход": 0, "данные": 0, "слоты": 0, "доставка": 0}
+    for sid in sorted(ape.SKILLS):
+        patch = (ov.get(sid) or {}).get("patch") or {}
+        tid = patch.get("schema_template_id") or sid
+        t = tpls.get(tid) or tpls.get(sid) or {}
+        try:
+            ents = [d.get("entity") for d in (ape.skill_datasources_resolved(sid) or []) if d.get("entity")]
+        except Exception:  # noqa: BLE001
+            ents = []
+        r = {"skill": sid, "template_id": t.get("id") or "",
+             "схема": bool((t.get("json_schema") or {}).get("properties")),
+             "вход": bool((t.get("inputs") or {}).get("required") or (t.get("inputs") or {}).get("optional")),
+             "выход": bool(t.get("produces")),
+             "данные": bool(ents), "слоты": bool(t.get("slots")), "доставка": bool(t.get("delivery")),
+             "ошибки": skill_contract.validate_contract(t)}
+        totals["всего"] += 1
+        for k in ("схема", "вход", "выход", "данные", "слоты", "доставка"):
+            totals[k] += 1 if r[k] else 0
+        rows.append(r)
+    return {"totals": totals, "skills": rows}
 
 
 @app.get("/api/agents/{agent_id}/slots")

@@ -94,5 +94,24 @@
       }
     }
   },
-  "max_tokens": 4000
+  "max_tokens": 4000,
+  "inputs": {
+    "required": [
+      {
+        "from": "skill",
+        "skill": "audit1c-checks",
+        "path": "находки",
+        "fields": [
+          "id",
+          "класс",
+          "критичность"
+        ]
+      }
+    ]
+  },
+  "produces": {
+    "path": "причины",
+    "key": "id",
+    "join": "первопричина"
+  }
 }

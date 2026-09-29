@@ -104,5 +104,30 @@
       }
     }
   },
-  "max_tokens": 4000
+  "max_tokens": 4000,
+  "inputs": {
+    "required": [
+      {
+        "from": "skill",
+        "skill": "audit1c-graph-build",
+        "path": "документы_по_типам",
+        "fields": [
+          "тип"
+        ]
+      },
+      {
+        "from": "data",
+        "entity": "doc1c",
+        "fields": [
+          "id",
+          "ДокументОснование"
+        ]
+      }
+    ]
+  },
+  "produces": {
+    "path": "гипотезы",
+    "key": "id",
+    "join": "гипотеза"
+  }
 }
