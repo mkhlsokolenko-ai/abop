@@ -4976,7 +4976,24 @@ async def hitl_item(item_id: str, u: dict = Depends(user)) -> dict:
     payload = item.get("payload") or {}
     cfg = payload.get("cfg") or {}
     cp = payload.get("payload") if payload.get("kind") == "command" and isinstance(payload.get("payload"), dict) else {}
-    return {"id": item.get("id"), "state": item.get("state"), "agent_id": item.get("agent_id"),
+    # Команда в систему (задача трекера, страница вики) шла на подтверждение без текста: html пуст,
+    # и человек видел «Содержимое не приложено». Отдаём тело и остальные поля команды — подтверждают
+    # ровно то, что уйдёт.
+    _body, _fields = "", []
+    if cp:
+        for _k in ("description", "body", "text", "content", "comment", "message", "html"):
+            _v = cp.get(_k)
+            if isinstance(_v, str) and _v.strip():
+                _body = _v[:20000]
+                break
+        for _k, _v in cp.items():
+            if _k in ("description", "body", "text", "content", "comment", "message", "html"):
+                continue
+            if isinstance(_v, (str, int, float, bool)) and str(_v).strip():
+                _fields.append([_k, str(_v)[:300]])
+        _fields = _fields[:12]
+    return {"body": _body, "command_fields": _fields,
+            "id": item.get("id"), "state": item.get("state"), "agent_id": item.get("agent_id"),
             "agent_name": payload.get("agent_name"), "title": item.get("title"), "channel": item.get("channel"),
             "to": item.get("to_addr"), "format": cfg.get("format") or ("command" if cp else None),
             "subject": cfg.get("subject") or cfg.get("title") or cp.get("subject") or cp.get("title"),

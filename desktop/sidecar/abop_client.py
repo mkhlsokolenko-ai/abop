@@ -261,6 +261,45 @@ def suggest_pipeline(q: str) -> dict:
     return _req("POST", "/api/pipelines/suggest", {"q": q}, timeout=90)
 
 
+def run_full(run_id: str) -> dict:
+    """Полная запись прогона: находки целиком, доска, вердикт, метрики."""
+    return _req("GET", "/api/runs/" + urllib.request.quote(run_id), timeout=60)
+
+
+def run_diff(run_id: str) -> dict:
+    """Сравнение с предыдущим прогоном агента: появилось / ушло / изменилось."""
+    return _req("GET", "/api/runs/" + urllib.request.quote(run_id) + "/diff", timeout=60)
+
+
+def run_metrics(run_id: str) -> dict:
+    """Время, токены и стоимость по навыкам прогона."""
+    return _req("GET", "/api/runs/" + urllib.request.quote(run_id) + "/metrics", timeout=30)
+
+
+def report_templates() -> list:
+    """Шаблоны отчётов ABOP (вид отчёта выбирает пользователь)."""
+    r = _req("GET", "/api/report-templates", timeout=30)
+    return (r or {}).get("templates", []) if isinstance(r, dict) else (r or [])
+
+
+def run_report_html(run_id: str, template: str = "") -> str:
+    """Отчёт прогона как HTML — показать в приложении без сборки PDF."""
+    q = "?format=html" + ("&template=" + urllib.request.quote(template) if template else "")
+    url = config.ABOP.rstrip("/") + "/api/runs/" + urllib.request.quote(run_id) + "/report" + q
+    headers = {}
+    tok = auth.token()
+    if tok:
+        headers["Authorization"] = "Bearer " + tok
+    req = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=120) as r:
+            return r.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        raise AbopError(e.code, e.read().decode("utf-8", "replace")[:300]) from None
+    except Exception as e:  # noqa: BLE001
+        raise AbopError(0, f"{type(e).__name__}: {e}") from None
+
+
 def run_report_pdf(run_id: str, template: str = "") -> bytes:
     """PDF-отчёт прогона по шаблону (ABOP рендерит) — байты файла."""
     q = "?format=pdf" + ("&template=" + urllib.request.quote(template) if template else "")

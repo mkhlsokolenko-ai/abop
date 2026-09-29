@@ -240,7 +240,9 @@ export async function mount(root, ctx) {
 
   // ── карточка прогона реального агента ABOP (находки / доставка / HITL) ──
   function runCard(s) {
-    const fnd = (s.findings || []).map((t) => `<div style="font-size:12.5px;color:var(--ink);border-left:2px solid var(--accent);padding-left:10px;margin:4px 0">${esc(cleanFinding(t).slice(0, 400))}</div>`).join("");
+    const fndAll = s.findings || [];
+    const fnd = fndAll.map((t) => `<div style="font-size:12.5px;color:var(--ink);border-left:2px solid var(--accent);padding-left:10px;margin:4px 0">${esc(cleanFinding(t).slice(0, 400))}</div>`).join("")
+      + (s.findings_total && s.findings_total > fndAll.length ? `<div style="font-size:11.5px;color:var(--ink-3);margin:6px 0 2px">Показаны ${fndAll.length} из ${s.findings_total} — остальные в разделе «Прогоны».</div>` : "");
     const dl = (s.delivery || []).map((d) => { const wait = d.mode === "awaiting_hitl"; const mode = wait ? "ожидает вашего подтверждения" : d.mode === "real" ? "отправлено" : d.mode === "dry_run" ? "черновик (без отправки)" : d.mode === "denied" ? "доступ закрыт" : esc(d.mode || ""); return `<div style="font-size:11.5px;color:${wait ? "var(--warn-ink)" : d.mode === "denied" ? "var(--danger-ink)" : "var(--ink-2)"}">${CH_ICON(d.channel)} ${esc(d.channel)}${d.to ? " → " + esc(d.to) : ""}${d.subject ? " · «" + esc(String(d.subject).slice(0, 80)) + "»" : ""} · ${mode}${d.hitl_id && s.cmd_results && s.cmd_results[d.hitl_id] ? (() => { const cr = s.cmd_results[d.hitl_id]; const body = cr.url ? `<a href="${esc(cr.url)}" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">${esc(cr.text)}</a>` : esc(cr.text); return ` <span style="color:${cr.ok ? "var(--ok-ink)" : "var(--danger-ink)"}">${body}</span>`; })() : ""}${d.result && d.mode === "real" ? ` <span style="color:var(--ink-3)">${esc(String(d.result).slice(0, 90))}</span>` : ""}</div>`; }).join("");
     const waits = (s.delivery || []).filter((d) => d.mode === "awaiting_hitl");
     const hitlIds = waits.map((d) => d.hitl_id).filter(Boolean);
@@ -256,7 +258,7 @@ export async function mount(root, ctx) {
         <span class="hitl-head">🛡 Агент подготовил внешнее действие — нужно ваше решение</span>
         <span style="font-size:11.5px;color:var(--ink-2)">${waits.map((d) => `${CH_ICON(d.channel)} ${esc(d.title || d.channel)}${d.to ? " → " + esc(d.to) : ""}`).join(" · ")}</span>
         <span style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn ok hitlOk">Посмотреть и подтвердить</button><button type="button" class="btn hitlNo">Отклонить</button></span></div>`) : ""}
-      <span style="display:flex;gap:8px;flex-wrap:wrap;margin-top:2px"><button type="button" class="btn sm mkRecurring" data-agent="${esc(s.agent_id || "")}" data-name="${esc(name)}">🔁 Сделать регулярной</button>${s.run_id ? `<button type="button" class="btn sm runPdf" data-run="${esc(s.run_id)}" title="Отчёт прогона по шаблону — PDF в «Загрузки»">📄 Отчёт PDF</button>` : ""}</span></div>`;
+      <span style="display:flex;gap:8px;flex-wrap:wrap;margin-top:2px"><button type="button" class="btn sm mkRecurring" data-agent="${esc(s.agent_id || "")}" data-name="${esc(name)}">🔁 Сделать регулярной</button>${s.run_id ? `<button type="button" class="btn sm runOpen" data-run="${esc(s.run_id)}" title="Все находки, доставка и затраты прогона">Открыть прогон</button><button type="button" class="btn sm runPdf" data-run="${esc(s.run_id)}" title="Отчёт прогона по шаблону — PDF в «Загрузки»">📄 Отчёт PDF</button>` : ""}</span></div>`;
   }
   // карточка результата цепочки — из данных (D-H3), legacy-строка HTML тоже поддерживается
   function pipelineHTML(pr) {
@@ -326,6 +328,8 @@ export async function mount(root, ctx) {
     });
     $("col").querySelectorAll("[data-edit]").forEach((e) => e.onclick = () => { $("inp").value = messages[+e.dataset.edit].content; $("inp").focus(); });
     $("col").querySelectorAll(".codecopy").forEach((b) => b.onclick = () => { const code = b.closest("span").parentElement.querySelector(".codebody"); navigator.clipboard.writeText(code ? code.textContent : ""); const o = b.textContent; b.textContent = "✓"; setTimeout(() => b.textContent = o, 1200); });
+    // карточка показывает первые находки — за полным прогоном уходим в журнал
+    $("col").querySelectorAll(".runOpen").forEach((b) => b.onclick = () => ctx.open("runs", { run: b.dataset.run }));
     $("col").querySelectorAll(".runPdf").forEach((b) => b.onclick = async () => { b.disabled = true; const t = b.textContent; b.textContent = "…"; try { const r = await api(A_AG + "/report/" + encodeURIComponent(b.dataset.run), { method: "POST", body: JSON.stringify({}) }); if (r && r.ok) toast(`📄 Отчёт сохранён: ${r.path}`, "ok"); else toast(humanError(r), "danger"); } catch (e) { toast(humanError(e), "danger"); } b.disabled = false; b.textContent = t; });
     $("col").querySelectorAll(".hitlOk").forEach((b) => b.onclick = () => decideDelivery(b, "approve"));
     $("col").querySelectorAll(".hitlNo").forEach((b) => b.onclick = () => decideDelivery(b, "reject"));
@@ -582,30 +586,66 @@ export async function mount(root, ctx) {
     if (!it || it.ok === false) { toast("Заявка уже обработана или недоступна", "warn"); loadHitlQueue(); return; }
     if (legacy) it.body = "Предпросмотр содержимого недоступен в этой версии ABOP Desktop — обновите приложение. Подтверждение отправит отчёт агента в указанный канал.";
     const fields = [["Агент", it.agent_name || agentName(it.agent_id, it.agent_id)], ["Канал", (CH_ICON(it.channel) + " " + (it.channel || ""))], ["Адресат", it.to || "—"]];
-    if (it.kind === "command") { fields[1] = ["Действие", `${it.system || ""} · ${it.type || ""}`]; fields[2] = ["Куда", it.to || it.system || "—"]; if (it.source && it.source.skill) fields.push(["Навык", skillName(it.source.skill) + (it.source.item ? " · " + it.source.item : "")]); }
+    if (it.kind === "command") {
+      fields[1] = ["Действие", `${it.system || ""} · ${it.type || ""}`];
+      fields[2] = ["Куда", it.to || it.system || "—"];
+      if (it.source && it.source.skill) fields.push(["Навык", skillName(it.source.skill) + (it.source.item ? " · " + it.source.item : "")]);
+      // поля самой команды: что именно создастся в системе
+      (it.command_fields || []).forEach(([k, v]) => fields.push([String(k), String(v)]));
+    }
     if (it.subject) fields.push(["Тема", it.subject]);
     if (it.format && it.kind !== "command") fields.push(["Формат", it.format]);
     const ok = await ctx.gate({ title: it.title || "Внешнее действие", kicker: "требуется ваше решение", fields, html: it.html ? sanitize(it.html) : "", body: it.html ? "" : (it.body || "Содержимое не приложено."), allowLabel: "Подтвердить", denyLabel: "Отклонить", note: it.kind === "command" ? "Действие выполнится в вашей системе. Ссылка на созданный объект вернётся в карточку прогона." : "Отправится только после вашего подтверждения. Персональные данные замаскированы." });
-    await decideHitl(ids, ok ? "approve" : "reject", btn);
+    let reason = "";
+    if (!ok) {
+      // причина отклонения поддержана сервером и пишется в журнал — спрашиваем её, но не требуем
+      reason = await askReason(it.title || "Внешнее действие");
+      if (reason === null) return;             // передумал отклонять
+    }
+    await decideHitl(ids, ok ? "approve" : "reject", btn, reason);
+  }
+  function askReason(title) {
+    return new Promise((resolve) => {
+      let done = false;
+      const ov = modal("Почему отклоняете?", `<div style="font-size:12.5px;color:var(--ink-2);line-height:1.55;margin-bottom:10px">«${esc(title)}» не уйдёт. Причина попадёт в журнал и поможет автору агента.</div>
+        <input id="hrReason" placeholder="Например: неверный адресат" style="width:100%;padding:9px 11px;border-radius:10px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-size:13px"/>`,
+        () => { done = true; resolve(String((document.getElementById("hrReason") || {}).value || "").trim()); },
+        "Отклонить", { danger: true, kicker: "решение", onClose: (v) => { if (v !== true && !done) resolve(null); } });
+      setTimeout(() => { const i = document.getElementById("hrReason"); if (i) { i.focus(); i.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); const b = ov.querySelector("#mOk"); if (b) b.click(); } }; } }, 30);
+    });
   }
   function sanitize(html) {   // превью отчёта: убираем скрипты/обработчики, остальное показываем как есть
     return String(html || "").replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<style[\s\S]*?<\/style>/gi, "").replace(/\son\w+="[^"]*"/gi, "").replace(/\son\w+='[^']*'/gi, "").replace(/javascript:/gi, "");
   }
-  async function decideHitl(ids, decision, btn) {
+  async function decideHitl(ids, decision, btn, reason) {
     if (btn) { btn.disabled = true; btn.textContent = "…"; }
     let n = 0, last = "", err = "";
     const commands = [];
     for (const id of ids) {
-      try { const r = await api(A_AG + "/hitl/" + encodeURIComponent(id) + "/approve", { method: "POST", body: JSON.stringify({ decision }) }); n++; const rr = (r && r.result) || r || {}; const d = rr.delivery; if (d) last = d; if (decision === "approve" && rr.command_id) commands.push(id); }
+      try { const r = await api(A_AG + "/hitl/" + encodeURIComponent(id) + "/approve", { method: "POST", body: JSON.stringify(reason ? { decision, reason } : { decision }) }); n++; const rr = (r && r.result) || r || {}; const d = rr.delivery; if (d) last = d; if (decision === "approve" && rr.command_id) commands.push(id); }
       catch (e) { err = humanError(e); }
     }
     if (commands.length) watchCommandResults(commands);
     if (n) toast(decision === "approve" ? `✓ Подтверждено: ${n}${last ? " · " + String(last).slice(0, 80) : ""}` : `⃠ Отклонено: ${n}`, decision === "approve" ? "ok" : "");
     if (err) toast(err, "danger");
     // отметить карточки прогонов в чате
-    messages.forEach((m) => { const ra = m.meta && m.meta.run_agent; if (ra && (ra.delivery || []).some((d) => ids.includes(d.hitl_id))) { ra.hitl_done = decision; ra.hitl_result = last; } });
+    messages.forEach((m) => {
+      const ra = m.meta && m.meta.run_agent;
+      if (ra && (ra.delivery || []).some((d) => ids.includes(d.hitl_id))) {
+        ra.hitl_done = decision; ra.hitl_result = last;
+        saveRunMeta(m, { hitl_done: decision, hitl_result: last });
+      }
+    });
     render(); await loadHitlQueue();
   }
+  // Карточка прогона живёт в истории чата: решения и результаты команд дописываем в неё,
+  // иначе после переоткрытия чата всё выглядит так, будто ничего не подтверждали.
+  async function saveRunMeta(m, patch) {
+    if (!cur || !m || !m.id) return;
+    try { await api(M + "/threads/" + cur.id + "/messages/" + m.id + "/meta", { method: "PATCH", body: JSON.stringify({ meta: { run_agent: patch } }) }); }
+    catch { /* история не обновилась — на экране решение уже отражено */ }
+  }
+
   // результат коннектора по команде: опрашиваем заявку до 90 с (command.done/failed приходит из шины)
   async function watchCommandResults(ids) {
     const started = Date.now();

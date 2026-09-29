@@ -181,7 +181,7 @@ const mounted = new Map();        // id → { root, mod }   (D-H11: кэш мо�
 
 function icon(name) {
   // Реальные глифы из эталона APE Desktop (standalone): геометрические, не смайлы.
-  return { chat: "✦", agents: "⎔", cabinet: "◉", graphlens: "◈", opslens: "◎", connectors: "⛁", security: "⛨", ocr: "◵", ml: "❖", abop: "⬡" }[name] || "◆";
+  return { chat: "✦", runs: "◷", agents: "⎔", cabinet: "◉", graphlens: "◈", opslens: "◎", connectors: "⛁", security: "⛨", ocr: "◵", ml: "❖", abop: "⬡" }[name] || "◆";
 }
 
 // ── вход: единый термин «ABOP» (Keycloak за шлюзом — детали пользователю не нужны) (D-H12) ──────
@@ -240,7 +240,7 @@ function canSee(id) { const req = MODULE_ROLES[id]; if (!req) return true; retur
 // «Операции» (opslens) убраны как лишние (#10); «Безопасность» слита в «Кабинет» (#11).
 const HIDDEN_MODULES = new Set(["opslens", "security"]);
 function visibleModules() { return MODULES.filter((m) => !HIDDEN_MODULES.has(m.id) && canSee(m.id)); }
-const RAIL_ORDER = ["chat", "connectors", "agents", "graphlens", "cabinet", "ocr"];
+const RAIL_ORDER = ["chat", "runs", "connectors", "agents", "graphlens", "cabinet", "ocr"];
 const RAIL_TITLE = { agents: "Мои агенты" };
 function railModules() {
   const rank = (id) => { const i = RAIL_ORDER.indexOf(id); return i < 0 ? RAIL_ORDER.length : i; };

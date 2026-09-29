@@ -13,7 +13,7 @@ import json
 import re
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -443,6 +443,32 @@ def agent_roles() -> list[dict]:
 
 
 # ── экспорт треда в файл в «Загрузки» (md/docx/xlsx; pdf делает Electron) ──
+class MetaIn(BaseModel):
+    meta: dict = {}
+
+
+@router.patch("/threads/{thread_id}/messages/{message_id}/meta")
+def patch_message_meta(thread_id: int, message_id: int, body: MetaIn):
+    """Дописать поля в meta сообщения (карточка прогона): решение по заявке, номер созданной задачи.
+    Без этого решение жило только в памяти вкладки: после переоткрытия чата кнопка «Подтвердить»
+    снова была активна, а ссылка на заведённую задачу исчезала."""
+    rows = db.q("SELECT meta FROM messages WHERE id=? AND thread_id=?", (message_id, thread_id))
+    if not rows:
+        raise HTTPException(404, "нет такого сообщения")
+    try:
+        meta = json.loads(rows[0]["meta"] or "{}")
+    except Exception:  # noqa: BLE001
+        meta = {}
+    patch = body.meta or {}
+    ra = dict(meta.get("run_agent") or {})
+    ra.update(patch.get("run_agent") or {})
+    meta.update({k: v for k, v in patch.items() if k != "run_agent"})
+    if ra:
+        meta["run_agent"] = ra
+    db.run("UPDATE messages SET meta=? WHERE id=?", (json.dumps(meta, ensure_ascii=False), message_id))
+    return {"ok": True, "meta": meta}
+
+
 @router.post("/threads/{thread_id}/export")
 def export_thread(thread_id: int, body: ExportIn) -> dict:
     th = db.q("SELECT title FROM threads WHERE id=?", (thread_id,))
