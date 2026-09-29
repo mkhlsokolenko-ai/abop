@@ -68,6 +68,7 @@ def _card(sid: str, raw: dict) -> dict | None:
     return {"name": raw.get("name") or sid, "instruction": raw.get("instruction") or "",
             "json_schema": sch, "max_tokens": int(raw.get("max_tokens") or 0) or None,
             "delivery": raw.get("delivery") if isinstance(raw.get("delivery"), dict) and raw.get("delivery") else None,
+            "slots": raw.get("slots") if isinstance(raw.get("slots"), list) else [],
             "fingerprint": fingerprint(raw)}
 
 
@@ -108,7 +109,7 @@ async def upsert(schema_store, sid: str, card: dict, *, editor: str = "repo", bu
         instr += "\n[repo:" + card["fingerprint"] + "]"
     return await schema_store.save(sid, {"name": card.get("name") or sid, "json_schema": card["json_schema"],
                                          "instruction": instr, "max_tokens": card.get("max_tokens"),
-                                         "delivery": card.get("delivery")},
+                                         "delivery": card.get("delivery"), "slots": card.get("slots") or []},
                                    editor=editor, builtin=builtin)
 
 
@@ -123,7 +124,8 @@ async def seed(schema_store) -> int:
             continue
         marker = "[repo:" + t["fingerprint"] + "]"
         if (cur and marker in (cur.get("instruction") or "") and (cur.get("max_tokens") or None) == t.get("max_tokens")
-                and (cur.get("delivery") or None) == (t.get("delivery") or None)):
+                and (cur.get("delivery") or None) == (t.get("delivery") or None)
+                and (cur.get("slots") or []) == (t.get("slots") or [])):
             continue
         await upsert(schema_store, sid, t, editor="repo", builtin=True)
         n += 1

@@ -132,6 +132,24 @@ def run(body: RunIn):
         return _err(e)
 
 
+@router.get("/slots/{agent_id:path}")
+def agent_slots(agent_id: str):
+    """Какие предметы работы (проект, контрагент, период) агент обязан получить до запуска."""
+    try:
+        return abop.agent_slots(agent_id)
+    except abop.AbopError as e:
+        return _err(e)
+
+
+@router.get("/resolve/{entity}")
+def resolve(entity: str, q: str = "", limit: int = 8):
+    """Кандидаты предмета по данным пользователя: режим подсказывает, спрашивать или подставлять."""
+    try:
+        return abop.resolve_entity(entity, q, limit)
+    except abop.AbopError as e:
+        return _err(e)
+
+
 @router.post("/retire/{agent_id}")
 def retire(agent_id: str):
     """Убрать агента в архив (обратимо) — мягкая альтернатива удалению всех версий."""

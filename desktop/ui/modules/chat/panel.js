@@ -285,7 +285,10 @@ export async function mount(root, ctx) {
       : (meta.run_agent ? runCard(meta.run_agent)
         : (meta.pipeline_result ? pipelineHTML(meta.pipeline_result)
           : (meta.chain_suggest ? chainSuggestHTML(meta.chain_suggest)
-            : (meta.decision ? decisionHTML(meta.decision) : (meta.notice ? noticeHTML(meta.notice, m.content) : md(m.content))))));
+            : (meta.decision ? decisionHTML(meta.decision)
+            : (meta.slot_ask ? slotCardHTML(meta.slot_ask)
+            : (meta.slot_picked ? slotPickedHTML(meta.slot_picked)
+            : (meta.notice ? noticeHTML(meta.notice, m.content) : md(m.content))))))));
     const cost = meta.model ? `<span style="margin-left:4px;font-family:var(--mono);font-size:11px;color:var(--ink-3)">${esc(meta.model)} · ${meta.cost_rub ?? 0} ₽</span>` : "";
     const isCard = !!(meta.run_agent || meta.pipeline_result || meta.chain_suggest || meta.decision || meta.notice);
     const acts = mine
@@ -342,6 +345,34 @@ export async function mount(root, ctx) {
     $("col").querySelectorAll(".dcRun").forEach((b) => b.onclick = () => { const dc = _decisionOf(b); runAbopAgentDeliver(b.dataset.id, b.dataset.name, dc ? dc.text : "", b.dataset.deliver || ""); });
     $("col").querySelectorAll(".dcChat").forEach((b) => b.onclick = () => { const dc = _decisionOf(b); if (dc) sendPrompt(dc.text); });
     $("col").querySelectorAll(".dcChain").forEach((b) => b.onclick = () => { const dc = _decisionOf(b); if (dc) suggestChain(dc.text); });
+    // выбор предмета работы: подставляем запись и запускаем агента уже по ней
+    $("col").querySelectorAll(".slotPick").forEach((b) => b.onclick = async () => {
+      const m = messages[+b.dataset.i]; const sl = m && m.meta && m.meta.slot_ask; if (!sl) return;
+      const c = (sl.candidates || [])[+b.dataset.n]; if (!c) return;
+      const r = c.record || {}; const d = sl.display || {};
+      const picked = { slot: sl.name, entity: sl.entity, record: r,
+                       title: r[d.title] || r.name || r.id,
+                       sub: [r[d.badge] || r.id, r[d.subtitle], r[d.note] ? "ввод " + r[d.note] : ""].filter(Boolean).join(" · ") };
+      m.meta.slot_ask = null; m.meta.slot_picked = picked; m.content = "предмет определён";
+      saveRunMeta(m, {});
+      render();
+      runAbopAgentDeliver(sl.agent_id, agentName(sl.agent_id), (sl.task || "") + "\n\n" + slotContext(picked), "");
+    });
+    $("col").querySelectorAll(".slotSkip").forEach((b) => b.onclick = () => {
+      const m = messages[+b.dataset.i]; const sl = m && m.meta && m.meta.slot_ask; if (!sl) return;
+      toast("Запускаю без уточнения: результат будет общим по всем записям", "warn");
+      runAbopAgentDeliver(sl.agent_id, agentName(sl.agent_id), sl.task || "", "", false, true);
+    });
+    $("col").querySelectorAll(".slotChange").forEach((b) => b.onclick = async () => {
+      const m = messages[+b.dataset.i]; const sp = m && m.meta && m.meta.slot_picked; if (!sp) return;
+      let res = null;
+      try { res = await api(A_AG + "/resolve/" + encodeURIComponent(sp.entity) + "?limit=8"); } catch (e) { toast(humanError(e), "danger"); return; }
+      await note("уточните предмет", { slot_ask: { name: sp.slot, entity: sp.entity, label: "Какой проект берём?",
+        display: { title: "name", subtitle: "customer", badge: "id", note: "commissioning" },
+        candidates: (res && res.candidates) || [], mode: (res && res.mode) || "choose", total: (res && res.total) || 0,
+        task: "", agent_id: (m.meta.slot_picked && m.meta.slot_picked.agent_id) || "" } });
+      render(); scrollDown(true);
+    });
     $("col").querySelectorAll(".chainRun").forEach((b) => b.onclick = () => { const i = +b.dataset.i; const m = messages[i]; if (m && m.meta && m.meta.chain_suggest) saveAndRunChain(m.meta.chain_suggest); });
     // правка предложенной цепочки: замена агента на шаге и удаление шага
     $("col").querySelectorAll(".chStep").forEach((sel) => sel.onchange = () => {
@@ -886,6 +917,76 @@ export async function mount(root, ctx) {
       ${bits.length ? `<span>${esc(bits.join(" · "))}</span>` : ""}
       ${sc < 0.45 ? `<span style="color:var(--warn-ink)">проверьте выбор перед запуском</span>` : ""}</div>`;
   }
+  // ── Предмет работы: какой именно проект, контрагент, договор ────────────────────────────────
+  // Подбор агента отвечает «что делать». Без предмета «сравни дорожную карту с фактом» даёт
+  // мета-ответ, поэтому недостающий предмет спрашивается до запуска, выбором и не больше одного раза.
+  function slotCardHTML(sl) {
+    const i = messages.findIndex((m) => m.meta && m.meta.slot_ask === sl);
+    const d = sl.display || {};
+    const rows = (sl.candidates || []).map((c, n) => {
+      const r = c.record || {};
+      const title = r[d.title] || r.name || r.id || "";
+      const sub = [r[d.subtitle], r[d.note] ? "ввод " + r[d.note] : ""].filter(Boolean).join(" · ");
+      return `<button type="button" class="drow pick slotPick" data-i="${i}" data-n="${n}">
+        <span class="drow-num">${r[d.badge] || r.id || ""}</span>
+        <span class="drow-main"><span class="drow-name">${esc(title)}</span><span class="drow-sub">${esc(sub)}</span></span>
+        ${c.score ? meterHTML(c.score, { short: true }) : ""}</button>`;
+    }).join("");
+    const head = sl.matched === false && sl.query
+      ? `По запросу ничего похожего не нашлось. Выберите из своих:`
+      : (sl.label || "Что именно берём в работу?");
+    return `<div data-si="${i}" class="dcard">
+      <div class="dcard-top"><span class="dcard-kicker">предмет работы</span></div>
+      ${sl.task ? `<div class="dcard-quote">${esc(String(sl.task).slice(0, 200))}</div>` : ""}
+      <div class="dcard-title">${esc(head)}</div>
+      ${sl.hint ? `<div class="dcard-note">${esc(sl.hint)}</div>` : ""}
+      <div class="dcard-body">${rows || `<div class="dcard-note">Подходящих записей нет. Проверьте источники данных.</div>`}</div>
+      ${sl.mode === "narrow" ? `<div class="dcard-note">Найдено ${sl.total}. Допишите название или номер, чтобы сузить.</div>` : ""}
+      <div class="dcard-acts"><button type="button" class="btn sm slotSkip" data-i="${i}">Запустить без уточнения</button></div></div>`;
+  }
+
+  function slotPickedHTML(sp) {
+    const i = messages.findIndex((m) => m.meta && m.meta.slot_picked === sp);
+    return `<div data-si="${i}" class="dcard">
+      <div class="dcard-top"><span class="dcard-kicker">понял так</span></div>
+      <div class="dcard-title">${esc(sp.title)}</div>
+      ${sp.sub ? `<div class="dcard-note">${esc(sp.sub)}</div>` : ""}
+      <div class="dcard-acts"><button type="button" class="btn sm slotChange" data-i="${i}">Поменять</button></div></div>`;
+  }
+
+  // Собрать предмет до запуска: вернуть строку контекста или null, если человек ушёл в выбор.
+  async function resolveSlots(agentId, task) {
+    let slots = [];
+    try { const r = await api(A_AG + "/slots/" + encodeURIComponent(agentId)); slots = (r && r.slots) || []; }
+    catch { return ""; }                                  // слотов нет или сервер старый — как раньше
+    const required = slots.filter((s) => s.required);
+    if (!required.length) return "";
+    const sl = required[0];                               // не больше одного вопроса за раз
+    let res = null;
+    try { res = await api(A_AG + "/resolve/" + encodeURIComponent(sl.entity) + "?q=" + encodeURIComponent(task || "") + "&limit=6"); }
+    catch { return ""; }
+    const cands = (res && res.candidates) || [];
+    if (res && res.mode === "exact" && cands.length) {
+      const r = cands[0].record || {};
+      const d = sl.display || {};
+      const picked = { slot: sl.name, entity: sl.entity, record: r,
+                       title: r[d.title] || r.name || r.id, sub: [r[d.badge] || r.id, r[d.subtitle], r[d.note] ? "ввод " + r[d.note] : ""].filter(Boolean).join(" · ") };
+      await note("предмет определён", { slot_picked: picked });
+      render();
+      return slotContext(picked);
+    }
+    await note("уточните предмет", { slot_ask: { ...sl, ...(res || {}), candidates: cands, task, agent_id: agentId } });
+    render(); scrollDown(true);
+    return null;                                          // ждём выбора человека
+  }
+
+  function slotContext(p) {
+    const r = p.record || {};
+    const pairs = Object.entries(r).filter(([k, v]) => v !== "" && v != null && typeof v !== "object").slice(0, 10);
+    return `=== ПРЕДМЕТ РАБОТЫ (${p.slot}) ===\n` + pairs.map(([k, v]) => `${k}: ${v}`).join("\n")
+      + `\nРаботай только по этой записи, другие не бери.`;
+  }
+
   function decisionHTML(dc) {
     const i = messages.findIndex((m) => m.meta && m.meta.decision === dc);
     const t = dc.top; const ch = (t.channels || []);
@@ -923,10 +1024,20 @@ export async function mount(root, ctx) {
       () => { proceed(); }, "Да, запустить сейчас");
   }
   // единая точка запуска агента (D-H6): карточка решения, подсказки, шторка, «Мои агенты», повтор
-  function runAbopAgentDeliver(agentId, agentNm, task, deliver, isRerun) {
+  function runAbopAgentDeliver(agentId, agentNm, task, deliver, isRerun, slotsDone) {
     if (busy) { toast("Дождитесь завершения текущего ответа", "warn"); return; }
     closeDrawer();
-    _scheduleGuard(agentId, agentNm, () => _doRunAbopAgent(agentId, agentNm, task, deliver, isRerun));
+    // Перед запуском выясняем предмет работы, если навык его требует: без конкретного проекта
+    // сверка плана и факта возвращает общие слова. Уверенный случай подставляется сам.
+    const go = async () => {
+      if (!slotsDone && !isRerun) {
+        const ctxAdd = await resolveSlots(agentId, task || "");
+        if (ctxAdd === null) return;                         // ушли в выбор, запустим после него
+        if (ctxAdd) task = (task || "") + "\n\n" + ctxAdd;
+      }
+      _scheduleGuard(agentId, agentNm, () => _doRunAbopAgent(agentId, agentNm, task, deliver, isRerun));
+    };
+    go();
   }
   async function _doRunAbopAgent(agentId, agentNm, task, deliver, isRerun) {
     await ensureThread(task ? task.slice(0, 50) : `Агент «${agentNm}»`);

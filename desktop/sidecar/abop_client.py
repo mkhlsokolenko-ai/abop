@@ -268,6 +268,17 @@ def runs_search(q: str = "", agent_id: str = "", verdict: str = "", days: int = 
     return _req("GET", "/api/runs/search" + ("?" + qs if qs else ""), timeout=60)
 
 
+def agent_slots(agent_id: str) -> dict:
+    """Слоты агента: какой предмет работы нужно уточнить до запуска."""
+    return _req("GET", "/api/agents/" + urllib.request.quote(agent_id) + "/slots", timeout=30)
+
+
+def resolve_entity(entity: str, q: str = "", limit: int = 8) -> dict:
+    """Кандидаты предмета работы по данным пользователя (проект, контрагент, договор)."""
+    qs = "?q=" + urllib.request.quote(q or "") + "&limit=" + str(int(limit or 8))
+    return _req("GET", "/api/resolve/" + urllib.request.quote(entity) + qs, timeout=45)
+
+
 def agent_retire(agent_id: str) -> dict:
     """Агент в архив (обратимо): расписания останавливаются, история остаётся."""
     return _req("POST", "/api/agents/" + urllib.request.quote(agent_id) + "/retire", {}, timeout=30)

@@ -1388,8 +1388,15 @@ async def schema_template_save(tid: str, body: dict, u: dict = Depends(user)) ->
     if dl and delivery_mod.validate_delivery(dl):
         raise HTTPException(422, "delivery: " + "; ".join(delivery_mod.validate_delivery(dl)))
     editor = u.get("name") or u.get("sub") or "dev"
+    # слоты: какой предмет работы навык обязан получить до запуска (проект, контрагент, период)
+    sl = (body or {}).get("slots") if "slots" in (body or {}) else (existing or {}).get("slots")
+    sl = sl if isinstance(sl, list) else []
+    for _s in sl:
+        if not isinstance(_s, dict) or not _s.get("name") or not _s.get("entity"):
+            raise HTTPException(422, "слот описывается объектом с полями name и entity")
     card = await schema_store.save(tid, {"name": (body or {}).get("name") or (existing or {}).get("name") or tid,
-                                         "json_schema": sch, "instruction": instr, "max_tokens": mt, "delivery": dl},
+                                         "json_schema": sch, "instruction": instr, "max_tokens": mt,
+                                         "delivery": dl, "slots": sl},
                                    editor=editor, builtin=False)
     await audit_store.record(editor, "schema_template.save", tid, {"name": card.get("name"), "was_builtin": bool(existing and existing.get("builtin"))})
     return card
@@ -3666,6 +3673,7 @@ async def _handle_job(job: dict) -> dict:
     contract = await _contract_for_agent(agent, p.get("contract_audit_id") or "")
     out = await execute_agent_run(agent, contract, job["actor"], use_cache=bool(p.get("use_cache", False)),
                                   user_context=p.get("user_context") or "", deliver_filter=p.get("deliver_filter") or "",
+                                  data_scope=p.get("data_scope") or None,   # предмет работы едет с заданием
                                   trigger=p.get("trigger"), job_id=job["id"])
     return {"run_id": out["saved"]["id"]}
 
@@ -3743,7 +3751,7 @@ async def _contract_for_agent(agent: dict, audit_id: str = "") -> dict:
 
 async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, trigger: dict | None = None,
                             use_cache: bool = True, user_context: str = "", deliver_filter: str = "",
-                            job_id: str | None = None) -> dict:
+                            job_id: str | None = None, data_scope: dict | None = None) -> dict:
     """Ядро прогона (LLM-раскладка + находки audit1c + сохранение + аудит). Переиспользуется
     POST /api/runs и планировщиком триггеров (server/triggers.py). Возвращает {saved, result}.
     Кэш результатов (multi-user): при попадании возвращает сохранённый вывод без LLM/доставки."""
@@ -3853,7 +3861,7 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
                                    data_query=ape.data_query,
                                    skill_sources=ape.skill_datasources_resolved,
                                    load_body=ape.load_skill_body,
-                                   chat_fn=clients.chat, blocked_entities=blocked,
+                                   chat_fn=clients.chat, blocked_entities=blocked, data_scope=data_scope,
                                    knowledge_fn=_agent_knowledge_fn(agent, started_by),
                                    skill_schemas=_skill_schemas,
                                    findings_context=_ctx, user_context=user_context,
@@ -4038,11 +4046,15 @@ async def run_start(body: dict, u: dict = Depends(user),
     # дерево решений: '', chat, redmine, email… Булево true означает «доставлять во все каналы»:
     # раньше str(True) превращался в фильтр «True», который не совпадал ни с чем, и доставка молча
     # отключалась — прогон выглядел успешным, но наружу не уходило ничего.
+    # Предмет работы из слота навыка: {поле: значение}. Сужает выборку данных, чтобы агент не
+    # смешивал проекты. Приходит из карточки уточнения в интерфейсе.
+    _ds = (body or {}).get("scope") if isinstance((body or {}).get("scope"), dict) else {}
+    _data_scope = {str(k): str(v) for k, v in _ds.items() if str(v or "").strip()} or None
     _dv = (body or {}).get("deliver")
     deliver_filter = "" if isinstance(_dv, bool) else str(_dv or "").strip()
     use_cache = not bool((body or {}).get("no_cache"))  # {no_cache:true} → форс свежий прогон
-    if user_context or deliver_filter:
-        use_cache = False   # контекст/выбор доставки влияют на прогон → кэш обходим
+    if user_context or deliver_filter or _data_scope:
+        use_cache = False   # контекст, выбор доставки и предмет работы меняют прогон → кэш обходим
     # идемпотентность: одинаковые сабмиты (юзер+агент[+idempotency_key]) сериализуются per-key lock →
     # второй дождётся первого и заберёт результат из кэша (двойной клик не запускает двойной прогон)
     idem = str((body or {}).get("idempotency_key", "")).strip()
@@ -4054,7 +4066,8 @@ async def run_start(body: dict, u: dict = Depends(user),
         job = await run_queue.enqueue(agent_id=agent["id"], actor=actor, dedupe_key=lock_key if idem else None,
                                       payload={"contract_audit_id": agent.get("contract_audit_id") or audit_id,
                                                "use_cache": use_cache, "user_context": user_context,
-                                               "deliver_filter": deliver_filter, "trace_id": obs.current_trace_id()},
+                                               "deliver_filter": deliver_filter, "data_scope": _data_scope,
+                                               "trace_id": obs.current_trace_id()},
                                       priority=int((body or {}).get("priority") or 5))
         await run_bus.bus().publish_request(job, obs.current_trace_id())
         obs.inc("abop_run_jobs_total", status="queued")
@@ -4062,7 +4075,7 @@ async def run_start(body: dict, u: dict = Depends(user),
         return JSONResponse({**run_queue.public(job, pos), "poll": f"/api/runs/jobs/{job['id']}",
                              "deduped": bool(job.get("deduped"))}, status_code=202)
     async with _run_lock(lock_key):
-        out = await execute_agent_run(agent, contract, actor, use_cache=use_cache,
+        out = await execute_agent_run(agent, contract, actor, use_cache=use_cache, data_scope=_data_scope,
                                       user_context=user_context, deliver_filter=deliver_filter)
     return JSONResponse({"run_id": out["saved"]["id"], **out["result"]}, status_code=201)
 
@@ -4765,6 +4778,118 @@ async def runs_list(agent_id: str = "", limit: int = 100, u: dict = Depends(user
         it["role"] = ag.get("role")
         out.append(it)
     return {"runs": out}
+
+
+# ═══════════════ Предмет работы: слоты навыка и разрешение по данным ═══════════════
+# Подбор агента отвечает на вопрос «что делать». Этого мало: «сравни дорожную карту проекта с фактом»
+# без конкретного проекта даёт мета-ответ. Слот описывает недостающий предмет, а разрешение ищет его
+# кандидатов в данных этого человека. Подробности: docs/PODBOR_AGENTA_I_PREDMETA.md.
+
+def _norm(x: str) -> str:
+    return " ".join(str(x or "").lower().replace("ё", "е").split())
+
+
+def _score_candidate(rec: dict, q: str, fields: list) -> float:
+    """Совпадение записи с запросом: точное вхождение кода, вхождение слова, нечёткое сходство."""
+    import difflib
+    qn = _norm(q)
+    if not qn:
+        return 0.0
+    words = [w for w in qn.split() if len(w) > 2]
+    best = 0.0
+    for f in fields:
+        v = _norm(rec.get(f))
+        if not v:
+            continue
+        if qn == v:
+            return 1.0
+        if v in qn or qn in v:
+            best = max(best, 0.9)
+        hit = sum(1 for w in words if w in v)
+        if hit:
+            best = max(best, 0.5 + 0.12 * min(3, hit))
+        best = max(best, difflib.SequenceMatcher(None, qn, v).ratio() * 0.8)
+    return round(min(1.0, best), 3)
+
+
+@app.get("/api/skills/{sid}/slots")
+async def skill_slots(sid: str, u: dict = Depends(user)) -> dict:
+    """Какие предметы навык обязан получить до запуска (из шаблона извлечения)."""
+    if sid not in ape.SKILLS:
+        raise HTTPException(404, "нет навыка")
+    ov = ((await skill_store.get(sid)) or {}).get("patch") or {}
+    tid = ov.get("schema_template_id") or sid
+    tpl = await schema_store.get(tid) or await schema_store.get(sid) or {}
+    slots = tpl.get("slots") or (tpl.get("spec") or {}).get("slots") or []
+    return {"skill": sid, "template_id": tpl.get("id") or tid, "slots": slots}
+
+
+@app.get("/api/agents/{agent_id}/slots")
+async def agent_slots(agent_id: str, u: dict = Depends(user)) -> dict:
+    """Слоты всех навыков агента: что спросить у человека до запуска."""
+    a = await agent_store.get(agent_id)
+    if not a:
+        raise HTTPException(404, "нет такого агента")
+    if not can_see_family(u, a.get("family")):
+        raise HTTPException(403, "нет доступа к семье агента")
+    out, seen = [], set()
+    ov = await skill_store.all()
+    for n in (a.get("graph") or {}).get("nodes") or []:
+        sid = n.get("skill")
+        if not sid:
+            continue
+        tid = ((ov.get(sid) or {}).get("patch") or {}).get("schema_template_id") or sid
+        tpl = await schema_store.get(tid) or await schema_store.get(sid) or {}
+        for sl in (tpl.get("slots") or []):
+            key = str(sl.get("name") or "")
+            if key and key not in seen:
+                seen.add(key)
+                out.append({**sl, "skill": sid})
+    return {"agent_id": agent_id, "slots": out}
+
+
+@app.get("/api/resolve/{entity}")
+async def resolve_entity(entity: str, q: str = "", limit: int = 8, u: dict = Depends(user)) -> dict:
+    """Кандидаты предмета по данным: точное совпадение, вхождение, нечёткое сходство.
+
+    Возвращает {mode, candidates}. mode: `exact` — один уверенный кандидат, подставляется молча;
+    `choose` — показать выбор; `narrow` — кандидатов слишком много, нужен уточняющий признак;
+    `empty` — не нашли. Так интерфейс не решает сам, когда спрашивать, а следует данным."""
+    ent = _re.sub(r"[^a-zA-Z0-9_\-]", "", str(entity or ""))
+    if not ent:
+        raise HTTPException(422, "нужна сущность")
+    try:
+        rows = await _asyncio.to_thread(ape.data_query, ent, None, None, 500)
+    except Exception as ex:  # noqa: BLE001
+        raise HTTPException(502, f"данные недоступны: {type(ex).__name__}: {ex}")
+    if not rows:
+        return {"entity": ent, "mode": "empty", "candidates": [], "total": 0}
+
+    fields = [f for f in ("id", "name", "название", "customer", "manager", "code", "title")
+              if any(f in r for r in rows[:5])]
+    scored = []
+    for r in rows:
+        sc = _score_candidate(r, q, fields) if q else 0.0
+        scored.append((sc, r))
+    scored.sort(key=lambda x: -x[0])
+    top = [{"score": sc, "record": r} for sc, r in scored[: max(1, min(50, int(limit or 8)))]]
+
+    best = top[0]["score"] if top else 0.0
+    second = top[1]["score"] if len(top) > 1 else 0.0
+    if not q:
+        mode = "choose" if len(rows) <= 8 else "narrow"
+    elif best >= 0.85 and best - second >= 0.2:
+        mode = "exact"
+    elif best >= 0.35:
+        mode = "choose"
+    elif len(rows) > 8:
+        mode = "narrow"
+    else:
+        mode = "choose"
+    # matched=false: запрос вообще не про эти данные. Показать список всё равно полезно, но подписать
+    # честно «по запросу не нашли», а не делать вид, что 0.38 это совпадение.
+    return {"entity": ent, "mode": mode, "query": q, "total": len(rows), "matched": bool(q) and best >= 0.45,
+            "candidates": [t for t in top if (t["score"] > 0 or not q)][: int(limit or 8)]}
 
 
 @app.get("/api/runs/search")

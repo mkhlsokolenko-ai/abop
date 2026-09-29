@@ -39,8 +39,8 @@ _LLM_TRUNCATE = os.getenv("ABOP_RUN_LLM_TRUNCATE", "1") != "0"
 # а не полный дамп → в разы меньше токенов/времени. Находки audit считает КОД (детерминир.), не LLM.
 # max_tokens — для СТРУКТУРНЫХ навыков (JSON-находки компактны); max_tokens_free — для FREEFORM
 # (рассуждающих: план/письмо/БФТ) им нужно БОЛЬШЕ места, иначе нарратив обрывается на полуслове.
-_LIM = {"rows": 5000, "sample": 6, "body": 2000, "data": 4000, "max_tokens": 1200, "max_tokens_free": 2600} if _LLM_TRUNCATE \
-    else {"rows": 5000, "sample": 20, "body": 8000, "data": 20000, "max_tokens": 1600, "max_tokens_free": 3600}
+_LIM = {"rows": 5000, "sample": 6, "full_rows": 120, "body": 2000, "data": 4000, "max_tokens": 1200, "max_tokens_free": 2600} if _LLM_TRUNCATE \
+    else {"rows": 5000, "sample": 20, "full_rows": 120, "body": 8000, "data": 20000, "max_tokens": 1600, "max_tokens_free": 3600}
 # max_tokens нарратива навыка настраивается на лету (ABOP_RUN_MAX_TOKENS; прод=1600) — узкое место
 # скорости на выделенном боксе = генерация output-токенов; режем длину нарратива (детекцию считает код,
 # не LLM). Замер audit1c: 2500→77с, 1200→42с (обрыв нарратива), 1600 — баланс. Следующий рычаг против
@@ -323,8 +323,31 @@ def run_agent(agent: dict, contract: dict, safety_of) -> dict:
     }
 
 
+def _apply_scope(rows: list, scope: dict) -> list:
+    """Сузить выборку до предмета работы (проект, контрагент, договор).
+
+    Предмет приходит из слота навыка: {поле: значение}. Запись остаётся, если совпадает хотя бы по
+    одному полю предмета, ИЛИ если ни одного из этих полей у неё нет (справочники и карточки самого
+    предмета не должны отсекаться). Без этого агент получает данные всех проектов сразу и смешивает их.
+    """
+    if not scope or not rows:
+        return rows
+    keys = {str(k).lower(): str(v).strip().lower() for k, v in scope.items() if str(v or "").strip()}
+    if not keys:
+        return rows
+    out = []
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        low = {str(k).lower(): str(v).strip().lower() for k, v in r.items() if not isinstance(v, (dict, list))}
+        common = [k for k in keys if k in low]
+        if not common or any(low[k] == keys[k] for k in common):
+            out.append(r)
+    return out
+
+
 async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_sources,
-                   load_body, chat_fn, blocked_entities=None, knowledge_fn=None,
+                   load_body, chat_fn, blocked_entities=None, knowledge_fn=None, data_scope=None,
                    findings_context=None, user_context="", skill_schemas=None, should_cancel=None,
                    tool_loop=None, actor: str = "", trace_id: str = "", on_progress=None) -> dict:
     """НАСТОЯЩИЙ прогон: governance-каркас (run_agent) + для каждого навыка с data-scope
@@ -381,9 +404,10 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
         data = {}
         for e in entities:
             try:
-                data[e] = await asyncio.to_thread(data_query, e, limit=_LIM["rows"])   # файловый Data Plane — не блокируем loop
+                rows = await asyncio.to_thread(data_query, e, limit=_LIM["rows"])   # файловый Data Plane — не блокируем loop
             except Exception:  # noqa: BLE001
-                data[e] = []
+                rows = []
+            data[e] = _apply_scope(rows, data_scope)
         if not entities:
             # навык БЕЗ объявленного data-scope (письмо, БФТ, отчёт) работает по КОНТЕКСТУ: находки прогона,
             # задача пользователя, контекст цепочки. Без контекста запускать нечего — честно помечаем пропуск.
@@ -402,8 +426,15 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
             for r in rows:
                 if isinstance(r, dict) and r.get("тип"):
                     by_type[r["тип"]] = by_type.get(r["тип"], 0) + 1
+            # Сэмпл бережёт токены на больших наборах, но когда предмет работы сузил выборку до
+            # десятков записей, модель должна видеть ВСЕ: иначе она считает по шести строкам и
+            # выдаёт «пунктов всего: 2» там, где их тринадцать.
+            full = len(rows) <= _LIM["full_rows"]
             digest[e] = {"всего": len(rows), "по_типам": (by_type or None),
-                         "сэмпл": rows[:_LIM["sample"]]}
+                         ("записи" if full else "сэмпл"): rows[: (len(rows) if full else _LIM["sample"])]}
+            if not full:
+                digest[e]["внимание"] = ("показан сэмпл из %d записей; считай итоги по полю «всего», "
+                                         "а не по числу показанных строк" % len(rows))
         body = (load_body(sid) or "")[:_LIM["body"]]
         # RAG-знание (нормы/регламент) из корпуса семьи через sLAVA — только норм-цитирующим навыкам
         # (safety.cite). knowledge_fn уже с ABAC-гейтом (вернёт [], если семья без доступа к корпусу).
