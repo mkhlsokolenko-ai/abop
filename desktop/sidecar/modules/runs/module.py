@@ -58,6 +58,15 @@ def runs_list(q: str = "", agent_id: str = "", verdict: str = "", days: int = 0,
             "agents": [{"id": a, "name": n} for a, n in agents if a]}
 
 
+@router.get("/search")
+def search(q: str = "", agent_id: str = "", verdict: str = "", days: int = 0, limit: int = 50):
+    """Поиск по содержимому прогонов: за что нашлось, видно по фрагментам."""
+    try:
+        return abop.runs_search(q, agent_id, verdict, days, limit)
+    except abop.AbopError as e:
+        return _err(e)
+
+
 @router.get("/item/{run_id:path}")
 def run_item(run_id: str):
     """Полная запись прогона: находки целиком, доставка, вердикт, метрики."""

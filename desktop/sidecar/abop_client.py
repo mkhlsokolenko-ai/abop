@@ -261,6 +261,13 @@ def suggest_pipeline(q: str) -> dict:
     return _req("POST", "/api/pipelines/suggest", {"q": q}, timeout=90)
 
 
+def runs_search(q: str = "", agent_id: str = "", verdict: str = "", days: int = 0, limit: int = 50) -> dict:
+    """Поиск по содержимому прогонов (находки, навыки, доставка) — считает Postgres на сервере."""
+    p = {"q": q, "agent_id": agent_id, "verdict": verdict, "days": days, "limit": limit}
+    qs = "&".join(f"{k}={urllib.request.quote(str(v))}" for k, v in p.items() if v not in ("", 0, None))
+    return _req("GET", "/api/runs/search" + ("?" + qs if qs else ""), timeout=60)
+
+
 def run_full(run_id: str) -> dict:
     """Полная запись прогона: находки целиком, доска, вердикт, метрики."""
     return _req("GET", "/api/runs/" + urllib.request.quote(run_id), timeout=60)

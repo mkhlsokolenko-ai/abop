@@ -20,6 +20,7 @@ import sys
 import time
 from pathlib import Path
 
+import re as _re
 from fastapi import Query, Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
@@ -4764,6 +4765,58 @@ async def runs_list(agent_id: str = "", limit: int = 100, u: dict = Depends(user
         it["role"] = ag.get("role")
         out.append(it)
     return {"runs": out}
+
+
+@app.get("/api/runs/search")
+async def runs_search(q: str = "", agent_id: str = "", verdict: str = "", days: int = 0,
+                      limit: int = 50, u: dict = Depends(user)) -> dict:
+    """Поиск по СОДЕРЖИМОМУ прогонов: находки, ответы навыков, доставка (jsonb → текст в Postgres).
+    Возвращает записи журнала плюс совпавшие фрагменты — видно, за что нашлось. ABAC как в журнале."""
+    words = [w for w in str(q or "").strip().split() if len(w) > 1][:6]
+    where, args = ["TRUE"], []
+    if agent_id:
+        where.append("agent_id = %s")
+        args.append(agent_id)
+    if verdict in ("ok", "issues"):
+        where.append("verdict_ok = %s")
+        args.append(verdict == "ok")
+    if days:
+        where.append("created_at > now() - make_interval(days => %s)")
+        args.append(int(days))
+    for w in words:
+        where.append("payload::text ILIKE %s")
+        args.append("%" + w + "%")
+    args.append(max(1, min(200, int(limit or 50))))
+    sql = ("SELECT id, agent_id, verdict_ok, created_at, payload::text FROM runs WHERE "
+           + " AND ".join(where) + " ORDER BY created_at DESC LIMIT %s")
+    from .db import _conn
+    async with _conn() as conn:
+        cur = await conn.execute(sql, tuple(args))
+        rows = await cur.fetchall()
+
+    briefs = {a["id"]: a for a in await agent_store.list_for(None)}
+    briefs.update({a["id"]: a for a in await agent_store.list_for(None, archived=True)})
+    out = []
+    for rid, aid, ok, created, blob in rows:
+        ag = briefs.get(aid, {})
+        if not can_see_family(u, ag.get("family")):
+            continue
+        hits = []
+        if words:
+            low = blob.lower()
+            for w in words:
+                i = low.find(w.lower())
+                if i < 0:
+                    continue
+                frag = blob[max(0, i - 90):i + 130].replace("\\n", " ")
+                hits.append(_re.sub(r"\s+", " ", frag).strip())
+                if len(hits) >= 3:
+                    break
+        out.append({"id": rid, "agent_id": aid, "agent_name": ag.get("name") or aid,
+                    "family": ag.get("family"), "verdict_ok": ok,
+                    "created_at": created.isoformat() if hasattr(created, "isoformat") else str(created),
+                    "hits": hits})
+    return {"runs": out, "count": len(out), "query": q}
 
 
 @app.get("/api/runs/{run_id}")

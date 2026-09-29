@@ -19,7 +19,7 @@ const fmtCost = (c) => (c == null ? "" : (Number(c) === 0 ? "0 ₽" : Number(c).
 export async function mount(root, ctx) {
   const { api, toast, humanError } = ctx;
   let runs = [], agentsList = [], total = 0, loadErr = null, busy = false;
-  let q = "", agentId = "", verdict = "", days = 0;
+  let q = "", agentId = "", verdict = "", days = 0, deep = false, hits = {};
   let open = null, openData = null, openTab = "findings", openErr = "", templates = [];
 
   async function load() {
@@ -30,8 +30,15 @@ export async function mount(root, ctx) {
     if (verdict) p.set("verdict", verdict);
     if (days) p.set("days", String(days));
     try {
-      const r = await api(R + "/list?" + p.toString());
-      runs = r.runs || []; total = r.total || 0; agentsList = r.agents || [];
+      if (deep && q) {
+        // поиск по содержимому прогонов считает Postgres на сервере: находки, ответы навыков, доставка
+        const r = await api(R + "/search?" + p.toString());
+        runs = r.runs || []; total = r.count || runs.length;
+        hits = {}; runs.forEach((x) => { if ((x.hits || []).length) hits[x.id] = x.hits; });
+      } else {
+        const r = await api(R + "/list?" + p.toString());
+        runs = r.runs || []; total = r.total || 0; agentsList = r.agents || []; hits = {};
+      }
     } catch (e) { loadErr = e; runs = []; }
     busy = false; render();
   }
@@ -52,10 +59,13 @@ export async function mount(root, ctx) {
     const dOpts = [[0, "за всё время"], [1, "за сутки"], [7, "за неделю"], [30, "за месяц"]]
       .map(([v, t]) => `<option value="${v}"${v === days ? " selected" : ""}>${t}</option>`).join("");
     return `<div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center">
-      <input id="rq" value="${esc(q)}" placeholder="Поиск: агент, отдел, идентификатор…" style="${INP};flex:1;min-width:220px"/>
+      <input id="rq" value="${esc(q)}" placeholder="Поиск: агент, отдел, а с галочкой — по находкам и ответам навыков" style="${INP};flex:1;min-width:220px"/>
       <select id="rag" style="${INP}">${opts}</select>
       <select id="rv" style="${INP}">${vOpts}</select>
       <select id="rd" style="${INP}">${dOpts}</select>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-2);cursor:pointer">
+        <input type="checkbox" id="rDeep"${deep ? " checked" : ""}/> искать внутри прогонов
+      </label>
       <button class="btn sm" id="rReload">Обновить</button>
     </div>`;
   }
@@ -70,7 +80,7 @@ export async function mount(root, ctx) {
       </span>
       <span style="font-size:11px;color:var(--ink-3);font-family:var(--mono);flex:none">${esc(fmtCost(r.cost))}</span>
       <span style="font-size:11px;flex:none;color:${ok ? "var(--ok-ink)" : "var(--warn-ink)"}">${ok ? "пройден" : "замечания"}</span>
-    </button>`;
+    </button>${(hits[r.id] || []).length ? `<div style="margin:-2px 0 6px 30px;display:flex;flex-direction:column;gap:3px">${hits[r.id].map((h) => `<div style="font-size:11.5px;color:var(--ink-3);line-height:1.45">…${esc(h)}…</div>`).join("")}</div>` : ""}`;
   }
 
   function listHTML() {
@@ -180,6 +190,7 @@ export async function mount(root, ctx) {
       if ($("rag")) $("rag").onchange = (e) => { agentId = e.target.value; load(); };
       if ($("rv")) $("rv").onchange = (e) => { verdict = e.target.value; load(); };
       if ($("rd")) $("rd").onchange = (e) => { days = +e.target.value; load(); };
+      if ($("rDeep")) $("rDeep").onchange = (e) => { deep = e.target.checked; load(); };
       if ($("rReload")) $("rReload").onclick = () => load();
       if ($("errRetry")) $("errRetry").onclick = () => load();
       if ($("rClear")) $("rClear").onclick = () => { q = ""; agentId = ""; verdict = ""; days = 0; load(); };
