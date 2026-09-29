@@ -77,10 +77,32 @@ export async function mount(root, ctx) {
     const er = root.querySelector("#errRetry"); if (er) er.onclick = async () => { await loadAgents(); render(); };
   }
 
+  // Удаление было только жёстким: сносило все версии безвозвратно. Сервер умеет архив, поэтому
+  // сначала предлагаем обратимый вариант, а безвозвратный оставляем отдельной кнопкой.
   async function deleteAgent(id, name) {
-    if (!(await confirmDialog({ title: `Удалить агента «${esc(name)}»?`, text: "Будут удалены все версии агента. Расписания и цепочки, где он участвует, перестанут работать. Отменить нельзя.", okLabel: "Удалить агента" }))) return;
-    try { await api(A + "/" + encodeURIComponent(id), { method: "DELETE" }); toast(`Агент «${name}» удалён`, "ok"); }
-    catch (e) { toast("Не удалось удалить: " + humanError(e), "danger"); }
+    let choice = "";
+    await new Promise((resolve) => {
+      const ov = ctx.modal(`Убрать агента «${name}»?`,
+        `<div style="font-size:12.5px;color:var(--ink-2);line-height:1.6">
+           <b>В архив</b> — агент перестаёт запускаться и пропадает из списка, расписания
+           останавливаются. История прогонов остаётся, вернуть можно в любой момент.<br><br>
+           <b>Удалить навсегда</b> — сносятся все версии агента. Отменить нельзя.
+         </div>
+         <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+           <button class="btn primary" id="agArch">В архив</button>
+           <button class="btn danger" id="agDel">Удалить навсегда</button>
+         </div>`,
+        null, "", { kicker: "агент", onClose: () => resolve() });
+      const q = (x) => ov.querySelector(x);
+      if (q("#agArch")) q("#agArch").onclick = () => { choice = "retire"; ov.close ? ov.close() : q("#mCancel").click(); resolve(); };
+      if (q("#agDel")) q("#agDel").onclick = () => { choice = "delete"; ov.close ? ov.close() : q("#mCancel").click(); resolve(); };
+    });
+    if (!choice) return;
+    if (choice === "delete" && !(await confirmDialog({ title: `Удалить «${esc(name)}» навсегда?`, text: "Будут удалены все версии агента. Отменить нельзя.", okLabel: "Удалить навсегда" }))) return;
+    try {
+      if (choice === "retire") { await api(A + "/retire/" + encodeURIComponent(id), { method: "POST" }); toast(`Агент «${name}» в архиве — можно вернуть`, "ok"); }
+      else { await api(A + "/" + encodeURIComponent(id), { method: "DELETE" }); toast(`Агент «${name}» удалён`, "ok"); }
+    } catch (e) { toast("Не удалось: " + humanError(e), "danger"); }
     await loadAgents(); render();
   }
 

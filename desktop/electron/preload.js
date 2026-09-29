@@ -9,6 +9,8 @@ contextBridge.exposeInMainWorld("ape", {
     install: () => ipcRenderer.invoke("updater:install"),
   },
   exportPdf: (html, filename) => ipcRenderer.invoke("export:pdf", { html, filename }),
+  openFile: (path) => ipcRenderer.invoke("file:open", path),
+  revealFile: (path) => ipcRenderer.invoke("file:reveal", path),
   // глобальный хоткей: выделенный текст из любого приложения (Word/Excel/браузер) → анализ в чате ABOP
   onAnalyze: (cb) => ipcRenderer.on("ape:analyze", (_e, text) => cb(text)),
 });

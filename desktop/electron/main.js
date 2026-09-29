@@ -151,6 +151,17 @@ ipcMain.handle("updater:check", () => { try { updater && updater.checkForUpdates
 ipcMain.handle("updater:install", () => { try { updater && updater.quitAndInstall(); } catch (e) { /* noop */ } });
 
 // экспорт в PDF: рендерим HTML в скрытом окне → printToPDF → в «Загрузки» (кириллица ок, Chromium)
+// Готовый файл (отчёт, выгрузка) раньше показывался только путём в уведомлении: открыть его или
+// найти в папке из приложения было нельзя.
+ipcMain.handle("file:open", async (_e, p) => {
+  try { const err = await shell.openPath(String(p || "")); return { ok: !err, error: err || "" }; }
+  catch (e) { return { ok: false, error: String(e) }; }
+});
+ipcMain.handle("file:reveal", (_e, p) => {
+  try { shell.showItemInFolder(String(p || "")); return { ok: true }; }
+  catch (e) { return { ok: false, error: String(e) }; }
+});
+
 ipcMain.handle("export:pdf", async (_e, { html, filename }) => {
   let w = null;
   try {

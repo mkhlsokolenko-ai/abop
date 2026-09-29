@@ -150,6 +150,20 @@ export function apeGate(action) {
 }
 
 // ── стек тостов (D-H16: один слот 2.6 с терял итог платного прогона) ────────────────────────────
+// Файл сохранён — сразу предлагаем открыть его или показать в папке. Раньше человеку доставался
+// только путь в уведомлении, а открыть файл из приложения было нечем.
+export function fileToast(msg, path) {
+  const name = String(path || "").split(/[\/]/).pop();
+  if (window.ape && window.ape.openFile) {
+    toast(msg + (name ? ": " + name : ""), "ok", { ttl: 9000, action: { label: "Открыть", run: async () => {
+      const r = await window.ape.openFile(path);
+      if (!r || !r.ok) { if (window.ape.revealFile) window.ape.revealFile(path); toast("Не удалось открыть файл — показали папку", "warn"); }
+    } } });
+  } else {
+    toast(msg + (path ? ": " + path : ""), "ok", { ttl: 9000 });
+  }
+}
+
 export function toast(msg, kind = "", opts = {}) {
   let box = document.getElementById("apeToasts");
   if (!box) { box = document.createElement("div"); box.id = "apeToasts"; box.setAttribute("aria-live", "polite"); document.body.appendChild(box); }
@@ -170,6 +184,7 @@ export const ctx = {
   gate: apeGate, mascot: apeMascot, modal, confirm: confirmDialog, toast, humanError, esc, openOverlay,
   // навигация с намерением: ctx.open("chat", { attach: {...} }) — модуль получает intent (см. loadModule)
   open: (id, intent) => loadModule(id, intent),
+  fileToast,
   setHitlCount,
   reload: (id) => reloadModule(id),
   login: () => startLogin(),

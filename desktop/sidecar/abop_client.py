@@ -268,6 +268,16 @@ def runs_search(q: str = "", agent_id: str = "", verdict: str = "", days: int = 
     return _req("GET", "/api/runs/search" + ("?" + qs if qs else ""), timeout=60)
 
 
+def agent_retire(agent_id: str) -> dict:
+    """Агент в архив (обратимо): расписания останавливаются, история остаётся."""
+    return _req("POST", "/api/agents/" + urllib.request.quote(agent_id) + "/retire", {}, timeout=30)
+
+
+def agent_restore(agent_id: str) -> dict:
+    """Вернуть агента из архива в работу."""
+    return _req("POST", "/api/agents/" + urllib.request.quote(agent_id) + "/restore", {}, timeout=30)
+
+
 def run_full(run_id: str) -> dict:
     """Полная запись прогона: находки целиком, доска, вердикт, метрики."""
     return _req("GET", "/api/runs/" + urllib.request.quote(run_id), timeout=60)

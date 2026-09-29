@@ -203,7 +203,7 @@ export async function mount(root, ctx) {
     if ($("oPdf")) $("oPdf").onclick = async (e) => {
       const tpl = $("oTpl") ? $("oTpl").value : "";
       e.target.disabled = true; e.target.textContent = "…";
-      try { const r = await api(R + "/report/" + encodeURIComponent(open) + (tpl ? "?template=" + encodeURIComponent(tpl) : ""), { method: "POST" }); toast("Отчёт сохранён: " + (r.path || ""), "ok"); }
+      try { const r = await api(R + "/report/" + encodeURIComponent(open) + (tpl ? "?template=" + encodeURIComponent(tpl) : ""), { method: "POST" }); ctx.fileToast("Отчёт сохранён", r.path); }
       catch (er) { toast(humanError(er), "danger"); }
       e.target.disabled = false; e.target.textContent = "Отчёт PDF";
     };

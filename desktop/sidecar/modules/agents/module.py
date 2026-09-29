@@ -132,6 +132,24 @@ def run(body: RunIn):
         return _err(e)
 
 
+@router.post("/retire/{agent_id}")
+def retire(agent_id: str):
+    """Убрать агента в архив (обратимо) — мягкая альтернатива удалению всех версий."""
+    try:
+        return abop.agent_retire(agent_id)
+    except abop.AbopError as e:
+        return _err(e)
+
+
+@router.post("/restore/{agent_id}")
+def restore(agent_id: str):
+    """Вернуть агента из архива в работу."""
+    try:
+        return abop.agent_restore(agent_id)
+    except abop.AbopError as e:
+        return _err(e)
+
+
 @router.get("/runs")
 def runs(agent_id: str = ""):
     """Журнал прогонов (ABAC)."""

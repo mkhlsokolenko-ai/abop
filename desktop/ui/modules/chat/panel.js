@@ -335,7 +335,7 @@ export async function mount(root, ctx) {
     $("col").querySelectorAll(".codecopy").forEach((b) => b.onclick = () => { const code = b.closest("span").parentElement.querySelector(".codebody"); navigator.clipboard.writeText(code ? code.textContent : ""); const o = b.textContent; b.textContent = "✓"; setTimeout(() => b.textContent = o, 1200); });
     // карточка показывает первые находки — за полным прогоном уходим в журнал
     $("col").querySelectorAll(".runOpen").forEach((b) => b.onclick = () => ctx.open("runs", { run: b.dataset.run }));
-    $("col").querySelectorAll(".runPdf").forEach((b) => b.onclick = async () => { b.disabled = true; const t = b.textContent; b.textContent = "…"; try { const r = await api(A_AG + "/report/" + encodeURIComponent(b.dataset.run), { method: "POST", body: JSON.stringify({}) }); if (r && r.ok) toast(`📄 Отчёт сохранён: ${r.path}`, "ok"); else toast(humanError(r), "danger"); } catch (e) { toast(humanError(e), "danger"); } b.disabled = false; b.textContent = t; });
+    $("col").querySelectorAll(".runPdf").forEach((b) => b.onclick = async () => { b.disabled = true; const t = b.textContent; b.textContent = "…"; try { const r = await api(A_AG + "/report/" + encodeURIComponent(b.dataset.run), { method: "POST", body: JSON.stringify({}) }); if (r && r.ok) ctx.fileToast("Отчёт сохранён", r.path); else toast(humanError(r), "danger"); } catch (e) { toast(humanError(e), "danger"); } b.disabled = false; b.textContent = t; });
     $("col").querySelectorAll(".hitlOk").forEach((b) => b.onclick = () => decideDelivery(b, "approve"));
     $("col").querySelectorAll(".hitlNo").forEach((b) => b.onclick = () => decideDelivery(b, "reject"));
     $("col").querySelectorAll(".mkRecurring").forEach((b) => b.onclick = () => recurringModal(b.dataset.agent, b.dataset.name));
@@ -474,12 +474,14 @@ export async function mount(root, ctx) {
       let r = await api(A_AG + "/pipelines/" + encodeURIComponent(pid) + "/run", { method: "POST", body: JSON.stringify({ context: task || "" }) });
       if (r && r.job_id && !r.done) {
         curJob = { id: r.job_id, agent: pid }; setBusy(true, "цепочка");
-        const jobId = r.job_id, t0 = Date.now(); let fin = null;
+        const jobId = r.job_id, t0 = Date.now(); let fin = null, _cmiss = 0;
         const stat = (txt) => { if (el && el.isConnected) el.innerHTML = `<span style="display:inline-flex;gap:12px;align-items:center">${mascot("thinking", 26)}<span style="color:var(--ink-2)">${txt}</span></span>`; };
         while (Date.now() - t0 < 30 * 60 * 1000) {
           await new Promise((ok) => setTimeout(ok, 3000));
           if (!root.isConnected) return;
-          let j; try { j = await api(A_AG + "/jobs/" + encodeURIComponent(jobId)); } catch (e) { stat("связь с ABOP прервалась, повторяю…"); continue; }
+          let j;
+          try { j = await api(A_AG + "/jobs/" + encodeURIComponent(jobId)); _cmiss = 0; }
+          catch (e) { _cmiss++; stat(`сервер не отвечает ${_cmiss * 3} с — цепочка идёт на сервере, результат догоним`); continue; }
           const pr = j.progress || {}; const sec = Math.round((Date.now() - t0) / 1000);
           if (j.status === "done" || j.status === "failed" || j.status === "cancelled") { fin = j; break; }
           if (j.status === "awaiting_hitl") { stat(`цепочка «${esc(p.name || pid)}» ждёт вашего подтверждения после шага ${pr.steps_done || "?"} из ${pr.steps_total || "?"} — панель «Требуют подтверждения»`); loadHitlQueue(); }
@@ -936,11 +938,19 @@ export async function mount(root, ctx) {
         curJob = { id: r.job_id, agent: agentId }; setBusy(true, "агент");
         if (r.deduped) toast("Такой прогон уже в очереди — присоединяюсь к нему", "warn");
         status(r.position > 1 ? `в очереди · впереди ${r.position - 1} · агент «${esc(agentNm)}»` : `агент «${esc(agentNm)}» запускается…`);
-        const t0 = Date.now(); let res = null;
+        const t0 = Date.now(); let res = null; let _miss = 0;
         while (Date.now() - t0 < 15 * 60 * 1000) {
           await new Promise((ok) => setTimeout(ok, 2500));
           if (!root.isConnected) return;
-          let j; try { j = await api(M + "/threads/" + cur.id + "/run-job/" + encodeURIComponent(r.job_id) + "?agent_id=" + encodeURIComponent(agentId)); } catch (e) { status(`связь с ABOP прервалась, повторяю… (${humanError(e)})`); continue; }
+          let j;
+          try { j = await api(M + "/threads/" + cur.id + "/run-job/" + encodeURIComponent(r.job_id) + "?agent_id=" + encodeURIComponent(agentId)); _miss = 0; }
+          catch (e) {
+            // Раньше здесь было бесконечное «повторяю…»: человек не понимал, сервер молчит секунду
+            // или десять минут. Считаем неудачные опросы и напоминаем, что прогон идёт на сервере.
+            _miss++;
+            status(`сервер не отвечает ${_miss * 3} с — прогон продолжается на сервере${_miss >= 20 ? ", можно закрыть ожидание: результат появится в разделе «Прогоны»" : ""} (${humanError(e)})`);
+            continue;
+          }
           if (j.done) { res = j; break; }
           const sec = Math.round((Date.now() - t0) / 1000);
           status(j.status === "queued" ? `в очереди · впереди ${Math.max(0, (j.position || 1) - 1)} · ${sec} с` : `агент «${esc(agentNm)}» ${progressText((j.progress || {}).run)} · ${sec} с`);
@@ -1103,7 +1113,7 @@ export async function mount(root, ctx) {
         const html = `<html><head><meta charset="utf-8"><style>body{font-family:sans-serif;padding:24px;color:#111}h2{margin:16px 0 4px;font-size:14px}</style></head><body><h1>${esc(cur.title)}</h1>${messages.map((m) => `<h2>${m.role === "user" ? "Вы" : "Ассистент"}</h2><div style="white-space:pre-wrap">${esc(exportText(m))}</div>`).join("")}</body></html>`;
         r = await window.ape.exportPdf(html, (cur.title || "chat").replace(/[^\w\-. ]/g, "_").slice(0, 60) + ".pdf");
       } else r = await api(M + "/threads/" + cur.id + "/export", { method: "POST", body: JSON.stringify({ format: fmt }) });
-      if (r.ok) toast("Сохранено в Загрузки: " + String(r.path || "").split(/[\\/]/).pop(), "ok", { ttl: 6000 }); else toast("Не удалось: " + (r.error || ""), "danger");
+      if (r.ok) ctx.fileToast("Сохранено в «Загрузки»", r.path); else toast("Не удалось: " + (r.error || ""), "danger");
     } catch (e) { toast("Не удалось: " + humanError(e), "danger"); }
   }
 
