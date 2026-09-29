@@ -554,6 +554,7 @@ export async function mount(root, ctx) {
   }
   function renderHitlBar() {
     const bar = $("hitlBar"); if (!bar) return;
+    if (ctx.setHitlCount) ctx.setHitlCount(hitlError ? 0 : hitlQueue.length);   // видно из любого раздела
     if (hitlError) {
       bar.innerHTML = `<div class="hitl-row" style="justify-content:space-between"><span style="font-size:12px;color:var(--danger-ink)">Очередь подтверждений не загрузилась: ${esc(hitlError)}</span><button type="button" class="btn sm hqRetry">Повторить</button></div>`;
       const rb = bar.querySelector(".hqRetry"); if (rb) rb.onclick = () => loadHitlQueue();
@@ -565,18 +566,33 @@ export async function mount(root, ctx) {
       <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
         <span style="font-size:12.5px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(h.title || h.channel || "Внешнее действие")}</span>
         <span style="font-size:11px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(agentName(h.agent_id, h.agent_id))} · ${esc(h.channel || "")}${h.to_addr ? " → " + esc(h.to_addr) : ""}</span></span>
-      <button type="button" class="btn sm ok hqOk" data-id="${esc(h.id)}">Посмотреть и подтвердить</button>
+      ${ctx.canApprove === false
+        ? `<span style="font-size:11px;color:var(--ink-3)" title="Подтверждать внешние действия может сотрудник с правами менеджера">только просмотр</span><button type="button" class="btn sm hqView" data-id="${esc(h.id)}">Посмотреть</button>`
+        : `<button type="button" class="btn sm ok hqOk" data-id="${esc(h.id)}">Посмотреть и подтвердить</button>`}
       <button type="button" class="ico hqNo" data-id="${esc(h.id)}" title="Отклонить" aria-label="Отклонить">✕</button></div>`).join("");
     bar.innerHTML = `<div class="hitl-panel">
       <div class="hitl-head">🛡 Требуют вашего подтверждения · ${hitlQueue.length}
         ${hitlQueue.length > 1 ? `<button type="button" id="hqAllOk" class="btn sm" style="margin-left:auto">Подтвердить все…</button>` : ""}</div>
       <div style="display:flex;flex-direction:column;gap:6px;max-height:236px;overflow-y:auto">${rows}${hitlQueue.length > 6 ? `<span style="font-size:11.5px;color:var(--ink-3)">…и ещё ${hitlQueue.length - 6}</span>` : ""}</div></div>`;
     bar.querySelectorAll(".hqOk").forEach((b) => b.onclick = () => previewAndDecide([b.dataset.id], b));
+    bar.querySelectorAll(".hqView").forEach((b) => b.onclick = () => previewOnly(b.dataset.id));
     bar.querySelectorAll(".hqNo").forEach((b) => b.onclick = () => decideHitl([b.dataset.id], "reject", b));
     const all = bar.querySelector("#hqAllOk"); if (all) all.onclick = async () => {
       const list = hitlQueue.map((h) => `• ${CH_ICON(h.channel)} ${esc(h.title || h.channel)}${h.to_addr ? " → " + esc(h.to_addr) : ""}`).join("<br>");
       if (await confirmDialog({ title: `Подтвердить все действия (${hitlQueue.length})?`, kicker: "действия наружу", text: `Отправятся наружу без просмотра каждого:<br><br>${list}`, okLabel: "Подтвердить все", danger: false })) decideHitl(hitlQueue.map((h) => h.id), "approve", all);
     };
+  }
+  async function previewOnly(id) {
+    let it = null;
+    try { it = await api(A_AG + "/hitl/" + encodeURIComponent(id)); } catch (e) { toast(humanError(e), "danger"); return; }
+    const rows = [["Агент", it.agent_name || agentName(it.agent_id, it.agent_id)], ["Канал", it.channel || ""], ["Адресат", it.to || "—"]]
+      .concat((it.command_fields || []).map(([k, v]) => [String(k), String(v)]));
+    modal(it.title || "Внешнее действие",
+      `<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:12.5px;margin-bottom:10px">`
+      + rows.map(([k, v]) => `<div style="color:var(--ink-3)">${esc(k)}</div><div>${esc(v)}</div>`).join("") + `</div>`
+      + `<div style="font-size:12.5px;white-space:pre-wrap;max-height:46vh;overflow:auto">${esc(it.body || "Содержимое не приложено.")}</div>`
+      + `<div style="margin-top:10px;font-size:12px;color:var(--ink-3)">Подтвердить это действие может сотрудник с правами менеджера.</div>`,
+      null, "", { kicker: "просмотр", width: "680px" });
   }
   async function previewAndDecide(ids, btn) {
     const id = ids[0];
@@ -665,10 +681,34 @@ export async function mount(root, ctx) {
         const ok = it.result_state === "done";
         const ref = res.url || (res.issue_id ? "#" + res.issue_id : "") || (res.page_id ? "стр. " + res.page_id : "") || "";
         const text = ok ? `✓ выполнено${ref ? ": " + ref : ""}` : `✗ ошибка коннектора: ${String(res.error || "").slice(0, 120)}`;
-        messages.forEach((m) => { const ra = m.meta && m.meta.run_agent; if (ra && (ra.delivery || []).some((d) => d.hitl_id === id)) { ra.cmd_results = ra.cmd_results || {}; ra.cmd_results[id] = { ok, text, url: res.url || "" }; } });
+        messages.forEach((m) => {
+          const ra = m.meta && m.meta.run_agent;
+          if (ra && (ra.delivery || []).some((d) => d.hitl_id === id)) {
+            ra.cmd_results = ra.cmd_results || {};
+            ra.cmd_results[id] = { ok, text, url: res.url || "" };
+            saveRunMeta(m, { cmd_results: ra.cmd_results });   // номер задачи переживает перезапуск
+          }
+        });
         toast(text, ok ? "ok" : "danger");
         render();
       }
+    }
+    // Ожидание кончилось, а ответа нет: раньше на этом месте наступала тишина и человек не знал,
+    // выполнилась команда или нет. Говорим прямо и оставляем след в карточке.
+    if (pending.size) {
+      const text = "⏳ система пока не ответила — проверьте результат в самой системе или в разделе «Прогоны»";
+      pending.forEach((id) => {
+        messages.forEach((m) => {
+          const ra = m.meta && m.meta.run_agent;
+          if (ra && (ra.delivery || []).some((d) => d.hitl_id === id)) {
+            ra.cmd_results = ra.cmd_results || {};
+            ra.cmd_results[id] = { ok: false, text, url: "" };
+            saveRunMeta(m, { cmd_results: ra.cmd_results });
+          }
+        });
+      });
+      toast(`Ответ системы не пришёл за полторы минуты: ${pending.size}. Команда могла выполниться — проверьте в системе.`, "warn", { ttl: 8000 });
+      render();
     }
   }
   async function decideDelivery(btn, decision) {

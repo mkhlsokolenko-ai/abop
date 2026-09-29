@@ -170,6 +170,7 @@ export const ctx = {
   gate: apeGate, mascot: apeMascot, modal, confirm: confirmDialog, toast, humanError, esc, openOverlay,
   // навигация с намерением: ctx.open("chat", { attach: {...} }) — модуль получает intent (см. loadModule)
   open: (id, intent) => loadModule(id, intent),
+  setHitlCount,
   reload: (id) => reloadModule(id),
   login: () => startLogin(),
 };
@@ -227,6 +228,7 @@ async function renderAuth() {
   try { me = await api("/api/auth/me"); } catch { me = { authed: false }; }
   const was = ctx.authed;
   ctx.user = me.user || null; ctx.roles = me.roles || []; ctx.email = me.email || null; ctx.authed = !!me.authed;
+  ctx.level = me.level || "analyst"; ctx.canApprove = me.can_approve !== false;
   if (_loginBusy && !me.authed) return;   // ждём завершения входа — не мигаем кнопкой
   renderAuthBox(me);
   refreshCost();
@@ -246,11 +248,24 @@ function railModules() {
   const rank = (id) => { const i = RAIL_ORDER.indexOf(id); return i < 0 ? RAIL_ORDER.length : i; };
   return visibleModules().slice().sort((a, b) => rank(a.id) - rank(b.id));
 }
+// Сколько действий ждёт решения — показываем на кнопке чата в боковом меню: очередь жила только
+// внутри чата, и из «Прогонов» или «Кабинета» о висящих письмах и задачах было не узнать.
+let hitlCount = 0;
+export function setHitlCount(n) {
+  const v = Math.max(0, Number(n) || 0);
+  if (v === hitlCount) return;
+  hitlCount = v;
+  renderNav();
+}
+
 function railBtn(m, on) {
   const bg = on ? "var(--accent-bg)" : "var(--panel)", fg = on ? "var(--accent-ink)" : "var(--ink-2)", bd = on ? "var(--line-2)" : "var(--line)";
   const label = RAIL_TITLE[m.id] || m.title;
-  return `<button data-id="${esc(m.id)}" aria-label="${esc(label)}" aria-current="${on ? "page" : "false"}" style="width:100%;padding:10px 4px;display:flex;flex-direction:column;align-items:center;gap:5px;border:1px solid ${bd};border-radius:12px;background:${bg};color:${fg}">
-    <span style="font-size:16px;line-height:1" aria-hidden="true">${icon(m.icon)}</span><span style="font-size:11px;font-weight:600">${esc(label)}</span></button>`;
+  const badge = (m.id === "chat" && hitlCount)
+    ? `<span title="Ждут вашего решения" style="position:absolute;top:5px;right:8px;min-width:17px;height:17px;padding:0 4px;border-radius:9999px;background:var(--warn-ink);color:#1a1205;font-size:10.5px;font-weight:800;display:flex;align-items:center;justify-content:center">${hitlCount > 99 ? "99+" : hitlCount}</span>` : "";
+  const aria = (m.id === "chat" && hitlCount) ? `${label}, ждут решения: ${hitlCount}` : label;
+  return `<button data-id="${esc(m.id)}" aria-label="${esc(aria)}" aria-current="${on ? "page" : "false"}" style="position:relative;width:100%;padding:10px 4px;display:flex;flex-direction:column;align-items:center;gap:5px;border:1px solid ${bd};border-radius:12px;background:${bg};color:${fg}">
+    ${badge}<span style="font-size:16px;line-height:1" aria-hidden="true">${icon(m.icon)}</span><span style="font-size:11px;font-weight:600">${esc(label)}</span></button>`;
 }
 function renderNav() {
   const nav = $("railNav"); if (!nav) return;
@@ -528,6 +543,14 @@ async function boot() {
   if (linkTimer) clearInterval(linkTimer);
   linkTimer = setInterval(() => pingLink(), 20000);   // офлайн виден сам, без действий пользователя
   document.addEventListener("visibilitychange", () => { if (!document.hidden) recheckLink(); });
+  // Очередь подтверждений опрашивает ядро, а не панель чата: иначе счётчик замирал, стоило уйти
+  // в другой раздел, и человек не видел, что письмо или задача ждут решения.
+  const pollHitl = async () => {
+    try { const q = await api("/api/modules/agents/hitl"); setHitlCount(Array.isArray(q) ? q.length : 0); }
+    catch { /* офлайн покажет светофор, счётчик оставляем прежним */ }
+  };
+  pollHitl();
+  setInterval(pollHitl, 45000);
   window.addEventListener("online", () => pingLink());
   window.addEventListener("offline", () => { linkOk = false; renderLink({ ok: false }); });
 }
