@@ -36,6 +36,7 @@ export async function api(path, opts = {}) {
     if (st === 502 || st === 503 || st === 504) { try { markOffline(_err); } catch { /* индикатор не критичен */ } }
     throw _err;
   }
+  if (!linkOk) { try { recheckLink(); } catch { /* индикатор не критичен */ } }
   return data;
 }
 // Ошибка → человеческая фраза (D-C1). Понимает ApiError, строки вида «ABOP 401: …» и коды сайдкара.
@@ -428,33 +429,78 @@ async function waitEngine() {
 // Локальный движок приложения может быть жив, а сервер — нет: тогда история чата и настройки доступны,
 // а запуск агентов и очередь подтверждений — нет. Показываем это в шапке, а не в каждой ошибке.
 let linkOk = true, linkTimer = null;
+let linkState = { phase: "checking", url: "", error: "", at: 0, engine: true };
+
+// Светофор связи: зелёный — ABOP отвечает, жёлтый — идёт проверка, красный — не отвечает.
+// Индикатор виден ВСЕГДА: раньше он появлялся только при аварии, и рабочее состояние ничем не
+// подтверждалось — было не отличить «всё хорошо» от «проверка зависла».
+const LINK_LOOK = {
+  ok:       { dot: "var(--ok-ink)",     ink: "var(--ink-2)",      text: "ABOP на связи",      bg: "var(--ok-bg)",     br: "var(--ok-line)" },
+  checking: { dot: "var(--warn-ink)",   ink: "var(--ink-2)",      text: "проверяю связь…",    bg: "var(--warn-bg)",   br: "var(--warn-line)" },
+  down:     { dot: "var(--danger-ink)", ink: "var(--danger-ink)", text: "Нет связи с ABOP",   bg: "var(--danger-bg)", br: "var(--danger-line)" },
+  engine:   { dot: "var(--danger-ink)", ink: "var(--danger-ink)", text: "Движок не отвечает", bg: "var(--danger-bg)", br: "var(--danger-line)" },
+};
+
 function renderLink(state) {
-  const pill = $("linkPill"), txt = $("linkText");
+  const pill = $("linkPill"), txt = $("linkText"), dot = $("linkDot");
   if (!pill) return;
-  if (state.ok) { pill.hidden = true; return; }
-  pill.hidden = false;
-  // причина молчания сервера пишется прямо в плашке: без неё «нет связи» одинаково выглядит
-  // и при таймауте, и при чужом адресе, и при 500 — чинить наугад невозможно.
-  const why = String(state.error || "").replace(/^AbopError:\s*/, "").slice(0, 120);
-  if (txt) txt.textContent = state.engine === false
-    ? "Движок приложения не отвечает — перезапустите ABOP"
-    : ("Нет связи с ABOP" + (state.url ? " (" + String(state.url).replace(/^https?:\/\//, "") + ")" : "")
-       + (why ? " — " + why : " — запуск агентов недоступен, история чата на месте"));
-  if (txt) txt.title = why ? "Ответ сервера: " + why : "";
+  linkState = { ...linkState, ...state, at: Date.now() };
+  const phase = state.phase || (state.ok ? "ok" : (state.engine === false ? "engine" : "down"));
+  linkState.phase = phase;
+  const look = LINK_LOOK[phase] || LINK_LOOK.checking;
+  pill.style.background = look.bg;
+  pill.style.borderColor = look.br;
+  if (dot) dot.style.background = look.dot;
+  if (txt) { txt.style.color = look.ink; txt.textContent = look.text; }
+  const why = String(linkState.error || "").replace(/^AbopError:\s*/, "");
+  pill.title = phase === "ok"
+    ? "Связь с ABOP есть · " + (linkState.url || "") + " · нажмите для подробностей"
+    : (why || "Нажмите, чтобы посмотреть причину");
 }
+
+function linkDetails() {
+  const when = linkState.at ? new Date(linkState.at).toLocaleTimeString("ru-RU") : "—";
+  const phase = linkState.phase;
+  const rows = [
+    ["Состояние", phase === "ok" ? "связь есть, запуск агентов доступен"
+      : phase === "engine" ? "локальный движок приложения не отвечает"
+      : phase === "checking" ? "идёт проверка" : "сервер ABOP не отвечает"],
+    ["Адрес сервера", linkState.url || "—"],
+    ["Последняя проверка", when],
+  ];
+  if (linkState.error) rows.push(["Ответ сервера", String(linkState.error).slice(0, 400)]);
+  const body = `<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:12.5px;line-height:1.55">`
+    + rows.map(([k, v]) => `<div style="color:var(--ink-3)">${esc(k)}</div><div style="color:var(--ink-1);word-break:break-word">${esc(v)}</div>`).join("")
+    + `</div>`
+    + (phase === "ok" ? "" : `<div style="margin-top:12px;font-size:12px;color:var(--ink-3);line-height:1.55">История чата и настройки доступны без сервера. Запуск агентов и очередь подтверждений вернутся сами, как только связь восстановится.</div>`);
+  modal("Связь с ABOP", body, () => { pingLink(true); }, "Проверить сейчас", { kicker: "Состояние" });
+}
+
 function markOffline(e) {
   const st = e && typeof e === "object" ? Number(e.status || 0) : 0;
   if (!(st === 0 || st === 502 || st === 503 || st === 504)) return;
-  if (linkOk) { linkOk = false; renderLink({ ok: false }); }
+  if (linkOk) { linkOk = false; renderLink({ ok: false, engine: st !== 0, error: (e && (e.detail || e.message)) || "" }); }
+  recheckLink();
 }
+
+// Перепроверка связи не чаще раза в 3 с: индикатор чинится фактом ответа, а не таймером.
+let _recheckAt = 0;
+function recheckLink() {
+  const now = Date.now();
+  if (now - _recheckAt < 3000) return;
+  _recheckAt = now;
+  setTimeout(() => { pingLink().catch(() => {}); }, 150);
+}
+
 async function pingLink(manual) {
+  if (manual) renderLink({ phase: "checking" });
   let h = null, engine = true;
   try { h = await api("/api/health"); } catch { engine = false; }
   const ok = !!(h && h.ok && h.abop !== false);
   if (ok && !linkOk) { toast("Связь с ABOP восстановлена", "ok"); reloadAll(); }
   if (!ok && manual) toast(engine ? "ABOP всё ещё недоступен" : "Движок приложения не отвечает", "warn");
   linkOk = ok;
-  renderLink({ ok, engine, url: h && h.abop_url, error: h && h.abop_error });
+  renderLink({ ok, engine, url: (h && h.abop_url) || linkState.url, error: (h && h.abop_error) || "" });
   return ok;
 }
 
@@ -477,10 +523,11 @@ async function boot() {
     else if (e.ctrlKey && (e.key === "n" || e.key === "N")) { e.preventDefault(); loadModule("chat", { newChat: true }); }
   });
   const pb = $("cmdBtn"); if (pb) pb.onclick = openPalette;
-  const lr = $("linkRetry"); if (lr) lr.onclick = () => pingLink(true);
+  const lp = $("linkPill"); if (lp) lp.onclick = () => linkDetails();
   await pingLink();
   if (linkTimer) clearInterval(linkTimer);
   linkTimer = setInterval(() => pingLink(), 20000);   // офлайн виден сам, без действий пользователя
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) recheckLink(); });
   window.addEventListener("online", () => pingLink());
   window.addEventListener("offline", () => { linkOk = false; renderLink({ ok: false }); });
 }
