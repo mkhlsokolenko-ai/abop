@@ -2600,6 +2600,79 @@ class Component extends DCLogic {
       .then(function(r){ return r.ok ? r.json() : null; })
       .then(function(t){ if (self.state.skillId === id) self.setState({ skillTpl: t }); })
       .catch(function(){});
+    // контракт навыка: чем кормить и что он отдаёт. До него вход был описан только прозой в
+    // инструкции, поэтому граф нечем было исполнять по порядку.
+    fetch('/api/skills/' + encodeURIComponent(id) + '/contract')
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(c){ if (c && self.state.skillId === id) self.setState({ skillContract: c, contractDirty: false }); })
+      .catch(function(){});
+  }
+  _contract() {
+    var c = this.state.skillContract || {};
+    var inp = c.inputs || {};
+    return { required: (inp.required || []).slice(), optional: (inp.optional || []).slice(),
+             produces: Array.isArray(c.produces) ? c.produces.slice() : (c.produces && c.produces.path ? [c.produces] : []) };
+  }
+  _setContract(next) {
+    var c = Object.assign({}, this.state.skillContract || {});
+    c.inputs = { required: next.required, optional: next.optional };
+    c.produces = next.produces;
+    this.setState({ skillContract: c, contractDirty: true });
+  }
+  addContractInput(bucket) {
+    var n = this._contract();
+    n[bucket].push({ from: 'data', entity: '', fields: [] });
+    this._setContract(n);
+  }
+  editContractInput(bucket, i, patch) {
+    var n = this._contract();
+    if (!n[bucket][i]) return;
+    n[bucket][i] = Object.assign({}, n[bucket][i], patch);
+    // смена источника чистит поля, которые к нему не относятся: иначе контракт копит мусор
+    if (patch.from) {
+      var keep = { from: patch.from, fields: n[bucket][i].fields || [] };
+      if (patch.from === 'data') keep.entity = '';
+      if (patch.from === 'skill') { keep.skill = ''; keep.path = ''; }
+      if (patch.from === 'slot') keep.name = '';
+      if (patch.from === 'context') keep.note = '';
+      n[bucket][i] = keep;
+    }
+    this._setContract(n);
+  }
+  removeContractInput(bucket, i) {
+    var n = this._contract();
+    n[bucket].splice(i, 1);
+    this._setContract(n);
+  }
+  addContractOutput() {
+    var n = this._contract();
+    n.produces.push({ path: '', key: '', join: '' });
+    this._setContract(n);
+  }
+  editContractOutput(i, patch) {
+    var n = this._contract();
+    if (!n.produces[i]) return;
+    n.produces[i] = Object.assign({}, n.produces[i], patch);
+    this._setContract(n);
+  }
+  removeContractOutput(i) {
+    var n = this._contract();
+    n.produces.splice(i, 1);
+    this._setContract(n);
+  }
+  saveContract() {
+    var self = this, c = this.state.skillContract || {}, tid = c.template_id || this.state.skillId;
+    if (!tid) return;
+    var body = { inputs: c.inputs || {}, produces: c.produces || [] };
+    fetch('/api/schema-templates/' + encodeURIComponent(tid), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    }).then(function(r){ return r.json().then(function(j){ return { ok: r.ok, j: j || {} }; }); })
+      .then(function(res){
+        if (!res.ok) { self.showToast('Контракт: ' + (res.j.detail || 'не сохранён')); return; }
+        self.setState({ contractDirty: false });
+        self.showToast('Контракт навыка сохранён');
+        self.loadSkillTemplate(self.state.skillId);
+      }).catch(function(){ self.showToast('ABOP недоступен'); });
   }
   resetSkillTemplate(id) {
     var self = this;
@@ -4186,6 +4259,55 @@ class Component extends DCLogic {
       hitlOpenFindings: () => { const rid = realHitl.length ? realHitl[0].run_id : ''; if (rid) this.openFindingsOf(rid); },
       hasToasts: !!(s.toasts && s.toasts.length), userMenuOpen: s.userMenu ? 'true' : 'false', toggleTheme: () => this.toggleTheme(), themeLabel: ((document.documentElement.getAttribute('data-theme') === 'light') ? '☾ Тёмная тема' : '☀ Светлая тема'),
 
+      contract: (() => {
+        const c = s.skillContract || null;
+        if (!c) return null;
+        const outs = Array.isArray(c.produces) ? c.produces : (c.produces && c.produces.path ? [c.produces] : []);
+        const inp = c.inputs || {};
+        const SRC = [['data', 'из данных'], ['skill', 'из навыка'], ['slot', 'предмет работы'], ['context', 'из контекста']];
+        const entOpts = (s.skillEntityOpts || ['transaction', 'document', 'customer', 'issue', 'email', 'meeting', 'doc1c', 'ref1c'])
+          .map(e => ({ value: e, label: e }));
+        const skillOpts = (s.skillList || []).map(k => ({ value: k.id, label: k.id }));
+        const row = (bucket) => (it, i) => ({
+          idx: i, bucket,
+          fromVal: it.from || 'data',
+          fromOpts: SRC.map(([v, l]) => ({ value: v, label: l })),
+          setFrom: (e) => this.editContractInput(bucket, i, { from: e.target.value }),
+          isData: it.from === 'data', isSkill: it.from === 'skill', isSlot: it.from === 'slot', isCtx: it.from === 'context',
+          entity: it.entity || '', entityOpts: entOpts,
+          setEntity: (e) => this.editContractInput(bucket, i, { entity: e.target.value }),
+          skill: it.skill || '', skillOpts,
+          setSkill: (e) => this.editContractInput(bucket, i, { skill: e.target.value }),
+          path: it.path || '', setPath: (e) => this.editContractInput(bucket, i, { path: e.target.value }),
+          name: it.name || '', setName: (e) => this.editContractInput(bucket, i, { name: e.target.value }),
+          note: it.note || '', setNote: (e) => this.editContractInput(bucket, i, { note: e.target.value }),
+          fields: (it.fields || []).join(', '),
+          setFields: (e) => this.editContractInput(bucket, i, { fields: String(e.target.value || '').split(',').map(x => x.trim()).filter(Boolean) }),
+          remove: () => this.removeContractInput(bucket, i)
+        });
+        const schemaLists = Object.keys(((s.skillTpl || {}).json_schema || {}).properties || {});
+        return {
+          required: (inp.required || []).map(row('required')),
+          optional: (inp.optional || []).map(row('optional')),
+          outputs: outs.map((o, i) => ({
+            path: o.path || '', key: o.key || '', join: o.join || '',
+            pathOpts: schemaLists.map(p => ({ value: p, label: p })),
+            setPath: (e) => this.editContractOutput(i, { path: e.target.value }),
+            setKey: (e) => this.editContractOutput(i, { key: e.target.value }),
+            setJoin: (e) => this.editContractOutput(i, { join: e.target.value }),
+            remove: () => this.removeContractOutput(i)
+          })),
+          slots: (c.slots || []).map(sl => ({ name: sl.name, entity: sl.entity, label: sl.label || '' })),
+          hasSlots: !!(c.slots || []).length,
+          errors: (c.errors || []).join(' · '), hasErrors: !!(c.errors || []).length,
+          hints: (c.field_hints || []).slice(0, 4).join(' · '), hasHints: !!(c.field_hints || []).length,
+          addRequired: () => this.addContractInput('required'),
+          addOptional: () => this.addContractInput('optional'),
+          addOutput: () => this.addContractOutput(),
+          save: () => this.saveContract(), dirty: !!s.contractDirty,
+          empty: !(inp.required || []).length && !(inp.optional || []).length && !outs.length
+        };
+      })(),
       skillCards, agentPortfolio: (s.showLimbo ? s.limboList : s.agentsList).map(a => ({ name: a.name, open: () => this.openAgent(a), meta: (a.role || '—') + ' · ' + (a.family || '') + ' · ' + a.status + ' · ' + (a.autonomy_max || ''), isLimbo: a.status === 'retired', isActive: a.status !== 'retired', retire: () => this.retireAgent(a.id), restore: () => this.restoreAgent(a.id), del: () => this.deleteAgent(a.id, a.name) })), agentPortfolioEmpty: (s.showLimbo ? s.limboList : s.agentsList).length === 0, showLimbo: s.showLimbo, toggleLimbo: () => this.setState({ showLimbo: !s.showLimbo }), limboToggleLabel: s.showLimbo ? ('← Активные (' + s.agentsList.length + ')') : ('Лимб / архив (' + s.limboList.length + ')'), skillShown: filtered.length, skillTotal: s.skillList.length, skillsEmpty: filtered.length === 0,
       coverageLine: s.coverageTotals ? ('Со схемой ' + s.coverageTotals['схема'] + ', с контрактом входа ' + s.coverageTotals['вход'] + ', с областью данных ' + s.coverageTotals['данные'] + ', с предметом ' + s.coverageTotals['слоты'] + ', с доставкой ' + s.coverageTotals['доставка'] + '.') : '',
       modeFilters, familyFilters,

@@ -344,6 +344,92 @@
             </div>
           </sc-if>
 
+          <sc-if value="{{ ov.contract }}" hint-placeholder-val="{{ false }}">
+            <div style="display: flex; flex-direction: column; gap: 12px; padding: 14px 16px; border-radius: 12px; background: rgba(34,197,94,.06); border: 1px solid rgba(34,197,94,.22);">
+              <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w38);">контракт навыка</span>
+                <span style="font-size: 12px; color: var(--w55);">чем кормить и что отдаёт — по нему сборка проверяет, можно ли поставить навык после другого</span>
+                <div style="flex: 1;"></div>
+                <sc-if value="{{ ov.contract.dirty }}" hint-placeholder-val="{{ false }}">
+                  <button sc-camel-on-click="{{ ov.contract.save }}" style="padding: 6px 12px; border: 1px solid rgba(34,197,94,.4); border-radius: 9px; background: rgba(34,197,94,.16); color: #86efac; font-size: 11.5px; font-weight: 700;">Сохранить контракт</button>
+                </sc-if>
+              </div>
+
+              <sc-if value="{{ ov.contract.hasErrors }}" hint-placeholder-val="{{ false }}">
+                <span style="font-size: 11.5px; color: var(--err-ink);">{{ ov.contract.errors }}</span>
+              </sc-if>
+
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--acc-ink);">вход · обязательный</span>
+                <button sc-camel-on-click="{{ ov.contract.addRequired }}" style="padding: 4px 10px; border: 1px solid var(--w14); border-radius: 8px; background: var(--w5); color: var(--ink); font-size: 11px;">＋</button>
+              </div>
+              <sc-for list="{{ ov.contract.required }}" as="ci" hint-placeholder-count="2">
+                <div style="display: flex; align-items: center; gap: 7px; flex-wrap: wrap; padding: 7px 9px; border-radius: 10px; background: var(--s50); border: 1px solid var(--w8);">
+                  <select value="{{ ci.fromVal }}" onChange="{{ ci.setFrom }}" style="padding: 6px 8px; border-radius: 8px; border: 1px solid var(--w14); background: var(--s70); color: var(--ink); font-size: 11.5px;"><sc-for list="{{ ci.fromOpts }}" as="o" hint-placeholder-count="4"><option value="{{ o.value }}">{{ o.label }}</option></sc-for></select>
+                  <sc-if value="{{ ci.isData }}" hint-placeholder-val="{{ false }}">
+                    <select value="{{ ci.entity }}" onChange="{{ ci.setEntity }}" style="padding: 6px 8px; border-radius: 8px; border: 1px solid var(--w14); background: var(--s70); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 11.5px;"><sc-for list="{{ ci.entityOpts }}" as="o" hint-placeholder-count="4"><option value="{{ o.value }}">{{ o.label }}</option></sc-for></select>
+                  </sc-if>
+                  <sc-if value="{{ ci.isSkill }}" hint-placeholder-val="{{ false }}">
+                    <select value="{{ ci.skill }}" onChange="{{ ci.setSkill }}" style="padding: 6px 8px; border-radius: 8px; border: 1px solid var(--w14); background: var(--s70); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 11.5px;"><sc-for list="{{ ci.skillOpts }}" as="o" hint-placeholder-count="4"><option value="{{ o.value }}">{{ o.label }}</option></sc-for></select>
+                    <input value="{{ ci.path }}" onChange="{{ ci.setPath }}" placeholder="какой список" style="width: 130px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--w14); background: var(--s70); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 11.5px;">
+                  </sc-if>
+                  <sc-if value="{{ ci.isSlot }}" hint-placeholder-val="{{ false }}">
+                    <input value="{{ ci.name }}" onChange="{{ ci.setName }}" placeholder="имя предмета" style="width: 140px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--w14); background: var(--s70); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 11.5px;">
+                  </sc-if>
+                  <sc-if value="{{ ci.isCtx }}" hint-placeholder-val="{{ false }}">
+                    <input value="{{ ci.note }}" onChange="{{ ci.setNote }}" placeholder="что приходит текстом" style="flex: 1; min-width: 160px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--w14); background: var(--s70); color: var(--w90); font-size: 11.5px;">
+                  </sc-if>
+                  <input value="{{ ci.fields }}" onChange="{{ ci.setFields }}" placeholder="поля через запятую" style="flex: 1; min-width: 140px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--w14); background: var(--s70); color: var(--w90); font-family: 'JetBrains Mono', monospace; font-size: 11.5px;">
+                  <button onClick="{{ ci.remove }}" style="border: none; background: transparent; color: var(--w55); font-size: 13px;">✕</button>
+                </div>
+              </sc-for>
+
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w45);">вход · необязательный</span>
+                <button sc-camel-on-click="{{ ov.contract.addOptional }}" style="padding: 4px 10px; border: 1px solid var(--w14); border-radius: 8px; background: var(--w5); color: var(--ink); font-size: 11px;">＋</button>
+              </div>
+              <sc-for list="{{ ov.contract.optional }}" as="ci" hint-placeholder-count="1">
+                <div style="display: flex; align-items: center; gap: 7px; flex-wrap: wrap; padding: 7px 9px; border-radius: 10px; background: var(--s50); border: 1px dashed var(--w10);">
+                  <select value="{{ ci.fromVal }}" onChange="{{ ci.setFrom }}" style="padding: 6px 8px; border-radius: 8px; border: 1px solid var(--w14); background: var(--s70); color: var(--ink); font-size: 11.5px;"><sc-for list="{{ ci.fromOpts }}" as="o" hint-placeholder-count="4"><option value="{{ o.value }}">{{ o.label }}</option></sc-for></select>
+                  <sc-if value="{{ ci.isSkill }}" hint-placeholder-val="{{ false }}">
+                    <select value="{{ ci.skill }}" onChange="{{ ci.setSkill }}" style="padding: 6px 8px; border-radius: 8px; border: 1px solid var(--w14); background: var(--s70); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 11.5px;"><sc-for list="{{ ci.skillOpts }}" as="o" hint-placeholder-count="4"><option value="{{ o.value }}">{{ o.label }}</option></sc-for></select>
+                    <input value="{{ ci.path }}" onChange="{{ ci.setPath }}" placeholder="какой список" style="width: 130px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--w14); background: var(--s70); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 11.5px;">
+                  </sc-if>
+                  <sc-if value="{{ ci.isData }}" hint-placeholder-val="{{ false }}">
+                    <select value="{{ ci.entity }}" onChange="{{ ci.setEntity }}" style="padding: 6px 8px; border-radius: 8px; border: 1px solid var(--w14); background: var(--s70); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 11.5px;"><sc-for list="{{ ci.entityOpts }}" as="o" hint-placeholder-count="4"><option value="{{ o.value }}">{{ o.label }}</option></sc-for></select>
+                  </sc-if>
+                  <input value="{{ ci.fields }}" onChange="{{ ci.setFields }}" placeholder="поля через запятую" style="flex: 1; min-width: 140px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--w14); background: var(--s70); color: var(--w90); font-family: 'JetBrains Mono', monospace; font-size: 11.5px;">
+                  <button onClick="{{ ci.remove }}" style="border: none; background: transparent; color: var(--w55); font-size: 13px;">✕</button>
+                </div>
+              </sc-for>
+
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--acc-ink);">выход · что отдаёт</span>
+                <button sc-camel-on-click="{{ ov.contract.addOutput }}" style="padding: 4px 10px; border: 1px solid var(--w14); border-radius: 8px; background: var(--w5); color: var(--ink); font-size: 11px;">＋</button>
+              </div>
+              <sc-for list="{{ ov.contract.outputs }}" as="co" hint-placeholder-count="2">
+                <div style="display: flex; align-items: center; gap: 7px; flex-wrap: wrap; padding: 7px 9px; border-radius: 10px; background: var(--s50); border: 1px solid var(--w8);">
+                  <select value="{{ co.path }}" onChange="{{ co.setPath }}" style="padding: 6px 8px; border-radius: 8px; border: 1px solid var(--w14); background: var(--s70); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 11.5px;"><sc-for list="{{ co.pathOpts }}" as="o" hint-placeholder-count="4"><option value="{{ o.value }}">{{ o.label }}</option></sc-for></select>
+                  <input value="{{ co.key }}" onChange="{{ co.setKey }}" placeholder="ключ записи" style="width: 130px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--w14); background: var(--s70); color: var(--w90); font-family: 'JetBrains Mono', monospace; font-size: 11.5px;">
+                  <input value="{{ co.join }}" onChange="{{ co.setJoin }}" placeholder="имя связи" style="width: 140px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--w14); background: var(--s70); color: var(--w90); font-family: 'JetBrains Mono', monospace; font-size: 11.5px;">
+                  <button onClick="{{ co.remove }}" style="border: none; background: transparent; color: var(--w55); font-size: 13px;">✕</button>
+                </div>
+              </sc-for>
+
+              <sc-if value="{{ ov.contract.hasSlots }}" hint-placeholder-val="{{ false }}">
+                <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                  <sc-for list="{{ ov.contract.slots }}" as="sl" hint-placeholder-count="1">
+                    <span title="{{ sl.label }}" style="padding: 4px 10px; border-radius: 9999px; background: rgba(245,158,11,.14); border: 1px solid rgba(245,158,11,.3); color: var(--warn-ink); font-family: 'JetBrains Mono', monospace; font-size: 11px;">предмет: {{ sl.name }} · {{ sl.entity }}</span>
+                  </sc-for>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ ov.contract.hasHints }}" hint-placeholder-val="{{ false }}">
+                <span style="font-size: 11px; color: var(--w45);">имена полей: {{ ov.contract.hints }}</span>
+              </sc-if>
+            </div>
+          </sc-if>
+
           <div style="display: flex; flex-direction: column; gap: 10px;">
             <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w38);">воркфлоу агента</span>
             <sc-for list="{{ ov.flowSteps }}" as="fs" hint-placeholder-count="4">
