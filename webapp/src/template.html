@@ -1350,7 +1350,7 @@
             <div style="display: flex; align-items: flex-end; gap: 18px; flex-wrap: wrap;">
               <div style="display: flex; flex-direction: column; gap: 7px;">
                 <h1 style="margin: 0; font-size: 32px; font-weight: 800; letter-spacing: -.8px;">Навыки <span style="font-family: 'JetBrains Mono', monospace; font-size: 18px; font-weight: 600; color: var(--w60);">{{ skillTotal }}</span></h1>
-                <p style="margin: 0; font-size: 13.5px; color: var(--w50);">Безопасность видна на карточке: mode × egress × cite. Показаны {{ skillShown }} из {{ skillTotal }}.</p>
+                <p style="margin: 0; font-size: 13.5px; color: var(--w50);">Безопасность: mode × egress × cite. Готовность к сборке: схема, вход, выход, данные, предмет, доставка. Показаны {{ skillShown }} из {{ skillTotal }}. {{ coverageLine }}</p>
               </div>
               <div style="margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
                 <sc-for list="{{ modeFilters }}" as="f" hint-placeholder-count="5">
@@ -1385,6 +1385,11 @@
                   <span style="display: flex; gap: 6px; flex-wrap: wrap;">
                     <sc-for list="{{ s.chips }}" as="c" hint-placeholder-count="3">
                       <span style="padding: 4px 9px; border-radius: 9999px; background: {{ c.bg }}; border: 1px solid {{ c.border }}; color: {{ c.fg }}; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600;">{{ c.label }}</span>
+                    </sc-for>
+                  </span>
+                  <span style="display: flex; gap: 5px; flex-wrap: wrap;" title="Готовность к сборке: схема результата, объявленный вход и выход, область данных, предмет работы, доставка">
+                    <sc-for list="{{ s.ready }}" as="r" hint-placeholder-count="6">
+                      <span style="padding: 3px 7px; border-radius: 7px; background: {{ r.bg }}; border: 1px solid {{ r.border }}; color: {{ r.fg }}; font-family: 'JetBrains Mono', monospace; font-size: 10px;">{{ r.label }}</span>
                     </sc-for>
                   </span>
                   <span style="display: flex; align-items: center; gap: 10px; margin-top: auto;">
@@ -2554,6 +2559,11 @@ class Component extends DCLogic {
     fetch('/api/families').then(function(r){return r.ok?r.json():{families:[]};}).then(function(fd){ (fd.families||[]).forEach(function(f){ FAM[f.id]=f.title||f.id; }); }).catch(function(){}).then(function(){ return fetch('/api/skills').then(function(r){return r.json();}); }).then(function(d){
       var list=(d.skills||[]).map(function(x){var sf=x.safety||{};var secs=x.sections||[];var secOf=function(kw){for(var i=0;i<secs.length;i++){if(((secs[i].head||'').toLowerCase()).indexOf(kw)>-1)return secs[i].text||'';}return '';};return {id:x.id,title:x.title,mode:sf.mode||'read',egress:sf.egress||'internal',cite:!!sf.cite,output:sf.output||'structured',famIds:(x.families||[]),families:(x.families||[]).map(function(f){return FAM[f]||f;}),desc:x.short||'',when:x.when||secOf('когда'),method:x.method||secOf('метод'),dod:x.dod||secOf('definition'),anti:x.anti||secOf('анти'),flow:x.flow||[],sections:secs,datasources:x.datasources||[]};});
       var meta={}; (d.skills||[]).forEach(function(x){ meta[x.id]={version:x.version||'v1.0', editor:x.editor||null, at:x.edited_at||null}; }); if(list.length) self.setState({skillList:list, skillMeta:meta, famCatalog:Object.keys(FAM).map(function(k){return {id:k,label:FAM[k]};})});
+      // готовность каталога к сборке: схема, вход, выход, данные, предмет, доставка по каждому навыку
+      fetch('/api/catalog/coverage').then(function(r){return r.ok?r.json():null;}).then(function(cv){
+        if(!cv) return; var by={}; (cv.skills||[]).forEach(function(r){ by[r.skill]=r; });
+        self.setState({catalogCoverage: by, coverageTotals: cv.totals||null});
+      }).catch(function(){});
     }).catch(function(){});
     this.refreshContracts(); this.loadData(); this.loadConfig(); this.loadBilling(); this.loadRbac(); this.loadUserData(); this.loadFleet(); this.loadFindings(); this.loadRuns(); this.loadSystems();
   }
@@ -3165,8 +3175,21 @@ class Component extends DCLogic {
       if (k.cite) arr.push(CHIP.cite);
       return arr.map(c => ({ label: c.label, bg: c.bg, border: c.border, fg: c.fg }));
     };
+    const cov = (s.catalogCoverage || {});
+    const READY = [['схема', 'сх'], ['вход', 'вх'], ['выход', 'вых'], ['данные', 'дан'], ['слоты', 'предм'], ['доставка', 'дост']];
+    const readyFor = (id) => {
+      const r = cov[id];
+      if (!r) return [];
+      // зелёный — объявлено, серый — нет. Автор видит, чего не хватает навыку, не открывая карточку
+      return READY.map(([key, label]) => ({
+        label, on: !!r[key],
+        bg: r[key] ? 'rgba(34,197,94,.16)' : 'var(--w4)',
+        fg: r[key] ? '#86efac' : 'var(--w45)',
+        border: r[key] ? 'rgba(34,197,94,.34)' : 'var(--w10)'
+      }));
+    };
     const skillCards = filtered.map(k => ({
-      id: k.id, title: k.title, desc: k.desc, chips: chipsFor(k),
+      id: k.id, title: k.title, desc: k.desc, chips: chipsFor(k), ready: readyFor(k.id),
       familyLine: k.families.join(' · '),
       border: k.mode === 'action' ? 'rgba(245,158,11,.28)' : 'var(--w10)',
       open: () => this.openSkill(k.id),
@@ -4163,7 +4186,8 @@ class Component extends DCLogic {
       hitlOpenFindings: () => { const rid = realHitl.length ? realHitl[0].run_id : ''; if (rid) this.openFindingsOf(rid); },
       hasToasts: !!(s.toasts && s.toasts.length), userMenuOpen: s.userMenu ? 'true' : 'false', toggleTheme: () => this.toggleTheme(), themeLabel: ((document.documentElement.getAttribute('data-theme') === 'light') ? '☾ Тёмная тема' : '☀ Светлая тема'),
 
-      skillCards, agentPortfolio: (s.showLimbo ? s.limboList : s.agentsList).map(a => ({ name: a.name, open: () => this.openAgent(a), meta: (a.role || '—') + ' · ' + (a.family || '') + ' · ' + a.status + ' · ' + (a.autonomy_max || ''), isLimbo: a.status === 'retired', isActive: a.status !== 'retired', retire: () => this.retireAgent(a.id), restore: () => this.restoreAgent(a.id), del: () => this.deleteAgent(a.id, a.name) })), agentPortfolioEmpty: (s.showLimbo ? s.limboList : s.agentsList).length === 0, showLimbo: s.showLimbo, toggleLimbo: () => this.setState({ showLimbo: !s.showLimbo }), limboToggleLabel: s.showLimbo ? ('← Активные (' + s.agentsList.length + ')') : ('Лимб / архив (' + s.limboList.length + ')'), skillShown: filtered.length, skillTotal: s.skillList.length, skillTotal: s.skillList.length, skillsEmpty: filtered.length === 0,
+      skillCards, agentPortfolio: (s.showLimbo ? s.limboList : s.agentsList).map(a => ({ name: a.name, open: () => this.openAgent(a), meta: (a.role || '—') + ' · ' + (a.family || '') + ' · ' + a.status + ' · ' + (a.autonomy_max || ''), isLimbo: a.status === 'retired', isActive: a.status !== 'retired', retire: () => this.retireAgent(a.id), restore: () => this.restoreAgent(a.id), del: () => this.deleteAgent(a.id, a.name) })), agentPortfolioEmpty: (s.showLimbo ? s.limboList : s.agentsList).length === 0, showLimbo: s.showLimbo, toggleLimbo: () => this.setState({ showLimbo: !s.showLimbo }), limboToggleLabel: s.showLimbo ? ('← Активные (' + s.agentsList.length + ')') : ('Лимб / архив (' + s.limboList.length + ')'), skillShown: filtered.length, skillTotal: s.skillList.length, skillsEmpty: filtered.length === 0,
+      coverageLine: s.coverageTotals ? ('Со схемой ' + s.coverageTotals['схема'] + ', с контрактом входа ' + s.coverageTotals['вход'] + ', с областью данных ' + s.coverageTotals['данные'] + ', с предметом ' + s.coverageTotals['слоты'] + ', с доставкой ' + s.coverageTotals['доставка'] + '.') : '',
       modeFilters, familyFilters,
       resetFilters: () => this.setState({ modeFilter: 'Все', familyFilter: 'Все' }),
       createSkill: () => this.createSkill(),
@@ -5936,11 +5960,28 @@ class Component extends DCLogic {
     var self=this, c=this.state.contract; if(!c||!c.audit_id) return;
     var _edges=(this.state.edges||[]), _nodes=(this.state.canvasNodes||[]); var _hitlIds=_nodes.filter(function(n){return n.kind==='hitl';}).map(function(n){return n.id;}); var _to=function(e){return Array.isArray(e)?e[1]:(e.to!==undefined?e.to:e.b);}; var _from=function(e){return Array.isArray(e)?e[0]:(e.from!==undefined?e.from:e.a);}; var g={nodes:_nodes.map(function(n){ var base={id:n.id,kind:n.kind,title:n.title||n.label||''}; if(n.kind==='skill'){ base.skill=n.title; base.autonomy=n.autonomy||c.autonomy||'A0'; base.hitl=!!n.hitl||_edges.some(function(e){return _from(e)===n.id&&_hitlIds.indexOf(_to(e))>-1;}); } if(n.trig) base.trig=n.trig; if(n.out) base.out=n.out; if(n.entity) base.entity=n.entity; if(n.recipe) base.recipe=n.recipe; if(n.kind==='hitl') base.hitl=true; return base; }),edges:_edges};
     fetch('/api/agents/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contract_audit_id:c.audit_id,graph:g})})
-      .then(function(r){return r.json();}).then(function(j){ self.showToast(j.ok?('Конверт бэка: пройдено · автономия '+j.autonomy_max+' ≤ '+(c.autonomy||'')+' · HITL '+j.hitl_count):('Конверт бэка: '+((j.errors||[]).length)+' наруш. — '+((j.errors||[])[0]||''))); }).catch(function(){});
+      .then(function(r){return r.json();}).then(function(j){
+        // разрывы входа по контрактам навыков: какому навыку не хватает данных, предмета или
+        // навыка-поставщика. Раньше ответ бэка целиком уходил в тост и автор его не видел.
+        var gaps=(j.input_gaps||[]);
+        var steps=(self.state.checkSteps||[]).slice();
+        steps.push({label:'Входы навыков покрыты', status: gaps.length?'fail':'pass',
+                    detail: gaps.length? gaps.map(function(g){return g.text;}).join(' · ') : 'каждый навык получает то, что объявил во входе'});
+        var iss=Object.assign({}, self.state.issues||{});
+        gaps.forEach(function(g){ if(g.node) iss[g.node]=(iss[g.node]?iss[g.node]+' · ':'')+g.text; });
+        var envErr=(j.errors||[]);
+        if(envErr.length) steps.push({label:'Конверт автономии', status:'fail', detail: envErr.join(' · ')});
+        self.setState({checkSteps: steps, issues: iss, inputGaps: gaps,
+                       checkOk: self.state.checkOk && !gaps.length && !envErr.length,
+                       checkFails: (self.state.checkFails||0) + (gaps.length?1:0) + (envErr.length?1:0)});
+        self.showToast(gaps.length? ('Входы: '+gaps.length+' разрыв(ов) — смотрите «Проверка исполнимости»')
+          : (j.ok?('Проверка бэка пройдена · автономия '+j.autonomy_max+' ≤ '+(c.autonomy||'')+' · HITL '+j.hitl_count)
+                 :('Конверт: '+envErr.length+' наруш. — '+(envErr[0]||''))));
+      }).catch(function(){});
   }
 
   runCheck() {
-    if (this.state.checkState === 'running') return; if(this.state.contract&&this.state.contract.audit_id) this.checkGraphBackend();
+    if (this.state.checkState === 'running') return;
     const built = this.buildChecks();
     this.setState({ checkState: 'running', checkSteps: [], checkOk: false, checkFails: 0, issues: {} });
     clearTimeout(this.checkTimer);
@@ -5949,6 +5990,8 @@ class Component extends DCLogic {
         const fails = built.steps.filter(c => c.status === 'fail').length;
         this.setState({ checkState: 'done', checkOk: fails === 0, checkFails: fails, issues: built.issues });
         this.showToast(fails === 0 ? 'Проверка пройдена — поток исполним' : 'Проверка нашла ' + fails + ' блокер(а)');
+        // контракты навыков считает сервер: дописывает шаг «Входы навыков покрыты» к этому же списку
+        if (this.state.contract && this.state.contract.audit_id) this.checkGraphBackend();
         return;
       }
       const shown = built.steps.slice(0, i).concat([Object.assign({}, built.steps[i], { status: 'run', detail: '' })]);
