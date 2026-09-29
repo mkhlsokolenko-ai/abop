@@ -1093,8 +1093,7 @@ export async function mount(root, ctx) {
     if (ra.hitl_done) out.push("Решение: " + (ra.hitl_done === "approve" ? "подтверждено" : "отклонено"));
     Object.values(ra.cmd_results || {}).forEach((r) => out.push("Результат: " + (r.text || "") + (r.url ? " · " + r.url : "")));
     if (ra.run_id) out.push("Прогон: " + ra.run_id);
-    return out.join("
-");
+    return out.join(String.fromCharCode(10));
   }
 
   function openExport() {

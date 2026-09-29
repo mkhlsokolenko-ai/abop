@@ -342,7 +342,13 @@ async function loadModule(id, intent) {
       await mod.mount(root, ctx);
     } catch (e) {
       mounted.delete(id);
-      root.innerHTML = `<div style="padding:24px;display:flex;flex-direction:column;gap:10px;max-width:520px"><div style="font-weight:700">Модуль «${esc(m.title)}» не загрузился</div><div class="danger-ink" style="font-size:12.5px">${esc(humanError(e))}</div><button class="btn" id="modRetry" style="align-self:flex-start">Повторить</button></div>`;
+      // Ошибка РАЗБОРА файла раздела (SyntaxError) — это не проблема сети, а сломанный код:
+      // «ABOP недоступен — проверьте сеть» отправляло чинить не то место.
+      const broken = e instanceof SyntaxError || /Invalid or unexpected token|Unexpected (token|identifier|end of input)|failed to fetch dynamically imported module/i.test(String(e && (e.message || e)));
+      const why = broken
+        ? "Код раздела повреждён: " + esc(String((e && e.message) || e).slice(0, 200)) + ". Сеть тут ни при чём — обновите приложение или сообщите об этом."
+        : esc(humanError(e));
+      root.innerHTML = `<div style="padding:24px;display:flex;flex-direction:column;gap:10px;max-width:560px"><div style="font-weight:700">Раздел «${esc(m.title)}» не загрузился</div><div class="danger-ink" style="font-size:12.5px;line-height:1.55">${why}</div><button class="btn" id="modRetry" style="align-self:flex-start">Повторить</button></div>`;
       root.querySelector("#modRetry").onclick = () => { root.remove(); loadModule(id, intent); };
       console.error(e);
     }
