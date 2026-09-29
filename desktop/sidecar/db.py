@@ -30,6 +30,13 @@ CREATE TABLE IF NOT EXISTS messages (
     created_at REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_msg_thread ON messages(thread_id);
+CREATE TABLE IF NOT EXISTS pending_runs (
+    job_id TEXT PRIMARY KEY,     -- задание в очереди ABOP
+    thread_id INTEGER NOT NULL,  -- чат, куда вернуть карточку
+    agent_id TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pending_thread ON pending_runs(thread_id);
 CREATE TABLE IF NOT EXISTS attachments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     thread_id INTEGER NOT NULL,

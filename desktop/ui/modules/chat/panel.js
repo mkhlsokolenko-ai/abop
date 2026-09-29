@@ -194,7 +194,12 @@ export async function mount(root, ctx) {
   async function openThread(t) {
     if (!t) return;
     cur = { ...t, skills: t.skills || [] }; renderThreads(); renderTools();
+    // догоняем прогоны, чей опрос оборвался: их карточки дописываются в историю до чтения сообщений
+    let caught = null;
+    try { caught = await api(M + "/threads/" + t.id + "/catchup"); } catch { /* сервер недоступен — покажем что есть */ }
     try { messages = await api(M + "/threads/" + t.id + "/messages"); } catch (e) { messages = []; toast(humanError(e), "danger"); }
+    if (caught && caught.added) toast(`Дописан результат прогона: ${caught.added}`, "ok");
+    if (caught && (caught.running || []).length) toast(`Ещё выполняется прогонов: ${caught.running.length}`, "");
     render(); scrollDown(true); loadKb();
   }
   // Ленивое создание чата (D-H1): первый Enter/шаблон/вложение сами заводят чат.
@@ -967,6 +972,25 @@ export async function mount(root, ctx) {
     };
   }
 
+  // В PDF уходил только текст сообщений, а у карточки прогона текст — строка «[агент X] находок: N».
+  // Собираем то же, что видно на экране: находки, доставку и решение.
+  function exportText(m) {
+    const ra = (m.meta && m.meta.run_agent) || null;
+    if (!ra) return m.content;
+    const out = [m.content];
+    const fnd = ra.findings || [];
+    if (fnd.length) {
+      out.push(`Находки (${fnd.length}${ra.findings_total && ra.findings_total > fnd.length ? " из " + ra.findings_total : ""}):`);
+      fnd.forEach((f) => out.push("  - " + cleanFinding(f)));
+    }
+    (ra.delivery || []).forEach((d) => out.push(`Доставка: ${d.channel || ""}${d.to ? " → " + d.to : ""} — ${d.mode || ""}`));
+    if (ra.hitl_done) out.push("Решение: " + (ra.hitl_done === "approve" ? "подтверждено" : "отклонено"));
+    Object.values(ra.cmd_results || {}).forEach((r) => out.push("Результат: " + (r.text || "") + (r.url ? " · " + r.url : "")));
+    if (ra.run_id) out.push("Прогон: " + ra.run_id);
+    return out.join("
+");
+  }
+
   function openExport() {
     if (!cur) { toast("Сначала начните чат", "warn"); return; }
     const ov = modal("Экспорт чата в «Загрузки»", `<div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -980,7 +1004,7 @@ export async function mount(root, ctx) {
       let r;
       if (fmt === "pdf") {
         if (!(window.ape && window.ape.exportPdf)) { toast("PDF доступен только в установленном приложении", "warn"); return; }
-        const html = `<html><head><meta charset="utf-8"><style>body{font-family:sans-serif;padding:24px;color:#111}h2{margin:16px 0 4px;font-size:14px}</style></head><body><h1>${esc(cur.title)}</h1>${messages.map((m) => `<h2>${m.role === "user" ? "Вы" : "Ассистент"}</h2><div style="white-space:pre-wrap">${esc(m.content)}</div>`).join("")}</body></html>`;
+        const html = `<html><head><meta charset="utf-8"><style>body{font-family:sans-serif;padding:24px;color:#111}h2{margin:16px 0 4px;font-size:14px}</style></head><body><h1>${esc(cur.title)}</h1>${messages.map((m) => `<h2>${m.role === "user" ? "Вы" : "Ассистент"}</h2><div style="white-space:pre-wrap">${esc(exportText(m))}</div>`).join("")}</body></html>`;
         r = await window.ape.exportPdf(html, (cur.title || "chat").replace(/[^\w\-. ]/g, "_").slice(0, 60) + ".pdf");
       } else r = await api(M + "/threads/" + cur.id + "/export", { method: "POST", body: JSON.stringify({ format: fmt }) });
       if (r.ok) toast("Сохранено в Загрузки: " + String(r.path || "").split(/[\\/]/).pop(), "ok", { ttl: 6000 }); else toast("Не удалось: " + (r.error || ""), "danger");

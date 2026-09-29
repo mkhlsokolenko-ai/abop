@@ -4034,7 +4034,11 @@ async def run_start(body: dict, u: dict = Depends(user),
                             + "\n\n" + user_context).strip()
     except Exception:  # noqa: BLE001 — identity опционален, не валим прогон
         pass
-    deliver_filter = str((body or {}).get("deliver") or "").strip()  # дерево решений: '', chat, redmine, email…
+    # дерево решений: '', chat, redmine, email… Булево true означает «доставлять во все каналы»:
+    # раньше str(True) превращался в фильтр «True», который не совпадал ни с чем, и доставка молча
+    # отключалась — прогон выглядел успешным, но наружу не уходило ничего.
+    _dv = (body or {}).get("deliver")
+    deliver_filter = "" if isinstance(_dv, bool) else str(_dv or "").strip()
     use_cache = not bool((body or {}).get("no_cache"))  # {no_cache:true} → форс свежий прогон
     if user_context or deliver_filter:
         use_cache = False   # контекст/выбор доставки влияют на прогон → кэш обходим

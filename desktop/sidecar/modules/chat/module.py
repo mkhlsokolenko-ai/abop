@@ -240,6 +240,10 @@ def run_agent(thread_id: int, body: RunAgentIn) -> dict:
         summary = _run_summary(body.agent_id, r["run"])
         _persist_run(thread_id, body.agent_id, summary)
         return {"ok": True, "done": True, "run": summary}
+    if r.get("job_id"):
+        # запоминаем задание: даже если опрос оборвётся, результат доедет в чат при следующем открытии
+        db.run("INSERT OR REPLACE INTO pending_runs (job_id, thread_id, agent_id, created_at) VALUES (?,?,?,?)",
+               (str(r["job_id"]), thread_id, body.agent_id, db.now()))
     return {"ok": True, "done": False, "job_id": r.get("job_id"), "status": r.get("status"),
             "position": r.get("position"), "deduped": bool(r.get("deduped"))}
 
@@ -256,10 +260,35 @@ def run_job_status(thread_id: int, job_id: str, agent_id: str = "") -> dict:
         aid = agent_id or j.get("agent_id") or ""
         summary = _run_summary(aid, j["run"])
         _persist_run(thread_id, aid, summary)
+        db.run("DELETE FROM pending_runs WHERE job_id=?", (job_id,))
         return {"ok": True, "done": True, "run": summary}
     if st in ("failed", "cancelled"):
+        db.run("DELETE FROM pending_runs WHERE job_id=?", (job_id,))
         return {"ok": False, "done": True, "status": st, "error": j.get("error") or ("прогон отменён" if st == "cancelled" else "прогон не выполнен")}
     return {"ok": True, "done": False, "status": st, "position": j.get("position") or 0, "progress": j.get("progress")}
+
+
+@router.get("/threads/{thread_id}/catchup")
+def catchup(thread_id: int) -> dict:
+    """Догнать прогоны, чей опрос оборвался: дописать готовые карточки, сообщить о ещё идущих.
+    Вызывается при открытии чата — без этого результат пропадал вместе с закрытой вкладкой."""
+    rows = db.q("SELECT job_id, agent_id FROM pending_runs WHERE thread_id=? ORDER BY created_at", (thread_id,))
+    added, running = 0, []
+    for r in rows:
+        try:
+            j = abop.run_job(r["job_id"])
+        except abop.AbopError:
+            continue                      # сервер недоступен — задание останется в очереди догона
+        st = j.get("status")
+        if st == "done" and j.get("run"):
+            _persist_run(thread_id, r["agent_id"] or j.get("agent_id") or "", _run_summary(r["agent_id"], j["run"]))
+            db.run("DELETE FROM pending_runs WHERE job_id=?", (r["job_id"],))
+            added += 1
+        elif st in ("failed", "cancelled"):
+            db.run("DELETE FROM pending_runs WHERE job_id=?", (r["job_id"],))
+        else:
+            running.append({"job_id": r["job_id"], "agent_id": r["agent_id"], "status": st})
+    return {"ok": True, "added": added, "running": running}
 
 
 @router.post("/threads/{thread_id}/run-job/{job_id}/cancel")
@@ -469,6 +498,46 @@ def patch_message_meta(thread_id: int, message_id: int, body: MetaIn):
     return {"ok": True, "meta": meta}
 
 
+def _run_text(meta: dict) -> str:
+    """Текст карточки прогона для выгрузки: находки, доставка, решение по подтверждению.
+    Без этого в Word и Excel уезжала строка вида «[агент X] находок: 12» вместо самих находок."""
+    ra = (meta or {}).get("run_agent") or {}
+    pr = (meta or {}).get("pipeline_result") or {}
+    parts: list[str] = []
+    if ra:
+        head = ra.get("agent_name") or ra.get("agent_id") or "агент"
+        v = ra.get("verdict") or {}
+        parts.append("Агент: %s%s" % (head, " — пройден" if v.get("ok") else (" — есть замечания" if v else "")))
+        fnd = ra.get("findings") or []
+        total = ra.get("findings_total") or len(fnd)
+        if fnd:
+            parts.append("Находки (%d из %d):" % (len(fnd), total))
+            parts += ["  - " + str(f).strip() for f in fnd]
+        for d in ra.get("delivery") or []:
+            mode = {"awaiting_hitl": "ждёт подтверждения", "real": "отправлено",
+                    "dry_run": "черновик", "denied": "доступ закрыт"}.get(d.get("mode"), d.get("mode") or "")
+            parts.append("Доставка: %s%s — %s" % (d.get("channel") or "", (" → " + d["to"]) if d.get("to") else "", mode))
+        if ra.get("hitl_done"):
+            parts.append("Решение: %s" % ("подтверждено" if ra["hitl_done"] == "approve" else "отклонено"))
+        for r in (ra.get("cmd_results") or {}).values():
+            parts.append("Результат: %s%s" % (r.get("text") or "", (" · " + r["url"]) if r.get("url") else ""))
+        if ra.get("run_id"):
+            parts.append("Прогон: %s" % ra["run_id"])
+    for st in (pr.get("steps") or []):
+        parts.append("Шаг «%s»: %s" % (st.get("agent_name") or st.get("agent_id") or "", str(st.get("text") or "").strip()[:2000]))
+    return "\n".join(parts)
+
+
+def _export_text(m: dict) -> str:
+    """Сообщение для выгрузки: обычный текст, а для карточки прогона — её содержимое."""
+    try:
+        meta = json.loads(m["meta"] or "{}")
+    except Exception:  # noqa: BLE001
+        meta = {}
+    body = _run_text(meta)
+    return (m["content"] + ("\n\n" + body if body else "")) if body else m["content"]
+
+
 @router.post("/threads/{thread_id}/export")
 def export_thread(thread_id: int, body: ExportIn) -> dict:
     th = db.q("SELECT title FROM threads WHERE id=?", (thread_id,))
@@ -483,7 +552,7 @@ def export_thread(thread_id: int, body: ExportIn) -> dict:
             lines = [f"# {title}\n"]
             for m in msgs:
                 who = "🧑 Вы" if m["role"] == "user" else "🤖 Ассистент"
-                lines.append(f"\n## {who}\n\n{m['content']}\n")
+                lines.append(f"\n## {who}\n\n{_export_text(m)}\n")
             p.write_text("\n".join(lines), encoding="utf-8")
         elif fmt == "docx":
             from docx import Document
@@ -491,7 +560,7 @@ def export_thread(thread_id: int, body: ExportIn) -> dict:
             doc.add_heading(title, 0)
             for m in msgs:
                 doc.add_heading("Вы" if m["role"] == "user" else "Ассистент", level=2)
-                doc.add_paragraph(m["content"])
+                doc.add_paragraph(_export_text(m))
             p = out / (base + ".docx")
             doc.save(str(p))
         elif fmt == "xlsx":
@@ -502,7 +571,7 @@ def export_thread(thread_id: int, body: ExportIn) -> dict:
             ws.append(["Роль", "Сообщение", "Модель", "Стоимость ₽"])
             for m in msgs:
                 meta = json.loads(m["meta"] or "{}")
-                ws.append([m["role"], m["content"], meta.get("model", ""), meta.get("cost_rub", "")])
+                ws.append([m["role"], _export_text(m), meta.get("model", ""), meta.get("cost_rub", "")])
             p = out / (base + ".xlsx")
             wb.save(str(p))
         else:
