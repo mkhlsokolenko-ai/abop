@@ -4259,6 +4259,21 @@ class Component extends DCLogic {
       hitlOpenFindings: () => { const rid = realHitl.length ? realHitl[0].run_id : ''; if (rid) this.openFindingsOf(rid); },
       hasToasts: !!(s.toasts && s.toasts.length), userMenuOpen: s.userMenu ? 'true' : 'false', toggleTheme: () => this.toggleTheme(), themeLabel: ((document.documentElement.getAttribute('data-theme') === 'light') ? '☾ Тёмная тема' : '☀ Светлая тема'),
 
+      fieldDict: (() => {
+        const d = s.fieldDict;
+        if (!d) return null;
+        const rows = (d.fields || []).filter(f => f.split || (f.used_synonyms || []).length);
+        return {
+          line: 'Понятий в реестре ' + (d.fields || []).length + ' · уникальных имён полей в каталоге ' + (d.unique_names || 0) + ' · расходятся ' + (d.split_count || 0),
+          rows: rows.map(f => ({
+            canon: f.canon,
+            canonCount: (f.skills || []).length,
+            alts: (f.used_synonyms || []).map(a => ({ name: a.name, count: (a.skills || []).length, where: (a.skills || []).slice(0, 4).join(', ') })),
+            bad: !!f.split
+          })),
+          empty: !rows.length
+        };
+      })(),
       contract: (() => {
         const c = s.skillContract || null;
         if (!c) return null;
@@ -5628,7 +5643,13 @@ class Component extends DCLogic {
       .then(function(r){return r.json();}).then(function(d){ self.setState({ reglamentMsg:'Граф: узлов '+(d.nodes||0)+' · иерархия '+(d.hierarchy_edges||0)+' · кросс-цитирование '+(d.xcite_edges||0) }); }).catch(function(){ self.setState({ reglamentMsg:'Ошибка графа' }); });
   }
   // Подбор по фразе: пороги уверенности, песочница разбора, словарь лексем агента.
+  loadFieldDict() {
+    var self = this;
+    fetch('/api/catalog/fields').then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(d){ if (d) self.setState({ fieldDict: d }); }).catch(function(){});
+  }
   loadNlu() {
+    this.loadFieldDict();
     var self = this;
     fetch('/api/nlu/config').then(function(r){ return r.ok ? r.json() : null; }).then(function(c){ if (c) self.setState({ nluCfg: c }); }).catch(function(){});
     fetch('/api/agents').then(function(r){ return r.ok ? r.json() : { agents: [] }; }).then(function(d){ self.setState({ nluAgents: d.agents || [] }); }).catch(function(){});
