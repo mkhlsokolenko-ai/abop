@@ -31,14 +31,14 @@ export async function mount(root, ctx) {
 
   const abopBlock = cat.abop_error
     ? `<div style="${CARD};gap:8px;border-color:var(--danger-line,rgba(239,68,68,.4))"><span style="${LBL}">ABOP</span><span style="font-size:12.5px;color:var(--danger-ink)">Не удалось получить источники из ABOP: ${esc(cat.abop_error)}</span></div>`
-    : `${abopConns ? `<div style="${CARD};gap:12px"><span style="${LBL}">коннекторы ABOP · Data Plane</span>${abopConns}</div>` : ""}
+    : `${abopConns ? `<div style="${CARD};gap:12px"><span style="${LBL}">источники ABOP</span>${abopConns}</div>` : ""}
        ${abopRecipes ? `<div style="${CARD};gap:12px"><span style="${LBL}">рецепты ABOP · источник → entity</span>${abopRecipes}</div>` : ""}`;
 
   root.innerHTML = `<div style="flex:1;min-width:0;overflow-y:auto;padding:26px 30px">
     <div style="max-width:1020px;margin:0 auto;display:flex;flex-direction:column;gap:20px;animation:ape-in .35s ease-out">
       <div style="display:flex;flex-direction:column;gap:6px">
-        <h1 style="margin:0;font-size:26px;font-weight:800;letter-spacing:-.7px">Рабочие источники</h1>
-        <p style="margin:0;font-size:13px;color:var(--ink-2)">Коннекторы и рецепты Data Plane тянутся из ABOP — это ровно то, что видит агент под вашими правами (ABAC). Локальные файлы читаются под вашими правами ОС.</p>
+        <h1 style="margin:0;font-size:26px;font-weight:800;letter-spacing:-.7px">Источники</h1>
+        <p style="margin:0;font-size:13px;color:var(--ink-2)">Источники и наборы данных приходят из ABOP — это ровно то, что видит агент под вашими правами. Локальные файлы читаются под правами вашей учётной записи в системе.</p>
       </div>
 
       ${abopBlock || `<div style="${CARD}"><span style="${LBL}">коннекторы</span><span style="font-size:12.5px;color:var(--ink-3)">В ABOP пока нет подключённых коннекторов.</span></div>`}
@@ -60,7 +60,7 @@ export async function mount(root, ctx) {
         <div id="recent" style="font-size:12.5px;color:var(--ink-3)">Загрузка…</div>
       </div>
 
-      <div style="font-size:12px;color:var(--ink-3)">Удалённые системы (CRM/ERP/почта) подключаются администратором в ABOP (реестр систем + коннекторы Data Plane), агент ходит под вашими правами (ABAC/делегированный доступ).</div>
+      <div style="font-size:12px;color:var(--ink-3)">Внешние системы (CRM, учётные системы, почта) подключает администратор в ABOP, а агент обращается к ним под вашими правами.</div>
     </div></div>`;
   const $ = (id) => root.querySelector("#" + id);
 

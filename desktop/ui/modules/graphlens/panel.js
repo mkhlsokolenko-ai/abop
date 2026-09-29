@@ -9,9 +9,13 @@ export async function mount(root, ctx) {
   const { api, toast, humanError, confirm: confirmDialog } = ctx;
   let palette = [], graphId = null, name = "Новый граф", nodes = [], edges = [], sel = null, nextId = 1, dirty = false;
   let linkFrom = null; // id узла, из которого тянем связь
-  try { palette = await api(G + "/palette"); } catch {}
-  let agentsCat = []; try { agentsCat = await api("/api/modules/agents/catalog"); } catch {}
-  let saved = []; try { saved = await api(G + "/graphs"); } catch {}
+  // Три молчаливых catch подряд оставляли пустой холст без единого объяснения: палитра не
+  // пришла - кликать не по чему, а подсказка «клик добавит блок» продолжала висеть.
+  let loadError = "";
+  const keep = (e) => { if (!loadError) loadError = humanError(e); };
+  try { palette = await api(G + "/palette"); } catch (e) { keep(e); }
+  let agentsCat = []; try { agentsCat = await api("/api/modules/agents/catalog"); } catch (e) { keep(e); }
+  let saved = []; try { saved = await api(G + "/graphs"); } catch (e) { keep(e); }
 
   root.innerHTML = `<div style="flex:1;min-width:0;display:flex;flex-direction:column;animation:ape-in .3s ease-out">
     <div style="display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap">
@@ -133,16 +137,32 @@ export async function mount(root, ctx) {
       <button id="iDel" style="margin-top:14px;width:100%;padding:9px;border:1px solid rgba(239,68,68,.3);border-radius:9px;background:rgba(239,68,68,.1);color:var(--danger-ink);font-size:12px;font-weight:600;cursor:pointer">Удалить узел</button>`;
     $("iLabel").oninput = (e) => { n.label = e.target.value; setDirty(true); const el = $("gCanvas").querySelector(`.gn[data-id="${n.id}"] span:nth-child(3)`); if (el) el.textContent = n.label; };
     if ($("iAgent")) $("iAgent").onchange = (e) => { n.agent_id = e.target.value ? String(e.target.value) : null; const a = agentsCat.find((x) => String(x.id) === String(e.target.value)); if (a) n.label = a.name; setDirty(true); paint(); };
-    $("iDel").onclick = () => { nodes = nodes.filter((x) => x.id !== sel); edges = edges.filter(([a, b]) => a !== sel && b !== sel); sel = null; setDirty(true); paint(); };
+    // Удаление узла уносит и все его связи - спрашиваем, как и при удалении одной связи
+    $("iDel").onclick = async () => {
+      const bound = edges.filter(([a, b]) => a === sel || b === sel).length;
+      const ok = await confirmDialog({ title: "Удалить узел?",
+        text: `«${esc(n.label)}»${bound ? ` и ${bound} связ${bound === 1 ? "ь" : "и"} с ним` : ""} будут удалены из графа.`,
+        okLabel: "Удалить узел" });
+      if (!ok) return;
+      nodes = nodes.filter((x) => x.id !== sel); edges = edges.filter(([a, b]) => a !== sel && b !== sel);
+      sel = null; setDirty(true); paint();
+    };
   }
   $("gCanvas").onclick = (e) => { if (e.target.id === "gCanvas" || e.target.id === "gWires") { sel = null; linkFrom = null; paint(); } };
 
   function syncDel() { $("gDel").style.display = graphId ? "" : "none"; }
+  async function askDiscard(what) {
+    // Несохранённый граф пропадал молча, хотя чип «не сохранено» о нём честно сообщал
+    if (!dirty) return true;
+    return await confirmDialog({ title: "Работа не сохранена",
+      text: `Изменения в графе «${esc(name)}» будут потеряны, если ${what}.`,
+      okLabel: "Продолжить без сохранения", danger: false });
+  }
   function loadGraph(g) { graphId = g.id; name = g.name; nodes = (g.nodes || []).map((n) => ({ ...n })); edges = (g.edges || []).map((e) => [...e]); nextId = Math.max(0, ...nodes.map((n) => n.id)) + 1; sel = null; linkFrom = null; $("gName").value = name; setDirty(false); paint(); paintPick(); syncDel(); }
 
   $("gName").value = name;
   $("gName").oninput = (e) => { name = e.target.value; setDirty(true); };
-  $("gNew").onclick = () => { graphId = null; name = "Новый граф"; nodes = []; edges = []; nextId = 1; sel = null; $("gName").value = name; setDirty(false); paint(); paintPick(); syncDel(); };
+  $("gNew").onclick = async () => { if (!(await askDiscard("начать новый граф"))) return; graphId = null; name = "Новый граф"; nodes = []; edges = []; nextId = 1; sel = null; $("gName").value = name; setDirty(false); paint(); paintPick(); syncDel(); };
   $("gDel").onclick = async () => {
     if (!graphId) return;
     if (!(await confirmDialog({ title: "Удалить граф?", text: `«${esc(name)}» будет удалён без возможности восстановления.`, okLabel: "Удалить граф" }))) return;

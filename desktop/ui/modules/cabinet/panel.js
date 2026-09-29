@@ -20,13 +20,25 @@ const SHORTCUTS = [
 export async function mount(root, ctx) {
   const { api, toast, humanError } = ctx;
   root.innerHTML = `<div style="flex:1;padding:30px;display:flex;flex-direction:column;gap:12px;max-width:760px"><div class="skeleton" style="height:28px;width:40%"></div><div class="skeleton" style="height:14px;width:70%"></div><div class="skeleton" style="height:120px"></div></div>`;
+  // Раньше все пять запросов глушились, и при недоступном ABOP кабинет выглядел рабочим:
+  // отдел «—», уровень «—», источников 0. Теперь сбой виден, и есть чем его повторить.
+  let loadError = "";
+  const keep = (e) => { if (!loadError) loadError = humanError(e); return null; };
   const [u, me, pol, agents, conns] = await Promise.all([
-    api(C + "/usage").catch(() => ({})),
-    api(SEC + "/me").catch(() => ({})),
-    api(SEC + "/policy").catch(() => ({})),
-    api(AG + "/catalog").catch(() => []),
-    api(K + "/list").catch(() => ({})),
-  ]);
+    api(C + "/usage").catch(keep),
+    api(SEC + "/me").catch(keep),
+    api(SEC + "/policy").catch(keep),
+    api(AG + "/catalog").catch(keep),
+    api(K + "/list").catch(keep),
+  ]).then((r) => r.map((x, i) => x === null ? (i === 3 ? [] : {}) : x));
+  if (loadError && !(u && u.ok)) {
+    root.innerHTML = `<div style="flex:1;padding:30px;display:flex;flex-direction:column;gap:10px;max-width:560px">
+      <div style="font-size:16px;font-weight:700">Кабинет не загрузился</div>
+      <div style="font-size:12.5px;color:var(--ink-2);line-height:1.6">${esc(loadError)}</div>
+      <button class="btn" id="cabRetry" style="align-self:flex-start;margin-top:6px">Повторить</button></div>`;
+    const rb = root.querySelector("#cabRetry"); if (rb) rb.onclick = () => mount(root, ctx);
+    return;
+  }
   const ok = u && u.ok;
   const myRoles = (me.roles && me.roles.length) ? me.roles : ((ok && u.roles) || (ctx.roles || []));
   const dept = (ok && u.department) || "—";

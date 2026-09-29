@@ -177,7 +177,11 @@ def abop_agents() -> list[dict]:
         _AG_CACHE.update({"at": _t.time(), "tok": tok, "data": out})
         return out
     except abop.AbopError:
-        return _AG_CACHE["data"] or []
+        # Раньше ошибка (в том числе «нужен вход») отдавалась пустым списком с кодом 200, и
+        # интерфейс писал «У вас пока нет своих агентов» вместо предложения войти.
+        if _AG_CACHE["data"]:
+            return _AG_CACHE["data"]
+        raise
 
 
 def _run_summary(agent_id: str, run: dict) -> dict:

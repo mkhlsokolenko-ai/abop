@@ -6,15 +6,15 @@ const LBL = "font-family:var(--mono);font-size:9.5px;letter-spacing:.8px;text-tr
 const CARD = "padding:20px;border-radius:16px;background:var(--panel);border:1px solid var(--line);display:flex;flex-direction:column;gap:14px";
 
 export async function mount(root, ctx) {
-  const { api, gate } = ctx;
+  const { api, gate, toast } = ctx;
   let p = {}; try { p = await api(S + "/policy"); } catch {}
   let me = {}; try { me = await api(S + "/me"); } catch {}
   const enforced = me.ok && me.enforced;
   const badge = enforced
-    ? `<span class="chip on">RBAC активен · энфорс на шлюзе</span>`
+    ? `<span class="chip on">права по ролям · проверяются при каждом действии</span>`
     : `<span class="chip">${me.error === "auth_required" ? "войдите — покажу вашу роль" : "предпросмотр"}</span>`;
   const meBar = me.ok ? `<div style="${CARD};padding:14px 16px;gap:8px">
-      <span style="${LBL}">ваш доступ (из JWT Keycloak)</span>
+      <span style="${LBL}">ваш доступ</span>
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span style="${LBL};width:74px">роли</span>${(me.roles || []).map((r) => `<span class="chip on">${esc(r)}</span>`).join("")}</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span style="${LBL};width:74px">можно</span>${(me.allowed || []).map((x) => `<span class="chip on">${esc(x)}</span>`).join("")}</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span style="${LBL};width:74px">нельзя</span>${(me.denied || []).map((x) => `<span class="chip" style="color:var(--danger-ink)">${esc(x)}</span>`).join("") || `<span style="font-size:12px;color:var(--ink-3)">—</span>`}</div>
@@ -45,7 +45,7 @@ export async function mount(root, ctx) {
         ${info("Ре-аттестация прав", "Период " + ((p.reattest || {}).period_days || "—") + " дн. · " + esc((p.reattest || {}).note || ""))}
         ${info("Аудит ИБ · хэш-цепочка", esc(p.audit_note || ""))}
       </div>
-      <div style="font-size:12px;color:var(--ink-3)">Роли приходят из Keycloak; правки версионируются и попадают в аудит ИБ. Реальный энфорс — на шлюзе (агент × инструмент × источник).</div>
+      <div style="font-size:12px;color:var(--ink-3)">Роли приходят из вашей учётной записи ABOP; правки версионируются и попадают в журнал безопасности. Права проверяются при каждом обращении агента к инструменту и источнику.</div>
     </div></div>`;
 
   root.querySelector("#gateDemo").onclick = async () => {
@@ -53,6 +53,7 @@ export async function mount(root, ctx) {
       fields: [["Кому", "partner@example.com"], ["Тема", "Оценка идеи · маркетплейс подрядчиков"], ["Провенанс", "312 записей · маска применена"]],
       body: "Добрый день! Прогон завершён: результат положительный при удержании. Критик отметил риск концентрации трафика — предлагаю проверить на втором канале до масштабирования.",
       allowLabel: "Разрешить отправку" });
-    alert(ok ? "✓ Разрешено (при коннекторах — отправится)" : "✕ Отклонено — наружу ничего не ушло");
+    toast(ok ? "Разрешено: при подключённых источниках письмо будет отправлено"
+             : "Отклонено: наружу ничего не ушло", ok ? "ok" : "warn");
   };
 }

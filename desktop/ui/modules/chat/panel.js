@@ -158,8 +158,11 @@ export async function mount(root, ctx) {
         <button class="ico ghost danger thdel" data-id="${t.id}" title="Удалить чат" aria-label="Удалить чат" style="width:26px;height:26px;font-size:11px">✕</button>
       </div>`; };
     const group = (folder, arr) => arr.length ? `<div style="display:flex;flex-direction:column;gap:5px"><span class="ape-label" style="padding:0 4px">${folder}</span>${arr.map(row).join("")}</div>` : "";
-    $("thList").innerHTML = (group("избранное", fav) + group("чаты", rest)) ||
-      `<div style="padding:20px 10px;text-align:center;font-size:12px;color:var(--ink-3);line-height:1.5">${search ? "Ничего не нашлось по «" + esc(search) + "»" : "Чатов пока нет.<br>Напишите задачу справа — чат создастся сам."}</div>`;
+    const emptyHTML = threadsError
+      ? `<div style="padding:18px 10px;text-align:center;font-size:12px;color:var(--ink-3);line-height:1.6">Список чатов не загрузился.<br><span style="color:var(--danger-ink)">${esc(threadsError)}</span><br><button type="button" class="btn sm thRetry" style="margin-top:10px">Повторить</button></div>`
+      : `<div style="padding:20px 10px;text-align:center;font-size:12px;color:var(--ink-3);line-height:1.5">${search ? "Ничего не нашлось по «" + esc(search) + "»" : "Чатов пока нет.<br>Напишите задачу справа — чат создастся сам."}</div>`;
+    $("thList").innerHTML = (group("избранное", fav) + group("чаты", rest)) || emptyHTML;
+    const _thRetry = $("thList").querySelector(".thRetry"); if (_thRetry) _thRetry.onclick = () => loadThreads();
     $("thList").querySelectorAll(".thopen").forEach((b) => { b.onclick = () => openThread(threads.find((x) => x.id == b.dataset.id)); b.ondblclick = () => renameThread(threads.find((x) => x.id == b.dataset.id)); });
     $("thList").querySelectorAll(".thren").forEach((b) => b.onclick = () => renameThread(threads.find((x) => x.id == b.dataset.id)));
     $("thList").querySelectorAll(".thfav").forEach((b) => b.onclick = async () => { const t = threads.find((x) => x.id == b.dataset.id); t.favorite = t.favorite ? 0 : 1; await saveThread(t); await loadThreads(); });
@@ -181,7 +184,13 @@ export async function mount(root, ctx) {
     ov.querySelector("#tt").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); ov.querySelector("#mOk").click(); } };
   }
   async function saveThread(t) { await api(M + "/threads/" + t.id, { method: "PATCH", body: JSON.stringify({ title: t.title, profile: t.profile, skills: t.skills, favorite: t.favorite || 0 }) }); }
-  async function loadThreads() { try { threads = await api(M + "/threads"); if (!Array.isArray(threads)) threads = []; } catch (e) { threads = []; } renderThreads(); }
+  // Сбой сети - это не «чатов нет»: человек с сотней чатов не должен читать «история пуста».
+  let threadsError = "";
+  async function loadThreads() {
+    try { threads = await api(M + "/threads"); if (!Array.isArray(threads)) threads = []; threadsError = ""; }
+    catch (e) { threadsError = humanError(e); }
+    renderThreads();
+  }
   async function openThread(t) {
     if (!t) return;
     cur = { ...t, skills: t.skills || [] }; renderThreads(); renderTools();
@@ -225,11 +234,14 @@ export async function mount(root, ctx) {
     return t.replace(/^[•\s]+/, "");
   }
   const agentName = (id, fallback) => (abopAgents.find((a) => a.id === id) || {}).name || fallback || id || "";
+  // Навыки показывались внутренними идентификаторами (audit1c-explain), хотя каталог отдаёт
+  // человеческие названия. Одна сущность не должна выглядеть в интерфейсе двумя способами.
+  const skillName = (id) => (skills.find((s) => s.id === id) || {}).title || String(id || "");
 
   // ── карточка прогона реального агента ABOP (находки / доставка / HITL) ──
   function runCard(s) {
     const fnd = (s.findings || []).map((t) => `<div style="font-size:12.5px;color:var(--ink);border-left:2px solid var(--accent);padding-left:10px;margin:4px 0">${esc(cleanFinding(t).slice(0, 400))}</div>`).join("");
-    const dl = (s.delivery || []).map((d) => { const wait = d.mode === "awaiting_hitl"; const mode = wait ? "ожидает вашего подтверждения" : d.mode === "real" ? "отправлено" : d.mode === "dry_run" ? "черновик (без отправки)" : d.mode === "denied" ? "доступ закрыт" : esc(d.mode || ""); return `<div style="font-size:11.5px;color:${wait ? "var(--warn-ink)" : d.mode === "denied" ? "var(--danger-ink)" : "var(--ink-2)"}">${CH_ICON(d.channel)} ${esc(d.channel)}${d.to ? " → " + esc(d.to) : ""}${d.subject ? " · «" + esc(String(d.subject).slice(0, 80)) + "»" : ""} · ${mode}${d.hitl_id && s.cmd_results && s.cmd_results[d.hitl_id] ? ` <span style="color:${s.cmd_results[d.hitl_id].ok ? "var(--ok-ink)" : "var(--danger-ink)"}">${esc(s.cmd_results[d.hitl_id].text)}</span>` : ""}${d.result && d.mode === "real" ? ` <span style="color:var(--ink-3)">${esc(String(d.result).slice(0, 90))}</span>` : ""}</div>`; }).join("");
+    const dl = (s.delivery || []).map((d) => { const wait = d.mode === "awaiting_hitl"; const mode = wait ? "ожидает вашего подтверждения" : d.mode === "real" ? "отправлено" : d.mode === "dry_run" ? "черновик (без отправки)" : d.mode === "denied" ? "доступ закрыт" : esc(d.mode || ""); return `<div style="font-size:11.5px;color:${wait ? "var(--warn-ink)" : d.mode === "denied" ? "var(--danger-ink)" : "var(--ink-2)"}">${CH_ICON(d.channel)} ${esc(d.channel)}${d.to ? " → " + esc(d.to) : ""}${d.subject ? " · «" + esc(String(d.subject).slice(0, 80)) + "»" : ""} · ${mode}${d.hitl_id && s.cmd_results && s.cmd_results[d.hitl_id] ? (() => { const cr = s.cmd_results[d.hitl_id]; const body = cr.url ? `<a href="${esc(cr.url)}" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">${esc(cr.text)}</a>` : esc(cr.text); return ` <span style="color:${cr.ok ? "var(--ok-ink)" : "var(--danger-ink)"}">${body}</span>`; })() : ""}${d.result && d.mode === "real" ? ` <span style="color:var(--ink-3)">${esc(String(d.result).slice(0, 90))}</span>` : ""}</div>`; }).join("");
     const waits = (s.delivery || []).filter((d) => d.mode === "awaiting_hitl");
     const hitlIds = waits.map((d) => d.hitl_id).filter(Boolean);
     const verd = s.verdict && s.verdict.within_envelope != null ? `<span style="font-family:var(--mono);font-size:11px;color:${s.verdict.within_envelope ? "var(--ok-ink)" : "var(--danger-ink)"}">конверт: ${s.verdict.within_envelope ? "в рамках" : "превышен"}${s.verdict.autonomy_used ? " · " + esc(s.verdict.autonomy_used) : ""}</span>` : "";
@@ -410,7 +422,7 @@ export async function mount(root, ctx) {
       <div style="display:flex;gap:8px;margin-bottom:12px"><select id="plPick" style="flex:1">${opts}</select><button type="button" id="plAdd" class="btn">＋ Шаг</button></div>
       <div style="font-size:12px;color:var(--ink-2);margin-bottom:6px">Куда результат цепочки (последний шаг):</div>
       <div id="plDeliver" style="display:flex;gap:6px;flex-wrap:wrap">${dOpt("chat", "💬 В чат")}${dOpt("email", "✉ Почта")}${dOpt("redmine", "🎫 Redmine")}${dOpt("bookstack", "📚 BookStack")}</div>
-      <div style="font-size:11.5px;color:var(--ink-3);margin-top:8px">Отправка наружу идёт через подтверждение (HITL), если оно включено у агента.</div>`;
+      <div style="font-size:11.5px;color:var(--ink-3);margin-top:8px">Ничего не уходит наружу без вашего подтверждения, если оно включено у агента.</div>`;
     const ov = modal("Собрать цепочку агентов", body, async (b) => {
       const name = (b.querySelector("#plName").value || "").trim();
       if (!name || chosen.length < 2) { toast("Нужно имя и минимум 2 шага", "warn"); return false; }
@@ -450,7 +462,7 @@ export async function mount(root, ctx) {
           else stat(`цепочка «${esc(p.name || pid)}» · шаг ${(pr.steps_done || 0) + 1} из ${pr.steps_total || (p.steps || []).length} · ${sec} с`);
         }
         curJob = null;
-        if (!fin) throw new Error("цепочка не завершилась за 30 минут — проверьте журнал прогонов позже");
+        if (!fin) throw new Error("цепочка не завершилась за 30 минут — результат появится в карточке прогона в этом чате");
         if (fin.status !== "done") throw new Error(fin.status === "cancelled" ? "цепочка отменена" : (fin.error || "цепочка не выполнена"));
         r = { steps: fin.steps || [] };
       }
@@ -517,15 +529,27 @@ export async function mount(root, ctx) {
     const tot = pr.total || ids.length;
     let t = esc(pr.phase || "работает");
     if (tot) t += ` · навыки ${done}/${tot}`;
-    if (now.length) t += ` · сейчас: ${now.map(esc).join(", ")}`;
+    if (now.length) t += ` · сейчас: ${now.map((x) => esc(skillName(x))).join(", ")}`;
     if (skipped) t += ` · пропущено: ${skipped}`;
     return t;
   }
 
   // ── HITL: очередь над композером + карточки прогонов. Превью → решение строго по hitl_id (D-C3) ──
-  async function loadHitlQueue() { try { const q = await api(A_AG + "/hitl"); hitlQueue = Array.isArray(q) ? q : []; } catch { hitlQueue = []; } renderHitlBar(); }
+  // Очередь нельзя молча обнулять: «ничего не ждёт подтверждения» вместо реально висящих
+  // писем и задач - самая дорогая ложь в приложении. При сбое показываем это прямо.
+  let hitlError = "";
+  async function loadHitlQueue() {
+    try { const q = await api(A_AG + "/hitl"); hitlQueue = Array.isArray(q) ? q : []; hitlError = ""; }
+    catch (e) { hitlError = humanError(e); }
+    renderHitlBar();
+  }
   function renderHitlBar() {
     const bar = $("hitlBar"); if (!bar) return;
+    if (hitlError) {
+      bar.innerHTML = `<div class="hitl-row" style="justify-content:space-between"><span style="font-size:12px;color:var(--danger-ink)">Очередь подтверждений не загрузилась: ${esc(hitlError)}</span><button type="button" class="btn sm hqRetry">Повторить</button></div>`;
+      const rb = bar.querySelector(".hqRetry"); if (rb) rb.onclick = () => loadHitlQueue();
+      return;
+    }
     if (!hitlQueue.length) { bar.innerHTML = ""; return; }
     const rows = hitlQueue.slice(0, 6).map((h) => `<div class="hitl-row">
       <span style="font-size:15px;flex:none" aria-hidden="true">${CH_ICON(h.channel)}</span>
@@ -542,7 +566,7 @@ export async function mount(root, ctx) {
     bar.querySelectorAll(".hqNo").forEach((b) => b.onclick = () => decideHitl([b.dataset.id], "reject", b));
     const all = bar.querySelector("#hqAllOk"); if (all) all.onclick = async () => {
       const list = hitlQueue.map((h) => `• ${CH_ICON(h.channel)} ${esc(h.title || h.channel)}${h.to_addr ? " → " + esc(h.to_addr) : ""}`).join("<br>");
-      if (await confirmDialog({ title: `Подтвердить все действия (${hitlQueue.length})?`, kicker: "governance · внешние действия", text: `Отправятся наружу без просмотра каждого:<br><br>${list}`, okLabel: "Подтвердить все", danger: false })) decideHitl(hitlQueue.map((h) => h.id), "approve", all);
+      if (await confirmDialog({ title: `Подтвердить все действия (${hitlQueue.length})?`, kicker: "действия наружу", text: `Отправятся наружу без просмотра каждого:<br><br>${list}`, okLabel: "Подтвердить все", danger: false })) decideHitl(hitlQueue.map((h) => h.id), "approve", all);
     };
   }
   async function previewAndDecide(ids, btn) {
@@ -558,10 +582,10 @@ export async function mount(root, ctx) {
     if (!it || it.ok === false) { toast("Заявка уже обработана или недоступна", "warn"); loadHitlQueue(); return; }
     if (legacy) it.body = "Предпросмотр содержимого недоступен в этой версии ABOP Desktop — обновите приложение. Подтверждение отправит отчёт агента в указанный канал.";
     const fields = [["Агент", it.agent_name || agentName(it.agent_id, it.agent_id)], ["Канал", (CH_ICON(it.channel) + " " + (it.channel || ""))], ["Адресат", it.to || "—"]];
-    if (it.kind === "command") { fields[1] = ["Действие", `${it.system || ""} · ${it.type || ""}`]; fields[2] = ["Куда", it.to || it.system || "—"]; if (it.source && it.source.skill) fields.push(["Навык", it.source.skill + (it.source.item ? " · " + it.source.item : "")]); }
+    if (it.kind === "command") { fields[1] = ["Действие", `${it.system || ""} · ${it.type || ""}`]; fields[2] = ["Куда", it.to || it.system || "—"]; if (it.source && it.source.skill) fields.push(["Навык", skillName(it.source.skill) + (it.source.item ? " · " + it.source.item : "")]); }
     if (it.subject) fields.push(["Тема", it.subject]);
     if (it.format && it.kind !== "command") fields.push(["Формат", it.format]);
-    const ok = await ctx.gate({ title: it.title || "Внешнее действие", kicker: "подтверждение · governance", fields, html: it.html ? sanitize(it.html) : "", body: it.html ? "" : (it.body || "Содержимое не приложено."), allowLabel: it.kind === "command" ? "Подтвердить и выполнить в системе" : "Подтвердить и отправить", denyLabel: "Отклонить", note: it.kind === "command" ? "Команда уйдёт в шину и её исполнит коннектор системы. Номер/ссылка вернутся в карточку прогона." : "Отправится только после вашего подтверждения. Персональные данные замаскированы." });
+    const ok = await ctx.gate({ title: it.title || "Внешнее действие", kicker: "требуется ваше решение", fields, html: it.html ? sanitize(it.html) : "", body: it.html ? "" : (it.body || "Содержимое не приложено."), allowLabel: "Подтвердить", denyLabel: "Отклонить", note: it.kind === "command" ? "Действие выполнится в вашей системе. Ссылка на созданный объект вернётся в карточку прогона." : "Отправится только после вашего подтверждения. Персональные данные замаскированы." });
     await decideHitl(ids, ok ? "approve" : "reject", btn);
   }
   function sanitize(html) {   // превью отчёта: убираем скрипты/обработчики, остальное показываем как есть
@@ -780,7 +804,7 @@ export async function mount(root, ctx) {
           const sec = Math.round((Date.now() - t0) / 1000);
           status(j.status === "queued" ? `в очереди · впереди ${Math.max(0, (j.position || 1) - 1)} · ${sec} с` : `агент «${esc(agentNm)}» ${progressText((j.progress || {}).run)} · ${sec} с`);
         }
-        finish(res || { ok: false, error: "прогон не завершился за 15 минут — проверьте журнал прогонов позже" });
+        finish(res || { ok: false, error: "прогон не завершился за 15 минут — результат появится в карточке прогона в этом чате" });
       }
     } catch (e) { run.content = "Не удалось запустить агента: " + humanError(e); run.meta = { notice: { icon: "⚠" } }; toast(humanError(e), "danger"); }
     curJob = null; setBusy(false);
