@@ -524,25 +524,29 @@ export async function mount(root, ctx) {
   }
   function chainSuggestHTML(cs) {
     const i = messages.findIndex((m) => m.meta && m.meta.chain_suggest === cs);
-    const chain = cs.steps.map((s) => esc(s.agent_name || agentName(s.agent_id))).join(" → ");
-    // разбор фразы: этап → действие → агент. Порядок шагов взят из самой формулировки задачи.
-    const stages = (cs.stages || []).map((st) => `<div style="display:flex;gap:8px;align-items:baseline;font-size:11.5px;color:var(--ink-2)">
-        <span style="font-family:var(--mono);color:var(--ink-3);min-width:14px">${st.order}.</span>
-        <span style="flex:1;min-width:0"><b>${esc(st.kind || "шаг")}</b> · «${esc(String(st.text || "").slice(0, 60))}» → ${esc(st.agent_name || "")}</span>
-        <span style="font-family:var(--mono);color:${st.score >= 0.35 ? "var(--ink-3)" : "var(--warn-ink)"}">${(st.score ?? 0).toFixed(2)}</span>
-      </div>`).join("");
-    const conf = cs.confidence == null ? "" : `<span style="font-family:var(--mono);font-size:11px;color:${cs.low ? "var(--warn-ink)" : "var(--ok-ink)"}">уверенность ${Number(cs.confidence).toFixed(2)}${cs.reranked ? " · уточнено моделью" : ""}</span>`;
-    return `<div style="display:flex;flex-direction:column;gap:9px">
-      <div style="font-size:13px;color:var(--ink)">🔗 Предлагаю цепочку: <b>${chain}</b></div>
-      ${stages ? `<div style="display:flex;flex-direction:column;gap:3px;padding:8px 10px;border-radius:9px;background:var(--panel);border:1px solid var(--line)">${stages}</div>` : ""}
-      ${cs.warning ? `<div style="font-size:11.5px;color:var(--warn-ink);font-weight:600">⚠ ${esc(cs.warning)}</div>` : ""}
-      ${cs.reason ? `<div style="font-size:11.5px;color:var(--ink-3)">${esc(cs.reason)}</div>` : ""}
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="font-size:11.5px;color:var(--ink-2)">результат → <b>${esc(DELIVER_LABEL[cs.deliver] || cs.deliver)}</b></span>${conf}</div>
+    const stages = cs.stages || [];
+    const rows = cs.steps.map((st, n) => {
+      const stage = stages[n] || {};
+      return `<div class="drow">
+        <span class="drow-num">${n + 1}</span>
+        <span class="drow-main">
+          <span class="drow-name">${esc(st.agent_name || agentName(st.agent_id))}</span>
+          <span class="drow-sub">${esc(stage.kind || "шаг")}${stage.text ? " · «" + esc(String(stage.text).slice(0, 64)) + "»" : ""}</span>
+        </span>
+        ${stage.score != null ? meterHTML(stage.score, { short: true }) : ""}</div>`;
+    }).join("");
+    return `<div class="dcard">
+      <div class="dcard-top"><span class="dcard-kicker">цепочка из ${cs.steps.length} шагов</span></div>
+      ${cs.task ? `<div class="dcard-quote">${esc(String(cs.task).slice(0, 200))}</div>` : ""}
+      <div class="dcard-title">${esc(cs.steps.map((st) => st.agent_name || agentName(st.agent_id)).join(" → "))}</div>
+      <div class="dcard-body">${rows}</div>
+      ${cs.confidence != null ? `<div class="dcard-why">${meterHTML(cs.confidence)}${cs.reranked ? `<span>уточнено моделью</span>` : ""}<span>результат → ${esc(DELIVER_LABEL[cs.deliver] || cs.deliver)}</span></div>` : ""}
+      ${cs.warning ? `<div class="dcard-warn">${esc(cs.warning)}</div>` : ""}
+      ${cs.reason ? `<div class="dcard-note">${esc(cs.reason)}</div>` : ""}
       ${chainEditHTML(cs, i)}
-      <button type="button" class="btn primary chainRun" data-i="${i}" style="align-self:flex-start">▶ Собрать и запустить</button></div>`;
+      <div class="dcard-acts"><button type="button" class="btn primary chainRun" data-i="${i}">Собрать и запустить</button></div></div>`;
   }
-  // Цепочку предлагали «как есть»: принять целиком или проигнорировать. Теперь шаг можно убрать
-  // или заменить на другого агента — особенно важно, когда подбор предупреждает о низкой уверенности.
+
   function chainEditHTML(cs, i) {
     const opts = (id) => abopAgents.map((a) => `<option value="${esc(a.id)}"${String(a.id) === String(id) ? " selected" : ""}>${esc(a.name)}</option>`).join("");
     const rows = cs.steps.map((st, n) => `<div style="display:flex;gap:7px;align-items:center">
@@ -863,39 +867,50 @@ export async function mount(root, ctx) {
   }
   // Почему выбран этот агент: оценка совпадения и слова, по которым он подобран. Для цепочки это
   // показывалось, для одиночного агента — нет, и выбор выглядел решением наугад.
+  // Мера уверенности: слово, полоска и вклад слов/смысла. Одинаково выглядит у агента, шага
+  // цепочки и кандидата-предмета, чтобы человек читал её одним и тем же движением глаз.
+  function meterHTML(score, opts = {}) {
+    const sc = Math.max(0, Math.min(1, Number(score) || 0));
+    const cls = sc >= 0.6 ? "sure" : sc >= 0.45 ? "" : "weak";
+    const word = sc >= 0.6 ? "уверенно" : sc >= 0.45 ? "похоже" : "неточно";
+    return `<span class="dmeter ${cls}" title="Оценка совпадения запроса с агентом: ${sc.toFixed(2)}">
+      <span class="dmeter-track"><span class="dmeter-fill" style="width:${Math.round(sc * 100)}%"></span></span>
+      <span>${opts.short ? "" : "совпадение "}${word}</span></span>`;
+  }
   function matchWhy(t) {
     const sc = Number(t.score || 0);
-    const lvl = sc >= 0.6 ? ["уверенно", "var(--ok-ink)"] : sc >= 0.45 ? ["похоже", "var(--ink-2)"] : ["неточно", "var(--warn-ink)"];
-    // подбор складывается из совпадения слов агента (lex) и смысловой близости (sem) — показываем оба,
-    // иначе выбор выглядит решением наугад
     const bits = [];
     if (t.lex != null) bits.push("по словам " + Number(t.lex).toFixed(2));
     if (t.sem != null) bits.push("по смыслу " + Number(t.sem).toFixed(2));
-    return `<div style="font-size:11.5px;color:var(--ink-3);display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-      <span style="color:${lvl[1]}">совпадение ${lvl[0]} · ${sc.toFixed(2)}</span>
+    return `<div class="dcard-why">${meterHTML(sc)}
       ${bits.length ? `<span>${esc(bits.join(" · "))}</span>` : ""}
-      ${sc < 0.45 ? `<span style="color:var(--warn-ink)">проверьте выбор перед запуском</span>` : ""}
-    </div>`;
+      ${sc < 0.45 ? `<span style="color:var(--warn-ink)">проверьте выбор перед запуском</span>` : ""}</div>`;
   }
   function decisionHTML(dc) {
     const i = messages.findIndex((m) => m.meta && m.meta.decision === dc);
     const t = dc.top; const ch = (t.channels || []);
-    const chanBtn = (d, label) => ch.includes(d) ? `<button type="button" class="btn dcRun" data-id="${esc(t.id)}" data-name="${esc(t.name)}" data-deliver="${d}">${label}</button>` : "";
-    const altBtns = (dc.alt || []).map((a) => `<button type="button" class="btn sm dcRun" data-id="${esc(a.id)}" data-name="${esc(a.name)}" data-deliver="">${esc(a.name)}</button>`).join("");
-    return `<div data-di="${i}" style="display:flex;flex-direction:column;gap:10px">
-      <div style="font-size:12px;color:var(--ink-3)">«${esc(dc.text.slice(0, 160))}»</div>
-      <div style="font-size:13px;color:var(--ink)">🎯 Похоже, это задача для агента <b>${esc(t.name)}</b> <span style="font-family:var(--mono);font-size:11px;color:var(--ink-3)">${esc(t.family || "")}</span></div>
+    const chanBtn = (d, label) => ch.includes(d) ? `<button type="button" class="btn sm dcRun" data-id="${esc(t.id)}" data-name="${esc(t.name)}" data-deliver="${d}">${label}</button>` : "";
+    const alts = (dc.alt || []).map((a) => `<button type="button" class="drow pick dcRun" data-id="${esc(a.id)}" data-name="${esc(a.name)}" data-deliver="">
+        <span class="drow-main"><span class="drow-name">${esc(a.name)}</span><span class="drow-sub">${esc(a.family || "")}</span></span>
+        ${meterHTML(a.score, { short: true })}</button>`).join("");
+    return `<div data-di="${i}" class="dcard">
+      <div class="dcard-top"><span class="dcard-kicker">задача для агента</span></div>
+      <div class="dcard-quote">${esc(dc.text.slice(0, 200))}</div>
+      <div class="dcard-title">${esc(t.name)}${t.family ? ` <span class="faint" style="font-weight:400;font-size:12px">${esc(t.family)}</span>` : ""}</div>
       ${matchWhy(t)}
-      ${ch.length ? `<div style="font-size:11px;color:var(--ink-3)">каналы агента: ${ch.map((c) => CH_ICON(c) + " " + esc(c)).join(", ")}</div>` : ""}
-      ${(dc.alt && dc.alt.length) ? `<button type="button" class="btn sm dcChain" style="align-self:flex-start;border-color:var(--info-line);background:var(--info-bg);color:var(--info-ink)">🔗 Задача многошаговая — собрать цепочку</button>` : ""}
-      <div style="font-size:11.5px;color:var(--ink-2)">Куда положить результат?</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button type="button" class="btn primary dcRun" data-id="${esc(t.id)}" data-name="${esc(t.name)}" data-deliver="">▶ Запустить (как настроено)</button>
-        <button type="button" class="btn dcRun" data-id="${esc(t.id)}" data-name="${esc(t.name)}" data-deliver="chat">💬 Только в чат</button>
-        ${chanBtn("redmine", "🎫 В Redmine")}${chanBtn("email", "✉ На почту")}${chanBtn("bookstack", "📚 В BookStack")}
+      ${ch.length ? `<div class="dcard-note">умеет отправлять: ${ch.map((c) => CH_ICON(c) + " " + esc(c)).join(", ")}</div>` : ""}
+      <div class="dcard-sep"></div>
+      <div class="dcard-note">Куда положить результат?</div>
+      <div class="dcard-acts">
+        <button type="button" class="btn primary dcRun" data-id="${esc(t.id)}" data-name="${esc(t.name)}" data-deliver="">Запустить как настроено</button>
+        <button type="button" class="btn sm dcRun" data-id="${esc(t.id)}" data-name="${esc(t.name)}" data-deliver="chat">Только в чат</button>
+        ${chanBtn("redmine", "В трекер")}${chanBtn("email", "На почту")}${chanBtn("bookstack", "В вики")}
       </div>
-      ${altBtns ? `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span style="font-size:11px;color:var(--ink-3)">другой агент:</span>${altBtns}</div>` : ""}
-      <button type="button" class="btn sm dcChat" style="align-self:flex-start;margin-top:2px">✖ Не нужен агент — продолжить в чате</button></div>`;
+      ${alts ? `<div class="dcard-sep"></div><div class="dcard-note">другой агент:</div><div class="dcard-body">${alts}</div>` : ""}
+      <div class="dcard-acts">
+        ${(dc.alt && dc.alt.length) ? `<button type="button" class="btn sm dcChain">Задача многошаговая, собрать цепочку</button>` : ""}
+        <button type="button" class="btn sm dcChat">Агент не нужен, ответь в чате</button>
+      </div></div>`;
   }
 
   // Гейт расписания: если у агента активное расписание — предупреждаем о дубле (Tier 0 #4).

@@ -291,4 +291,42 @@ button:disabled { cursor: default; }
 /* скелет загрузки модуля */
 .skeleton { border-radius: 10px; background: linear-gradient(90deg, var(--hover), var(--panel-2), var(--hover)); background-size: 200% 100%; animation: ape-skel 1.2s ease-in-out infinite; }
 @keyframes ape-skel { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+/* Карточка решения в чате: выбор агента, предложенная цепочка, уточнение предмета работы.
+   Один вид у всех трёх: шапка с пометкой, цитата запроса, тело, строка «почему», ряд действий.
+   До этого каждая карточка рисовалась своими инлайн-стилями и они разъезжались между собой. */
+.dcard { display: flex; flex-direction: column; gap: 10px; padding: 14px 15px; border-radius: 14px;
+         background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow-1); }
+.dcard-top { display: flex; align-items: center; gap: 9px; }
+.dcard-kicker { font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+.dcard-title { font-size: 13.5px; font-weight: 700; color: var(--ink); line-height: 1.35; }
+.dcard-quote { font-size: 12px; color: var(--ink-3); border-left: 2px solid var(--line-2); padding-left: 9px; line-height: 1.5; }
+.dcard-body { display: flex; flex-direction: column; gap: 7px; }
+.dcard-why { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; font-size: 11.5px; color: var(--ink-3); }
+.dcard-acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.dcard-acts .btn { min-height: 30px; }
+.dcard-sep { height: 1px; background: var(--line); margin: 1px 0; }
+.dcard-note { font-size: 11.5px; color: var(--ink-2); line-height: 1.5; }
+.dcard-warn { font-size: 11.5px; color: var(--warn-ink); font-weight: 600; }
+
+/* Ряд варианта: шаг цепочки, кандидат-сущность, альтернативный агент. */
+.drow { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 10px;
+        background: var(--field); border: 1px solid var(--line); }
+.drow-num { font-family: var(--mono); font-size: 11px; color: var(--ink-3); min-width: 15px; }
+.drow-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.drow-name { font-size: 12.5px; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.drow-sub { font-size: 11px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.drow-score { font-family: var(--mono); font-size: 11px; color: var(--ink-3); flex: none; }
+.drow.pick { cursor: pointer; text-align: left; width: 100%; }
+.drow.pick:hover { border-color: var(--accent); background: var(--hover); }
+.drow.on { border-color: var(--accent); background: var(--accent-bg); }
+
+/* Мера уверенности подбора: словом и цветом, без вываливания сырых чисел в заголовок. */
+.dmeter { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; }
+.dmeter-track { width: 54px; height: 5px; border-radius: 5px; background: var(--hover); overflow: hidden; }
+.dmeter-fill { height: 100%; border-radius: 5px; background: var(--grad); }
+.dmeter.sure .dmeter-fill { background: var(--ok-ink); }
+.dmeter.weak .dmeter-fill { background: var(--warn-ink); }
+.dmeter.weak { color: var(--warn-ink); }
+
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
