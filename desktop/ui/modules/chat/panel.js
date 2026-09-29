@@ -343,6 +343,22 @@ export async function mount(root, ctx) {
     $("col").querySelectorAll(".dcChat").forEach((b) => b.onclick = () => { const dc = _decisionOf(b); if (dc) sendPrompt(dc.text); });
     $("col").querySelectorAll(".dcChain").forEach((b) => b.onclick = () => { const dc = _decisionOf(b); if (dc) suggestChain(dc.text); });
     $("col").querySelectorAll(".chainRun").forEach((b) => b.onclick = () => { const i = +b.dataset.i; const m = messages[i]; if (m && m.meta && m.meta.chain_suggest) saveAndRunChain(m.meta.chain_suggest); });
+    // правка предложенной цепочки: замена агента на шаге и удаление шага
+    $("col").querySelectorAll(".chStep").forEach((sel) => sel.onchange = () => {
+      const m = messages[+sel.dataset.i]; const cs = m && m.meta && m.meta.chain_suggest; if (!cs) return;
+      const st = cs.steps[+sel.dataset.n]; if (!st) return;
+      st.agent_id = sel.value;
+      st.agent_name = (abopAgents.find((a) => String(a.id) === String(sel.value)) || {}).name || sel.value;
+      st.edited = true;
+      render();
+    });
+    $("col").querySelectorAll(".chDel").forEach((b) => b.onclick = () => {
+      const m = messages[+b.dataset.i]; const cs = m && m.meta && m.meta.chain_suggest; if (!cs) return;
+      if (cs.steps.length < 2) { toast("В цепочке должен остаться хотя бы один шаг", "warn"); return; }
+      cs.steps.splice(+b.dataset.n, 1);
+      cs.stages = (cs.stages || []).filter((_, n) => n !== +b.dataset.n);
+      render();
+    });
     $("col").querySelectorAll(".msgact").forEach((b) => { b.style.cssText += ";padding:5px 9px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--ink-3);font-size:11.5px;min-height:26px"; });
   }
   function _decisionOf(btn) { const idx = +btn.closest("[data-di]").dataset.di; const m = messages[idx]; return m && m.meta && m.meta.decision; }
@@ -486,14 +502,18 @@ export async function mount(root, ctx) {
   }
 
   // #5 авто-цепочка: семантика + LLM собирают цепочку под задачу → карточка «собрать и запустить».
+  // Подбор цепочки занимает до полутора минут: на это время ввод блокируется, иначе второе
+  // сообщение снималось из ленты вместе со служебным и человек терял свой текст.
   async function suggestChain(task) {
     if (!task) return;
     await ensureThread(task.slice(0, 50));
     const run = { role: "assistant", content: "", meta: {} }; messages.push(run); render(); scrollDown(true);
     const bubs = $("col").querySelectorAll(".bub"); const el = bubs[bubs.length - 1];
     if (el) el.innerHTML = `<span style="display:inline-flex;gap:12px;align-items:center">${mascot("thinking", 26)}<span style="color:var(--ink-2)">подбираю цепочку под задачу…</span></span>`;
+    setBusy(true);
     let r = null; try { r = await api(A_AG + "/pipelines/suggest", { method: "POST", body: JSON.stringify({ q: task }) }); } catch (e) { toast(humanError(e), "danger"); }
-    messages.pop();
+    setBusy(false);
+    const _i = messages.indexOf(run); if (_i >= 0) messages.splice(_i, 1);   // снимаем именно служебное сообщение
     const steps = (r && r.steps) || [];
     if (steps.length < 2) { await note("Под эту задачу цепочка не нужна — хватит одного агента (кнопки выше).", { notice: { icon: "💡" } }); render(); return; }
     await note("предложена цепочка", { chain_suggest: { steps, name: (r && r.name) || "Авто-цепочка", deliver: (r && r.deliver) || "chat", reason: (r && r.reason) || "", task,
@@ -516,7 +536,21 @@ export async function mount(root, ctx) {
       ${cs.warning ? `<div style="font-size:11.5px;color:var(--warn-ink);font-weight:600">⚠ ${esc(cs.warning)}</div>` : ""}
       ${cs.reason ? `<div style="font-size:11.5px;color:var(--ink-3)">${esc(cs.reason)}</div>` : ""}
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="font-size:11.5px;color:var(--ink-2)">результат → <b>${esc(DELIVER_LABEL[cs.deliver] || cs.deliver)}</b></span>${conf}</div>
+      ${chainEditHTML(cs, i)}
       <button type="button" class="btn primary chainRun" data-i="${i}" style="align-self:flex-start">▶ Собрать и запустить</button></div>`;
+  }
+  // Цепочку предлагали «как есть»: принять целиком или проигнорировать. Теперь шаг можно убрать
+  // или заменить на другого агента — особенно важно, когда подбор предупреждает о низкой уверенности.
+  function chainEditHTML(cs, i) {
+    const opts = (id) => abopAgents.map((a) => `<option value="${esc(a.id)}"${String(a.id) === String(id) ? " selected" : ""}>${esc(a.name)}</option>`).join("");
+    const rows = cs.steps.map((st, n) => `<div style="display:flex;gap:7px;align-items:center">
+        <span style="font-family:var(--mono);font-size:11px;color:var(--ink-3);min-width:14px">${n + 1}.</span>
+        <select class="chStep" data-i="${i}" data-n="${n}" style="flex:1;min-width:0;padding:5px 8px;border-radius:8px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-size:12px">${opts(st.agent_id)}</select>
+        <button type="button" class="ico ghost chDel" data-i="${i}" data-n="${n}" title="Убрать шаг" aria-label="Убрать шаг ${n + 1}" style="width:24px;height:24px;font-size:11px"${cs.steps.length < 2 ? " disabled" : ""}>✕</button>
+      </div>`).join("");
+    return `<details style="border:1px solid var(--line);border-radius:10px;padding:8px 10px">
+      <summary style="font-size:11.5px;color:var(--ink-2);cursor:pointer">Поправить цепочку</summary>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">${rows}</div></details>`;
   }
   async function saveAndRunChain(cs) {
     const steps = cs.steps.map((s, i) => ({ agent_id: s.agent_id, deliver: i < cs.steps.length - 1 ? "chat" : cs.deliver }));
@@ -804,11 +838,16 @@ export async function mount(root, ctx) {
     $("inp").value = ""; renderAgentSuggest("");
     // Вставленный по хоткею текст или длинный кусок — это работа в чате, НЕ команда агенту.
     const isPasted = /^Проанализируй этот фрагмент/i.test(v);
-    if (!isPasted && v.length <= 240) {
+    // Раньше подбор отключался на формулировках длиннее 240 знаков — то есть ровно там, где человек
+    // подробно описал задачу. Длина больше не отменяет подбор; вставленный по хоткею фрагмент —
+    // по-прежнему работа в чате, а не команда агенту.
+    if (!isPasted) {
       let matches = [];
       try { const r = await api(M + "/match", { method: "POST", body: JSON.stringify({ q: v }) }); matches = (r && r.matches) || []; } catch { /* без подсказки */ }
       const top = matches[0];
-      if (top && top.score >= 0.6) { await decisionCard(v, matches); return; }
+      // уверенный подбор — карточка решения; средняя уверенность — тоже карточка, но с оговоркой,
+      // потому что раньше в этом диапазоне агент не предлагался вовсе, а подсказки уже стирались
+      if (top && top.score >= 0.32) { await decisionCard(v, matches); return; }
     }
     sendPrompt(v);
   }
@@ -820,6 +859,22 @@ export async function mount(root, ctx) {
     await note("предложен агент", { decision: { text, top, alt } });
     render(); scrollDown(true);
   }
+  // Почему выбран этот агент: оценка совпадения и слова, по которым он подобран. Для цепочки это
+  // показывалось, для одиночного агента — нет, и выбор выглядел решением наугад.
+  function matchWhy(t) {
+    const sc = Number(t.score || 0);
+    const lvl = sc >= 0.6 ? ["уверенно", "var(--ok-ink)"] : sc >= 0.45 ? ["похоже", "var(--ink-2)"] : ["неточно", "var(--warn-ink)"];
+    // подбор складывается из совпадения слов агента (lex) и смысловой близости (sem) — показываем оба,
+    // иначе выбор выглядит решением наугад
+    const bits = [];
+    if (t.lex != null) bits.push("по словам " + Number(t.lex).toFixed(2));
+    if (t.sem != null) bits.push("по смыслу " + Number(t.sem).toFixed(2));
+    return `<div style="font-size:11.5px;color:var(--ink-3);display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <span style="color:${lvl[1]}">совпадение ${lvl[0]} · ${sc.toFixed(2)}</span>
+      ${bits.length ? `<span>${esc(bits.join(" · "))}</span>` : ""}
+      ${sc < 0.45 ? `<span style="color:var(--warn-ink)">проверьте выбор перед запуском</span>` : ""}
+    </div>`;
+  }
   function decisionHTML(dc) {
     const i = messages.findIndex((m) => m.meta && m.meta.decision === dc);
     const t = dc.top; const ch = (t.channels || []);
@@ -828,6 +883,7 @@ export async function mount(root, ctx) {
     return `<div data-di="${i}" style="display:flex;flex-direction:column;gap:10px">
       <div style="font-size:12px;color:var(--ink-3)">«${esc(dc.text.slice(0, 160))}»</div>
       <div style="font-size:13px;color:var(--ink)">🎯 Похоже, это задача для агента <b>${esc(t.name)}</b> <span style="font-family:var(--mono);font-size:11px;color:var(--ink-3)">${esc(t.family || "")}</span></div>
+      ${matchWhy(t)}
       ${ch.length ? `<div style="font-size:11px;color:var(--ink-3)">каналы агента: ${ch.map((c) => CH_ICON(c) + " " + esc(c)).join(", ")}</div>` : ""}
       ${(dc.alt && dc.alt.length) ? `<button type="button" class="btn sm dcChain" style="align-self:flex-start;border-color:var(--info-line);background:var(--info-bg);color:var(--info-ink)">🔗 Задача многошаговая — собрать цепочку</button>` : ""}
       <div style="font-size:11.5px;color:var(--ink-2)">Куда положить результат?</div>
