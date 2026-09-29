@@ -2613,8 +2613,85 @@ async def agent_check(body: dict, u: dict = Depends(user)) -> dict:
     if not cs:
         raise HTTPException(404, "нет ContractSet для проверки")
     check = assembly.check_graph(graph, cs.get("intake") or {}, ape.skill_safety)
-    return {"ok": not check["errors"], "errors": check["errors"], "warnings": check["warnings"],
+    gaps = await _input_gaps(graph)
+    return {"ok": not check["errors"], "errors": check["errors"],
+            "warnings": check["warnings"] + [g["text"] for g in gaps],
+            "input_gaps": gaps,
             "autonomy_max": check["autonomy_max"], "hitl_count": check["hitl_count"]}
+
+
+async def _input_gaps(graph: dict) -> list[dict]:
+    """Каким навыкам графа не хватает входа: нет данных сущности, не задан предмет, нет навыка-поставщика.
+
+    Считается по контрактам навыков, волнами: навык видит только выходы тех, кто стоит раньше.
+    Это ловит разрыв цепочки на сборке, а не на прогоне, где он выглядит пустым результатом."""
+    nodes = [n for n in (graph or {}).get("nodes") or [] if n.get("skill")]
+    if not nodes:
+        return []
+    ov = await skill_store.all()
+    tpl_of: dict[str, dict] = {}
+    for n in nodes:
+        sid = n["skill"]
+        tid = ((ov.get(sid) or {}).get("patch") or {}).get("schema_template_id") or sid
+        tpl_of[sid] = await schema_store.get(tid) or await schema_store.get(sid) or {}
+
+    entities: set[str] = set()
+    for n in nodes:
+        try:
+            entities |= {d.get("entity") for d in (ape.skill_datasources_resolved(n["skill"]) or []) if d.get("entity")}
+        except Exception:  # noqa: BLE001 — область данных опциональна
+            pass
+    slots = {str(sl.get("name")) for t in tpl_of.values() for sl in (t.get("slots") or []) if isinstance(sl, dict)}
+
+    waves = runner._waves(nodes, (graph or {}).get("edges") or [])
+    seen: dict[str, dict] = {}
+    out: list[dict] = []
+    for wave in waves:
+        for n in wave:
+            sid = n.get("skill")
+            if not sid:
+                continue
+            miss = skill_contract.coverage((tpl_of.get(sid) or {}).get("inputs"),
+                                           entities=entities, slots=slots, upstream=seen)
+            for m in miss:
+                out.append({"skill": sid, "node": n.get("id"), "text": f"навык «{sid}»: {m}"})
+        for n in wave:
+            if n.get("skill"):
+                seen[n["skill"]] = (tpl_of.get(n["skill"]) or {}).get("produces") or {}
+    return out
+
+
+@app.get("/api/catalog/fields")
+async def catalog_fields(u: dict = Depends(user)) -> dict:
+    """Словарь понятий: канонические имена полей, их синонимы и употребление в каталоге.
+
+    По нему интерфейс подсказывает автору навыка каноническое имя и показывает, где в каталоге
+    одно понятие названо по-разному (из-за этого шаги цепочки не соединялись)."""
+    used: dict[str, set] = {}
+
+    def walk(node, sid):
+        if not isinstance(node, dict):
+            return
+        for k, v in (node.get("properties") or {}).items():
+            used.setdefault(k, set()).add(sid)
+            if isinstance(v, dict):
+                walk(v, sid)
+                walk(v.get("items") or {}, sid)
+
+    for t in await schema_store.all():
+        walk(t.get("json_schema") or {}, t.get("id"))
+
+    rows = []
+    for canon, syns in sorted(skill_contract.CANON.items()):
+        alts = [{"name": a, "skills": sorted(used.get(a, []))} for a in syns if a in used]
+        rows.append({"canon": canon, "skills": sorted(used.get(canon, [])),
+                     "synonyms": sorted(syns), "used_synonyms": alts,
+                     "split": bool(alts and used.get(canon))})
+    return {"fields": rows, "unique_names": len(used),
+            "split_count": sum(1 for r in rows if r["split"])}
+
+
+
 
 
 async def _refresh_lexicon(agent: dict) -> dict:
