@@ -206,6 +206,14 @@ def _run_summary(agent_id: str, run: dict) -> dict:
         "verdict": run.get("verdict") if isinstance(run.get("verdict"), dict) else None,
         "tokens": int(((run.get("run_metrics") or {}).get("cost") or {}).get("input_tokens") or 0)
                   + int(((run.get("run_metrics") or {}).get("cost") or {}).get("output_tokens") or 0),
+        # Прогон, обрезанный лимитом, выглядел как обычный: находок меньше — и непонятно почему.
+        "budget_stopped": [str(x) for x in (((run.get("run_metrics") or {}).get("budget") or {}).get("stopped_skills") or [])],
+        # Расхождения между ветвями: сколько закрыто правилом и что ждёт решения человека. Молчать об
+        # этом нельзя — иначе человек видит одну цифру и не знает, что о ней спорили.
+        "arbitration": (lambda a: {"total": a.get("total"), "by_rule": a.get("by_rule"),
+                                   "needs_human": a.get("needs_human"), "open": a.get("open") or [],
+                                   "note": a.get("note")} if a and a.get("total") else None)(
+            (run.get("run_metrics") or {}).get("arbitration") or {}),
     }
 
 

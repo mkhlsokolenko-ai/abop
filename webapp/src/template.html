@@ -1872,6 +1872,8 @@
             <span style="padding:6px 12px;border-radius:9px;background:var(--w5);border:1px solid var(--w12);color:var(--w75);font-family:JetBrains Mono,monospace;font-size:12px;">этапов {{ runData.waves }}</span>
             <span style="padding:6px 12px;border-radius:9px;background:var(--w5);border:1px solid var(--w12);color:var(--w75);font-family:JetBrains Mono,monospace;font-size:12px;">автономия {{ runData.autonomy }}</span>
             <sc-if value="{{ runData.timingText }}" hint-placeholder-val="{{ false }}"><span style="padding:6px 12px;border-radius:9px;background:rgba(99,102,241,.1);border:1px solid rgba(99,102,241,.24);color:var(--acc-ink);font-family:JetBrains Mono,monospace;font-size:12px;">⏱ {{ runData.timingText }}</span></sc-if>
+            <sc-if value="{{ runData.budgetText }}" hint-placeholder-val="{{ false }}"><span title="Бюджет прогона: задаётся в окне запуска" style="padding:6px 12px;border-radius:9px;background:var(--w5);border:1px solid var(--w12);color:var(--w75);font-family:JetBrains Mono,monospace;font-size:12px;">бюджет: {{ runData.budgetText }}</span></sc-if>
+            <sc-if value="{{ runData.snapText }}" hint-placeholder-val="{{ false }}"><span title="Снимок данных: все ветви одного запроса считают по одной картине" style="padding:6px 12px;border-radius:9px;background:var(--w5);border:1px solid var(--w12);color:var(--w75);font-family:JetBrains Mono,monospace;font-size:12px;">📷 {{ runData.snapText }}</span></sc-if>
           </div>
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;border-radius:12px;background:var(--w4);border:1px solid var(--w10);">
             <span style="font-size:12.5px;color:var(--w62);">Сравнить с предыдущим прогоном этого агента — что изменилось в находках</span>
@@ -1917,6 +1919,23 @@
                 </div>
               </sc-for>
             </div>
+          </sc-if>
+          <sc-if value="{{ runData.arbText }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;gap:7px;padding:12px 14px;border-radius:12px;background:var(--w3);border:1px solid var(--w12);">
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><span style="font-family:JetBrains Mono,monospace;font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:var(--w62);">⚖ расхождения между ветвями</span><span style="font-size:12px;color:var(--w70);">{{ runData.arbText }}</span></div>
+              <sc-for list="{{ runData.arbRows }}" as="d" hint-placeholder-count="2">
+                <div style="display:flex;flex-direction:column;gap:3px;padding:8px 10px;border-radius:9px;background:var(--w3);border-left:2px solid var(--w14);">
+                  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><span style="font-family:JetBrains Mono,monospace;font-size:12px;color:var(--ink);">{{ d.item }}</span><span style="font-size:11.5px;color:var(--w55);">поле {{ d.field }}</span><span style="font-size:11.5px;color:var(--w55);">{{ d.variants }}</span><span style="margin-left:auto;font-size:12px;font-weight:600;color:var(--ink);">{{ d.chosen }}</span><span style="font-size:11px;color:var(--w50);">{{ d.by }}</span></div>
+                  <div style="font-size:11.5px;color:var(--w60);line-height:1.45;">{{ d.reason }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+          <sc-if value="{{ runData.budgetStopped }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;gap:4px;padding:10px 12px;border-radius:12px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);"><span style="font-family:JetBrains Mono,monospace;font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:var(--warn-ink);">⚠ прогон остановлен бюджетом</span><span style="font-size:12.5px;color:var(--w75);line-height:1.45;">{{ runData.budgetStopped }}</span><span style="font-size:11.5px;color:var(--w55);">Результат неполный: эти навыки не запускались. Поднимите лимит в окне запуска или сузьте область данных.</span></div>
+          </sc-if>
+          <sc-if value="{{ runData.budgetOver }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:9px 12px;border-radius:11px;background:var(--w3);border:1px solid var(--w12);font-size:12px;color:var(--w66);line-height:1.45;">{{ runData.budgetOver }} — расход одного вызова становится известен после ответа модели, поэтому последний навык мог выйти за рамки.</div>
           </sc-if>
           <sc-if value="{{ runData.hasSoftErrors }}" hint-placeholder-val="{{ false }}">
             <div style="display:flex;flex-direction:column;gap:6px;padding:10px 12px;border-radius:12px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);"><span style="font-family:JetBrains Mono,monospace;font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:var(--warn-ink);">⚠ нефатальные ошибки прогона (не молча — залогированы, trace {{ runData.traceId }})</span>
@@ -2728,7 +2747,8 @@ class Component extends DCLogic {
       self.showToast('Прогон '+d.run_id+': '+(v.ok?'вердикт пройден':'есть замечания')+' · этапов '+((d.waves||[]).length)+' · автономия '+v.autonomy_used+' · HITL '+((d.hitl_gates||[]).length));
     };
     var failed = function(msg){ self.setState({runBusy:false, runError: msg, runJob:null, runProgress:''}); self.showToast('Прогон не выполнен: '+msg); };
-    fetch('/api/runs?async=1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contract_audit_id:c.audit_id, async:true, context: (typeof context === 'string' ? context : '')})})
+    var _bd = this._budgetBody();
+    fetch('/api/runs?async=1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({contract_audit_id:c.audit_id, async:true, context: (typeof context === 'string' ? context : '')}, _bd ? {budget:_bd} : {}))})
       .then(function(r){ return r.json().then(function(j){ j = j || {}; if(!r.ok && !j.detail) j.detail = 'HTTP ' + r.status; j.__status = r.status; return j; }); }).then(function(d){
         if(d.run_id && d.__status === 201){ done(d); return; }   // старый сервер без очереди — результат сразу
         if(!d.job_id){ failed(d.detail||'нет агента — сначала «Сохранить»'); return; }
@@ -4650,6 +4670,28 @@ class Component extends DCLogic {
                  rows: rows };
       })(),
       runData: (function(){ var lr=s.lastRun; if(!lr) return null; var v=lr.verdict||{}; var fs=lr.findings_summary||null; var bc=(fs&&fs.by_class)||{}; return { waves:(lr.waves||[]).length, verdictOk:!!v.ok, verdictLabel:(v.ok?'вердикт пройден':'есть замечания'), autonomy:v.autonomy_used||'—', findingsTotal:(fs?fs.total:null), hasFindings:!!fs, findingsLine:(fs?('A'+(bc.A||0)+' · B'+(bc.B||0)+' · C'+(bc.C||0)+' · D'+(bc.D||0)):''), board:(lr.board||[]).slice(0,10).map(function(b){ return {text:(b.text||'').slice(0,160)}; }), findingsRows:(lr.findings||[]).slice(0,12).map(function(f){ var nr=(f['нормы_rag']||f.norms_rag||[]); var cls=f['класс']||f.class||''; return { cls:cls, clsBg:(cls==='A'?'rgba(239,68,68,.14)':cls==='B'?'rgba(245,158,11,.14)':cls==='C'?'rgba(99,102,241,.14)':'rgba(52,211,153,.14)'), clsFg:(cls==='A'?'var(--err-ink)':cls==='B'?'var(--warn-ink)':cls==='C'?'var(--acc-ink)':'var(--ok-ink)'), check:(f['проверка']||f.op||'').slice(0,60), desc:(f['описание']||'').slice(0,130), norm:(nr.length?(nr[0]||'').replace('[закон/норма] ','').slice(0,150):''), hasNorm:nr.length>0 }; }), normsEnriched:(lr.norms_enriched||0), runId:(lr.run_id||''),
+        arbText:(function(){ var a=((lr.run_metrics||{}).arbitration)||null; if(!a||!a.total) return ''; return a.note||''; })(),
+        arbOpen:(((lr.run_metrics||{}).arbitration)||{}).needs_human||0,
+        arbRows:((((lr.run_metrics||{}).arbitration)||{}).decisions||[]).slice(0,10).map(function(d){
+          var who=String(d.by||'');
+          return { item:(d.item||d.key||''), field:(d.field||''),
+            open:!!d.needs_human,
+            chosen:(d.needs_human?'ждёт человека':String(d.chosen===null||d.chosen===undefined?'':d.chosen).slice(0,80)),
+            by:(who.indexOf('rule:')===0?'правило':who.indexOf('skill:')===0?'навык-арбитр':'человек'),
+            variants:(d.variants||[]).map(function(v){ return (v.authors||[]).join(', '); }).join(' ↔ '),
+            reason:String(d.reason||'').slice(0,220) }; }),
+        snapText:(function(){ var sn=((lr.run_metrics||{}).data_snapshot)||null; if(!sn) return '';
+          var t='снимок '+(sn.id||'')+' · записей '+(sn.rows_total||0)+(sn.inherited?' · общий для ветвей':'');
+          if((sn.drift||[]).length) t+=' · данные разошлись: '+sn.drift.slice(0,2).join('; ');
+          return t; })(),
+        snapDrift:!!((((lr.run_metrics||{}).data_snapshot)||{}).drift||[]).length,
+        budgetText:(function(){ var b=((lr.run_metrics||{}).budget)||null; if(!b) return ''; var lim=b.limit||{}, sp=b.spent||{}, p=[];
+          if(lim.max_tokens) p.push('токены '+(sp.tokens||0).toLocaleString('ru-RU')+' из '+Number(lim.max_tokens).toLocaleString('ru-RU'));
+          if(lim.max_rub) p.push('деньги '+Number(sp.rub||0).toFixed(2)+' из '+lim.max_rub+' ₽');
+          if(lim.max_sec) p.push('время '+Math.round(sp.sec||0)+' из '+lim.max_sec+' с');
+          return p.join(' · '); })(),
+        budgetStopped:(function(){ var b=((lr.run_metrics||{}).budget)||{}; var st=b.stopped_skills||[]; return st.length?('лимит остановил навыки: '+st.join(', ')):''; })(),
+        budgetOver:(function(){ var b=((lr.run_metrics||{}).budget)||{}; var o=b.overrun; if(!o) return ''; return 'перерасход: '+Object.keys(o).map(function(k){ return ({tokens:'токенов',rub:'рублей',sec:'секунд'}[k]||k)+' на '+o[k]; }).join(', ')+(b.note?(' · '+b.note):''); })(),
         traceId:(lr.trace_id||''), timingText:(function(){ var tm=((lr.run_metrics||{}).timings)||{}; if(!tm.total_ms) return ''; var s=tm.total_ms+' мс всего'; if(tm.slowest&&tm.slowest.skill) s+=' · дольше всех: '+tm.slowest.skill+' '+tm.slowest.ms+' мс'; return s; })(), hasSoftErrors:!!((lr.soft_errors||[]).length), softErrorRows:(lr.soft_errors||[]).map(function(x){ return { stage:(x.stage||''), error:(x.error||'').slice(0,240) }; }),
         hasDelivery:!!((lr.delivery||[]).length), deliveryRows:(lr.delivery||[]).map(function(d){ return { channel:(d.channel||''), to:(d.to!=null?String(d.to):''), mode:(d.mode||'dry_run'), real:(d.mode==='real'), title:(d.title||''), result:(d.result||'').slice(0,220), modeBg:(d.mode==='real'?'rgba(245,158,11,.16)':'rgba(99,102,241,.14)'), modeFg:(d.mode==='real'?'var(--warn-ink)':'var(--acc-ink)'), modeLabel:(d.mode==='real'?'РЕАЛЬНО отправлено':'dry_run (превью)') }; }),
         hasInvest:!!((lr.investigations||[]).length), investTotal:((lr.investigations_summary||{}).total!=null?lr.investigations_summary.total:(lr.investigations||[]).length), investBroken:((lr.investigations_summary||{}).broken!=null?lr.investigations_summary.broken:null),
@@ -4907,6 +4949,13 @@ class Component extends DCLogic {
       buildAndRunGo: () => this.buildAndRun(),
 
       launchModal: s.modal === 'launch', goalText: s.goalText, setGoal: (e) => this.setState({ goalText: e.target.value, planOk: false, planWavesReal: null }),
+      budTokens: s.budTokens || '', budRub: s.budRub || '', budSec: s.budSec || '',
+      setBudTokens: (e) => this.setState({ budTokens: e.target.value }),
+      setBudRub: (e) => this.setState({ budRub: e.target.value }),
+      setBudSec: (e) => this.setState({ budSec: e.target.value }),
+      budgetPresetSmall: () => this.setState({ budTokens: '30000', budRub: '10', budSec: '180' }),
+      budgetPresetFull: () => this.setState({ budTokens: '120000', budRub: '40', budSec: '540' }),
+      budgetPresetNone: () => this.setState({ budTokens: '', budRub: '', budSec: '' }),
       planWaves: (s.planWavesReal || []), planEmpty: !(s.planWavesReal && s.planWavesReal.length), planEstimate: (s.contract && s.contract.audit_id) ? ('агент: ' + (s.contract.family || s.contract.audit_id) + ' · автономия по контракту ' + (s.contract.autonomy || '') + ' · стоимость считается по факту прогона') : ('агента на канве нет — будет собран демо-агент сценария «' + s.scenario + '» · стоимость по факту прогона'),
       startRun: () => { if (s.runBusy || s.planChecking) return; if (!s.planOk) { this.checkPlan(); return; } this.launchReal(); },
 
@@ -5462,6 +5511,17 @@ class Component extends DCLogic {
         ];
         self.setState({ planChecking: false, planOk: true, planSteps: steps, planWavesReal: waves });
       }).catch(function(){ self.setState({ planChecking: false, planOk: false, planSteps: [{ text: 'ABOP недоступен — план не проверен', ok: false }] }); });
+  }
+
+  _budgetBody() {
+    // Пустое поле = без лимита. Лимит означает «после превышения не начинать новое»: расход одного
+    // вызова известен только после ответа модели, поэтому один тяжёлый навык может выйти за рамки.
+    var s = this.state, out = {};
+    var num = function(v){ var x = parseFloat(String(v || '').replace(',', '.')); return (isFinite(x) && x > 0) ? x : 0; };
+    if (num(s.budTokens)) out.max_tokens = Math.round(num(s.budTokens));
+    if (num(s.budRub)) out.max_rub = num(s.budRub);
+    if (num(s.budSec)) out.max_sec = Math.round(num(s.budSec));
+    return Object.keys(out).length ? out : null;
   }
 
   launchReal() {

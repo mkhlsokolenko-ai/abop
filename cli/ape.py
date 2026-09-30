@@ -779,6 +779,11 @@ def parse_skill_md(sid: str) -> dict:
 SKILL_REFERENCE = frozenset({"conventional-commits", "docker-patterns", "fastapi-patterns", "grill-me", "test-writer"})
 
 SKILL_DATASOURCES = {
+    # приёмка заказчика: независимая картина по тем же пунктам — решения комиссии, а не отчёт подрядчика
+    "acceptance-check": [{"entity": "acceptance", "kind": "json", "note": "решения приёмки: принято/с замечаниями/не принято, подтверждённые часы"},
+                         {"entity": "roadmap_item", "kind": "json", "note": "пункты дорожной карты: названия, часы, критичность"},
+                         {"entity": "contractor_report", "kind": "json", "note": "заявленное подрядчиком — для сравнения с подтверждённым"},
+                         {"entity": "project", "kind": "json", "note": "карточка проекта: дата ввода"}],
     # сверка плана и факта: дорожная карта, отчёты подрядчиков и карточка проекта
     "roadmap-fact": [{"entity": "roadmap_item", "kind": "json", "note": "пункты дорожной карты: сроки, часы, критичность"},
                      {"entity": "contractor_report", "kind": "json", "note": "исполнение: статус, факт, часы, причины, мероприятия"},

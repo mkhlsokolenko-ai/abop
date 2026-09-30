@@ -406,7 +406,8 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
                    load_body, chat_fn, blocked_entities=None, knowledge_fn=None, data_scope=None,
                    findings_context=None, user_context="", skill_schemas=None, should_cancel=None,
                    tool_loop=None, actor: str = "", trace_id: str = "", on_progress=None,
-                   budget: dict | None = None) -> dict:
+                   budget: dict | None = None, board=None, data_snapshot: dict | None = None,
+                   arbiter_ask=None) -> dict:
     """НАСТОЯЩИЙ прогон: governance-каркас (run_agent) + для каждого навыка с data-scope
     собирает РЕАЛЬНЫЕ данные из canonical store (data_query) и прогоняет их через LLM
     (тело навыка = методика) → находки на доску. Числа — только из данных (анти-галлюцинация).
@@ -420,6 +421,12 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
     skills = [n for n in (graph.get("nodes") or []) if n.get("kind") == "skill"]  # УЗЛЫ (несут per-node output)
     sem = asyncio.Semaphore(_LLM_CONCURRENCY)  # rate-limiter: не больше N одновременных вызовов к RouteAI
     produced: dict[str, dict] = {}   # выходы навыков предыдущих волн: sid → structured (вход для следующих)
+    # Доска прогона: общая память с авторством. Приходит снаружи, если ветвь работает в группе — тогда
+    # она видит выводы соседних ветвей; иначе доска своя и живёт только этот прогон.
+    from . import blackboard as _bb
+    _board = board if board is not None else _bb.Board(trace_id or str(agent.get("id") or ""))
+    _snap_rows: dict[str, list] = {}   # выборка по сущностям — для снимка «одной картины»
+    _snap_drift: list[str] = []
     # Бюджет прогона: {max_tokens, max_rub, max_sec}. Пусто — без ограничений, как раньше.
     _bud = {k: float(v) for k, v in (budget or {}).items() if str(k).startswith("max_") and v}
     _spent = {"tokens": 0, "rub": 0.0, "skills": 0}
@@ -473,6 +480,7 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
         # Обязательный вход из навыка не готов — запускать рано. Раньше навык всё равно шёл в модель и
         # выдавал общие слова, которые выглядели результатом.
         _need = _missing_upstream((_custom or {}).get("inputs"), produced)
+        _need += _bb.missing_board((_custom or {}).get("inputs"), _board)
         if _need:
             await _notify(sid, "skipped", reason="нет входа: " + ", ".join(_need))
             return {"skill": sid, "entities": [], "model": "", "input_tokens": 0, "output_tokens": 0,
@@ -501,6 +509,10 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
             except Exception:  # noqa: BLE001
                 rows = []
             data[e] = _apply_scope(rows, data_scope)
+            # Снимок берётся ПОСЛЕ сужения предметом: ветви веера считают каждая по своему предмету,
+            # и сравнивать их надо с тем, что они реально видели, иначе «расхождение данных» покажется
+            # там, где его нет.
+            _snap_rows.setdefault(e, data[e])
         if not entities:
             # навык БЕЗ объявленного data-scope (письмо, БФТ, отчёт) работает по КОНТЕКСТУ: находки прогона,
             # задача пользователя, контекст цепочки. Без контекста запускать нечего — честно помечаем пропуск.
@@ -552,9 +564,13 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
         # Вход от предыдущих волн: берём ТОЛЬКО объявленное в контракте (список и поля), а не весь
         # чужой результат. Без контракта блок пуст — навык работает как раньше, по данным и контексту.
         up_block = _upstream_block(sid, (_custom or {}).get("inputs"), produced)
+        # Общая память: навык получает объявленные ключи доски вместе с расхождениями, если они есть.
+        # Не объявил ключ — не получил: «всё всем» топит навык в чужих выводах и выедает лимит токенов.
+        board_block = _board.block((_custom or {}).get("inputs"))
         _head = (uc_block
                  + know_block
                  + up_block
+                 + board_block
                  + "=== ДАННЫЕ (дайджест: всего+по_типам = полный scope, сэмпл = примеры записей) ===\n"
                  + _json.dumps(digest, ensure_ascii=False)[:_LIM["data"]] + "\n\n")
         # GROUNDED-режим: если детерминированный движок уже посчитал находки (истина), навык их ОБЪЯСНЯЕТ,
@@ -711,7 +727,46 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
             st = r.get("structured")
             if isinstance(st, dict) and r.get("skill"):
                 produced[r["skill"]] = st        # доступно навыкам следующих волн по их контракту
+                _board.put_structured(r["skill"], st,
+                                      (skill_schemas.get(r["skill"]) or {}).get("produces"))
     base["run_metrics"]["waves"] = len(_waves(skills, graph.get("edges") or []))
+    # ── Снимок данных: одна картина для всех ветвей одного запроса ──
+    if _snap_rows:
+        _snap_drift = _bb.drift(data_snapshot, _snap_rows)
+        _snap = dict(data_snapshot) if data_snapshot else _bb.snapshot(_snap_rows, scope=trace_id or "")
+        _snap["inherited"] = bool(data_snapshot)
+        if _snap_drift:
+            # Разная картина данных объясняет разные цифры. Молчать об этом нельзя: тогда расхождение
+            # выглядит спором ветвей, хотя они считали по разным наборам записей.
+            _snap["drift"] = _snap_drift
+            _snap["note"] = "ветвь видела не тот же набор записей, что снимок прогона"
+            base["board"].append({"kind": "warning", "agent": "снимок данных",
+                                  "text": "⚠ данные разошлись со снимком: " + "; ".join(_snap_drift[:3])})
+        base["run_metrics"]["data_snapshot"] = _snap
+    # ── Расхождения между ветвями и их разрешение ──
+    _contr = _board.contradictions()
+    if _contr:
+        from . import arbiter as _arb
+        _dec = []
+        for c in _contr:
+            d = _arb.resolve(c)
+            # Навык-арбитр зовём только там, где правило не справилось: лишний вызов модели стоит
+            # денег и времени, а правило объяснимо и повторяемо.
+            if d.get("needs_human") and arbiter_ask and not _arb.needs_human(d.get("field") or ""):
+                d = await _arb.resolve_by_skill(c, arbiter_ask)
+            _board.resolve(d["key"], d.get("chosen"), by=d.get("by") or "human",
+                           reason=d.get("reason") or "", variants=d.get("variants"))
+            _dec.append(d)
+            base["board"].append({"kind": "arbitration", "agent": "арбитр",
+                                  "text": ("⚖ " + str(d.get("key")) +
+                                           (" · " + str(d.get("item")) if d.get("item") else "") +
+                                           (" · поле " + str(d.get("field")) if d.get("field") else "") +
+                                           ": " + ("ждёт человека" if d.get("needs_human")
+                                                   else "выбрано «" + str(d.get("chosen"))[:80] + "»") +
+                                           " — " + str(d.get("reason"))[:200])})
+        base["run_metrics"]["arbitration"] = _arb.report(_dec)
+    base["run_metrics"]["board"] = _board.summary()
+    base["board_entries"] = _board.export()
     if _bud or _stopped:
         _sec = round(time.perf_counter() - _t_start, 1)
         # Лимит означает «после превышения не начинать новое», а не «не превысить ни при каких

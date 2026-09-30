@@ -49,6 +49,31 @@
           </sc-for>
           <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w50);">{{ ov.planEstimate }}</div>
         </div>
+        <div style="display: flex; flex-direction: column; gap: 9px; padding: 13px 15px; border-radius: 12px; background: var(--s55); border: 1px solid var(--w8);">
+          <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w62);">бюджет прогона</span>
+            <span style="font-size: 11.5px; color: var(--w50);">пусто — без лимита</span>
+            <div style="flex: 1;"></div>
+            <button sc-camel-on-click="{{ ov.budgetPresetSmall }}" style="padding: 4px 10px; border: 1px solid var(--w14); border-radius: 8px; background: var(--w5); color: var(--w70); font-size: 11px;">короткий</button>
+            <button sc-camel-on-click="{{ ov.budgetPresetFull }}" style="padding: 4px 10px; border: 1px solid var(--w14); border-radius: 8px; background: var(--w5); color: var(--w70); font-size: 11px;">полный</button>
+            <button sc-camel-on-click="{{ ov.budgetPresetNone }}" style="padding: 4px 10px; border: 1px solid var(--w14); border-radius: 8px; background: var(--w5); color: var(--w70); font-size: 11px;">снять</button>
+          </div>
+          <div style="display: flex; gap: 9px; flex-wrap: wrap;">
+            <label style="display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 120px;">
+              <span style="font-size: 11px; color: var(--w55);">токенов не больше</span>
+              <input value="{{ ov.budTokens }}" onChange="{{ ov.setBudTokens }}" placeholder="например 60000" style="padding: 8px 10px; border-radius: 9px; border: 1px solid var(--w14); background: var(--s70); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+            </label>
+            <label style="display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 110px;">
+              <span style="font-size: 11px; color: var(--w55);">рублей не больше</span>
+              <input value="{{ ov.budRub }}" onChange="{{ ov.setBudRub }}" placeholder="например 20" style="padding: 8px 10px; border-radius: 9px; border: 1px solid var(--w14); background: var(--s70); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+            </label>
+            <label style="display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 110px;">
+              <span style="font-size: 11px; color: var(--w55);">секунд не больше</span>
+              <input value="{{ ov.budSec }}" onChange="{{ ov.setBudSec }}" placeholder="например 300" style="padding: 8px 10px; border-radius: 9px; border: 1px solid var(--w14); background: var(--s70); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+            </label>
+          </div>
+          <span style="font-size: 11px; color: var(--w45); line-height: 1.45;">Лимит останавливает запуск новых навыков. Расход одного вызова известен только после ответа модели, поэтому один тяжёлый навык может выйти за рамки — превышение будет показано в результате.</span>
+        </div>
         <div style="display: flex; gap: 10px;">
           <button onClick="{{ ov.startRun }}" style="flex: 1; padding: 13px; border: none; border-radius: 12px; background: {{ ov.gateBtnBg }}; color: {{ ov.gateBtnFg }}; font-size: 14px; font-weight: 600;" style-hover="transform: scale(1.02);">{{ ov.gateBtnLabel }}</button>
           <button onClick="{{ ov.closeModal }}" style="padding: 13px 20px; border: 1px solid var(--w14); border-radius: 12px; background: var(--w5); color: var(--ink); font-size: 13.5px; font-weight: 600;">Отмена</button>

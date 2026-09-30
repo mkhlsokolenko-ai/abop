@@ -30,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, assembly, audit_store, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, report_store, run_cache_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, arbiter, assembly, audit_store, blackboard, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, report_store, run_cache_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
@@ -2009,6 +2009,7 @@ async def _startup() -> None:
     await run_cache_store.init()
     await hitl_store.init()
     await finding_store.init()
+    await blackboard.init()               # доска прогона: общая память ветвей с авторством
     import asyncio as _asyncio
     _asyncio.create_task(triggers.scheduler_loop(execute_agent_run))  # фоновый планировщик (leader-election)
     # ── очередь прогонов (гейт масштабирования, Фаза 1): воркеры вместо исполнения в HTTP-запросе ──
@@ -3766,6 +3767,10 @@ async def _handle_job(job: dict) -> dict:
                                   user_context=p.get("user_context") or "", deliver_filter=p.get("deliver_filter") or "",
                                   data_scope=p.get("data_scope") or None,   # предмет работы едет с заданием
                                   budget=p.get("budget") or None,
+                                  # общая память ветвей одного запроса и снимок данных на всю группу
+                                  board_scope=p.get("board_scope") or job.get("group_id") or "",
+                                  data_snapshot=p.get("data_snapshot") or None,
+                                  parent_trace_id=p.get("parent_trace_id") or "",
                                   trigger=p.get("trigger"), job_id=job["id"])
     return {"run_id": out["saved"]["id"]}
 
@@ -3822,6 +3827,10 @@ async def _pipeline_graph_job(job: dict) -> dict:
                                               user_context="\n\n".join(parts), deliver_filter=deliver,
                                               data_scope=st.get("scope") or None,
                                               budget=st.get("budget") or (p.get("budget") or None),
+                                              # параллельные ветви цепочки пишут на ОДНУ доску: иначе
+                                              # шаг слияния видит два вывода и не знает, какой верен
+                                              board_scope="job-" + str(job["id"]),
+                                              data_snapshot=cp.get("data_snapshot") or None,
                                               job_id=job["id"])
                 result = res["result"]
                 data = {o.get("skill"): o.get("structured") for o in (result.get("skill_outputs") or [])
@@ -3836,6 +3845,8 @@ async def _pipeline_graph_job(job: dict) -> dict:
                         "tokens": int(_sc.get("input_tokens") or 0) + int(_sc.get("output_tokens") or 0),
                         "findings_total": (result.get("findings_summary") or {}).get("total") or len(result.get("findings") or []),
                         "delivery": result.get("delivery") or [], "verdict": result.get("verdict") or {},
+                        "run_metrics": {"data_snapshot": (result.get("run_metrics") or {}).get("data_snapshot"),
+                                        "arbitration": (result.get("run_metrics") or {}).get("arbitration")},
                         "trace_id": result.get("trace_id") or ""}
             except Exception as ex:  # noqa: BLE001 — сбой ветви не рушит цепочку
                 return {"id": sid, "agent_id": agent["id"], "agent_name": agent.get("name"),
@@ -3848,6 +3859,14 @@ async def _pipeline_graph_job(job: dict) -> dict:
             if r.get("data"):
                 results[r["id"]] = {"data": r["data"], "agent_name": r.get("agent_name"),
                                     "run_id": r.get("run_id")}
+        if not cp.get("data_snapshot"):
+            # Картину задаёт первая ветвь, у которой она есть: дальше все шаги сверяются с ней, и
+            # разные цифры в ветвях перестают быть загадкой — видно, что состав данных изменился.
+            for r in got:
+                _sn = ((r.get("run_metrics") or {}).get("data_snapshot")) if isinstance(r, dict) else None
+                if _sn:
+                    cp["data_snapshot"] = _sn
+                    break
         cp.update({"results": results, "steps": done_steps, "steps_total": len(steps),
                    "steps_done": len(started)})
         await run_queue.set_checkpoint(job["id"], cp)
@@ -3930,7 +3949,8 @@ async def _contract_for_agent(agent: dict, audit_id: str = "") -> dict:
 async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, trigger: dict | None = None,
                             use_cache: bool = True, user_context: str = "", deliver_filter: str = "",
                             job_id: str | None = None, data_scope: dict | None = None,
-                            budget: dict | None = None) -> dict:
+                            budget: dict | None = None, board_scope: str = "",
+                            data_snapshot: dict | None = None, parent_trace_id: str = "") -> dict:
     """Ядро прогона (LLM-раскладка + находки audit1c + сохранение + аудит). Переиспользуется
     POST /api/runs и планировщиком триггеров (server/triggers.py). Возвращает {saved, result}.
     Кэш результатов (multi-user): при попадании возвращает сохранённый вывод без LLM/доставки."""
@@ -4039,6 +4059,17 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
         obs.log_event("warning", "skill_schemas.bind_failed", error=f"{type(_ex).__name__}: {str(_ex)[:200]}")
         _skill_schemas = {}
     await _push_progress("навыки")
+    # Общая память ветвей одного запроса. Область — группа заданий: ветвь видит выводы соседей, которые
+    # успели записаться раньше. Без области доска своя и живёт только этот прогон, как было до этого.
+    _board = await blackboard.board_of(board_scope) if board_scope else blackboard.Board(_trace)
+    # Навык-арбитр зовём только там, где правило не различает варианты (см. arbiter.DEFAULT_ORDER).
+    async def _arbiter_ask(task: str) -> dict:
+        return await clients.chat(messages=[
+            {"role": "system", "content": "Ты арбитр расхождений между ветвями прогона ABOP. Выбери НОМЕР "
+             "варианта, подтверждённого данными, и объясни одной фразой. Новых значений не придумывай. "
+             "Ответ строго JSON: {\"вариант\": N, \"обоснование\": \"...\"}."},
+            {"role": "user", "content": task}], max_tokens=300)
+
     result = await runner.run_live(agent, contract, ape.skill_safety,
                                    data_query=ape.data_query,
                                    skill_sources=ape.skill_datasources_resolved,
@@ -4051,7 +4082,16 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
                                    should_cancel=(lambda: run_queue.cancel_requested(job_id)) if job_id else None,
                                    tool_loop=skill_tools.tool_loop, actor=started_by,
                                    trace_id=(obs.current_trace_id() if hasattr(obs, "current_trace_id") else "") or "",
-                                   on_progress=_on_skill_progress)
+                                   on_progress=_on_skill_progress,
+                                   board=_board, data_snapshot=data_snapshot, arbiter_ask=_arbiter_ask)
+    # Выводы ветви выкладываем в общую область, чтобы следующие ветви и сводка их увидели. Сбой записи
+    # прогон не валит: доска — усиление, а не условие работы.
+    if board_scope:
+        try:
+            await blackboard.save(board_scope, result.get("board_entries") or [])
+        except Exception as _bex:  # noqa: BLE001
+            obs.log_event("warning", "board.save_failed", scope=board_scope,
+                          error=f"{type(_bex).__name__}: {str(_bex)[:200]}")
     await _push_progress("доставка и отчёт")
     # Структурированные ответы навыков (по шаблонам) — отдельно: ниже findings подменяются детерминированными
     result["skill_outputs"] = [{"skill": f.get("skill"), "structured": f.get("structured"), "model": f.get("model"),
@@ -4150,7 +4190,22 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
     _soft = _collect_soft_errors(result)  # опциональные шаги, что отвалились (доставка/находки/нормы/…)
     if _soft:
         result["soft_errors"] = _soft
+    # Доска прогона лежит в своём хранилище, а не в теле прогона: значения выводов повторяют
+    # skill_outputs, и хранить их дважды — это просто вдвое больший прогон в базе.
+    if parent_trace_id:
+        # Ветвь веера — это дочерний прогон общего запроса. Без ссылки на родителя её трасса висит
+        # сама по себе, и собрать картину «один запрос → двадцать ветвей» нечем.
+        result.setdefault("run_metrics", {})["parent_trace_id"] = parent_trace_id
+        obs.log_event("info", "run.child", parent_trace=parent_trace_id, trace=_trace,
+                      agent=agent.get("id"), group=board_scope or "")
+    _entries = result.pop("board_entries", None) or []
     saved = await run_store.save(result)
+    if _entries:
+        try:
+            await blackboard.save("run-" + str(saved["id"]), _entries)
+        except Exception as _bex:  # noqa: BLE001 — доска усиление, прогон из-за неё не падает
+            obs.log_event("warning", "board.save_failed", run=saved["id"],
+                          error=f"{type(_bex).__name__}: {str(_bex)[:200]}")
     _v = result.get("verdict") or {}
     await audit_store.record(started_by, "agent.run", saved["id"],
                              {"agent_id": agent.get("id"), "verdict_ok": bool(_v.get("ok")),
@@ -4172,6 +4227,16 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
         obs.inc("abop_deliveries_total", channel=_d.get("channel") or "-", mode=_d.get("mode") or "-")
     if _soft:
         obs.inc("abop_run_soft_errors_total", val=float(len(_soft)))
+    # Расхождения между ветвями — показатель качества данных, а не прогона: их рост означает, что
+    # источники разъехались. Без экспорта наружу это видно только тому, кто открыл конкретный прогон.
+    _arb = (result.get("run_metrics") or {}).get("arbitration") or {}
+    if _arb.get("total"):
+        obs.inc("abop_arbitration_total", val=float(_arb["total"]), family=_fam)
+        if _arb.get("needs_human"):
+            obs.inc("abop_arbitration_human_total", val=float(_arb["needs_human"]), family=_fam)
+    _brd = (result.get("run_metrics") or {}).get("board") or {}
+    if _brd.get("entries"):
+        obs.gauge("abop_board_entries", float(_brd["entries"]), family=_fam)
     obs.log_event("warn" if _soft else "info", "agent.run.done", run_id=saved["id"],
                   agent=agent.get("id"), family=_fam, ok=bool(_v.get("ok")),
                   ms=round(_dur * 1000, 1), findings=_ft, soft_errors=(_soft or None))
@@ -4320,6 +4385,31 @@ async def run_jobs_mine(limit: int = 30, u: dict = Depends(user)) -> dict:
 _FANOUT_MAX = max(1, int(os.getenv("ABOP_FANOUT_MAX", "20")))   # защита от веера на двести заданий
 
 
+@app.get("/api/runs/groups/{group_id}/board")
+async def run_group_board(group_id: str, u: dict = Depends(user)) -> dict:
+    """Что ветви группы выложили в общую память: ключ, автор, значение, расхождения."""
+    require_level(u, "manager")
+    board = await blackboard.board_of(group_id)
+    contr = board.contradictions()
+    return {"group_id": group_id, "entries": board.export(), "summary": board.summary(),
+            "contradictions": contr, "arbitration": arbiter.report(arbiter.resolve_all(contr))}
+
+
+@app.get("/api/runs/{run_id}/board")
+async def run_board(run_id: str, u: dict = Depends(user)) -> dict:
+    """Доска одного прогона: выводы навыков с авторством и решения арбитра по расхождениям."""
+    run = await run_store.get(run_id)
+    if not run:
+        raise HTTPException(404, "нет такого прогона")
+    payload = run.get("payload") or run
+    entries = await blackboard.load("run-" + str(run_id)) or payload.get("board_entries") or []
+    board = blackboard.Board(run_id, entries)
+    return {"run_id": run_id, "entries": entries, "summary": board.summary(),
+            "contradictions": board.contradictions(),
+            "arbitration": (payload.get("run_metrics") or {}).get("arbitration"),
+            "data_snapshot": (payload.get("run_metrics") or {}).get("data_snapshot")}
+
+
 @app.post("/api/runs/fan-out")
 async def run_fan_out(body: dict, u: dict = Depends(user)) -> dict:
     """Запустить агента по МНОГИМ предметам сразу: одна группа заданий, по заданию на предмет.
@@ -4370,6 +4460,17 @@ async def run_fan_out(body: dict, u: dict = Depends(user)) -> dict:
     actor = u.get("name") or u.get("sub") or "dev"
     gid = "grp-" + _hashlib.sha1(f"{agent_id}:{slot['name']}:{_t.time()}".encode()).hexdigest()[:10]
 
+    # Снимок данных на группу: все ветви считают по одной картине. Берём объём и отпечаток выборки
+    # сущности слота ДО запуска — иначе долгий веер начинает на одних данных, а заканчивает на других,
+    # и разные цифры ветвей объяснить нечем.
+    _snap = None
+    try:
+        _rows = await _asyncio.to_thread(ape.data_query, entity, limit=5000)
+        _snap = blackboard.snapshot({entity: _rows or []}, scope=gid)
+    except Exception as _sex:  # noqa: BLE001 — снимок усиление, а не условие запуска
+        obs.log_event("warning", "fanout.snapshot_failed", entity=entity, error=str(_sex)[:200])
+    _parent_trace = obs.current_trace_id()
+
     jobs = []
     for it in items:
         label = it["record"].get("name") or it["record"].get("название") or it["value"]
@@ -4377,6 +4478,8 @@ async def run_fan_out(body: dict, u: dict = Depends(user)) -> dict:
             agent_id=agent_id, actor=actor, kind="run", group_id=gid, priority=int((body or {}).get("priority") or 6),
             payload={"contract_audit_id": agent.get("contract_audit_id") or "",
                      "use_cache": False, "deliver_filter": deliver, "budget": budget,
+                     # доска группы: ветвь видит выводы соседей; снимок: одна картина данных на всех
+                     "board_scope": gid, "data_snapshot": _snap, "parent_trace_id": _parent_trace,
                      "data_scope": {slot["name"]: it["value"]},
                      "user_context": (ctx + f"\n\n=== ПРЕДМЕТ РАБОТЫ ({slot['name']}) ===\n" +
                                       "\n".join(f"{k}: {v}" for k, v in it["record"].items()
@@ -4384,10 +4487,13 @@ async def run_fan_out(body: dict, u: dict = Depends(user)) -> dict:
                      "trace_id": obs.current_trace_id(), "fan_item": it["value"], "fan_label": label})
         await run_bus.bus().publish_request(job, obs.current_trace_id())
         jobs.append({"job_id": job["id"], "item": it["value"], "label": label})
-    obs.log_event("info", "fanout.started", group=gid, agent=agent_id, slot=slot["name"], jobs=len(jobs))
+    obs.log_event("info", "fanout.started", group=gid, agent=agent_id, slot=slot["name"], jobs=len(jobs),
+                  parent_trace=_parent_trace, snapshot=(_snap or {}).get("id") or "")
+    obs.gauge("abop_fanout_jobs", len(jobs), group=gid)
     await audit_store.record(actor, "run.fan_out", gid, {"agent": agent_id, "slot": slot["name"], "jobs": len(jobs)})
     return {"group_id": gid, "agent_id": agent_id, "slot": slot["name"], "entity": entity,
             "jobs": jobs, "count": len(jobs), "skipped_over_limit": cut,
+            "board_scope": gid, "data_snapshot": _snap, "parent_trace_id": _parent_trace,
             "note": f"запущено заданий: {len(jobs)}" + (f"; за пределом лимита осталось {cut}" if cut else "")}
 
 
@@ -4440,11 +4546,40 @@ async def run_group_summary(group_id: str, key: str = "", u: dict = Depends(user
                 numeric[k] = round(numeric.get(k, 0) + v, 2)
         per_item.append({"job_id": jid, "предмет": r.get("agent_name"), "run_id": r.get("run_id"),
                          "показатели": flat})
+    # Арбитраж: в слиянии при расхождении выживало значение последней ветви, и человек получал цифру
+    # без следа спора. Теперь спор разрешается правилом, а где правило не различает варианты или цена
+    # ошибки высока (срок, деньги, предлагаемое мероприятие) — расхождение остаётся открытым и явно
+    # адресовано человеку, а не подчищено.
+    rows = (merged.get("data") or {}).get("сведено") or []
+    board = await blackboard.board_of(group_id)
+    contr = board.contradictions()
+    decisions = arbiter.resolve_all(contr)
+    for d in decisions:
+        board.resolve(d["key"], d.get("chosen"), by=d.get("by") or "human",
+                      reason=d.get("reason") or "", variants=d.get("variants"))
+    arbiter.apply_to_rows(rows, decisions)
+    arb = arbiter.report(decisions)
+    # Картина данных группы: сначала снимок, заданный при запуске веера, иначе снимок первой ветви,
+    # которая его записала. Пустое поле означало бы «ветви сверяли неизвестно что».
+    snap = None
+    for _it in (st.get("items") or []):
+        _p = ((await run_queue.get(_it["id"])) or {}).get("payload") or {}
+        if _p.get("data_snapshot"):
+            snap = _p["data_snapshot"]
+            break
+    if not snap:
+        for _r in results.values():
+            _run = await run_store.get(_r.get("run_id") or "")
+            _sn = (((_run or {}).get("payload") or _run or {}).get("run_metrics") or {}).get("data_snapshot")
+            if _sn:
+                snap = dict(_sn, note="снимок первой завершившейся ветви: группа запускалась без общего")
+                break
     return {"group_id": group_id, "jobs": st.get("jobs"), "by_status": st.get("by_status"),
             "ready": len(results), "pending": pending, "key": keys,
             "по_предметам": per_item, "суммы": numeric,
             "merged": merged.get("data") or {}, "conflicts": merged.get("conflicts") or [],
-            "note": merged.get("note")}
+            "arbitration": arb, "data_snapshot": snap, "board": board.summary(),
+            "note": (merged.get("note") or "") + " · " + arb["note"]}
 
 
 @app.get("/api/runs/groups/{group_id}")
