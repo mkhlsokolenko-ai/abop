@@ -137,3 +137,34 @@ def test_long_phrase_with_known_words_is_enough():
 
 def test_normal_phrase_passes():
     assert planner.sufficiency("сверь дорожную карту проекта с отчётами подрядчиков", CATALOG)["ok"]
+
+
+# ── Названный источник данных ───────────────────────────────────────────────────────────────
+
+def test_named_source_outweighs_word_similarity():
+    """«в 1С» ведёт к навыку, который читает 1С, даже если по словам похож другой.
+
+    Живой случай: «проверь проводки и счета-фактуры в 1С на расхождения» давало сверку регистров —
+    по словам методики она тоже про проводки и расхождения, но читает другую сущность.
+    """
+    cat = dict(CATALOG)
+    cat["ledger-recon"] = {
+        "title": "Сверка регистров", "short": "проводки и расхождения",
+        "body": "сверь проводки, счета, суммы и расхождения по регистрам учёта, счета-фактуры тоже",
+        "inputs": {"required": [{"from": "data", "entity": "transaction"}]},
+        "produces": [{"path": "расхождения", "key": "id"}],
+    }
+    ents = ENTS | {"transaction"}
+    p = planner.plan("проверь проводки и счета-фактуры в 1С на расхождения", cat, entities=ents, slots=set())
+    assert p["ok"] and p["steps"][0]["skill"] == "audit1c-checks", [s["skill"] for s in p["steps"]]
+
+    # без упоминания источника выигрывает тот, кто похож по словам — прибавка не должна быть вечной
+    p2 = planner.plan("сверь проводки и счета по регистрам, покажи расхождения", cat, entities=ents, slots=set())
+    assert p2["steps"][0]["skill"] == "ledger-recon", [s["skill"] for s in p2["steps"]]
+
+
+def test_named_source_needs_the_data_to_exist():
+    """Названный источник без данных навык не спасает: план не берёт неисполнимое."""
+    p = planner.plan("проверь проводки и счета-фактуры в 1С на расхождения", CATALOG,
+                     entities={"roadmap_item"}, slots=set())
+    assert "audit1c-checks" not in [s["skill"] for s in p.get("steps") or []]

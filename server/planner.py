@@ -153,6 +153,29 @@ def _producers(catalog: dict, want: str) -> list[str]:
     return out
 
 
+# Кириллические двойники латиницы: «1С» человек пишет русской «эс», а сущности зовутся doc1c/ref1c.
+# Без этой замены названный источник не совпадает с именем сущности ни по одному правилу.
+_LOOKALIKE = str.maketrans("асеорхукмтвн", "aceopxykmtbh")
+
+
+def _named_sources(task: str, entities: set[str]) -> set[str]:
+    """Сущности, НАЗВАННЫЕ в задаче: «в 1С» → doc1c, ref1c.
+
+    Ищем не равенство, а вхождение: имя сущности состоит из системы и рода данных (`doc1c`, `ref1c`),
+    и человек называет только систему. Слова короче двух знаков не берём — они совпадут со всем.
+    """
+    low = str(task or "").lower().translate(_LOOKALIKE)
+    words = {w for w in re.findall(r"[a-z0-9]{2,}", low)}
+    named: set[str] = set()
+    for e in entities:
+        el = str(e).lower()
+        for w in words:
+            if w == el or (len(w) >= 2 and w in el):
+                named.add(e)
+                break
+    return named
+
+
 def _needs(meta: dict) -> dict:
     """Что навыку нужно: сущности, предметы, выходы других навыков."""
     req = (meta.get("inputs") or {}).get("required") or []
@@ -254,9 +277,21 @@ def plan(task: str, catalog: dict, *, entities: set[str], slots: set[str],
 
     index = _index(catalog)
 
+    # Если человек назвал источник («в 1С», «по почте»), навыки, читающие эту сущность, получают
+    # прибавку. Это не эвристика по словам: и то, что названо, и то, что навык читает, взято из
+    # контрактов — сравниваем объявленное с объявленным.
+    named = _named_sources(task, entities)
+
+    def _source_bonus(sid: str, meta: dict) -> float:
+        if not named:
+            return 0.0
+        ents = set(_needs(meta)["entities"])
+        return 0.25 if ents & named else 0.0
+
     def rank_for(text: str) -> list[tuple[float, str]]:
         tw, tc = _words(text), _concepts(text)
-        r = sorted(((max(_match_score(tw, sid, m, index, tc), float(hints.get(sid) or 0)), sid)
+        r = sorted((((max(_match_score(tw, sid, m, index, tc), float(hints.get(sid) or 0))
+                      + _source_bonus(sid, m)), sid)
                     for sid, m in catalog.items()), key=lambda x: (-x[0], x[1]))
         return [(v, sid) for v, sid in r if v > 0.08][:MAX_CANDIDATES]
 
