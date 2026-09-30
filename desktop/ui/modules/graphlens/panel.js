@@ -195,9 +195,20 @@ export async function mount(root, ctx) {
     running = true; $("gRun").disabled = true; $("gRun").textContent = "Выполняется…";
     $("gChk").innerHTML = `<span class="faint">▍ граф выполняется…</span>`;
     try {
-      const r = await api(G + "/run", { method: "POST", body: JSON.stringify({ id: graphId, task }) });
+      const r = await api(G + "/run", { method: "POST", body: JSON.stringify({ id: graphId, task, name }) });
       if (!r.ok) { $("gChk").innerHTML = `<span class="danger-ink">${esc(humanError(r.message || r.error))}</span>`; }
-      else $("gChk").innerHTML = (r.steps || []).map((s) => `<div style="border:1px solid var(--line);border-radius:10px;padding:9px;margin-bottom:6px;background:var(--panel);box-shadow:var(--shadow-1);animation:ape-in .3s ease-out"><b style="font-size:12px">🤖 ${esc(s.name)}</b><div style="font-size:11.5px;color:var(--ink-2);white-space:pre-wrap;margin-top:3px">${esc((s.text || "").slice(0, 400))}</div></div>`).join("") || '<span class="faint">Шагов нет.</span>';
+      else {
+        // Граф исполняется настоящим движком ABOP: результат живёт в прогонах, а не в этой панели.
+        const skipped = (r.skipped || []).length
+          ? `<div style="font-size:11.5px;color:var(--warn-ink);margin-top:6px">Пропущены узлы без агента: ${esc((r.skipped || []).join(", "))}</div>` : "";
+        $("gChk").innerHTML = `<div style="border:1px solid var(--line);border-radius:10px;padding:11px;background:var(--panel);box-shadow:var(--shadow-1)">
+          <b style="font-size:12.5px" class="ok-ink">▶ ${esc(r.message || "Запущено")}</b>
+          <div style="font-size:11.5px;color:var(--ink-2);margin-top:4px;font-family:var(--mono)">${esc(r.kind === "pipeline" ? ("цепочка " + (r.pipeline_id || "") + " · шагов " + (r.steps_total || 0)) : ("задание " + (r.job_id || "")))}</div>
+          ${skipped}
+          <button type="button" id="gGoRuns" class="btn" style="margin-top:9px;padding:6px 12px;font-size:11.5px">Открыть «Прогоны»</button>
+        </div>`;
+        const gb = $("gGoRuns"); if (gb) gb.onclick = () => ctx.open && ctx.open("runs");
+      }
     } catch (e) { $("gChk").innerHTML = `<span class="danger-ink">${esc(humanError(e))}</span>`; }
     running = false; $("gRun").disabled = false; $("gRun").textContent = "Запустить ▸";
   };

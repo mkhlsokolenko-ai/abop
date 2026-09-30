@@ -4,13 +4,16 @@ const G = "/api/modules/graphlens";
 const esc = (s) => (s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 const LBL = "font-family:var(--mono);font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--ink-3)";
 
+// Базовый процесс — ОБРАЗЕЦ, а не ваши данные: он показывает, как выглядит карта, пока свой процесс
+// не собран. Раньше он рисовался наравне с настоящими участками, и карта выглядела как реальная
+// картина работы отдела продаж, которой ни у кого нет.
 const BASE_ZONES = [
-  { id: "b1", title: "Приём заявок", agents: 2, state: "ok" },
-  { id: "b2", title: "Квалификация", agents: 1, state: "ok" },
-  { id: "b3", title: "Подготовка КП", agents: 1, state: "warn" },
-  { id: "b4", title: "Согласование", agents: 0, state: "idle" },
-  { id: "b5", title: "Отправка", agents: 1, state: "warn" },
-  { id: "b6", title: "Аналитика", agents: 1, state: "ok" },
+  { id: "b1", title: "Приём заявок", agents: 2, state: "ok", sample: true },
+  { id: "b2", title: "Квалификация", agents: 1, state: "ok", sample: true },
+  { id: "b3", title: "Подготовка КП", agents: 1, state: "warn", sample: true },
+  { id: "b4", title: "Согласование", agents: 0, state: "idle", sample: true },
+  { id: "b5", title: "Отправка", agents: 1, state: "warn", sample: true },
+  { id: "b6", title: "Аналитика", agents: 1, state: "ok", sample: true },
 ];
 const DOT = { ok: "var(--ok-ink)", warn: "var(--warn-ink)", idle: "var(--ink-3)" };
 
@@ -19,7 +22,7 @@ export async function mount(root, ctx) {
   let graphs = []; try { graphs = await api(G + "/graphs"); } catch {}
   let zoom = 1, layer = "LIVE", selZone = null;
 
-  // участки: базовый процесс + узлы-агенты из сохранённых графов
+  // участки: свои графы всегда впереди образца — сначала то, что действительно собрано
   const zones = [...BASE_ZONES];
   graphs.forEach((g) => { const ag = (g.nodes || []).filter((n) => n.kind === "agent").length; zones.push({ id: "g" + g.id, title: g.name, agents: ag, state: ag ? "ok" : "idle", graph: g.id }); });
 
@@ -28,6 +31,7 @@ export async function mount(root, ctx) {
       <div style="display:flex;flex-direction:column;gap:4px">
         <span style="${LBL}">карта процесса</span>
         <h1 style="margin:0;font-size:22px;font-weight:800;letter-spacing:-.6px">Операции</h1>
+        <span style="font-size:11.5px;color:var(--ink-3)">Участки с пометкой «образец» — демонстрация формы, а не ваши данные.</span>
       </div>
       <div style="display:flex;gap:4px;padding:4px;border-radius:10px;background:var(--hover);border:1px solid var(--line)">
         ${["LIVE", "AS-IS", "TO-BE"].map((l) => `<button class="lay" data-l="${l}" style="padding:7px 13px;border:none;border-radius:8px;font-family:var(--mono);font-size:11px;font-weight:600;cursor:pointer">${l}</button>`).join("")}
@@ -55,7 +59,7 @@ export async function mount(root, ctx) {
     $("map").style.transform = `scale(${zoom})`;
     $("map").innerHTML = zones.map((z, i) => `
       <div class="zone" data-id="${z.id}" style="cursor:pointer;padding:14px 16px;border-radius:16px;background:var(--panel);border:1px solid ${selZone === z.id ? "#818cf8" : "var(--line)"};backdrop-filter:blur(16px);min-width:170px;flex:0 0 auto;display:flex;flex-direction:column;gap:6px;margin:0 8px 8px 0">
-        <div style="display:flex;align-items:center;gap:8px"><span style="width:8px;height:8px;border-radius:9999px;background:${DOT[z.state]};flex:none"></span><b style="font-size:13.5px">${esc(z.title)}</b></div>
+        <div style="display:flex;align-items:center;gap:8px"><span style="width:8px;height:8px;border-radius:9999px;background:${DOT[z.state]};flex:none"></span><b style="font-size:13.5px">${esc(z.title)}</b>${z.sample ? `<span title="Это образец, а не ваши данные" style="font-family:var(--mono);font-size:9.5px;letter-spacing:.6px;text-transform:uppercase;padding:2px 6px;border-radius:5px;background:var(--hover);color:var(--ink-3);border:1px solid var(--line)">образец</span>` : ""}</div>
         <div style="font-size:12px;color:var(--ink-3)">${z.agents ? z.agents + " агент(ов)" : "нет агентов"}${z.graph ? " · граф" : ""}</div>
       </div>${i < zones.length - 1 ? `<div style="align-self:center;color:var(--ink-3);padding:0 4px;flex:none">→</div>` : ""}`).join("");
     $("map").querySelectorAll(".zone").forEach((el) => el.onclick = () => { selZone = el.dataset.id; paintMap(); paintInsp(); });
@@ -65,7 +69,7 @@ export async function mount(root, ctx) {
     if (!z) { $("insp").innerHTML = `<div style="padding:20px 4px;text-align:center;font-size:12.5px;color:var(--ink-3)">Выберите участок на карте.</div>`; return; }
     $("insp").innerHTML = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span style="width:8px;height:8px;border-radius:9999px;background:${DOT[z.state]}"></span><b style="font-size:14px">${esc(z.title)}</b></div>
       ${[["агентов", z.agents], ["статус", z.state === "ok" ? "работает" : z.state === "warn" ? "внимание" : "нет активности"], ["автономия", z.state === "warn" ? "с подтверждением" : "по контракту"], ["слой", layer]].map((r) => `<div style="display:flex;gap:10px;font-size:12px;margin-bottom:6px"><span style="${LBL};width:80px">${r[0]}</span><span style="color:var(--ink-2)">${esc(String(r[1]))}</span></div>`).join("")}
-      ${z.graph ? `<button id="openG" style="margin-top:12px;width:100%;padding:9px;border:1px solid rgba(129,140,248,.4);border-radius:10px;background:rgba(99,102,241,.16);color:var(--accent-ink);font-size:12px;font-weight:600;cursor:pointer">Открыть граф участка ▸</button>` : `<div style="margin-top:10px;font-size:11.5px;color:var(--ink-3)">Базовый участок процесса. Схему меняют в слоях AS-IS/TO-BE (Граф).</div>`}`;
+      ${z.graph ? `<button id="openG" style="margin-top:12px;width:100%;padding:9px;border:1px solid rgba(129,140,248,.4);border-radius:10px;background:rgba(99,102,241,.16);color:var(--accent-ink);font-size:12px;font-weight:600;cursor:pointer">Открыть граф участка ▸</button>` : `<div style="margin-top:10px;font-size:11.5px;color:var(--warn-ink)">Это участок-образец: он показывает, как выглядит карта, и не отражает вашу работу. Соберите свой процесс в разделе «Граф» — он появится здесь как настоящий участок.</div>`}`;
     if (z.graph && $("openG")) $("openG").onclick = () => { const nav = root.closest("body")?.querySelector(`[data-id="graphlens"]`) || document.querySelector('#railNav [data-id="graphlens"]'); if (nav) nav.click(); };
   }
 

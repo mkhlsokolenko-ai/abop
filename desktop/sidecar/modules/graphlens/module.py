@@ -35,6 +35,7 @@ class GraphIn(BaseModel):
 class RunGraphIn(BaseModel):
     id: int
     task: str
+    name: str = ""      # имя цепочки, в которую превращается граф
 
 
 def _row(g: dict) -> dict:
@@ -142,9 +143,10 @@ def check(body: GraphIn) -> dict:
 @router.post("/run")
 def run(body: RunGraphIn) -> dict:
     """Запуск графа: агентные узлы в топологическом порядке — цепочкой через шлюз."""
-    rows = db.q("SELECT nodes,edges FROM graphs WHERE id=?", (body.id,))
+    rows = db.q("SELECT name,nodes,edges FROM graphs WHERE id=?", (body.id,))
     if not rows:
         return {"ok": False, "error": "not_found"}
+    _gname = rows[0]["name"] or ""
     nodes = json.loads(rows[0]["nodes"] or "[]")
     edges = [tuple(e) for e in json.loads(rows[0]["edges"] or "[]")]
     # порядок: топосорт; берём только агентные узлы
@@ -168,26 +170,46 @@ def run(body: RunGraphIn) -> dict:
     agent_nodes = [byid[i] for i in order if byid[i].get("kind") == "agent"]
     if not agent_nodes:
         return {"ok": False, "error": "no_agents", "message": "В графе нет агентных узлов."}
-    outputs, prior = [], ""
+    # Узел без привязанного агента исполнять нечем. Раньше такой узел всё равно «работал» — модель
+    # отвечала от его имени, и это выглядело результатом.
+    bound = [n for n in agent_nodes if n.get("agent_id")]
+    skipped = [str(n.get("label") or n.get("id")) for n in agent_nodes if not n.get("agent_id")]
+    if not bound:
+        return {"ok": False, "error": "no_agent_id",
+                "message": "Ни у одного узла не выбран агент. Откройте узел и привяжите агента — "
+                           "граф исполняется настоящими агентами, а не пересказом модели."}
+
+    # Граф → цепочка ABOP: узел-агент становится шагом, ребро — зависимостью «после».
+    ids = {n["id"] for n in bound}
+    steps = []
+    for i, n in enumerate(bound, 1):
+        after = [str(a) for a, b in edges if b == n["id"] and a in ids]
+        st = {"id": "n" + str(i), "agent_id": str(n["agent_id"]), "deliver": n.get("deliver") or "chat"}
+        if after:
+            # имена шагов свои, поэтому переводим идентификаторы узлов в имена шагов
+            idx = {x["id"]: "n" + str(j) for j, x in enumerate(bound, 1)}
+            st["after"] = [idx[a] for a in after if a in idx]
+        steps.append(st)
+    if len(steps) < 2:
+        # Один шаг цепочкой не бывает — запускаем агента напрямую, это тот же настоящий прогон.
+        try:
+            r = abop.run_async(agent_id=steps[0]["agent_id"], context=body.task, no_cache=True,
+                               deliver=steps[0].get("deliver") or "chat")
+        except abop.AbopError as e:
+            return {"ok": False, "error": str(e)}
+        return {"ok": True, "kind": "run", "job_id": r.get("job_id"), "status": r.get("status"),
+                "skipped": skipped,
+                "message": "Запущен прогон агента. Результат появится в разделе «Прогоны»."}
     try:
-        for n in agent_nodes:
-            name = n.get("label") or "Агент"
-            system = f"Ты — узел графа «{name}»."
-            # спека узла-агента берётся из ABOP (единый каталог), fallback — локальная метка
-            if n.get("agent_id"):
-                try:
-                    a = abop.agent(str(n["agent_id"]))
-                    if a:
-                        steps = a.get("steps") or a.get("skills") or ""
-                        if isinstance(steps, list):
-                            steps = "\n".join(str(s) for s in steps)
-                        system = f"Ты — {a.get('name', name)}. {a.get('description', '') or a.get('role', '')}\nШаги:\n{steps}"
-                except abop.AbopError:
-                    pass
-            prefix = ("Наработки предыдущих узлов:\n" + prior) if prior else ""
-            r = abop.chat(prompt=f"Задача: {body.task}\n\n{prefix}", system=system, max_tokens=1000)
-            t = r.get("text", "")
-            outputs.append({"name": name, "text": t}); prior += f"[{name}]: {t}\n"
+        pl = abop._req("POST", "/api/pipelines",
+                       {"name": (body.name or _gname or "Граф из десктопа"), "steps": steps}, timeout=60)
+        # Асинхронно: цепочка уходит в очередь заданиями, окно не висит и результат не теряется,
+        # если пользователь закроет раздел.
+        started = abop._req("POST", "/api/pipelines/" + str(pl.get("id")) + "/run?async=1",
+                            {"context": body.task}, timeout=60)
     except abop.AbopError as e:
         return {"ok": False, "error": str(e)}
-    return {"ok": True, "steps": outputs}
+    return {"ok": True, "kind": "pipeline", "pipeline_id": pl.get("id"),
+            "job_id": (started or {}).get("job_id"), "steps_total": len(steps), "skipped": skipped,
+            "message": f"Цепочка из {len(steps)} шагов запущена настоящим движком ABOP. "
+                       "Ход и результат — в разделе «Прогоны»."}
