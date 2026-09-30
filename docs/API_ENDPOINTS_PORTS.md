@@ -204,7 +204,8 @@
 | GET | `/api/data/recipes` / `/{name}` | Рецепты трансформации | user |
 | POST | `/api/data/recipes` | Сохранить рецепт (→PG) | manager+ |
 | DELETE | `/api/data/recipes/{name}` | Удалить рецепт | manager+ |
-| POST | `/api/data/recipes/{name}/run` / `/rebind` | Прогнать / перепривязать рецепт | manager+ |
+| POST | `/api/data/recipes/{name}/run` | Прогнать рецепт; тело `{"reset": true}` — перечитать сущность **начисто** (иначе удалённые в источнике записи остаются навсегда: у удаления нет новой версии) | manager+ |
+| POST | `/api/data/recipes/{name}/rebind` | Перепривязать рецепт на другую сущность | manager+ |
 | POST | `/api/data/recipe/preview` | Dry-run рецепта | user |
 | GET | `/api/data/connectors` | Коннекторы источников (+ резолв системы реестра, `allowed`) | user |
 | POST | `/api/data/connectors` / `/test` | Сохранить / протестировать коннектор | manager+ |
@@ -232,6 +233,7 @@
 | GET | `/api/admin/users` / `/staff` / `/audit` / `/rbac` | Пользователи Keycloak / штат из Redmine / журнал аудита / RBAC-матрица | support+ |
 | GET / POST | `/api/admin/config` | Админ-настройки в PG (модели/квоты/пороги/дерево; `llmOverride`) | user / manager+ |
 | GET / POST | `/api/admin/run-limits` | Лимиты прогона: что задано кодом, что изменено настройкой, в каких границах (пустое поле → умолчание) | user / manager+ |
+| POST | `/api/admin/cleanup` | **Зачистка следов проверок перед показом**: прогоны, завершённые задания, ожидающие подтверждения, ошибки шины, цепочки. По умолчанию сухой прогон; удаление требует `confirm: "зачистить"`. Агентов, навыки, шаблоны, данные и аудит не трогает | admin |
 | GET | `/api/guides` | Поставочные руководства пользователя и администратора (HTML и PDF, отдаются с `/guide`) | user |
 | GET | `/api/systems` / `/{sid}` | Реестр систем: эндпоинты, egress, scope семей, Kafka-топики | user |
 | POST / DELETE | `/api/systems/{sid}` | Сохранить / удалить систему | manager+ |
