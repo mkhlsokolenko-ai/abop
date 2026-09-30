@@ -1755,6 +1755,49 @@ async def impact_analysis(kind: str, id: str, u: dict = Depends(user)) -> dict:
                         "est_rub_per_cycle": round(tot_rub, 4), "est_tokens_per_cycle": tot_tokens}}
 
 
+@app.get("/api/data/entities")
+async def data_entities(u: dict = Depends(user)) -> dict:
+    """Сущности, которые реально существуют в среде: реестр схем + данные в хранилище + то, что
+    объявили навыки.
+
+    Реестр canonical-схем намеренно открыт: вертикаль заводит свои сущности без правки кода. Поэтому
+    список для интерфейса нельзя брать из одного реестра — иначе редактор контракта не покажет
+    сущность, с которой навык уже работает.
+    """
+    known = dict(ape.CANONICAL_SCHEMAS)
+    out: dict[str, dict] = {e: {"entity": e, "known": True, "hint": v.get("hint") or "",
+                                "required": v.get("required") or [], "rows": 0, "skills": 0}
+                            for e, v in known.items()}
+    # что лежит в хранилище: имя сущности = имя файла canonical store
+    import glob as _glob
+    import os as _os
+    _dir = _os.path.dirname(ape._data_path("x"))
+    for path in _glob.glob(_os.path.join(_dir, "*.jsonl")):
+        e = _os.path.basename(path)[:-6]
+        row = out.setdefault(e, {"entity": e, "known": False, "hint": "", "required": ["id"],
+                                 "rows": 0, "skills": 0})
+        try:
+            row["rows"] = len(await _asyncio.to_thread(ape.data_query, e, limit=5000))
+        except Exception:  # noqa: BLE001 — пустая или битая сущность не должна ломать список
+            row["rows"] = 0
+    # что объявили навыки — источниками данных и входами контракта
+    for sid in list(ape.SKILLS):
+        for ds in (ape.skill_datasources_resolved(sid) or []):
+            e = ds.get("entity")
+            if e:
+                out.setdefault(e, {"entity": e, "known": False, "hint": ds.get("note") or "",
+                                   "required": ["id"], "rows": 0, "skills": 0})["skills"] += 1
+    for tpl in (await schema_store.all() or []):
+        for bucket in ("required", "optional"):
+            for it in ((tpl.get("inputs") or {}).get(bucket) or []):
+                e = (it or {}).get("entity")
+                if e:
+                    out.setdefault(e, {"entity": e, "known": False, "hint": "", "required": ["id"],
+                                       "rows": 0, "skills": 0})["skills"] += 1
+    rows = sorted(out.values(), key=lambda r: (-r["rows"], -r["skills"], r["entity"]))
+    return {"entities": rows, "count": len(rows)}
+
+
 @app.get("/api/data/adapters")
 def adapters(u: dict = Depends(user)) -> dict:
     """Каталог адаптеров с дескрипторами (label/category/src_fields/egress/badge/available)
