@@ -3935,6 +3935,9 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
                                         "instruction": _instr + "\n\nПОЛЯ СХЕМЫ (что класть):\n" + skill_templates.describe_for_prompt(_tpl),
                                         "max_tokens": skill_templates.max_tokens_of(_tpl),
                                         "delivery": _tpl.get("delivery") or None, "template_id": _tpl.get("id"),
+                                        # контракт: вход из предыдущих навыков и объявленный выход —
+                                        # по ним рантайм передаёт результат по волнам графа
+                                        "inputs": _tpl.get("inputs") or {}, "produces": _tpl.get("produces") or {},
                                         # шаблон извлечения конкретнее дефолта формата из кода (письмо/БФТ помечены
                                         # «документ»), но НЕ перебивает явный выбор «рассуждения» в UI навыка
                                         "force_struct": ((_ov.get(_sid) or {}).get("patch") or {}).get("output") != "freeform"}
