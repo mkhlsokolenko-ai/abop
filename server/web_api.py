@@ -4317,6 +4317,136 @@ async def run_jobs_mine(limit: int = 30, u: dict = Depends(user)) -> dict:
     return {"jobs": [run_queue.public(j) for j in jobs]}
 
 
+_FANOUT_MAX = max(1, int(os.getenv("ABOP_FANOUT_MAX", "20")))   # защита от веера на двести заданий
+
+
+@app.post("/api/runs/fan-out")
+async def run_fan_out(body: dict, u: dict = Depends(user)) -> dict:
+    """Запустить агента по МНОГИМ предметам сразу: одна группа заданий, по заданию на предмет.
+
+    Тело: {agent_id, slot?, values?|query?, budget?, deliver?, limit?}. Предметы берутся из values,
+    либо подбираются по query через разрешение предмета, либо берутся все доступные записи сущности
+    слота. Каждое задание получает свой scope, поэтому агент видит только свой предмет и не смешивает
+    их — это та ошибка, которую мы уже лечили в одиночном прогоне.
+    """
+    require_level(u, "manager")
+    agent_id = str((body or {}).get("agent_id") or "").strip()
+    agent = await agent_store.get(agent_id)
+    if not agent:
+        raise HTTPException(404, "нет такого агента")
+    if not can_see_family(u, agent.get("family")):
+        raise HTTPException(403, "нет доступа к семье агента")
+
+    # какой слот разворачиваем: указанный или первый обязательный слот агента
+    slots = (await agent_slots(agent_id, u)).get("slots") or []
+    slot_name = str((body or {}).get("slot") or "").strip()
+    slot = next((s for s in slots if s.get("name") == slot_name), None) if slot_name else \
+        next((s for s in slots if s.get("required")), None)
+    if not slot:
+        raise HTTPException(422, "у агента нет предмета работы, по которому можно развернуть веер")
+    entity = str(slot.get("entity") or "")
+
+    vals = (body or {}).get("values")
+    items: list[dict] = []
+    if isinstance(vals, list) and vals:
+        items = [{"value": str(v), "record": {"id": str(v)}} for v in vals]
+    else:
+        res = await resolve_entity(entity, str((body or {}).get("query") or ""), 200, u)
+        for c in res.get("candidates") or []:
+            rec = c.get("record") or {}
+            key = rec.get("id") or rec.get("название") or rec.get("name")
+            if key:
+                items.append({"value": str(key), "record": rec})
+    if not items:
+        raise HTTPException(404, f"не нашлось предметов сущности «{entity}» для веера")
+    lim = max(1, min(_FANOUT_MAX, int((body or {}).get("limit") or _FANOUT_MAX)))
+    cut = len(items) - lim if len(items) > lim else 0
+    items = items[:lim]
+
+    _bd = (body or {}).get("budget") if isinstance((body or {}).get("budget"), dict) else {}
+    budget = {k: v for k, v in _bd.items() if k in ("max_tokens", "max_rub", "max_sec") and v} or None
+    deliver = str((body or {}).get("deliver") or "chat")
+    ctx = str((body or {}).get("context") or "")[:8000]
+    actor = u.get("name") or u.get("sub") or "dev"
+    gid = "grp-" + _hashlib.sha1(f"{agent_id}:{slot['name']}:{_t.time()}".encode()).hexdigest()[:10]
+
+    jobs = []
+    for it in items:
+        label = it["record"].get("name") or it["record"].get("название") or it["value"]
+        job = await run_queue.enqueue(
+            agent_id=agent_id, actor=actor, kind="run", group_id=gid, priority=int((body or {}).get("priority") or 6),
+            payload={"contract_audit_id": agent.get("contract_audit_id") or "",
+                     "use_cache": False, "deliver_filter": deliver, "budget": budget,
+                     "data_scope": {slot["name"]: it["value"]},
+                     "user_context": (ctx + f"\n\n=== ПРЕДМЕТ РАБОТЫ ({slot['name']}) ===\n" +
+                                      "\n".join(f"{k}: {v}" for k, v in it["record"].items()
+                                                 if not isinstance(v, (dict, list)))).strip(),
+                     "trace_id": obs.current_trace_id(), "fan_item": it["value"], "fan_label": label})
+        await run_bus.bus().publish_request(job, obs.current_trace_id())
+        jobs.append({"job_id": job["id"], "item": it["value"], "label": label})
+    obs.log_event("info", "fanout.started", group=gid, agent=agent_id, slot=slot["name"], jobs=len(jobs))
+    await audit_store.record(actor, "run.fan_out", gid, {"agent": agent_id, "slot": slot["name"], "jobs": len(jobs)})
+    return {"group_id": gid, "agent_id": agent_id, "slot": slot["name"], "entity": entity,
+            "jobs": jobs, "count": len(jobs), "skipped_over_limit": cut,
+            "note": f"запущено заданий: {len(jobs)}" + (f"; за пределом лимита осталось {cut}" if cut else "")}
+
+
+@app.get("/api/runs/groups/{group_id}/summary")
+async def run_group_summary(group_id: str, key: str = "", u: dict = Depends(user)) -> dict:
+    """Сводка по группе: результаты завершённых заданий, сведённые в одну таблицу.
+
+    Ветвь без результата не ломает сводку: она попадает в список незавершённых. Ключ сведения можно
+    задать (через запятую для составного), иначе берётся предмет веера плюс идентификатор записи."""
+    st = await run_queue.group_status(group_id)
+    if not st.get("jobs"):
+        raise HTTPException(404, "нет заданий с такой группой")
+    results: dict = {}
+    pending: list[str] = []
+    for it in st.get("items") or []:
+        rid = it.get("run_id")
+        if not rid:
+            pending.append(it.get("id"))
+            continue
+        run = await run_store.get(rid)
+        if not run:
+            pending.append(it.get("id"))
+            continue
+        flat: dict = {}
+        for o in (run.get("skill_outputs") or []):
+            for k, v in (o.get("structured") or {}).items():
+                flat.setdefault(k, v)
+        label = ((await run_queue.get(it["id"])) or {}).get("payload", {}).get("fan_label") or it.get("agent_id")
+        results[it["id"]] = {"data": flat, "agent_name": label, "run_id": rid}
+    keys = [k.strip() for k in str(key or "").split(",") if k.strip()]
+    if not keys:
+        first = next(iter(results.values()), None)
+        keys = ["проект", "пункт"] if first and "исполнение" in (first["data"] or {}) else ["id"]
+    merged = pipeline_graph.merge({"policy": "by_key", "from": list(results), "key": keys}, results)
+    # Таблица на 24 строки — ещё не ответ руководителю. Сводим шапки ветвей: по каждому предмету
+    # короткая выжимка (без списков) и суммы по числовым полям, чтобы было видно общую картину.
+    per_item, numeric = [], {}
+    for jid, r in results.items():
+        head = {k: v for k, v in (r.get("data") or {}).items() if not isinstance(v, list)}
+        flat = {}
+        for k, v in head.items():
+            if isinstance(v, dict):
+                for k2, v2 in v.items():
+                    if not isinstance(v2, (dict, list)):
+                        flat[f"{k}.{k2}"] = v2
+            else:
+                flat[k] = v
+        for k, v in flat.items():
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                numeric[k] = round(numeric.get(k, 0) + v, 2)
+        per_item.append({"job_id": jid, "предмет": r.get("agent_name"), "run_id": r.get("run_id"),
+                         "показатели": flat})
+    return {"group_id": group_id, "jobs": st.get("jobs"), "by_status": st.get("by_status"),
+            "ready": len(results), "pending": pending, "key": keys,
+            "по_предметам": per_item, "суммы": numeric,
+            "merged": merged.get("data") or {}, "conflicts": merged.get("conflicts") or [],
+            "note": merged.get("note")}
+
+
 @app.get("/api/runs/groups/{group_id}")
 async def run_group_status(group_id: str, u: dict = Depends(user)) -> dict:
     """Состояние группы заданий: сколько в каком статусе, что стоило, какие ветви упали.
