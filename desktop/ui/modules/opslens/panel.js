@@ -17,6 +17,13 @@ const BASE_ZONES = [
 ];
 const DOT = { ok: "var(--ok-ink)", warn: "var(--warn-ink)", idle: "var(--ink-3)" };
 
+const STATE_WORD = { ok: "работает", warn: "требует внимания", idle: "нет активности" };
+function zoneAria(z) {
+  return [`Участок: ${z.title}`, STATE_WORD[z.state] || z.state,
+          z.agents ? `агентов: ${z.agents}` : "агентов нет",
+          z.sample ? "образец, а не ваши данные" : ""].filter(Boolean).join(", ");
+}
+
 export async function mount(root, ctx) {
   const { api } = ctx;
   let graphs = []; try { graphs = await api(G + "/graphs"); } catch {}
@@ -34,18 +41,18 @@ export async function mount(root, ctx) {
         <span style="font-size:11.5px;color:var(--ink-3)">Участки с пометкой «образец» — демонстрация формы, а не ваши данные.</span>
       </div>
       <div style="display:flex;gap:4px;padding:4px;border-radius:10px;background:var(--hover);border:1px solid var(--line)">
-        ${["LIVE", "AS-IS", "TO-BE"].map((l) => `<button class="lay" data-l="${l}" style="padding:7px 13px;border:none;border-radius:8px;font-family:var(--mono);font-size:11px;font-weight:600;cursor:pointer">${l}</button>`).join("")}
+        ${["LIVE", "AS-IS", "TO-BE"].map((l) => `<button type="button" class="lay" data-l="${l}" aria-pressed="false" aria-label="Слой ${l}" style="padding:7px 13px;border:none;border-radius:8px;font-family:var(--mono);font-size:11px;font-weight:600;cursor:pointer">${l}</button>`).join("")}
       </div>
       <div style="margin-left:auto;display:flex;align-items:center;gap:4px;padding:4px;border-radius:10px;border:1px solid var(--line)">
-        <button id="zOut" style="width:26px;height:26px;border:none;border-radius:7px;background:transparent;color:var(--accent-ink);font-size:15px;cursor:pointer">−</button>
-        <button id="zRst" style="min-width:42px;height:26px;border:none;border-radius:7px;background:transparent;color:var(--ink-2);font-family:var(--mono);font-size:10.5px;font-weight:600;cursor:pointer">100%</button>
-        <button id="zIn" style="width:26px;height:26px;border:none;border-radius:7px;background:transparent;color:var(--accent-ink);font-size:15px;cursor:pointer">＋</button>
+        <button type="button" id="zOut" aria-label="Уменьшить карту" style="width:26px;height:26px;border:none;border-radius:7px;background:transparent;color:var(--accent-ink);font-size:15px;cursor:pointer">−</button>
+        <button type="button" id="zRst" aria-label="Масштаб 100 процентов" style="min-width:42px;height:26px;border:none;border-radius:7px;background:transparent;color:var(--ink-2);font-family:var(--mono);font-size:10.5px;font-weight:600;cursor:pointer">100%</button>
+        <button type="button" id="zIn" aria-label="Увеличить карту" style="width:26px;height:26px;border:none;border-radius:7px;background:transparent;color:var(--accent-ink);font-size:15px;cursor:pointer">＋</button>
       </div>
     </div>
     <div id="hint" style="padding:10px 20px;font-size:12.5px;color:var(--ink-2);border-bottom:1px solid var(--line)"></div>
     <div style="flex:1;display:flex;min-height:0">
       <div id="mapWrap" style="flex:1;overflow:auto;padding:24px">
-        <div id="map" style="transform-origin:0 0;display:flex;align-items:stretch;gap:0;flex-wrap:wrap;transition:transform .15s"></div>
+        <div id="map" role="group" aria-label="Участки процесса слева направо. Tab — по участкам, Enter — открыть инспектор." style="transform-origin:0 0;display:flex;align-items:stretch;gap:0;flex-wrap:wrap;transition:transform .15s"></div>
       </div>
       <div style="width:280px;flex:none;border-left:1px solid var(--line);padding:16px;overflow:auto">
         <span style="${LBL}">инспектор участка</span>
@@ -54,15 +61,18 @@ export async function mount(root, ctx) {
     </div></div>`;
   const $ = (id) => root.querySelector("#" + id);
 
-  function paintLayers() { root.querySelectorAll(".lay").forEach((b) => { const on = b.dataset.l === layer; b.style.background = on ? "var(--panel)" : "transparent"; b.style.color = on ? "var(--ink)" : "var(--ink-2)"; }); $("hint").textContent = layer === "LIVE" ? "Слой LIVE — только наблюдение. Чтобы менять схему и сажать агентов, переключитесь на AS-IS/TO-BE (вкладка Граф)." : `Слой ${layer} — редактирование схемы процесса (открывается в Графе).`; }
+  function paintLayers() { root.querySelectorAll(".lay").forEach((b) => { const on = b.dataset.l === layer; b.style.background = on ? "var(--panel)" : "transparent"; b.style.color = on ? "var(--ink)" : "var(--ink-2)"; b.setAttribute("aria-pressed", String(on)); }); $("hint").textContent = layer === "LIVE" ? "Слой LIVE — только наблюдение. Чтобы менять схему и сажать агентов, переключитесь на AS-IS/TO-BE (вкладка Граф)." : `Слой ${layer} — редактирование схемы процесса (открывается в Графе).`; }
   function paintMap() {
     $("map").style.transform = `scale(${zoom})`;
+    // Участок — кнопка, а не div с onclick: тогда он попадает в обход Tab, откликается на Enter и
+    // объявляется диктором вместе со статусом. Цвет точки статуса дублируется словом в подписи —
+    // «внимание» нельзя передавать одним только цветом.
     $("map").innerHTML = zones.map((z, i) => `
-      <div class="zone" data-id="${z.id}" style="cursor:pointer;padding:14px 16px;border-radius:16px;background:var(--panel);border:1px solid ${selZone === z.id ? "#818cf8" : "var(--line)"};backdrop-filter:blur(16px);min-width:170px;flex:0 0 auto;display:flex;flex-direction:column;gap:6px;margin:0 8px 8px 0">
-        <div style="display:flex;align-items:center;gap:8px"><span style="width:8px;height:8px;border-radius:9999px;background:${DOT[z.state]};flex:none"></span><b style="font-size:13.5px">${esc(z.title)}</b>${z.sample ? `<span title="Это образец, а не ваши данные" style="font-family:var(--mono);font-size:9.5px;letter-spacing:.6px;text-transform:uppercase;padding:2px 6px;border-radius:5px;background:var(--hover);color:var(--ink-3);border:1px solid var(--line)">образец</span>` : ""}</div>
-        <div style="font-size:12px;color:var(--ink-3)">${z.agents ? z.agents + " агент(ов)" : "нет агентов"}${z.graph ? " · граф" : ""}</div>
-      </div>${i < zones.length - 1 ? `<div style="align-self:center;color:var(--ink-3);padding:0 4px;flex:none">→</div>` : ""}`).join("");
-    $("map").querySelectorAll(".zone").forEach((el) => el.onclick = () => { selZone = el.dataset.id; paintMap(); paintInsp(); });
+      <button type="button" class="zone" data-id="${z.id}" aria-pressed="${selZone === z.id}" aria-label="${esc(zoneAria(z))}" style="text-align:left;font:inherit;color:var(--ink);cursor:pointer;padding:14px 16px;border-radius:16px;background:var(--panel);border:1px solid ${selZone === z.id ? "var(--node-sel)" : "var(--line)"};backdrop-filter:blur(16px);min-width:170px;flex:0 0 auto;display:flex;flex-direction:column;gap:6px;margin:0 8px 8px 0">
+        <span style="display:flex;align-items:center;gap:8px"><span aria-hidden="true" style="width:8px;height:8px;border-radius:9999px;background:${DOT[z.state]};flex:none"></span><b style="font-size:13.5px">${esc(z.title)}</b>${z.sample ? `<span title="Это образец, а не ваши данные" style="font-family:var(--mono);font-size:9.5px;letter-spacing:.6px;text-transform:uppercase;padding:2px 6px;border-radius:5px;background:var(--hover);color:var(--ink-3);border:1px solid var(--line)">образец</span>` : ""}</span>
+        <span style="font-size:12px;color:var(--ink-3)">${z.agents ? z.agents + " агент(ов)" : "нет агентов"}${z.graph ? " · граф" : ""}</span>
+      </button>${i < zones.length - 1 ? `<div aria-hidden="true" style="align-self:center;color:var(--ink-3);padding:0 4px;flex:none">→</div>` : ""}`).join("");
+    $("map").querySelectorAll(".zone").forEach((el) => el.onclick = () => { selZone = el.dataset.id; paintMap(); paintInsp(); const b = $("map").querySelector(`.zone[data-id="${el.dataset.id}"]`); if (b) b.focus(); });
   }
   function paintInsp() {
     const z = zones.find((x) => x.id === selZone);
@@ -74,9 +84,10 @@ export async function mount(root, ctx) {
   }
 
   root.querySelectorAll(".lay").forEach((b) => b.onclick = () => { layer = b.dataset.l; paintLayers(); });
-  $("zIn").onclick = () => { zoom = Math.min(1.8, zoom + 0.15); $("zRst").textContent = Math.round(zoom * 100) + "%"; paintMap(); };
-  $("zOut").onclick = () => { zoom = Math.max(0.5, zoom - 0.15); $("zRst").textContent = Math.round(zoom * 100) + "%"; paintMap(); };
-  $("zRst").onclick = () => { zoom = 1; $("zRst").textContent = "100%"; paintMap(); };
+  function setZoom(z) { zoom = z; const p = Math.round(zoom * 100); $("zRst").textContent = p + "%"; $("zRst").setAttribute("aria-label", `Масштаб ${p} процентов, сбросить к 100`); paintMap(); }
+  $("zIn").onclick = () => setZoom(Math.min(1.8, zoom + 0.15));
+  $("zOut").onclick = () => setZoom(Math.max(0.5, zoom - 0.15));
+  $("zRst").onclick = () => setZoom(1);
 
   paintLayers(); paintMap(); paintInsp();
 }

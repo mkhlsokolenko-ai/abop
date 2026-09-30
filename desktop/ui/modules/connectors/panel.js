@@ -68,7 +68,7 @@ export async function mount(root, ctx) {
     $("ingRes").innerHTML = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="ok-ink">✓ «${esc(name)}» распознан (${text.length} симв.)</span>
       <button class="btn primary sm" id="toChat">💬 Добавить в чат</button><button class="btn sm" id="copyTxt">⧉ копировать</button></div>`;
     $("toChat").onclick = () => ctx.open("chat", { attach: { name, text } });
-    $("copyTxt").onclick = () => { navigator.clipboard.writeText(text); toast("Скопировано", "ok"); };
+    $("copyTxt").onclick = (e) => ctx.copy(text, e.currentTarget, "команду");
   }
   async function ingestPath(path) {
     $("ingRes").textContent = "Читаю…";

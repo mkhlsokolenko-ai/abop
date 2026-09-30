@@ -118,6 +118,19 @@ export function modal(title, bodyHTML, onOk, okLabel, opts = {}) {
     onClose: opts.onClose,
   });
   ov.querySelector("#mCancel").onclick = () => ov.close(false);
+  // Enter подтверждает В ЛЮБОМ диалоге. Раньше это зависело от того, повесил ли автор конкретного
+  // окна свой обработчик: в одном Enter подтверждал, в соседнем не делал ничего.
+  // Исключения осознанные: в многострочном поле Enter — перенос строки, на кнопке и в списке его
+  // обрабатывает сам элемент, а Ctrl/Cmd+Enter подтверждает отовсюду, включая поле ввода текста.
+  if (onOk) ov.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" || e.isComposing) return;
+    const t = e.target, tag = (t && t.tagName) || "";
+    const hard = e.ctrlKey || e.metaKey;
+    if (!hard && (tag === "TEXTAREA" || tag === "BUTTON" || tag === "SELECT" || (t && t.isContentEditable))) return;
+    const ok = ov.querySelector("#mOk");
+    if (!ok || ok.disabled) return;
+    e.preventDefault(); ok.click();
+  });
   if (onOk) ov.querySelector("#mOk").onclick = async () => {
     const b = ov.querySelector("#mOk"); const t = b.textContent;
     b.disabled = true;
@@ -164,6 +177,37 @@ export function fileToast(msg, path) {
   }
 }
 
+// Копирование отвечает ОДИНАКОВО везде: отметка прямо на нажатой кнопке (она рядом с тем, что
+// скопировано) плюс объявление для экранного диктора. Всплывающее уведомление для этого не нужно —
+// раньше половина мест отвечала им, и одно и то же действие выглядело как два разных.
+// Отказ буфера (нет разрешения, пустой источник) теперь виден: прежде кнопка врала «скопировано».
+export async function copyText(text, btn, what) {
+  const v = String(text == null ? "" : text);
+  let ok = true;
+  try { await navigator.clipboard.writeText(v); } catch { ok = false; }
+  if (btn) {
+    const was = btn.dataset.copyWas || btn.textContent;
+    btn.dataset.copyWas = was;
+    btn.textContent = ok ? "✓ скопировано" : "✕ не удалось";
+    setTimeout(() => { btn.textContent = btn.dataset.copyWas || was; delete btn.dataset.copyWas; }, 1400);
+  }
+  say(ok ? `Скопировано${what ? ": " + what : ""}` : "Скопировать не удалось: буфер обмена недоступен");
+  return ok;
+}
+
+// Одна область объявлений на всё приложение: короткие сообщения о том, что произошло, для тех,
+// кто работает с экранным диктором.
+export function say(msg) {
+  let el = document.getElementById("apeSay");
+  if (!el) {
+    el = document.createElement("div"); el.id = "apeSay"; el.className = "sr-only";
+    el.setAttribute("role", "status"); el.setAttribute("aria-live", "polite");
+    document.body.appendChild(el);
+  }
+  el.textContent = "";
+  setTimeout(() => { el.textContent = String(msg || ""); }, 30);
+}
+
 export function toast(msg, kind = "", opts = {}) {
   let box = document.getElementById("apeToasts");
   if (!box) { box = document.createElement("div"); box.id = "apeToasts"; box.setAttribute("aria-live", "polite"); document.body.appendChild(box); }
@@ -182,6 +226,7 @@ export function toast(msg, kind = "", opts = {}) {
 export const ctx = {
   api, base: API, user: null, roles: [], email: null, authed: false,
   gate: apeGate, mascot: apeMascot, modal, confirm: confirmDialog, toast, humanError, esc, openOverlay,
+  copy: copyText, say,
   // навигация с намерением: ctx.open("chat", { attach: {...} }) — модуль получает intent (см. loadModule)
   open: (id, intent) => loadModule(id, intent),
   fileToast,

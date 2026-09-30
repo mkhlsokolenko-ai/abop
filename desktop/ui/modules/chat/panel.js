@@ -111,7 +111,7 @@ export async function mount(root, ctx) {
           </div>
         </div>
       </div>
-      <div id="drawer" role="complementary" aria-label="Инструменты и агенты" style="position:absolute;top:0;right:0;bottom:0;width:386px;max-width:88%;transform:translateX(100%);transition:transform .28s cubic-bezier(.4,0,.2,1);background:var(--rail);backdrop-filter:blur(20px);border-left:1px solid var(--line-2);z-index:41;display:flex;flex-direction:column;box-shadow:-20px 0 50px rgba(0,0,0,.32)">
+      <div id="drawer" role="complementary" aria-label="Инструменты и агенты" inert aria-hidden="true" style="position:absolute;top:0;right:0;bottom:0;width:386px;max-width:88%;transform:translateX(100%);transition:transform .28s cubic-bezier(.4,0,.2,1);background:var(--rail);backdrop-filter:blur(20px);border-left:1px solid var(--line-2);z-index:41;display:flex;flex-direction:column;box-shadow:-20px 0 50px rgba(0,0,0,.32)">
         <div style="flex:none;display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--line)">
           <div style="flex:1;display:flex;gap:4px;padding:4px;border-radius:11px;background:var(--hover);border:1px solid var(--line)">
             <button id="drTabTools" style="flex:1;padding:8px 10px;border:none;border-radius:8px;font-size:12.5px;font-weight:600">Инструменты</button>
@@ -124,7 +124,22 @@ export async function mount(root, ctx) {
     </section>`;
   const $ = (id) => root.querySelector("#" + id);
   const drawerOpen = () => $("drawer").style.transform === "translateX(0px)";
-  const closeDrawer = () => ($("drawer").style.transform = "translateX(100%)");
+  // inert снимает закрытую шторку с обхода Tab и прячет её от диктора; фокус возвращается тому
+  // элементу, который шторку открыл, — иначе после закрытия он улетал в начало страницы.
+  let drawerOpener = null;
+  const closeDrawer = () => {
+    const d = $("drawer");
+    d.style.transform = "translateX(100%)";
+    d.inert = true; d.setAttribute("aria-hidden", "true");
+    if (drawerOpener && drawerOpener.isConnected) drawerOpener.focus();
+    drawerOpener = null;
+  };
+  const showDrawer = () => {
+    const d = $("drawer");
+    drawerOpener = document.activeElement;
+    d.style.transform = "translateX(0)";
+    d.inert = false; d.removeAttribute("aria-hidden");
+  };
 
   $("thSearch").oninput = (e) => { search = e.target.value.toLowerCase(); renderThreads(); };
   $("drClose").onclick = closeDrawer;
@@ -329,7 +344,7 @@ export async function mount(root, ctx) {
     $("col").querySelectorAll("[data-copy]").forEach((e) => e.onclick = () => {
       const m = messages[+e.dataset.copy]; const meta = m.meta || {};
       const text = meta.run_agent ? (meta.run_agent.findings || []).map(cleanFinding).join("\n") || m.content : (meta.pipeline_result && typeof meta.pipeline_result === "object" ? (meta.pipeline_result.steps || []).flatMap((s) => (s.findings || []).map(cleanFinding)).join("\n") : m.content);
-      navigator.clipboard.writeText(text || ""); const o = e.textContent; e.textContent = "✓ скопировано"; setTimeout(() => e.textContent = o, 1200);
+      ctx.copy(text || "", e, "ответ");
     });
     $("col").querySelectorAll("[data-regen]").forEach((e) => e.onclick = () => {
       const idx = +e.dataset.regen; const m = messages[idx]; const meta = (m && m.meta) || {};
@@ -339,7 +354,7 @@ export async function mount(root, ctx) {
       const p = messages[idx - 1]; if (p && p.role === "user") sendPrompt(p.content);
     });
     $("col").querySelectorAll("[data-edit]").forEach((e) => e.onclick = () => { $("inp").value = messages[+e.dataset.edit].content; $("inp").focus(); });
-    $("col").querySelectorAll(".codecopy").forEach((b) => b.onclick = () => { const code = b.closest("span").parentElement.querySelector(".codebody"); navigator.clipboard.writeText(code ? code.textContent : ""); const o = b.textContent; b.textContent = "✓"; setTimeout(() => b.textContent = o, 1200); });
+    $("col").querySelectorAll(".codecopy").forEach((b) => b.onclick = () => { const code = b.closest("span").parentElement.querySelector(".codebody"); ctx.copy(code ? code.textContent : "", b, "код"); });
     // карточка показывает первые находки — за полным прогоном уходим в журнал
     $("col").querySelectorAll(".runOpen").forEach((b) => b.onclick = () => ctx.open("runs", { run: b.dataset.run }));
     $("col").querySelectorAll(".runPdf").forEach((b) => b.onclick = async () => { b.disabled = true; const t = b.textContent; b.textContent = "…"; try { const r = await api(A_AG + "/report/" + encodeURIComponent(b.dataset.run), { method: "POST", body: JSON.stringify({}) }); if (r && r.ok) ctx.fileToast("Отчёт сохранён", r.path); else toast(humanError(r), "danger"); } catch (e) { toast(humanError(e), "danger"); } b.disabled = false; b.textContent = t; });
@@ -1164,7 +1179,7 @@ export async function mount(root, ctx) {
 
   // ── шторка Инструменты / Агенты (1:1 из макета Overlays) ──
   let drTab = "tools", drAgTab = "mine";
-  function openAgents(tab) { drTab = tab || "agents"; $("drawer").style.transform = "translateX(0)"; renderDrawer(); }
+  function openAgents(tab) { drTab = tab || "agents"; showDrawer(); renderDrawer(); const t = $(drTab === "tools" ? "drTabTools" : "drTabAgents"); if (t) t.focus(); }
   function drTabStyle(on) { return on ? "background:var(--panel);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.2)" : "background:transparent;color:var(--ink-2)"; }
   async function runRolesInThread(rl, task) {
     if (busy) { toast("Дождитесь завершения текущего ответа", "warn"); return; }

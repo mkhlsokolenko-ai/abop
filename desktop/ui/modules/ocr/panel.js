@@ -42,7 +42,7 @@ export async function mount(root, ctx) {
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="${LBL};flex:1">распознанный текст · ${r.chars} симв.</span>${note}
         ${r.text ? `<button id="toChat" class="btn primary sm">💬 Добавить в чат</button>` : ""}<button id="copyTxt" class="btn sm">⧉ копировать</button></div>
       <div style="white-space:pre-wrap;font-size:13px;line-height:1.6;color:var(--ink);max-height:340px;overflow:auto;background:var(--field);border:1px solid var(--line);border-radius:11px;padding:12px">${esc(r.text) || '<span style="color:var(--ink-3)">текст не найден</span>'}</div></div>`;
-    if ($("copyTxt")) $("copyTxt").onclick = () => { navigator.clipboard.writeText(r.text || ""); toast("Скопировано", "ok"); };
+    if ($("copyTxt")) $("copyTxt").onclick = (e) => ctx.copy(r.text || "", e.currentTarget, "распознанный текст");
     if ($("toChat")) $("toChat").onclick = () => ctx.open("chat", { attach: { name: lastName, text: r.text } });
   }
 

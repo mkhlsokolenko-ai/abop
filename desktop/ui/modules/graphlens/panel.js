@@ -31,7 +31,7 @@ export async function mount(root, ctx) {
         <button id="gDel" class="btn sm danger" style="display:none" title="Удалить сохранённый граф">Удалить</button>
         <button id="gCheck" style="padding:9px 16px;border:1px solid rgba(52,211,153,.4);border-radius:10px;background:rgba(16,185,129,.14);color:var(--ok-ink);font-size:12.5px;font-weight:600;cursor:pointer">Проверить</button>
         <button id="gSave" class="btn sm">Сохранить</button>
-        <button id="gRun" style="padding:9px 16px;border:none;border-radius:10px;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:12.5px;font-weight:600;cursor:pointer;box-shadow:var(--shadow-accent)">Запустить ▸</button>
+        <button id="gRun" style="padding:9px 16px;border:none;border-radius:10px;background:var(--grad);color:#fff;font-size:12.5px;font-weight:600;cursor:pointer;box-shadow:var(--shadow-accent)">Запустить ▸</button>
       </div>
     </div>
     <div style="flex:1;display:flex;min-height:0">
@@ -39,8 +39,10 @@ export async function mount(root, ctx) {
         <span style="${LBL}">палитра · клик добавит блок</span>
         <div id="gPal" style="display:flex;flex-direction:column;gap:8px"></div>
         <div style="font-size:11.5px;line-height:1.5;color:var(--ink-3);margin-top:6px">Связь: клик на правый порт «→», затем на левый «▸» другого блока. Клик по связи — удалить её.</div>
+        <div style="font-size:11.5px;line-height:1.5;color:var(--ink-3);margin-top:6px">С клавиатуры: <b>Tab</b> — по узлам, <b>стрелки</b> — двигать (с Shift точнее), <b>Enter</b> — связать два узла, <b>Delete</b> — удалить узел, <b>Esc</b> — отменить.</div>
+        <div id="gSay" role="status" aria-live="polite" class="sr-only"></div>
       </div>
-      <div id="gCanvas" style="flex:1;position:relative;overflow:hidden;background:radial-gradient(circle at center, rgba(255,255,255,.05) 1px, transparent 1px) 0 0/22px 22px;cursor:default">
+      <div id="gCanvas" role="application" aria-label="Холст графа. Tab — по узлам, стрелки двигают узел, Enter связывает два узла, Delete удаляет узел, Escape отменяет связывание." style="flex:1;position:relative;overflow:hidden;background:radial-gradient(circle at center, rgba(255,255,255,.05) 1px, transparent 1px) 0 0/22px 22px;cursor:default">
         <svg id="gWires" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible"></svg>
       </div>
       <div style="width:264px;flex:none;border-left:1px solid var(--line);padding:14px;overflow:auto">
@@ -66,18 +68,31 @@ export async function mount(root, ctx) {
     nodes.push({ id: nextId++, kind, label: p.label, glyph: p.glyph, x: 60 + (nodes.length % 4) * 40, y: 60 + nodes.length * 30, agent_id: null });
     setDirty(true); paint();
   }
+  // Подпись узла для экранного диктора: без неё диктор читал только название, и было не понять ни
+  // рода узла, ни того, с чем он связан.
+  function nodeAria(n) {
+    const inc = edges.filter(([, b]) => b === n.id).map(([a]) => (nodes.find((x) => x.id === a) || {}).label).filter(Boolean);
+    const out = edges.filter(([a]) => a === n.id).map(([, b]) => (nodes.find((x) => x.id === b) || {}).label).filter(Boolean);
+    const kind = (palette.find((p) => p.kind === n.kind) || {}).label || n.kind;
+    return [`${kind}: ${n.label}`,
+            inc.length ? `вход от: ${inc.join(", ")}` : "входящих связей нет",
+            out.length ? `выход в: ${out.join(", ")}` : "исходящих связей нет",
+            linkFrom === n.id ? "выбран как источник связи" : ""].filter(Boolean).join(". ");
+  }
   function nodeEl(n) {
-    const acc = n.kind === "agent" ? "rgba(129,140,248,.4)" : "var(--line)";
-    return `<div class="gn" data-id="${n.id}" style="position:absolute;left:${n.x}px;top:${n.y}px;width:${NW}px;height:${NH}px;border:1px solid ${sel === n.id ? "#818cf8" : acc};border-radius:12px;background:var(--panel);backdrop-filter:blur(16px);display:flex;align-items:center;gap:8px;padding:0 12px;cursor:grab;user-select:none;box-shadow:0 8px 24px rgba(0,0,0,.25)">
-      <span class="gport gl" data-id="${n.id}" title="вход ▸" style="position:absolute;left:-7px;top:50%;transform:translateY(-50%);width:14px;height:14px;border-radius:9999px;background:var(--rail);border:1px solid var(--line-2);cursor:crosshair"></span>
-      <span style="font-size:15px;color:${edgeColor(n.kind)}">${n.glyph || "▦"}</span>
+    const acc = n.kind === "agent" ? "var(--node-line-agent)" : "var(--line)";
+    return `<div class="gn" data-id="${n.id}" tabindex="0" role="button" aria-label="${esc(nodeAria(n))}" aria-pressed="${sel === n.id}" style="position:absolute;left:${n.x}px;top:${n.y}px;width:${NW}px;height:${NH}px;border:1px solid ${sel === n.id ? "var(--node-sel)" : acc};border-radius:12px;background:var(--panel);backdrop-filter:blur(16px);display:flex;align-items:center;gap:8px;padding:0 12px;cursor:grab;user-select:none;box-shadow:var(--node-shadow)">
+      <span class="gport gl" data-id="${n.id}" title="вход ▸" aria-hidden="true" style="position:absolute;left:-7px;top:50%;transform:translateY(-50%);width:14px;height:14px;border-radius:9999px;background:var(--rail);border:1px solid var(--line-2);cursor:crosshair"></span>
+      <span aria-hidden="true" style="font-size:15px;color:${edgeColor(n.kind)}">${n.glyph || "▦"}</span>
       <span style="flex:1;min-width:0;font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(n.label)}</span>
-      <span class="gport gr" data-id="${n.id}" title="выход → (клик, затем вход другого)" style="position:absolute;right:-7px;top:50%;transform:translateY(-50%);width:14px;height:14px;border-radius:9999px;background:${linkFrom === n.id ? "#6366f1" : "var(--rail)"};border:1px solid var(--line-2);cursor:crosshair"></span>
+      <span class="gport gr" data-id="${n.id}" title="выход → (клик, затем вход другого)" aria-hidden="true" style="position:absolute;right:-7px;top:50%;transform:translateY(-50%);width:14px;height:14px;border-radius:9999px;background:${linkFrom === n.id ? "var(--accent)" : "var(--rail)"};border:1px solid var(--line-2);cursor:crosshair"></span>
     </div>`;
   }
   // Семантика рёбер (перенос из webapp): цвет + пунктир-поток по КИНДУ узла-источника —
   // видно, что течёт по графу (триггер→, данные→, навык→, агент→, решение→, выход→).
-  const KIND_COL = { trigger: "#f59e0b", source: "#22d3ee", data: "#22d3ee", skill: "#818cf8", agent: "#a855f7", decision: "#fbbf24", output: "#34d399" };
+  const KIND_COL = { trigger: "var(--node-trigger)", source: "var(--node-data)", data: "var(--node-data)",
+                   skill: "var(--node-skill)", agent: "var(--node-agent)", decision: "var(--node-decision)",
+                   output: "var(--node-output)" };
   function edgeColor(kind) { return KIND_COL[kind] || "var(--accent-2)"; }
   function paintWires() {
     const svg = $("gWires");
@@ -105,10 +120,41 @@ export async function mount(root, ctx) {
     nodes.forEach((n) => cv.insertAdjacentHTML("beforeend", nodeEl(n)));
     paintWires(); wireNodes(); paintInsp();
   }
+  function say(t) { const el = $("gSay"); if (el) el.textContent = t; }
+  // Связывание с клавиатуры повторяет мышиный сценарий «источник → приёмник», но одной клавишей:
+  // первый Enter помечает источник, второй на другом узле создаёт связь.
+  function linkStep(id) {
+    if (linkFrom === null) { linkFrom = id; paint(); focusNode(id); say(`Источник связи: ${nodeLabel(id)}. Перейдите к другому узлу и нажмите Enter.`); return; }
+    if (linkFrom === id) { linkFrom = null; paint(); focusNode(id); say("Связывание отменено"); return; }
+    if (!edges.some(([a, b]) => a === linkFrom && b === id)) { edges.push([linkFrom, id]); setDirty(true); say(`Связь: ${nodeLabel(linkFrom)} → ${nodeLabel(id)}`); }
+    else say("Такая связь уже есть");
+    linkFrom = null; paint(); focusNode(id);
+  }
+  function nodeLabel(id) { return ((nodes.find((x) => x.id === id) || {}).label) || String(id); }
+  function focusNode(id) { const el = $("gCanvas").querySelector(`.gn[data-id="${id}"]`); if (el) el.focus(); }
+  const ARROWS = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
   function wireNodes() {
     const cv = $("gCanvas");
     cv.querySelectorAll(".gn").forEach((el) => {
       const id = +el.dataset.id;
+      el.onfocus = () => { if (sel !== id) { sel = id; paintInsp(); highlightSel(); } };
+      el.onkeydown = async (e) => {
+        const n = nodes.find((x) => x.id === id); if (!n) return;
+        if (ARROWS[e.key]) {
+          e.preventDefault();
+          const step = e.shiftKey ? 1 : 10;
+          n.x = Math.max(0, n.x + ARROWS[e.key][0] * step); n.y = Math.max(0, n.y + ARROWS[e.key][1] * step);
+          el.style.left = n.x + "px"; el.style.top = n.y + "px"; paintWires(); setDirty(true);
+          say(`${n.label}: ${n.x} на ${n.y}`);
+          return;
+        }
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); linkStep(id); return; }
+        if (e.key === "Escape" && linkFrom !== null) { e.preventDefault(); linkFrom = null; paint(); focusNode(id); say("Связывание отменено"); return; }
+        if (e.key === "Delete" || e.key === "Backspace") {
+          e.preventDefault(); sel = id; paintInsp();
+          const btn = $("iDel"); if (btn) btn.click();
+        }
+      };
       el.onmousedown = (e) => {
         if (e.target.classList.contains("gport")) return;
         sel = id; paintInsp(); highlightSel();
@@ -125,7 +171,13 @@ export async function mount(root, ctx) {
       linkFrom = null; paint();
     });
   }
-  function highlightSel() { $("gCanvas").querySelectorAll(".gn").forEach((el) => { el.style.borderColor = (+el.dataset.id === sel) ? "#818cf8" : (nodes.find((x) => x.id == el.dataset.id).kind === "agent" ? "rgba(129,140,248,.4)" : "var(--line)"); }); }
+  function highlightSel() {
+    $("gCanvas").querySelectorAll(".gn").forEach((el) => {
+      const on = +el.dataset.id === sel;
+      el.style.borderColor = on ? "var(--node-sel)" : (nodes.find((x) => x.id == el.dataset.id).kind === "agent" ? "var(--node-line-agent)" : "var(--line)");
+      el.setAttribute("aria-pressed", String(on));
+    });
+  }
   function paintInsp() {
     if (!sel) { $("gInsp").innerHTML = `<div style="padding:20px 4px;text-align:center;font-size:12.5px;color:var(--ink-3)">Выберите узел на холсте.</div>`; return; }
     const n = nodes.find((x) => x.id === sel); if (!n) { sel = null; return paintInsp(); }
@@ -144,8 +196,11 @@ export async function mount(root, ctx) {
         text: `«${esc(n.label)}»${bound ? ` и ${bound} связ${bound === 1 ? "ь" : "и"} с ним` : ""} будут удалены из графа.`,
         okLabel: "Удалить узел" });
       if (!ok) return;
+      const gone = n.label;
       nodes = nodes.filter((x) => x.id !== sel); edges = edges.filter(([a, b]) => a !== sel && b !== sel);
       sel = null; setDirty(true); paint();
+      say(`Узел «${gone}» удалён`);
+      const first = $("gCanvas").querySelector(".gn"); if (first) first.focus();
     };
   }
   $("gCanvas").onclick = (e) => { if (e.target.id === "gCanvas" || e.target.id === "gWires") { sel = null; linkFrom = null; paint(); } };
