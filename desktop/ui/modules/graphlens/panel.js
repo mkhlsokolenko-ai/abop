@@ -74,7 +74,9 @@ export async function mount(root, ctx) {
     const inc = edges.filter(([, b]) => b === n.id).map(([a]) => (nodes.find((x) => x.id === a) || {}).label).filter(Boolean);
     const out = edges.filter(([a]) => a === n.id).map(([, b]) => (nodes.find((x) => x.id === b) || {}).label).filter(Boolean);
     const kind = (palette.find((p) => p.kind === n.kind) || {}).label || n.kind;
-    return [`${kind}: ${n.label}`,
+    // У только что добавленного узла название совпадает с родом — не читаем «входящие: входящие».
+    const head = String(kind).toLowerCase() === String(n.label).toLowerCase() ? String(n.label) : `${kind}: ${n.label}`;
+    return [head,
             inc.length ? `вход от: ${inc.join(", ")}` : "входящих связей нет",
             out.length ? `выход в: ${out.join(", ")}` : "исходящих связей нет",
             linkFrom === n.id ? "выбран как источник связи" : ""].filter(Boolean).join(". ");
