@@ -365,5 +365,30 @@
       }
     }
   },
-  "max_tokens": 5000
+  "max_tokens": 5000,
+  "inputs": {
+    "required": [
+      {
+        "from": "data",
+        "entity": "transaction",
+        "fields": [
+          "id",
+          "amount",
+          "date"
+        ]
+      }
+    ]
+  },
+  "produces": [
+    {
+      "path": "драйверы",
+      "key": "драйвер",
+      "join": "драйвер"
+    },
+    {
+      "path": "pnl",
+      "key": "период",
+      "join": "период"
+    }
+  ]
 }

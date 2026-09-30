@@ -4,19 +4,207 @@
   "json_schema": {
     "type": "object",
     "additionalProperties": false,
-    "required": ["icp", "цена", "стоимость_на_пользователя", "маржа", "окупаемость", "чувствительность", "скрытые_косты", "красные_флаги", "вердикт", "источники", "итог"],
+    "required": [
+      "icp",
+      "цена",
+      "стоимость_на_пользователя",
+      "маржа",
+      "окупаемость",
+      "чувствительность",
+      "скрытые_косты",
+      "красные_флаги",
+      "вердикт",
+      "источники",
+      "итог"
+    ],
     "properties": {
-      "icp": {"type": "string", "description": "сегмент клиента"},
-      "цена": {"type": "object", "additionalProperties": false, "required": ["в_месяц", "готовность_платить", "источник_готовности"], "properties": {"в_месяц": {"type": "string"}, "готовность_платить": {"type": "string"}, "источник_готовности": {"type": "string", "description": "id интервью/записи или «нет данных»"}}},
-      "стоимость_на_пользователя": {"type": "object", "additionalProperties": false, "required": ["llm", "инфра", "амортизация_gpu", "retrieval_память", "итого", "источник"], "properties": {"llm": {"type": "string"}, "инфра": {"type": "string"}, "амортизация_gpu": {"type": "string"}, "retrieval_память": {"type": "string"}, "итого": {"type": "string"}, "источник": {"type": "string"}}},
-      "маржа": {"type": "object", "additionalProperties": false, "required": ["абсолютная", "процент", "знак"], "properties": {"абсолютная": {"type": "string"}, "процент": {"type": "string"}, "знак": {"type": "string", "enum": ["положительная", "отрицательная", "около нуля"]}}},
-      "окупаемость": {"type": "object", "additionalProperties": false, "required": ["фикс_косты_в_месяц", "пользователей_для_нуля", "комментарий"], "properties": {"фикс_косты_в_месяц": {"type": "string"}, "пользователей_для_нуля": {"type": "string"}, "комментарий": {"type": "string"}}},
-      "чувствительность": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["сценарий", "маржа", "окупаемость"], "properties": {"сценарий": {"type": "string", "enum": ["стоимость модели ×2", "контекст ×2", "цена −20%", "базовый"]}, "маржа": {"type": "string"}, "окупаемость": {"type": "string"}}}},
-      "скрытые_косты": {"type": "array", "items": {"type": "string"}},
-      "красные_флаги": {"type": "array", "items": {"type": "string"}},
-      "вердикт": {"type": "string", "enum": ["окупается", "на грани", "не окупается", "недостаточно данных"]},
-      "источники": {"type": "array", "items": {"type": "string"}},
-      "итог": {"type": "string"}
+      "icp": {
+        "type": "string",
+        "description": "сегмент клиента"
+      },
+      "цена": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "в_месяц",
+          "готовность_платить",
+          "источник_готовности"
+        ],
+        "properties": {
+          "в_месяц": {
+            "type": "string"
+          },
+          "готовность_платить": {
+            "type": "string"
+          },
+          "источник_готовности": {
+            "type": "string",
+            "description": "id интервью/записи или «нет данных»"
+          }
+        }
+      },
+      "стоимость_на_пользователя": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "llm",
+          "инфра",
+          "амортизация_gpu",
+          "retrieval_память",
+          "итого",
+          "источник"
+        ],
+        "properties": {
+          "llm": {
+            "type": "string"
+          },
+          "инфра": {
+            "type": "string"
+          },
+          "амортизация_gpu": {
+            "type": "string"
+          },
+          "retrieval_память": {
+            "type": "string"
+          },
+          "итого": {
+            "type": "string"
+          },
+          "источник": {
+            "type": "string"
+          }
+        }
+      },
+      "маржа": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "абсолютная",
+          "процент",
+          "знак"
+        ],
+        "properties": {
+          "абсолютная": {
+            "type": "string"
+          },
+          "процент": {
+            "type": "string"
+          },
+          "знак": {
+            "type": "string",
+            "enum": [
+              "положительная",
+              "отрицательная",
+              "около нуля"
+            ]
+          }
+        }
+      },
+      "окупаемость": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "фикс_косты_в_месяц",
+          "пользователей_для_нуля",
+          "комментарий"
+        ],
+        "properties": {
+          "фикс_косты_в_месяц": {
+            "type": "string"
+          },
+          "пользователей_для_нуля": {
+            "type": "string"
+          },
+          "комментарий": {
+            "type": "string"
+          }
+        }
+      },
+      "чувствительность": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "сценарий",
+            "маржа",
+            "окупаемость"
+          ],
+          "properties": {
+            "сценарий": {
+              "type": "string",
+              "enum": [
+                "стоимость модели ×2",
+                "контекст ×2",
+                "цена −20%",
+                "базовый"
+              ]
+            },
+            "маржа": {
+              "type": "string"
+            },
+            "окупаемость": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "скрытые_косты": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "красные_флаги": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "вердикт": {
+        "type": "string",
+        "enum": [
+          "окупается",
+          "на грани",
+          "не окупается",
+          "недостаточно данных"
+        ]
+      },
+      "источники": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "итог": {
+        "type": "string"
+      }
     }
-  }
+  },
+  "inputs": {
+    "required": [
+      {
+        "from": "data",
+        "entity": "transaction",
+        "fields": [
+          "id",
+          "amount"
+        ]
+      },
+      {
+        "from": "data",
+        "entity": "customer",
+        "fields": [
+          "id"
+        ]
+      }
+    ]
+  },
+  "produces": [
+    {
+      "path": "чувствительность",
+      "key": "сценарий",
+      "join": "сценарий"
+    }
+  ]
 }

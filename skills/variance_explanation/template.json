@@ -245,5 +245,41 @@
       }
     }
   },
-  "max_tokens": 4000
+  "max_tokens": 4000,
+  "inputs": {
+    "required": [
+      {
+        "from": "data",
+        "entity": "transaction",
+        "fields": [
+          "id",
+          "amount",
+          "date"
+        ]
+      }
+    ],
+    "optional": [
+      {
+        "from": "skill",
+        "skill": "budget-forecast",
+        "path": "статьи",
+        "fields": [
+          "статья",
+          "база"
+        ]
+      }
+    ]
+  },
+  "produces": [
+    {
+      "path": "дельты_по_статьям",
+      "key": "статья",
+      "join": "статья"
+    },
+    {
+      "path": "драйверы",
+      "key": "драйвер",
+      "join": "драйвер"
+    }
+  ]
 }

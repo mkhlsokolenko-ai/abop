@@ -304,5 +304,42 @@
       }
     }
   },
-  "max_tokens": 5000
+  "max_tokens": 5000,
+  "inputs": {
+    "required": [
+      {
+        "from": "data",
+        "entity": "transaction",
+        "fields": [
+          "id",
+          "amount",
+          "date"
+        ]
+      }
+    ],
+    "optional": [
+      {
+        "from": "skill",
+        "skill": "three-statement-model",
+        "path": "драйверы",
+        "fields": [
+          "драйвер",
+          "значение",
+          "основание"
+        ]
+      }
+    ]
+  },
+  "produces": [
+    {
+      "path": "драйверы",
+      "key": "драйвер",
+      "join": "драйвер"
+    },
+    {
+      "path": "статьи",
+      "key": "статья",
+      "join": "статья"
+    }
+  ]
 }

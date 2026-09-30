@@ -264,5 +264,44 @@
       }
     }
   },
-  "max_tokens": 5000
+  "max_tokens": 5000,
+  "inputs": {
+    "required": [
+      {
+        "from": "data",
+        "entity": "transaction",
+        "fields": [
+          "id",
+          "amount",
+          "date"
+        ]
+      }
+    ],
+    "optional": [
+      {
+        "from": "data",
+        "entity": "issue",
+        "fields": [
+          "id",
+          "title"
+        ]
+      },
+      {
+        "from": "skill",
+        "skill": "finance-report",
+        "path": "kpi",
+        "fields": [
+          "метрика",
+          "значение"
+        ]
+      }
+    ]
+  },
+  "produces": [
+    {
+      "path": "дерево_метрик",
+      "key": "метрика",
+      "join": "метрика"
+    }
+  ]
 }

@@ -98,7 +98,7 @@
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "номер",
+            "id",
             "сумма",
             "документ",
             "проводка",
@@ -109,10 +109,6 @@
             "статус"
           ],
           "properties": {
-            "номер": {
-              "type": "integer",
-              "description": "порядковый номер строки"
-            },
             "сумма": {
               "type": "string",
               "description": "с валютой и знаком относительно стороны а"
@@ -153,6 +149,10 @@
                 "под_вопросом"
               ],
               "description": "объяснено только при наличии документа/проводки"
+            },
+            "id": {
+              "type": "integer",
+              "description": "порядковый номер строки"
             }
           }
         },
@@ -200,21 +200,13 @@
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "дебет",
-            "кредит",
+            "счёт_дт",
+            "счёт_кт",
             "сумма",
             "основание",
             "документ"
           ],
           "properties": {
-            "дебет": {
-              "type": "string",
-              "description": "счёт"
-            },
-            "кредит": {
-              "type": "string",
-              "description": "счёт"
-            },
             "сумма": {
               "type": "string"
             },
@@ -224,6 +216,14 @@
             "документ": {
               "type": "string",
               "description": "документ-основание; без него проводку не предлагать"
+            },
+            "счёт_дт": {
+              "type": "string",
+              "description": "счёт"
+            },
+            "счёт_кт": {
+              "type": "string",
+              "description": "счёт"
             }
           }
         },
@@ -237,7 +237,7 @@
           "required": [
             "сумма",
             "документ_или_проводка",
-            "почему"
+            "основание"
           ],
           "properties": {
             "сумма": {
@@ -246,7 +246,7 @@
             "документ_или_проводка": {
               "type": "string"
             },
-            "почему": {
+            "основание": {
               "type": "string",
               "description": "чего не хватает, чтобы объяснить"
             }
@@ -266,5 +266,38 @@
       }
     }
   },
-  "max_tokens": 4000
+  "max_tokens": 4000,
+  "inputs": {
+    "required": [
+      {
+        "from": "data",
+        "entity": "transaction",
+        "fields": [
+          "id",
+          "amount",
+          "date"
+        ]
+      },
+      {
+        "from": "data",
+        "entity": "document",
+        "fields": [
+          "id",
+          "kind"
+        ]
+      }
+    ]
+  },
+  "produces": [
+    {
+      "path": "расхождения",
+      "key": "id",
+      "join": "расхождение"
+    },
+    {
+      "path": "предлагаемые_проводки",
+      "key": "документ",
+      "join": "проводка"
+    }
+  ]
 }

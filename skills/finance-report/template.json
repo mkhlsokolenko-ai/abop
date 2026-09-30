@@ -70,18 +70,18 @@
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "показатель",
+            "метрика",
             "значение",
             "комментарий"
           ],
           "properties": {
-            "показатель": {
-              "type": "string"
-            },
             "значение": {
               "type": "string"
             },
             "комментарий": {
+              "type": "string"
+            },
+            "метрика": {
               "type": "string"
             }
           }
@@ -256,5 +256,41 @@
       }
     }
   },
-  "max_tokens": 5000
+  "max_tokens": 5000,
+  "inputs": {
+    "required": [
+      {
+        "from": "data",
+        "entity": "transaction",
+        "fields": [
+          "id",
+          "amount",
+          "date"
+        ]
+      }
+    ],
+    "optional": [
+      {
+        "from": "skill",
+        "skill": "variance_explanation",
+        "path": "дельты_по_статьям",
+        "fields": [
+          "статья",
+          "дельта_абс"
+        ]
+      }
+    ]
+  },
+  "produces": [
+    {
+      "path": "pnl",
+      "key": "статья",
+      "join": "статья"
+    },
+    {
+      "path": "kpi",
+      "key": "метрика",
+      "join": "метрика"
+    }
+  ]
 }
