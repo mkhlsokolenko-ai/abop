@@ -1353,6 +1353,25 @@ async def report_template_preview(tid: str, body: dict, u: dict = Depends(user))
     return {"html": report_store.render(tpl, ctx)}
 
 
+@app.post("/api/report-templates/{tid}/reset")
+async def report_template_reset(tid: str, u: dict = Depends(user)) -> dict:
+    """Вернуть шаблон отчёта к версии из поставки (reports/<id>.html).
+
+    Посев намеренно не перезаписывает шаблоны, которые правили в интерфейсе: иначе чужая правка
+    пропадала бы при каждом обновлении. Но когда форма отчёта согласована заново, нужен штатный
+    способ вернуться к ней — без похода в базу руками.
+    """
+    require_level(u, "admin")
+    files = report_store.load_files()
+    spec = files.get(tid)
+    if not spec:
+        raise HTTPException(404, f"в поставке нет шаблона «{tid}»")
+    card = await report_store.save(tid, spec, editor="seed", builtin=True)
+    await audit_store.record(u.get("name") or u.get("sub") or "dev", "report_template.reset", tid, {})
+    return {"ok": True, "id": tid, "name": card.get("name"),
+            "note": "шаблон возвращён к версии из поставки"}
+
+
 @app.delete("/api/report-templates/{tid}")
 async def report_template_delete(tid: str, u: dict = Depends(user)) -> dict:
     require_level(u, "admin")
