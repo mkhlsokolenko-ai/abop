@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS schema_templates (
     delivery    JSONB
 );
 ALTER TABLE schema_templates ADD COLUMN IF NOT EXISTS max_tokens INTEGER;
+-- сколько раз навык может сходить в инструменты до ответа; пусто — значение среды
+ALTER TABLE schema_templates ADD COLUMN IF NOT EXISTS tool_steps INTEGER;
 ALTER TABLE schema_templates ADD COLUMN IF NOT EXISTS delivery JSONB;
 -- слоты: какой предмет работы навык обязан получить до запуска (проект, контрагент, период)
 ALTER TABLE schema_templates ADD COLUMN IF NOT EXISTS slots JSONB;
@@ -35,7 +37,7 @@ ALTER TABLE schema_templates ADD COLUMN IF NOT EXISTS produces JSONB;
 """
 
 _MEM: dict[str, dict] = {}
-_COLS = "id,name,json_schema,instruction,builtin,editor,updated_at,max_tokens,delivery,slots,inputs,produces"
+_COLS = "id,name,json_schema,instruction,builtin,editor,updated_at,max_tokens,delivery,slots,inputs,produces,tool_steps"
 
 
 def _has_pg() -> bool:
@@ -46,6 +48,7 @@ def _row(r) -> dict:
     return {"id": r[0], "name": r[1], "json_schema": r[2] or {}, "instruction": r[3] or "",
             "builtin": bool(r[4]), "editor": r[5], "updated_at": r[6].isoformat() if r[6] else None,
             "max_tokens": int(r[7]) if len(r) > 7 and r[7] else None,
+            "tool_steps": int(r[12]) if len(r) > 12 and r[12] is not None else None,
             "delivery": (r[8] if len(r) > 8 and isinstance(r[8], dict) and r[8] else None),
             "slots": (r[9] if len(r) > 9 and isinstance(r[9], list) else []),
             "inputs": (r[10] if len(r) > 10 and isinstance(r[10], dict) else {}),
@@ -81,11 +84,24 @@ async def get(tid: str) -> dict | None:
     return _row(r) if r else None
 
 
+def _opt_int(v):
+    """Целое или «не задано». Ноль остаётся нулём, пустая строка означает «взять значение среды»."""
+    if v is None or str(v).strip() == "":
+        return None
+    try:
+        return int(str(v).strip())
+    except (TypeError, ValueError):
+        return None
+
+
 async def save(tid: str, spec: dict, editor: str = "dev", builtin: bool = False) -> dict:
     spec = spec or {}
     card = {"id": tid, "name": spec.get("name") or tid, "json_schema": spec.get("json_schema") or {},
             "instruction": spec.get("instruction") or "", "builtin": builtin,
             "max_tokens": int(spec.get("max_tokens") or 0) or None,
+            # Ноль — осмысленное значение («в инструменты не ходить»), и отличать его от «не задано»
+            # нужно явной проверкой: `spec.get(...) or ""` превращает ноль в пусто и молча теряет настройку.
+            "tool_steps": _opt_int(spec.get("tool_steps")),
             "delivery": spec.get("delivery") if isinstance(spec.get("delivery"), dict) and spec.get("delivery") else None,
             "slots": spec.get("slots") if isinstance(spec.get("slots"), list) else [],
             "inputs": spec.get("inputs") if isinstance(spec.get("inputs"), dict) else {},
@@ -97,17 +113,18 @@ async def save(tid: str, spec: dict, editor: str = "dev", builtin: bool = False)
     from .db import _conn
     async with _conn() as conn:
         await conn.execute(
-            "INSERT INTO schema_templates (id,name,json_schema,instruction,builtin,editor,updated_at,max_tokens,delivery,slots,inputs,produces) "
-            "VALUES (%s,%s,%s,%s,%s,%s,now(),%s,%s,%s,%s,%s) "
+            "INSERT INTO schema_templates (id,name,json_schema,instruction,builtin,editor,updated_at,max_tokens,delivery,slots,inputs,produces,tool_steps) "
+            "VALUES (%s,%s,%s,%s,%s,%s,now(),%s,%s,%s,%s,%s,%s) "
             "ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, json_schema=EXCLUDED.json_schema, "
             "instruction=EXCLUDED.instruction, builtin=EXCLUDED.builtin, editor=EXCLUDED.editor, updated_at=now(), "
-            "max_tokens=EXCLUDED.max_tokens, delivery=EXCLUDED.delivery, slots=EXCLUDED.slots, "
+            "max_tokens=EXCLUDED.max_tokens, tool_steps=EXCLUDED.tool_steps, delivery=EXCLUDED.delivery, slots=EXCLUDED.slots, "
             "inputs=EXCLUDED.inputs, produces=EXCLUDED.produces",
             (tid, card["name"], json.dumps(card["json_schema"]), card["instruction"], builtin, editor, card["max_tokens"],
              json.dumps(card["delivery"], ensure_ascii=False) if card["delivery"] else None,
              json.dumps(card["slots"], ensure_ascii=False) if card["slots"] else None,
              json.dumps(card["inputs"], ensure_ascii=False) if card["inputs"] else None,
-             json.dumps(card["produces"], ensure_ascii=False) if card["produces"] else None))
+             json.dumps(card["produces"], ensure_ascii=False) if card["produces"] else None,
+             card["tool_steps"]))
     return await get(tid)
 
 

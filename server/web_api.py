@@ -637,7 +637,7 @@ async def admin_rbac(u: dict = Depends(user)) -> dict:
 # persistence-localstorage-hole. Отсутствующие ключи ⇒ клиент берёт свой дефолт (сид в state).
 # tree/assignments — карта процессов (области ответственности агентов), авторится в RBAC-редакторе.
 _ADMIN_CONFIG_KEYS = {"modelCfg", "defaultProfile", "tenantMode", "quotaLimit", "quotaPolicy",
-                      "escThresholds", "tree", "assignments", "tokenQuota", "nluConfig"}
+                      "escThresholds", "tree", "assignments", "tokenQuota", "nluConfig", "runLimits"}
 
 # пороги подбора: правятся в UI (Настройки → Подбор), живут в admin_config.nluConfig
 _NLU_DEFAULTS = {"min_confidence": 0.35, "weak_stage": 0.2, "rerank": True, "max_stages": 6}
@@ -675,6 +675,48 @@ async def admin_config_set(body: dict, u: dict = Depends(user)) -> dict:
     await admin_store.save(key, value, editor=editor)
     await audit_store.record(editor, "admin.config", key, {"key": key})
     return {"key": key, "value": value}
+
+
+@app.get("/api/admin/run-limits")
+async def run_limits_get(u: dict = Depends(user)) -> dict:
+    """Действующие лимиты прогона: что задано кодом, что изменено настройкой и в каких границах.
+
+    Раньше это жило только в переменных окружения сервера: человек видел лимит ответа навыка в
+    карточке, но изменить его не мог и не знал, откуда взялось число."""
+    saved = (await admin_store.all()).get("runLimits") or {}
+    saved = saved if isinstance(saved, dict) else {}
+    defaults = runner.default_limits()
+    return {"limits": runner.effective_limits(saved), "defaults": defaults, "saved": saved,
+            "fields": [{"key": k, "label": v[0], "min": v[1], "max": v[2],
+                        "default": defaults.get(k), "changed": k in saved}
+                       for k, v in runner.LIMIT_FIELDS.items()]}
+
+
+@app.post("/api/admin/run-limits")
+async def run_limits_set(body: dict, u: dict = Depends(user)) -> dict:
+    """Изменить лимиты прогона (manager+). Пустое значение поля возвращает его к умолчанию.
+
+    Значение вне границ не отвергается молча, а подрезается: опечатка в поле иначе ломала бы прогоны
+    до тех пор, пока кто-нибудь не догадается заглянуть в настройки."""
+    require_level(u, "manager")
+    cur = (await admin_store.all()).get("runLimits") or {}
+    cur = dict(cur) if isinstance(cur, dict) else {}
+    patch = (body or {}).get("limits")
+    if not isinstance(patch, dict):
+        raise HTTPException(422, "нужен объект limits")
+    for k, v in patch.items():
+        if k not in runner.LIMIT_FIELDS:
+            raise HTTPException(422, f"неизвестный лимит «{k}»")
+        if v in (None, ""):
+            cur.pop(k, None)
+            continue
+        cur[k] = v
+    clean = {k: v for k, v in runner.effective_limits(cur).items() if k in cur}
+    editor = u.get("name") or u.get("sub") or "dev"
+    await admin_store.save("runLimits", clean, editor=editor)
+    await audit_store.record(editor, "admin.run_limits", "runLimits", {"keys": sorted(clean)})
+    obs.log_event("info", "run_limits.changed", editor=editor, keys=sorted(clean))
+    return await run_limits_get(u)
 
 
 @app.get("/api/me/scenarios")
@@ -1381,6 +1423,18 @@ async def schema_template_save(tid: str, body: dict, u: dict = Depends(user)) ->
     instr = skill_templates.strip_markers(instr if instr is not None else (existing or {}).get("instruction") or "")
     mt = (body or {}).get("max_tokens")
     mt = int(mt) if mt not in (None, "") else (existing or {}).get("max_tokens")
+    # Шаги инструментов навыка. Ноль осмыслен — «в инструменты не ходить», поэтому пустую строку
+    # (вернуть к значению среды) отличаем от нуля явной проверкой, а не через «или».
+    _ts = (body or {}).get("tool_steps") if "tool_steps" in (body or {}) else (existing or {}).get("tool_steps")
+    if str(_ts if _ts is not None else "").strip() == "":
+        _ts = None
+    else:
+        try:
+            _ts = int(_ts)
+        except (TypeError, ValueError):
+            raise HTTPException(422, "шаги инструментов — целое число от 0 до 8")
+        if not (0 <= _ts <= 8):
+            raise HTTPException(422, "шаги инструментов — от 0 до 8: больше восьми навык ходит по кругу")
     if mt is not None and not (256 <= mt <= 16000):
         raise HTTPException(422, "max_tokens: 256..16000")
     dl = (body or {}).get("delivery") if "delivery" in (body or {}) else (existing or {}).get("delivery")
@@ -1405,6 +1459,7 @@ async def schema_template_save(tid: str, body: dict, u: dict = Depends(user)) ->
         raise HTTPException(422, "контракт навыка: " + "; ".join(_cerr[:5]))
     card = await schema_store.save(tid, {"name": (body or {}).get("name") or (existing or {}).get("name") or tid,
                                          "json_schema": sch, "instruction": instr, "max_tokens": mt,
+                                         "tool_steps": _ts,
                                          "delivery": dl, "slots": sl, "inputs": inp, "produces": prod},
                                    editor=editor, builtin=False)
     await audit_store.record(editor, "schema_template.save", tid, {"name": card.get("name"), "was_builtin": bool(existing and existing.get("builtin"))})
@@ -3766,7 +3821,7 @@ async def _handle_job(job: dict) -> dict:
     out = await execute_agent_run(agent, contract, job["actor"], use_cache=bool(p.get("use_cache", False)),
                                   user_context=p.get("user_context") or "", deliver_filter=p.get("deliver_filter") or "",
                                   data_scope=p.get("data_scope") or None,   # предмет работы едет с заданием
-                                  budget=p.get("budget") or None,
+                                  budget=p.get("budget") or None, limits=p.get("limits") or None,
                                   # общая память ветвей одного запроса и снимок данных на всю группу
                                   board_scope=p.get("board_scope") or job.get("group_id") or "",
                                   data_snapshot=p.get("data_snapshot") or None,
@@ -3950,7 +4005,8 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
                             use_cache: bool = True, user_context: str = "", deliver_filter: str = "",
                             job_id: str | None = None, data_scope: dict | None = None,
                             budget: dict | None = None, board_scope: str = "",
-                            data_snapshot: dict | None = None, parent_trace_id: str = "") -> dict:
+                            data_snapshot: dict | None = None, parent_trace_id: str = "",
+                            limits: dict | None = None) -> dict:
     """Ядро прогона (LLM-раскладка + находки audit1c + сохранение + аудит). Переиспользуется
     POST /api/runs и планировщиком триггеров (server/triggers.py). Возвращает {saved, result}.
     Кэш результатов (multi-user): при попадании возвращает сохранённый вывод без LLM/доставки."""
@@ -4047,6 +4103,8 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
                 _skill_schemas[_sid] = {"response_format": schema_store.response_format(_tpl),
                                         "instruction": _instr + "\n\nПОЛЯ СХЕМЫ (что класть):\n" + skill_templates.describe_for_prompt(_tpl),
                                         "max_tokens": skill_templates.max_tokens_of(_tpl),
+                                        # шаги инструментов навыка: пусто — берётся значение среды
+                                        "tool_steps": _tpl.get("tool_steps"),
                                         "delivery": _tpl.get("delivery") or None, "template_id": _tpl.get("id"),
                                         # контракт: вход из предыдущих навыков и объявленный выход —
                                         # по ним рантайм передаёт результат по волнам графа
@@ -4059,6 +4117,11 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
         obs.log_event("warning", "skill_schemas.bind_failed", error=f"{type(_ex).__name__}: {str(_ex)[:200]}")
         _skill_schemas = {}
     await _push_progress("навыки")
+    # Лимиты прогона: настройка среды, поверх неё — разовое переопределение при запуске. Без слияния
+    # здесь настройка из интерфейса не действовала бы ни на один прогон, кроме ручного вызова.
+    _saved_limits = (await admin_store.all()).get("runLimits") or {}
+    _limits = dict(_saved_limits if isinstance(_saved_limits, dict) else {})
+    _limits.update({k: v for k, v in (limits or {}).items() if v not in (None, "")})
     # Общая память ветвей одного запроса. Область — группа заданий: ветвь видит выводы соседей, которые
     # успели записаться раньше. Без области доска своя и живёт только этот прогон, как было до этого.
     _board = await blackboard.board_of(board_scope) if board_scope else blackboard.Board(_trace)
@@ -4083,7 +4146,8 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
                                    tool_loop=skill_tools.tool_loop, actor=started_by,
                                    trace_id=(obs.current_trace_id() if hasattr(obs, "current_trace_id") else "") or "",
                                    on_progress=_on_skill_progress,
-                                   board=_board, data_snapshot=data_snapshot, arbiter_ask=_arbiter_ask)
+                                   board=_board, data_snapshot=data_snapshot, arbiter_ask=_arbiter_ask,
+                                   limits=_limits or None)
     # Выводы ветви выкладываем в общую область, чтобы следующие ветви и сводка их увидели. Сбой записи
     # прогон не валит: доска — усиление, а не условие работы.
     if board_scope:
@@ -4300,6 +4364,9 @@ async def run_start(body: dict, u: dict = Depends(user),
     # общим таймаутом задания, который читается как «прогон не выполнен».
     _bd = (body or {}).get("budget") if isinstance((body or {}).get("budget"), dict) else {}
     _budget = {k: v for k, v in _bd.items() if k in ("max_tokens", "max_rub", "max_sec") and v}
+    # Разовые лимиты этого запуска: перекрывают настройку среды, но только на этот прогон.
+    _lm = (body or {}).get("limits") if isinstance((body or {}).get("limits"), dict) else {}
+    _run_limits = {k: v for k, v in _lm.items() if k in runner.LIMIT_FIELDS and v not in (None, "")}
     _ds = (body or {}).get("scope") if isinstance((body or {}).get("scope"), dict) else {}
     _data_scope = {str(k): str(v) for k, v in _ds.items() if str(v or "").strip()} or None
     _dv = (body or {}).get("deliver")
@@ -4320,6 +4387,7 @@ async def run_start(body: dict, u: dict = Depends(user),
                                                "use_cache": use_cache, "user_context": user_context,
                                                "deliver_filter": deliver_filter, "data_scope": _data_scope,
                                                "budget": _budget or None,
+                                               "limits": _run_limits or None,
                                                "trace_id": obs.current_trace_id()},
                                       priority=int((body or {}).get("priority") or 5))
         await run_bus.bus().publish_request(job, obs.current_trace_id())
@@ -4329,7 +4397,7 @@ async def run_start(body: dict, u: dict = Depends(user),
                              "deduped": bool(job.get("deduped"))}, status_code=202)
     async with _run_lock(lock_key):
         out = await execute_agent_run(agent, contract, actor, use_cache=use_cache, data_scope=_data_scope,
-                                      budget=_budget or None,
+                                      budget=_budget or None, limits=_run_limits or None,
                                       user_context=user_context, deliver_filter=deliver_filter)
     return JSONResponse({"run_id": out["saved"]["id"], **out["result"]}, status_code=201)
 

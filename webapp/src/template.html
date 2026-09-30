@@ -2336,7 +2336,7 @@ const SETTINGS = {
     { label: 'Общие креды', value: 'используются 2 арендаторами', badge: 'shared', ok: false },
     { label: 'BYO-креды', value: 'arendator-b · собственный ERP', badge: 'BYO', ok: true }
   ],
-  'Память': [], 'Подбор': [], 'Шина': [], 'Биллинг': [
+  'Память': [], 'Подбор': [], 'Прогон': [], 'Шина': [], 'Биллинг': [
     { label: 'Недельная квота', value: '1 240 ₽ из 4 000 ₽', badge: '31%', ok: true },
     { label: 'Дороже всех', value: 'dcf-valuation · 0.14 ₽ за вызов', badge: 'per-node', ok: false },
     { label: 'Аудит-след', value: '100% перешагов с провенансом', badge: 'полный', ok: true }
@@ -2693,6 +2693,25 @@ class Component extends DCLogic {
         self.loadSkillTemplate(self.state.skillId);
       }).catch(function(){ self.showToast('ABOP недоступен'); });
   }
+  saveSkillTune(tid) {
+    // Пустое поле = «взять из настроек прогона». Ноль шагов — осмысленное значение, поэтому пустую
+    // строку и ноль различаем явно, а не проверкой на истинность.
+    var self = this, st = this.state;
+    var body = {};
+    if (st.skillMtDraft != null) body.max_tokens = String(st.skillMtDraft).trim();
+    if (st.skillTsDraft != null) body.tool_steps = String(st.skillTsDraft).trim();
+    if (!Object.keys(body).length) { this.showToast('Нечего сохранять'); return; }
+    fetch('/api/schema-templates/' + encodeURIComponent(tid), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    }).then(function(r){ return r.json().then(function(j){ return { ok: r.ok, j: j || {} }; }); })
+      .then(function(res){
+        if (!res.ok) { self.showToast('Навык: ' + (res.j.detail || 'не сохранено')); return; }
+        self.setState({ skillMtDraft: null, skillTsDraft: null });
+        self.showToast('Лимиты навыка сохранены');
+        self.loadSkillTemplate(tid);
+      }).catch(function(){ self.showToast('ABOP недоступен'); });
+  }
+
   resetSkillTemplate(id) {
     var self = this;
     if (!window.confirm('Вернуть шаблон навыка «' + id + '» к версии из репозитория? Ручные правки схемы будут потеряны.')) return;
@@ -4361,11 +4380,20 @@ class Component extends DCLogic {
                    var v = props[k] || {}; return { name: k, type: (v.type || '') + (v.enum ? ' ∈ ' + v.enum.slice(0, 4).join('|') : '') }; }),
                  fieldsMore: Math.max(0, Object.keys(props).length - 14),
                  limit: t.max_tokens ? (t.max_tokens + ' токенов на ответ') : 'лимит по умолчанию',
+                 // Лимит ответа и шаги инструментов правятся здесь же: раньше число показывалось
+                 // только для чтения, и было непонятно, где его менять.
+                 mtVal: (s.skillMtDraft != null ? s.skillMtDraft : String(t.max_tokens || '')),
+                 tsVal: (s.skillTsDraft != null ? s.skillTsDraft : (t.tool_steps == null ? '' : String(t.tool_steps))),
+                 tsNote: (t.tool_steps == null ? 'пусто — сколько задано в настройках прогона' : (t.tool_steps === 0 ? 'ноль — навык не ходит в инструменты' : 'своё значение навыка')),
+                 canTune: !!(s.me && ['admin'].indexOf(s.me.level) > -1),
                  source: t.builtin ? ('из репозитория · ' + (t.editor || 'seed')) : ('правка в интерфейсе · ' + (t.editor || '')),
                  sourceFg: t.builtin ? 'var(--ok-ink)' : 'var(--warn-ink)',
                  delivery: dl ? ('результат уходит в ' + dl.system + ' · ' + dl.type + (dl.each ? ' · по элементу «' + dl.each + '»' : ' · одной командой')
                                  + (dl.where ? ' · только ' + Object.keys(dl.where).map(function(k){ return k + ': ' + (dl.where[k] || []).join('/'); }).join(', ') : '')) : '',
                  canReset: !!(s.me && ['admin'].indexOf(s.me.level) > -1),
+                 setMt: (e) => this.setState({ skillMtDraft: e.target.value }),
+                 setTs: (e) => this.setState({ skillTsDraft: e.target.value }),
+                 saveTune: () => this.saveSkillTune(t.id),
                  reset: () => this.resetSkillTemplate(t.id) };
       })(),
       skillTplNone: !!(s.modal === 'drawer' && !s.skillTpl),
@@ -5010,6 +5038,20 @@ class Component extends DCLogic {
       resetLlm: () => this.setLlmEndpoint('', ''),
       isConnTab: s.settingsTab === 'Подключения',
       isNluTab: s.settingsTab === 'Подбор',
+      isLimitsTab: s.settingsTab === 'Прогон',
+      limitRows: (((s.runLimits || {}).fields) || []).map((f) => ({
+        key: f.key, label: f.label, hint: 'по умолчанию ' + f.default + ' · допустимо ' + f.min + '…' + f.max,
+        value: ((s.runLimitsDraft || {})[f.key] != null ? (s.runLimitsDraft || {})[f.key]
+                : String(((s.runLimits || {}).limits || {})[f.key] != null ? ((s.runLimits || {}).limits || {})[f.key] : '')),
+        changed: !!f.changed, changedLabel: f.changed ? 'изменено' : 'по умолчанию',
+        changedFg: f.changed ? 'var(--warn-ink)' : 'var(--w45)',
+        set: (e) => this.setState({ runLimitsDraft: Object.assign({}, s.runLimitsDraft || {}, { [f.key]: e.target.value }) }),
+        apply: () => this.saveRunLimits({ [f.key]: ((s.runLimitsDraft || {})[f.key] != null ? (s.runLimitsDraft || {})[f.key] : '') }),
+        reset: () => this.saveRunLimits({ [f.key]: '' }),
+      })),
+      limitsDirty: Object.keys(s.runLimitsDraft || {}).length > 0,
+      applyAllLimits: () => this.saveRunLimits(s.runLimitsDraft || {}),
+      limitsNote: (s.runLimits ? 'Лестница: значение из кода → эта настройка → настройка навыка → разовое переопределение при запуске. Действует со следующего прогона.' : 'Загружаю…'),
       nluQuery: s.nluQuery || '',
       setNluQuery: (e) => this.setState({ nluQuery: e.target.value }),
       tryNluGo: () => this.tryNlu(),
@@ -5192,7 +5234,7 @@ class Component extends DCLogic {
         }
       })),
       settingsTabs: Object.keys(SETTINGS).map(t => ({
-        label: t, pick: () => { this.setState({ settingsTab: t }); if (t === 'Шина') this.loadBus(); if (t === 'Подбор') this.loadNlu(); },
+        label: t, pick: () => { this.setState({ settingsTab: t }); if (t === 'Шина') this.loadBus(); if (t === 'Подбор') this.loadNlu(); if (t === 'Прогон') this.loadRunLimits(); },
         bg: s.settingsTab === t ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : 'transparent',
         fg: s.settingsTab === t ? 'var(--ink)' : 'var(--w55)'
       })),
@@ -5511,6 +5553,25 @@ class Component extends DCLogic {
         ];
         self.setState({ planChecking: false, planOk: true, planSteps: steps, planWavesReal: waves });
       }).catch(function(){ self.setState({ planChecking: false, planOk: false, planSteps: [{ text: 'ABOP недоступен — план не проверен', ok: false }] }); });
+  }
+
+  loadRunLimits() {
+    var self = this;
+    fetch('/api/admin/run-limits').then(function(r){ return r.json(); })
+      .then(function(j){ self.setState({ runLimits: j || null, runLimitsDraft: {} }); })
+      .catch(function(){ self.showToast('Лимиты прогона: ABOP недоступен'); });
+  }
+  saveRunLimits(patch) {
+    // Пустое поле отправляем как пустую строку: это «вернуть к умолчанию», а не «ноль».
+    var self = this;
+    fetch('/api/admin/run-limits', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                     body: JSON.stringify({ limits: patch }) })
+      .then(function(r){ return r.json().then(function(j){ return { ok: r.ok, j: j || {} }; }); })
+      .then(function(res){
+        if (!res.ok) { self.showToast('Лимит: ' + (res.j.detail || 'не сохранён')); return; }
+        self.setState({ runLimits: res.j, runLimitsDraft: {} });
+        self.showToast('Лимит прогона сохранён — действует со следующего прогона');
+      }).catch(function(){ self.showToast('ABOP недоступен'); });
   }
 
   _budgetBody() {

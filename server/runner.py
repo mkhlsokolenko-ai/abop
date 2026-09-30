@@ -54,6 +54,54 @@ if _MTF and _MTF.isdigit():
 # freeform всегда ≥ структурного (рассуждениям нужно больше)
 _LIM["max_tokens_free"] = max(_LIM["max_tokens_free"], _LIM["max_tokens"])
 
+# ── Действующие лимиты прогона ──────────────────────────────────────────────────────────────
+# Значения выше — умолчания из кода и переменных окружения. Поверх них ложится настройка среды
+# (Настройки → Прогон), а её, в свою очередь, перекрывает разовое переопределение при запуске.
+# Держим в одном месте: раньше каждое число читалось из своей константы, и «поменять лимит» означало
+# перенакат сервера.
+LIMIT_FIELDS = {
+    "max_tokens": ("лимит ответа навыка со схемой", 200, 32000),
+    "max_tokens_free": ("лимит ответа рассуждающего навыка", 200, 32000),
+    "max_tokens_template": ("лимит ответа навыка с подробной схемой", 200, 32000),
+    "tool_steps": ("шагов инструментов до ответа", 0, 8),
+    "concurrency": ("параллельных навыков", 1, 12),
+    "retries": ("повторов при сбое модели", 0, 5),
+    "rows": ("строк данных на сущность", 50, 50000),
+    "sample": ("записей в примере для модели", 1, 200),
+    "full_rows": ("до скольких записей показываем целиком", 1, 2000),
+    "body": ("знаков методики навыка", 500, 40000),
+    "data": ("знаков данных в промпте", 500, 60000),
+}
+
+
+def default_limits() -> dict:
+    """Умолчания: то, что задано кодом и переменными окружения этого процесса."""
+    from . import skill_tools as _st
+    return {"max_tokens": _LIM["max_tokens"], "max_tokens_free": _LIM["max_tokens_free"],
+            "max_tokens_template": _CUSTOM_MAX_TOKENS, "tool_steps": _st.TOOL_STEPS,
+            "concurrency": _LLM_CONCURRENCY, "retries": _LLM_RETRIES,
+            "rows": _LIM["rows"], "sample": _LIM["sample"], "full_rows": _LIM["full_rows"],
+            "body": _LIM["body"], "data": _LIM["data"]}
+
+
+def effective_limits(limits: dict | None) -> dict:
+    """Умолчания, перекрытые настройкой. Значение вне разумных границ не принимается молча: оно
+    подрезается до границы, иначе опечатка в поле («200000 токенов») ломала бы прогон целиком."""
+    out = default_limits()
+    for k, v in (limits or {}).items():
+        if k not in LIMIT_FIELDS or v in (None, ""):
+            continue
+        try:
+            num = float(str(v).replace(",", "."))
+        except (TypeError, ValueError):
+            continue
+        _, lo, hi = LIMIT_FIELDS[k]
+        out[k] = int(max(lo, min(hi, num)))
+    # Рассуждающему навыку места нужно не меньше, чем структурному: иначе нарратив обрывается.
+    out["max_tokens_free"] = max(out["max_tokens_free"], out["max_tokens"])
+    return out
+
+
 # ── Structured output (guided JSON) против «раздутости рассуждений» ──
 # У навыка-ДЕТЕКТОРА (аудит/список находок) чёткая задача → просим СТРОГО JSON по схеме (vLLM xgrammar
 # запрещает прозу вне схемы → минус «вода», токены ×3-5, вывод парсится). НО документные навыки
@@ -407,7 +455,7 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
                    findings_context=None, user_context="", skill_schemas=None, should_cancel=None,
                    tool_loop=None, actor: str = "", trace_id: str = "", on_progress=None,
                    budget: dict | None = None, board=None, data_snapshot: dict | None = None,
-                   arbiter_ask=None) -> dict:
+                   arbiter_ask=None, limits: dict | None = None) -> dict:
     """НАСТОЯЩИЙ прогон: governance-каркас (run_agent) + для каждого навыка с data-scope
     собирает РЕАЛЬНЫЕ данные из canonical store (data_query) и прогоняет их через LLM
     (тело навыка = методика) → находки на доску. Числа — только из данных (анти-галлюцинация).
@@ -419,7 +467,6 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
     base = run_agent(agent, contract, safety_of)
     graph = agent.get("graph") or {}
     skills = [n for n in (graph.get("nodes") or []) if n.get("kind") == "skill"]  # УЗЛЫ (несут per-node output)
-    sem = asyncio.Semaphore(_LLM_CONCURRENCY)  # rate-limiter: не больше N одновременных вызовов к RouteAI
     produced: dict[str, dict] = {}   # выходы навыков предыдущих волн: sid → structured (вход для следующих)
     # Доска прогона: общая память с авторством. Приходит снаружи, если ветвь работает в группе — тогда
     # она видит выводы соседних ветвей; иначе доска своя и живёт только этот прогон.
@@ -427,6 +474,10 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
     _board = board if board is not None else _bb.Board(trace_id or str(agent.get("id") or ""))
     _snap_rows: dict[str, list] = {}   # выборка по сущностям — для снимка «одной картины»
     _snap_drift: list[str] = []
+    # Действующие лимиты прогона: значения из кода, перекрытые настройкой среды и разовым запуском.
+    # Ниже по тексту читаются ТОЛЬКО отсюда, чтобы настройка не расходилась с поведением.
+    _lim = effective_limits(limits)
+    sem = asyncio.Semaphore(int(_lim["concurrency"]))
     # Бюджет прогона: {max_tokens, max_rub, max_sec}. Пусто — без ограничений, как раньше.
     _bud = {k: float(v) for k, v in (budget or {}).items() if str(k).startswith("max_") and v}
     _spent = {"tokens": 0, "rub": 0.0, "skills": 0}
@@ -505,7 +556,7 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
         data = {}
         for e in entities:
             try:
-                rows = await asyncio.to_thread(data_query, e, limit=_LIM["rows"])   # файловый Data Plane — не блокируем loop
+                rows = await asyncio.to_thread(data_query, e, limit=int(_lim["rows"]))   # файловый Data Plane — не блокируем loop
             except Exception:  # noqa: BLE001
                 rows = []
             data[e] = _apply_scope(rows, data_scope)
@@ -534,13 +585,13 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
             # Сэмпл бережёт токены на больших наборах, но когда предмет работы сузил выборку до
             # десятков записей, модель должна видеть ВСЕ: иначе она считает по шести строкам и
             # выдаёт «пунктов всего: 2» там, где их тринадцать.
-            full = len(rows) <= _LIM["full_rows"]
+            full = len(rows) <= int(_lim["full_rows"])
             digest[e] = {"всего": len(rows), "по_типам": (by_type or None),
-                         ("записи" if full else "сэмпл"): rows[: (len(rows) if full else _LIM["sample"])]}
+                         ("записи" if full else "сэмпл"): rows[: (len(rows) if full else int(_lim["sample"]))]}
             if not full:
                 digest[e]["внимание"] = ("показан сэмпл из %d записей; считай итоги по полю «всего», "
                                          "а не по числу показанных строк" % len(rows))
-        body = (load_body(sid) or "")[:_LIM["body"]]
+        body = (load_body(sid) or "")[:int(_lim["body"])]
         # RAG-знание (нормы/регламент) из корпуса семьи через sLAVA — только норм-цитирующим навыкам
         # (safety.cite). knowledge_fn уже с ABAC-гейтом (вернёт [], если семья без доступа к корпусу).
         know_block = ""
@@ -572,7 +623,7 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
                  + up_block
                  + board_block
                  + "=== ДАННЫЕ (дайджест: всего+по_типам = полный scope, сэмпл = примеры записей) ===\n"
-                 + _json.dumps(digest, ensure_ascii=False)[:_LIM["data"]] + "\n\n")
+                 + _json.dumps(digest, ensure_ascii=False)[:int(_lim["data"])] + "\n\n")
         # GROUNDED-режим: если детерминированный движок уже посчитал находки (истина), навык их ОБЪЯСНЯЕТ,
         # а не ищет заново на сэмпле (иначе на дайджесте LLM ложно пишет «расхождений нет» — противоречит коду).
         explain = bool(findings_context)
@@ -581,7 +632,7 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
         use_struct = _STRUCTURED and _out != "freeform"
         if explain:
             _head += ("=== ВЫЯВЛЕННЫЕ НАХОДКИ (детерминированный движок — ИСТИНА, не оспаривать) ===\n"
-                      + str(findings_context)[:_LIM["data"]] + "\n\n")
+                      + str(findings_context)[:int(_lim["data"])] + "\n\n")
         if explain:
             _task_verb = ("объясни ВЫЯВЛЕННЫЕ НАХОДКИ по методике навыка (суть/чем грозит/что проверить), "
                           "опираясь на данные; НЕ ищи новых и НЕ пиши «расхождений нет»")
@@ -623,14 +674,22 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
         if tool_loop is not None:
             try:
                 async with sem:
+                    # Сколько раз навык может сходить в инструменты до ответа. Ноль — осмысленное
+                    # значение «не ходить вовсе», поэтому уровни перебираем по «задано ли», а не по
+                    # истинности: иначе ноль проваливался бы на следующий уровень и навык всё равно шёл.
+                    _steps = int(_lim["tool_steps"])
+                    for _src in ((_custom or {}).get("tool_steps"), node.get("tool_steps")):
+                        if _src is not None and str(_src).strip() != "":
+                            _steps = int(_src)
                     _obs_block, tool_calls = await tool_loop(sid, _head, chat_fn, safety=(safety_of(sid) or {}),
                                                              actor=actor, trace_id=trace_id, system=_sys,
+                                                             steps=_steps,
                                                              family=str(agent.get("family") or ""), agent_id=str(agent.get("id") or ""))
                 if _obs_block:
                     prompt = prompt.replace("ЗАДАЧА", _obs_block + "ЗАДАЧА", 1)
             except Exception as ex:  # noqa: BLE001
                 tool_calls = [{"error": f"{type(ex).__name__}: {ex}"}]
-        async with sem:  # батчинг: семафор пускает по _LLM_CONCURRENCY вызовов за раз
+        async with sem:  # батчинг: семафор пускает по «параллельных навыков» вызовов за раз
             # Пока навык стоял в очереди к модели, бюджет могли израсходовать соседние ветви. Проверяем
             # ещё раз: десять ветвей на двенадцати слотах иначе пробьют лимит все разом.
             _gap2 = _budget_gap()
@@ -644,10 +703,19 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
             resp = None
             err = None
             miss = []
-            for _attempt in range(_LLM_RETRIES + 1):
+            for _attempt in range(int(_lim["retries"]) + 1):
                 try:
                     # кастомная (подробная) схема шаблона требует больше выходных токенов, иначе JSON обрежется
-                    _mt = (max(_LIM["max_tokens"], int((_custom or {}).get("max_tokens") or 0), _CUSTOM_MAX_TOKENS) if (_custom and use_struct) else (_LIM["max_tokens"] if use_struct else _LIM["max_tokens_free"]))
+                    # Лимит ответа: у навыка с подробной схемой — свой (из шаблона), иначе общий по
+                    # среде. Узел графа может переопределить его для этого агента.
+                    _node_mt = int(node.get("max_tokens") or 0)
+                    if _custom and use_struct:
+                        _mt = max(int(_lim["max_tokens"]), int((_custom or {}).get("max_tokens") or 0),
+                                  int(_lim["max_tokens_template"]))
+                    else:
+                        _mt = int(_lim["max_tokens"] if use_struct else _lim["max_tokens_free"])
+                    if _node_mt:
+                        _mt = _node_mt
                     resp = await chat_fn(messages=[{"role": "system", "content": _sys}, {"role": "user", "content": prompt}], profile="standard",
                                          max_tokens=_mt,
                                          response_format=_resp_fmt)
@@ -655,7 +723,7 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
                     break
                 except Exception as ex:  # noqa: BLE001
                     err = f"{type(ex).__name__}: {ex}"
-                    if _attempt < _LLM_RETRIES:
+                    if _attempt < int(_lim["retries"]):
                         await asyncio.sleep(_LLM_BACKOFF * (_attempt + 1))  # 1.5с, 3с, …
             struct = None
             miss: list = []
@@ -766,6 +834,8 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
                                            " — " + str(d.get("reason"))[:200])})
         base["run_metrics"]["arbitration"] = _arb.report(_dec)
     base["run_metrics"]["board"] = _board.summary()
+    # Какие лимиты реально действовали. Без этого «почему ответ обрезан» выясняется чтением кода.
+    base["run_metrics"]["limits"] = dict(_lim, source=("настройка" if limits else "по умолчанию"))
     base["board_entries"] = _board.export()
     if _bud or _stopped:
         _sec = round(time.perf_counter() - _t_start, 1)
