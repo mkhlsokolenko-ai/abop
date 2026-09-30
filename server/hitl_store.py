@@ -124,6 +124,24 @@ async def find_by_command(command_id: str) -> dict | None:
     return await get(r[0]) if r else None
 
 
+async def purge(pending_only: bool = True) -> int:
+    """Снять заявки на подтверждение. По умолчанию только ожидающие.
+
+    Заявка — это превью того, что уйдёт наружу. Накопившиеся с проверок превью на показе всплывают
+    чужими и смазывают кульминацию, поэтому перед демо очередь обнуляют.
+    """
+    if not _has_pg():
+        ids = [k for k, v in _MEM.items() if not pending_only or v.get("state") == "pending"]
+        for k in ids:
+            _MEM.pop(k, None)
+        return len(ids)
+    from .db import _conn
+    sql = "DELETE FROM hitl_items" + (" WHERE state = 'pending'" if pending_only else "")
+    async with _conn() as conn:
+        cur = await conn.execute(sql)
+        return int(cur.rowcount or 0)
+
+
 async def decide(item_id: str, state: str, decided_by: str, reason: str = "") -> None:
     if not _has_pg():
         if item_id in _MEM:

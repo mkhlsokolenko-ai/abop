@@ -622,6 +622,86 @@ async def admin_staff(u: dict = Depends(user)) -> dict:
     return {"staff": staff, "source": "redmine"}
 
 
+@app.post("/api/admin/cleanup")
+async def admin_cleanup(body: dict, u: dict = Depends(user)) -> dict:
+    """Убрать следы проверочных прогонов перед показом (admin).
+
+    Стенд, на котором тестировались, и стенд, который показывают заказчику, — разные вещи: журнал с
+    сотней проверочных прогонов, очередь чужих превью и тестовые цепочки выглядят как настоящая
+    работа и смазывают демо.
+
+    Тело: {what: [runs|jobs|hitl|dlq|pipelines], confirm: "зачистить", dry_run: bool, before?: ISO}.
+    По умолчанию **сухой прогон**: возвращает, сколько чего будет удалено, и ничего не трогает.
+    Удаление требует `confirm: "зачистить"` — случайный вызов не должен стирать историю.
+
+    Что НЕ трогает ни при каких параметрах: агентов, навыки и шаблоны, данные Data Plane,
+    засеянные демо-материалы, журнал аудита ИБ. Чистятся только следы исполнения.
+    """
+    require_level(u, "admin")
+    b = body or {}
+    known = ("runs", "jobs", "hitl", "dlq", "pipelines")
+    what = [w for w in (b.get("what") or known) if w in known]
+    if not what:
+        raise HTTPException(422, "нечего чистить: what пуст или содержит неизвестное")
+    dry = b.get("dry_run") is not False
+    before = str(b.get("before") or "").strip() or None
+    if not dry and str(b.get("confirm") or "") != "зачистить":
+        raise HTTPException(422, 'удаление требует confirm: "зачистить"')
+
+    plan: dict[str, int] = {}
+    if "runs" in what:
+        plan["runs"] = len(await run_store.list_runs(limit=100000))
+    if "jobs" in what:
+        st = await run_queue.stats()
+        by = st.get("by_status") or {}
+        plan["jobs"] = sum(int(v or 0) for k, v in by.items() if k in ("done", "failed", "cancelled"))
+    if "hitl" in what:
+        plan["hitl"] = len(await hitl_store.list_pending())
+    if "dlq" in what:
+        # Сообщение Kafka удалить нельзя — состояние разбора живёт отдельно, по ключу partition:offset.
+        # Поэтому считаем и помечаем сами сообщения хвоста DLQ, а не уже существующие отметки.
+        _acks = await dlq_store.all()
+        _tail = await run_bus.bus().tail(run_bus.TOPIC_DLQ, 200)
+        plan["dlq"] = len([m for m in _tail
+                           if (_acks.get(dlq_store.key_of(m.get("partition") or 0, m.get("offset") or 0)) or {}).get("state") != "acked"])
+    if "pipelines" in what:
+        plan["pipelines"] = len(await pipeline_store.all())
+
+    if dry:
+        return {"dry_run": True, "что_будет_удалено": plan,
+                "подсказка": 'повторите с {"confirm": "зачистить", "dry_run": false}',
+                "не_трогаем": ["агентов", "навыки и шаблоны", "данные Data Plane",
+                               "засеянные демо-материалы", "журнал аудита"]}
+
+    done: dict[str, int] = {}
+    if "runs" in what:
+        done["runs"] = await run_store.purge(before=before)
+    if "jobs" in what:
+        done["jobs"] = await run_queue.purge()
+    if "hitl" in what:
+        done["hitl"] = await hitl_store.purge(pending_only=True)
+    if "dlq" in what:
+        acks = await dlq_store.all()
+        n = 0
+        for m in await run_bus.bus().tail(run_bus.TOPIC_DLQ, 200):
+            k = dlq_store.key_of(m.get("partition") or 0, m.get("offset") or 0)
+            if (acks.get(k) or {}).get("state") != "acked":
+                await dlq_store.mark(k, "acked", u.get("name") or "admin", "зачистка перед показом")
+                n += 1
+        done["dlq"] = n
+    if "pipelines" in what:
+        n = 0
+        for p in await pipeline_store.all():
+            if await pipeline_store.delete(p["id"]):
+                n += 1
+        done["pipelines"] = n
+
+    await audit_store.record(u.get("name") or u.get("sub") or "dev", "admin.cleanup", ",".join(what), done)
+    obs.log_event("warn", "admin.cleanup", **{k: int(v) for k, v in done.items()})
+    return {"dry_run": False, "удалено": done,
+            "note": "следы прогонов убраны; агенты, навыки, шаблоны и данные на месте"}
+
+
 @app.get("/api/admin/audit")
 async def admin_audit(limit: int = 100, u: dict = Depends(user)) -> dict:
     """Аудит ИБ: неизменяемый лог governance-событий среды (не хардкод). Только admin/support."""
@@ -2040,13 +2120,23 @@ def recipe_preview(body: dict, u: dict = Depends(user)) -> dict:
 
 
 @app.post("/api/data/recipes/{name}/run")
-async def recipe_run(name: str, u: dict = Depends(user)) -> dict:
-    """Применить сохранённый рецепт и записать в canonical store. §5 публикация."""
+async def recipe_run(name: str, body: dict | None = None, u: dict = Depends(user)) -> dict:
+    """Применить сохранённый рецепт и записать в canonical store. §5 публикация.
+
+    Тело (необязательно): `{"reset": true}` — перечитать сущность НАЧИСТО. Нужно, когда записи в
+    источнике УДАЛЯЛИ: у удаления нет новой версии, и без этого режима снесённая в трекере задача
+    остаётся в Data Plane, а агент считает её существующей.
+    """
+    reset = bool((body or {}).get("reset"))
     try:
-        entity, written, dropped, invalid = await _asyncio.to_thread(ape.data_run, name)
+        entity, written, dropped, invalid = await _asyncio.to_thread(ape.data_run, name, reset)
     except Exception as ex:  # noqa: BLE001 — сбой источника/рецепта → 400
         raise HTTPException(400, str(ex))
-    return {"entity": entity, "written": written, "dropped": dropped, "invalid": invalid}
+    if reset:
+        await audit_store.record(u.get("name") or u.get("sub") or "dev", "data.recipe.reset", name,
+                                 {"entity": entity, "written": written})
+    return {"entity": entity, "written": written, "dropped": dropped, "invalid": invalid,
+            "mode": "начисто" if reset else "дозапись"}
 
 
 @app.post("/api/data/recipes/{name}/rebind")

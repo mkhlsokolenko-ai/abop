@@ -439,6 +439,20 @@ async def requeue_stale() -> int:
         return cur.rowcount or 0
 
 
+async def purge(*, states: tuple[str, ...] = ("done", "failed", "cancelled")) -> int:
+    """Убрать завершённые задания из очереди. Активные (queued/running/awaiting_hitl) не трогаем:
+    удалить задание, которое сейчас исполняется, значит потерять его результат на полпути."""
+    if not _has_pg():
+        ids = [k for k, j in _MEM.items() if j.get("status") in states]
+        for k in ids:
+            _MEM.pop(k, None)
+        return len(ids)
+    from .db import _conn
+    async with _conn() as conn:
+        cur = await conn.execute("DELETE FROM run_jobs WHERE status = ANY(%s)", (list(states),))
+        return int(cur.rowcount or 0)
+
+
 async def stats() -> dict:
     if not _has_pg():
         by: dict = {}

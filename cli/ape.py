@@ -3179,14 +3179,21 @@ def data_save_recipe(name: str, spec: dict) -> dict:
     return r
 
 
-def data_run(name: str) -> tuple:
-    """Применяет сохранённый рецепт и ПИШЕТ в canonical store. Возвращает (entity, записано, отброшено, невалидно)."""
+def data_run(name: str, reset: bool = False) -> tuple:
+    """Применяет сохранённый рецепт и ПИШЕТ в canonical store. Возвращает (entity, записано, отброшено, невалидно).
+
+    `reset=True` — перечитать сущность НАЧИСТО: файл переписывается тем, что отдал источник сейчас.
+    Это единственный способ убрать записи, УДАЛЁННЫЕ в источнике: у удаления нет новой версии, запись
+    просто перестаёт приходить, а компакция бережёт последнюю версию каждой записи навсегда. Обычный
+    режим (дозапись) остаётся по умолчанию — история правок ценна и нужна для провенанса.
+    """
     r = data_load_recipe(name)
     entity, out, dropped, invalid = _apply_recipe(r, name=name)
-    with open(_data_path(entity), "a", encoding="utf-8") as f:  # append-only canonical store
+    with open(_data_path(entity), "w" if reset else "a", encoding="utf-8") as f:
         for rec in out:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-    _data_compact(entity)  # вытеснить перекрытые старые версии (старьё уходит по TTL, не по wall-clock)
+    if not reset:
+        _data_compact(entity)  # вытеснить перекрытые старые версии (старьё уходит по TTL, не по wall-clock)
     return entity, len(out), dropped, invalid
 
 

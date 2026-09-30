@@ -67,6 +67,34 @@ async def save(run: dict) -> dict:
     return row
 
 
+async def purge(before: str | None = None, agent_id: str | None = None) -> int:
+    """Удалить прогоны из журнала. Возвращает, сколько удалено.
+
+    Нужна перед показом: следы проверочных прогонов в журнале выглядят как настоящая работа и
+    сбивают и зрителя, и метрики. `before` — ISO-время, старше которого удаляем (без него — всё);
+    `agent_id` — ограничить одним агентом.
+    """
+    if not _has_pg():
+        ids = [k for k, r in _MEM.items()
+               if (not agent_id or r.get("agent_id") == agent_id)
+               and (not before or str(r.get("created_at") or "") < before)]
+        for k in ids:
+            _MEM.pop(k, None)
+        return len(ids)
+    from .db import _conn
+    where, args = [], []
+    if agent_id:
+        where.append("agent_id = %s")
+        args.append(agent_id)
+    if before:
+        where.append("created_at < %s")
+        args.append(before)
+    sql = "DELETE FROM runs" + (" WHERE " + " AND ".join(where) if where else "")
+    async with _conn() as conn:
+        cur = await conn.execute(sql, tuple(args))
+        return int(cur.rowcount or 0)
+
+
 async def list_runs(agent_id: str | None = None, limit: int = 100) -> list[dict]:
     """Сводки прогонов (для журнала): без тяжёлого payload, свежие сверху."""
     if not _has_pg():
