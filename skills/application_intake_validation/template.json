@@ -323,5 +323,31 @@
       }
     }
   },
-  "max_tokens": 4000
+  "max_tokens": 4000,
+  "inputs": {
+    "required": [
+      {
+        "from": "data",
+        "entity": "document",
+        "fields": [
+          "id",
+          "kind"
+        ]
+      },
+      {
+        "from": "data",
+        "entity": "customer",
+        "fields": [
+          "id"
+        ]
+      }
+    ]
+  },
+  "produces": [
+    {
+      "path": "стоп_факторы",
+      "key": "фактор",
+      "join": "стоп_фактор"
+    }
+  ]
 }

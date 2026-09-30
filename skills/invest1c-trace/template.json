@@ -4,38 +4,189 @@
   "json_schema": {
     "type": "object",
     "additionalProperties": false,
-    "required": ["цепочки", "сводка", "итог"],
+    "required": [
+      "цепочки",
+      "сводка",
+      "итог"
+    ],
     "properties": {
       "цепочки": {
         "type": "array",
         "items": {
-          "type": "object", "additionalProperties": false,
-          "required": ["id", "симптом", "контрагент", "звенья", "сверка", "звено_разрыва", "корень"],
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "симптом",
+            "контрагент",
+            "звенья",
+            "сверка",
+            "звено_разрыва",
+            "корень"
+          ],
           "properties": {
-            "id": {"type": "string", "description": "id расследования, напр. INV-РТ-0002"},
-            "симптом": {"type": "string"},
-            "контрагент": {"type": "string"},
+            "id": {
+              "type": "string",
+              "description": "id расследования, напр. INV-РТ-0002"
+            },
+            "симптом": {
+              "type": "string"
+            },
+            "контрагент": {
+              "type": "string"
+            },
             "звенья": {
               "type": "array",
-              "items": {"type": "object", "additionalProperties": false, "required": ["звено", "статус", "документ", "сумма", "примечание"],
-                        "properties": {"звено": {"type": "string", "enum": ["Реализация", "Счёт-фактура выданный", "Оплата · взаиморасчёты"]},
-                                       "статус": {"type": "string", "enum": ["есть", "РАЗРЫВ"]},
-                                       "документ": {"type": "string", "description": "тип № от даты или «—»"},
-                                       "сумма": {"type": "string", "description": "в ₽ или «—»"},
-                                       "примечание": {"type": "string"}}}
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "звено",
+                  "статус",
+                  "документ",
+                  "сумма",
+                  "примечание"
+                ],
+                "properties": {
+                  "звено": {
+                    "type": "string",
+                    "enum": [
+                      "Реализация",
+                      "Счёт-фактура выданный",
+                      "Оплата · взаиморасчёты"
+                    ]
+                  },
+                  "статус": {
+                    "type": "string",
+                    "enum": [
+                      "есть",
+                      "РАЗРЫВ"
+                    ]
+                  },
+                  "документ": {
+                    "type": "string",
+                    "description": "тип № от даты или «—»"
+                  },
+                  "сумма": {
+                    "type": "string",
+                    "description": "в ₽ или «—»"
+                  },
+                  "примечание": {
+                    "type": "string"
+                  }
+                }
+              }
             },
             "сверка": {
-              "type": "object", "additionalProperties": false, "required": ["реализация", "оплачено", "разница", "ндс_выделен", "ндс_предъявлен"],
-              "properties": {"реализация": {"type": "string"}, "оплачено": {"type": "string"}, "разница": {"type": "string"}, "ндс_выделен": {"type": "string", "description": "сумма НДС или «0,00 ₽»"}, "ндс_предъявлен": {"type": "boolean"}}
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "реализация",
+                "оплачено",
+                "разница",
+                "ндс_выделен",
+                "ндс_предъявлен"
+              ],
+              "properties": {
+                "реализация": {
+                  "type": "string"
+                },
+                "оплачено": {
+                  "type": "string"
+                },
+                "разница": {
+                  "type": "string"
+                },
+                "ндс_выделен": {
+                  "type": "string",
+                  "description": "сумма НДС или «0,00 ₽»"
+                },
+                "ндс_предъявлен": {
+                  "type": "boolean"
+                }
+              }
             },
-            "звено_разрыва": {"type": "string", "description": "название звена со статусом РАЗРЫВ или «нет разрыва»"},
-            "корень": {"type": "string", "description": "одной фразой: почему это звено — корень симптома"}
+            "звено_разрыва": {
+              "type": "string",
+              "description": "название звена со статусом РАЗРЫВ или «нет разрыва»"
+            },
+            "корень": {
+              "type": "string",
+              "description": "одной фразой: почему это звено — корень симптома"
+            }
           }
         }
       },
-      "сводка": {"type": "object", "additionalProperties": false, "required": ["цепочек", "с_разрывом", "без_счёта_фактуры", "без_оплаты", "расхождения_сумм"],
-                 "properties": {"цепочек": {"type": "integer"}, "с_разрывом": {"type": "integer"}, "без_счёта_фактуры": {"type": "integer"}, "без_оплаты": {"type": "integer"}, "расхождения_сумм": {"type": "integer"}}},
-      "итог": {"type": "string"}
+      "сводка": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "цепочек",
+          "с_разрывом",
+          "без_счёта_фактуры",
+          "без_оплаты",
+          "расхождения_сумм"
+        ],
+        "properties": {
+          "цепочек": {
+            "type": "integer"
+          },
+          "с_разрывом": {
+            "type": "integer"
+          },
+          "без_счёта_фактуры": {
+            "type": "integer"
+          },
+          "без_оплаты": {
+            "type": "integer"
+          },
+          "расхождения_сумм": {
+            "type": "integer"
+          }
+        }
+      },
+      "итог": {
+        "type": "string"
+      }
     }
-  }
+  },
+  "inputs": {
+    "required": [
+      {
+        "from": "data",
+        "entity": "doc1c",
+        "fields": [
+          "id",
+          "тип",
+          "ДокументОснование",
+          "Проводки"
+        ]
+      }
+    ],
+    "optional": [
+      {
+        "from": "data",
+        "entity": "ref1c",
+        "fields": [
+          "id",
+          "Наименование"
+        ]
+      },
+      {
+        "from": "skill",
+        "skill": "audit1c-graph-build",
+        "path": "документы_по_типам",
+        "fields": [
+          "тип"
+        ]
+      }
+    ]
+  },
+  "produces": [
+    {
+      "path": "цепочки",
+      "key": "id",
+      "join": "цепочка"
+    }
+  ]
 }

@@ -318,5 +318,30 @@
       }
     }
   },
-  "max_tokens": 4000
+  "max_tokens": 4000,
+  "inputs": {
+    "required": [
+      {
+        "from": "context",
+        "note": "что агент должен помнить и зачем"
+      }
+    ],
+    "optional": [
+      {
+        "from": "data",
+        "entity": "document",
+        "fields": [
+          "id",
+          "title"
+        ]
+      }
+    ]
+  },
+  "produces": [
+    {
+      "path": "retention",
+      "key": "слой",
+      "join": "слой_памяти"
+    }
+  ]
 }

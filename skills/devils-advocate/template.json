@@ -107,7 +107,7 @@
           "type": "object",
           "additionalProperties": false,
           "required": [
-            "ранг",
+            "приоритет",
             "риск",
             "угол",
             "почему_убьёт_первым",
@@ -116,10 +116,6 @@
             "критичность"
           ],
           "properties": {
-            "ранг": {
-              "type": "integer",
-              "description": "1 = убьёт первым"
-            },
             "риск": {
               "type": "string"
             },
@@ -153,6 +149,10 @@
                 "low"
               ],
               "description": "high — ставит проект под вопрос"
+            },
+            "приоритет": {
+              "type": "integer",
+              "description": "1 = убьёт первым"
             }
           }
         },
@@ -209,5 +209,20 @@
       }
     }
   },
-  "max_tokens": 4000
+  "max_tokens": 4000,
+  "inputs": {
+    "required": [
+      {
+        "from": "context",
+        "note": "тезис или решение, которое нужно оспорить"
+      }
+    ]
+  },
+  "produces": [
+    {
+      "path": "топ_риски",
+      "key": "риск",
+      "join": "риск"
+    }
+  ]
 }

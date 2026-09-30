@@ -275,5 +275,34 @@
       }
     }
   },
-  "max_tokens": 4000
+  "max_tokens": 4000,
+  "inputs": {
+    "required": [
+      {
+        "from": "data",
+        "entity": "transaction",
+        "fields": [
+          "id",
+          "amount"
+        ]
+      }
+    ],
+    "optional": [
+      {
+        "from": "skill",
+        "skill": "limit_policy_enforcement",
+        "path": "ограничения_лимита",
+        "fields": [
+          "ограничение"
+        ]
+      }
+    ]
+  },
+  "produces": [
+    {
+      "path": "пред_условия",
+      "key": "условие",
+      "join": "предусловие"
+    }
+  ]
 }

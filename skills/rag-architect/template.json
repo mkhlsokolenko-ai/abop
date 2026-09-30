@@ -338,5 +338,30 @@
       }
     }
   },
-  "max_tokens": 4000
+  "max_tokens": 4000,
+  "inputs": {
+    "required": [
+      {
+        "from": "context",
+        "note": "корпус знания и вопросы, на которые нужно отвечать"
+      }
+    ],
+    "optional": [
+      {
+        "from": "data",
+        "entity": "document",
+        "fields": [
+          "id",
+          "title"
+        ]
+      }
+    ]
+  },
+  "produces": [
+    {
+      "path": "решения_для_adr",
+      "key": "решение",
+      "join": "решение"
+    }
+  ]
 }

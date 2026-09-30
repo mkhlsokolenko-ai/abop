@@ -247,5 +247,30 @@
       }
     }
   },
-  "max_tokens": 4000
+  "max_tokens": 4000,
+  "inputs": {
+    "required": [
+      {
+        "from": "context",
+        "note": "решение, которое нужно зафиксировать, и его контекст"
+      }
+    ],
+    "optional": [
+      {
+        "from": "skill",
+        "skill": "architecture-chooser",
+        "path": "критерии",
+        "fields": [
+          "критерий"
+        ]
+      }
+    ]
+  },
+  "produces": [
+    {
+      "path": "альтернативы",
+      "key": "вариант",
+      "join": "вариант"
+    }
+  ]
 }

@@ -4953,13 +4953,20 @@ async def catalog_coverage(u: dict = Depends(user)) -> dict:
             ents = [d.get("entity") for d in (ape.skill_datasources_resolved(sid) or []) if d.get("entity")]
         except Exception:  # noqa: BLE001
             ents = []
-        r = {"skill": sid, "template_id": t.get("id") or "",
+        ref = sid in getattr(ape, "SKILL_REFERENCE", frozenset())
+        r = {"skill": sid, "template_id": t.get("id") or "", "reference": ref,
              "схема": bool((t.get("json_schema") or {}).get("properties")),
              "вход": bool((t.get("inputs") or {}).get("required") or (t.get("inputs") or {}).get("optional")),
              "выход": bool(t.get("produces")),
              "данные": bool(ents), "слоты": bool(t.get("slots")), "доставка": bool(t.get("delivery")),
              "ошибки": skill_contract.validate_contract(t)}
         totals["всего"] += 1
+        if ref:
+            # справочные навыки (стилевые гайды) в цепочку не встраиваются: считаем отдельно, иначе
+            # покрытие каталога вечно будет выглядеть незакрытым
+            totals["справочные"] = totals.get("справочные", 0) + 1
+            rows.append(r)
+            continue
         for k in ("схема", "вход", "выход", "данные", "слоты", "доставка"):
             totals[k] += 1 if r[k] else 0
         rows.append(r)

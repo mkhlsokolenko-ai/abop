@@ -272,5 +272,47 @@
       }
     }
   },
-  "max_tokens": 4000
+  "max_tokens": 4000,
+  "inputs": {
+    "required": [
+      {
+        "from": "data",
+        "entity": "customer",
+        "fields": [
+          "id"
+        ]
+      },
+      {
+        "from": "data",
+        "entity": "transaction",
+        "fields": [
+          "id",
+          "amount"
+        ]
+      }
+    ],
+    "optional": [
+      {
+        "from": "skill",
+        "skill": "application_intake_validation",
+        "path": "стоп_факторы",
+        "fields": [
+          "фактор",
+          "основание"
+        ]
+      }
+    ]
+  },
+  "produces": [
+    {
+      "path": "ограничения_лимита",
+      "key": "ограничение",
+      "join": "ограничение"
+    },
+    {
+      "path": "стоп_факторы",
+      "key": "фактор",
+      "join": "стоп_фактор"
+    }
+  ]
 }
