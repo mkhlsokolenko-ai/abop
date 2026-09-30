@@ -30,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, assembly, audit_store, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, report_store, run_cache_store, run_store, runner, safety, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, assembly, audit_store, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, report_store, run_cache_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
@@ -3751,7 +3751,12 @@ async def _refresh_source_data(agent: dict) -> None:
 async def _handle_job(job: dict) -> dict:
     """Воркер очереди: kind=run → execute_agent_run; kind=pipeline → шаги цепочки с чекпоинтом."""
     if (job.get("kind") or "run") == "pipeline":
-        return await _pipeline_job(job)
+        # ветвление, условия и слияние умеет только граф-исполнитель; плоские цепочки оставляем на
+        # прежнем пути, чтобы не менять поведение того, что уже работает на демо
+        _p = await pipeline_store.get(((job.get("payload") or {}).get("pid")) or "")
+        _st = (_p or {}).get("steps") or []
+        _branched = any(isinstance(x, dict) and (x.get("after") or x.get("join") or x.get("when")) for x in _st)
+        return await (_pipeline_graph_job(job) if _branched else _pipeline_job(job))
     p = job.get("payload") or {}
     agent = await agent_store.get(job["agent_id"])
     if not agent:
@@ -3762,6 +3767,90 @@ async def _handle_job(job: dict) -> dict:
                                   data_scope=p.get("data_scope") or None,   # предмет работы едет с заданием
                                   trigger=p.get("trigger"), job_id=job["id"])
     return {"run_id": out["saved"]["id"]}
+
+
+async def _pipeline_graph_job(job: dict) -> dict:
+    """Цепочка-граф: волны шагов, параллельные ветви, условия запуска и узлы слияния.
+
+    Отличия от линейного исполнителя: между шагами едет СТРУКТУРА (результаты нужных шагов помеченным
+    блоком данных, а не проза с обрезкой), ветви внутри волны идут параллельно, ошибка ветви не рушит
+    цепочку, а попадает в слияние как «нет результата». Плоские цепочки без ветвления по-прежнему идут
+    старым путём: у них нет ни условий, ни слияния, и незачем менять их поведение.
+    """
+    p = job.get("payload") or {}
+    cp = dict(job.get("checkpoint") or {})
+    pipe = await pipeline_store.get(p.get("pid") or "")
+    if not pipe:
+        raise RuntimeError("цепочка не найдена")
+    steps = pipeline_graph.normalize(pipe.get("steps") or [])
+    errs = pipeline_graph.validate(steps)
+    if errs:
+        raise RuntimeError("граф цепочки: " + "; ".join(errs[:3]))
+    base_ctx = str(p.get("context") or "")[:20000]
+    actor = job["actor"]
+    results: dict = dict(cp.get("results") or {})     # step_id → {data, agent_name, run_id, ...}
+    done_steps: list = list(cp.get("steps") or [])
+    started = {d.get("id") for d in done_steps if d.get("id")}
+
+    for wave in pipeline_graph.waves(steps):
+        todo = [st for st in wave if st["id"] not in started]
+        if not todo:
+            continue
+        if run_queue.cancel_requested(job["id"]):
+            raise RuntimeError("отменено оператором")
+
+        async def _one(st: dict) -> dict:
+            sid = st["id"]
+            # узел слияния: агента не запускает, сводит результаты ветвей по политике
+            if st.get("join"):
+                m = pipeline_graph.merge(st["join"], results)
+                return {"id": sid, "join": True, "policy": m.get("policy"), "note": m.get("note"),
+                        "missing": m.get("missing") or [], "data": m.get("data") or {}}
+            ok, why = pipeline_graph.should_run(st, results)
+            if not ok:
+                return {"id": sid, "agent_id": st.get("agent_id"), "skipped": True, "reason": why}
+            agent = await agent_store.get(st.get("agent_id"))
+            if not agent:
+                return {"id": sid, "agent_id": st.get("agent_id"), "error": "агент не найден", "skipped": True}
+            contract = await _contract_for_agent(agent)
+            up = pipeline_graph.step_input(st, results)
+            parts = [x for x in (base_ctx, safety.data_block("ВХОД ОТ ПРЕДЫДУЩИХ ШАГОВ ЦЕПОЧКИ", up) if up else "") if x]
+            deliver = st.get("deliver") or "chat"
+            try:
+                res = await execute_agent_run(agent, contract, actor, use_cache=False,
+                                              user_context="\n\n".join(parts), deliver_filter=deliver,
+                                              data_scope=st.get("scope") or None, job_id=job["id"])
+                result = res["result"]
+                data = {o.get("skill"): o.get("structured") for o in (result.get("skill_outputs") or [])
+                        if isinstance(o.get("structured"), dict)}
+                flat: dict = {}
+                for st_out in data.values():
+                    for k, v in (st_out or {}).items():
+                        flat.setdefault(k, v)
+                _sc = ((res.get("saved") or {}).get("run_metrics") or {}).get("cost") or {}
+                return {"id": sid, "agent_id": agent["id"], "agent_name": agent.get("name"),
+                        "run_id": res["saved"]["id"], "deliver": deliver, "data": flat,
+                        "tokens": int(_sc.get("input_tokens") or 0) + int(_sc.get("output_tokens") or 0),
+                        "findings_total": (result.get("findings_summary") or {}).get("total") or len(result.get("findings") or []),
+                        "delivery": result.get("delivery") or [], "verdict": result.get("verdict") or {},
+                        "trace_id": result.get("trace_id") or ""}
+            except Exception as ex:  # noqa: BLE001 — сбой ветви не рушит цепочку
+                return {"id": sid, "agent_id": agent["id"], "agent_name": agent.get("name"),
+                        "error": str(ex)[:300]}
+
+        got = await _asyncio.gather(*[_one(st) for st in todo])
+        for r in got:
+            done_steps.append(r)
+            started.add(r["id"])
+            if r.get("data"):
+                results[r["id"]] = {"data": r["data"], "agent_name": r.get("agent_name"),
+                                    "run_id": r.get("run_id")}
+        cp.update({"results": results, "steps": done_steps, "steps_total": len(steps),
+                   "steps_done": len(started)})
+        await run_queue.set_checkpoint(job["id"], cp)
+
+    last = next((d for d in reversed(done_steps) if d.get("run_id")), None)
+    return {"run_id": (last or {}).get("run_id") or "", "pipeline": pipe.get("id"), "steps": done_steps}
 
 
 async def _pipeline_job(job: dict) -> dict:
@@ -4517,6 +4606,11 @@ async def pipeline_save(body: dict, u: dict = Depends(user)) -> dict:
     steps = (body or {}).get("steps") or []
     if not name or len(steps) < 2:
         raise HTTPException(422, "нужно имя и минимум 2 шага (цепочка)")
+    # граф проверяем до сохранения: ссылка в никуда, цикл или неверное слияние иначе всплывут посреди
+    # прогона, когда часть шагов уже отработала и потратила токены
+    gerr = pipeline_graph.validate(steps)
+    if gerr:
+        raise HTTPException(422, "граф цепочки: " + "; ".join(gerr[:5]))
     import uuid as _uuid
     pid = str((body or {}).get("id") or "").strip() or ("pl_" + _uuid.uuid4().hex[:10])
     owner = _uid_of(u) or (u.get("name") or "dev")

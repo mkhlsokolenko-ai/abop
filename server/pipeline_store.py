@@ -4,8 +4,9 @@
 mem-фолбэк как у прочих сторов.
 
 pipelines{id, name, steps JSONB, owner, created_at, updated_at}
-  steps = [{agent_id, deliver?}]  — deliver: '' (как настроено) | 'chat' | канал; по умолчанию промежуточные
-  шаги идут в chat (без внешней доставки), последний — как настроено.
+  steps = [{id?, agent_id?, deliver?, after?, when?, join?, inputs_from?, scope?}]
+  Плоский список без after исполняется линейно, как раньше. Граф с ветвлением и слиянием описан в
+  server/pipeline_graph.py.
 """
 from __future__ import annotations
 
@@ -72,8 +73,20 @@ async def get(pid: str) -> dict | None:
 
 
 async def save(pid: str, name: str, steps: list, owner: str = "") -> dict:
-    steps = [{"agent_id": str(s.get("agent_id")), "deliver": str(s.get("deliver") or "")}
-             for s in (steps or []) if isinstance(s, dict) and s.get("agent_id")]
+    # Шаг цепочки — это уже граф, а не пара «агент и канал»: есть зависимости, условие запуска,
+    # узел слияния и предмет работы. Раньше сохранялись только agent_id и deliver, поэтому ветвление
+    # молча пропадало при записи и цепочка исполнялась старым линейным путём.
+    keep = ("id", "agent_id", "deliver", "after", "when", "join", "inputs_from", "scope", "budget", "title")
+    out = []
+    for st in (steps or []):
+        if not isinstance(st, dict):
+            continue
+        if not st.get("agent_id") and not st.get("join"):
+            continue                       # шаг без исполнителя и без слияния бессмыслен
+        row = {k: st[k] for k in keep if st.get(k) not in (None, "")}
+        row.setdefault("deliver", "")
+        out.append(row)
+    steps = out
     card = {"id": pid, "name": name or pid, "steps": steps, "owner": owner}
     if not _has_pg():
         import time as _t
