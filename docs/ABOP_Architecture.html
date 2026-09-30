@@ -122,7 +122,7 @@
           <div class="box hl" style="margin-bottom:6px"><div class="bt">UI с ABOP → кэш → /ui</div><div class="bd">один origin с /api/* (без PNA) · фолбэк вшит · правки UI git-деплоем без пересборки .exe</div></div>
           <div class="sec">Модули (прокси к ABOP /api/*)</div>
           <div class="chips" style="margin-bottom:8px">
-            <span class="chip g">chat</span><span class="chip g">runs · журнал</span><span class="chip g">agents</span><span class="chip g">connectors</span>
+            <span class="chip g">chat</span><span class="chip g">runs · журнал</span><span class="chip g">findings · находки 1С</span><span class="chip g">agents</span><span class="chip g">connectors</span>
             <span class="chip g">graphlens</span><span class="chip g">opslens</span><span class="chip g">security</span>
             <span class="chip g">cabinet</span><span class="chip g">ocr</span>
           </div>
@@ -134,6 +134,10 @@
             <div class="box hl"><div class="bt">🛡 HITL-очередь + превью</div><div class="bd">Действие / Куда / Навык / Тема → «да» → команда в шину</div></div>
             <div class="box"><div class="bt">🔁 Расписания · цепочки</div><div class="bd">крон + уведомления · авто-цепочки</div></div>
             <div class="box"><div class="bt">🖇 Файлы · OCR</div><div class="bd">pdf/docx/xlsx · RapidOCR</div></div>
+                  <div class="box hl"><div class="bt">◬ Журнал находок 1С</div><div class="bd">расхождения всех прогонов в одном списке · фильтры класс/существенность/межучастковые</div></div>
+                  <div class="box hl"><div class="bt">Доска прогона</div><div class="bd">кто что выложил · решения арбитра · нерешённые споры</div></div>
+                  <div class="box"><div class="bt">↺ Версии агента</div><div class="bd">откат с разницей узлов перед действием · прошлая версия в архив</div></div>
+                  <div class="box"><div class="bt">Затраты прогона</div><div class="bd">время по навыкам · токены · вызовы модели · действовавшие лимиты</div></div>
             <div class="box"><div class="bt">🗄 SQLite</div><div class="bd">треды · вложения</div></div>
           </div>
         </div>
@@ -173,6 +177,7 @@
                   <div class="box hl"><div class="bt">Волны со структурой</div><div class="bd">между шагами едет объект, а не пересказ прозой</div></div>
                   <div class="box hl"><div class="bt">Ветвление и слияние</div><div class="bd">pipeline_graph.py · after/when/scope · 4 политики слияния · составной ключ</div></div>
                   <div class="box hl"><div class="bt">Бюджет и лимиты</div><div class="bd">код → настройка → навык → прогон · проверка перед каждым шагом · честная остановка</div></div>
+                  <div class="box"><div class="bt">Зачистка следов проверок</div><div class="bd">/api/admin/cleanup · сухой прогон по умолчанию · агенты, навыки, данные не трогает</div></div>
                   <div class="box hl"><div class="bt">Доска прогона</div><div class="bd">blackboard.py · выводы с авторством · снимок данных на группу · дрейф</div></div>
                   <div class="box hl"><div class="bt">Арбитраж расхождений</div><div class="bd">arbiter.py · большинство → тяжесть → край → происхождение → навык → человек</div></div>
                   <div class="box hl"><div class="bt">Группы заданий (веер)</div><div class="bd">один агент по многим предметам · сводка · отмена группы · повтор ветви</div></div>
@@ -180,12 +185,12 @@
               </div>
               <div class="card">
                 <div class="sec">Data Plane</div>
-                <div class="chips"><span class="chip b">canonical store · jsonl (том abop_ape)</span><span class="chip b">recipes: источник→entity</span><span class="chip b">connectors</span><span class="chip b">реестр систем</span></div>
+                <div class="chips"><span class="chip b">canonical store · jsonl (том abop_ape)</span><span class="chip b">recipes: источник→entity</span><span class="chip b">reset: перечитать начисто (удалённое в источнике уходит)</span><span class="chip b">connectors</span><span class="chip b">реестр систем</span></div>
               </div>
               <div class="card">
                 <div class="sec">Schema-driven (шаблоны в БД)</div>
-                <div class="chips"><span class="chip b">schema_templates · skills/&lt;sid&gt;/template.json</span><span class="chip b">json_schema · instruction · max_tokens · delivery · slots</span><span class="chip b">report_templates · reports/&lt;id&gt;.html</span><span class="chip b">{{skills}} · {{skill_&lt;sid&gt;}}</span></div>
-                <div class="bd" style="color:var(--ink3);font-size:9.5px;margin-top:5px">58 навыков в каталоге, 55 со строгой схемой (vLLM xgrammar) · 6 с доставкой · 1 со слотом предмета · ответ сверяется со схемой: недобор → повтор с бОльшим лимитом, остаток помечается в прогоне и в отчёте · правка в UI / POST /schema-templates/import без пересборки · отчёт: default · audit1c · invest · digest</div>
+                <div class="chips"><span class="chip b">schema_templates · skills/&lt;sid&gt;/template.json</span><span class="chip b">json_schema · instruction · max_tokens · tool_steps · delivery</span><span class="chip b">контракт: inputs · produces · slots</span><span class="chip b">report_templates · reports/&lt;id&gt;.html</span><span class="chip b">reset: вернуть шаблон к версии поставки</span><span class="chip b">{{skills}} · {{skill_&lt;sid&gt;}}</span></div>
+                <div class="bd" style="color:var(--ink3);font-size:9.5px;margin-top:5px">59 навыков в каталоге, 54 с контрактом и строгой схемой (vLLM xgrammar) · 6 с доставкой · ответ сверяется со схемой: недобор → повтор с бОльшим лимитом, остаток помечается в прогоне и в отчёте · правка в UI / POST /schema-templates/import без пересборки · отчёт: default · audit1c · invest · digest</div>
               </div>
               <div class="card">
                 <div class="sec">Планирование</div>
@@ -212,7 +217,7 @@
                 <div class="chips">
                   <span class="chip">agent</span><span class="chip">contract</span><span class="chip">skill</span><span class="chip">families</span>
                   <span class="chip">identity</span><span class="chip">systems</span><span class="chip">dataplane</span><span class="chip">report</span>
-                  <span class="chip">schema</span><span class="chip">run</span><span class="chip">run_cache</span><span class="chip">hitl</span>
+                  <span class="chip">schema</span><span class="chip">run</span><span class="chip">run_cache</span><span class="chip">hitl</span><span class="chip">board_entries</span>
                   <span class="chip">trigger</span><span class="chip">reglament</span><span class="chip">audit</span><span class="chip">admin</span>
                 </div>
               </div>
@@ -221,29 +226,28 @@
                 <div class="chips"><span class="chip">chat · chat_stream</span><span class="chip">embed (BGE-M3)</span><span class="chip">rerank</span><span class="chip">qdrant</span><span class="chip">admission-семафор</span></div>
               </div>
               <div class="card">
-        <div class="st">Оценка: переход к мультиагентности в несколько потоков (29.09.2026)</div>
+        <div class="st">Переход к мультиагентности: состояние на 30.09.2026</div>
         <div class="grid g3" style="margin-bottom:8px">
-          <div class="box"><div class="bt" style="color:#63d78a">Готово и переиспользуется</div><div class="bd">
-            очередь run_jobs (SKIP LOCKED, приоритеты, heartbeat, чекпоинты, бэкпрешер) ·
-            шина + DLQ · версионный кэш · admission-семафор LLM · HITL-пауза через чекпоинт ·
-            предмет работы (scope) сужает данные · разделение system/user и санитизация ·
-            трассировка прогона и навыков в Langfuse</div></div>
-          <div class="box"><div class="bt" style="color:#f59e0b">Сделано наполовину</div><div class="bd">
-            волны графа считаются, но НЕ исполняются: все навыки агента стартуют одним gather,
-            зависимости между навыками игнорируются · цепочка строго линейная, между шагами едет
-            проза (6000 знаков), не структура · вход навыка описан прозой в инструкции, схема
-            описывает только выход · слоты есть у 1 навыка из 58</div></div>
-          <div class="box"><div class="bt" style="color:#f87171">Нет совсем</div><div class="bd">
-            ветвление и условия · слияние результатов ветвей и арбитраж противоречий ·
-            общая память прогона (блэкборд) · бюджет и дедлайн на ветку · отмена группы и повтор
-            одной ветки · снапшот данных на прогон · родительские трассы для параллельных веток ·
-            распределённые локи для второй реплики</div></div>
+          <div class="box"><div class="bt" style="color:#63d78a">Работает на стенде</div><div class="bd">
+            контракт навыка (вход/выход/слоты) у 54 из 59 · исполнение по волнам, между шагами едет
+            структура · ветвление с условиями и четыре политики слияния · бюджет и лимиты лестницей
+            (код → настройка → навык → прогон) · веер по предмету одной группой · общая доска с
+            авторством и снимком данных · арбитраж расхождений правилом, навыком или человеком ·
+            план по контрактам и правило достаточности запроса</div></div>
+          <div class="box"><div class="bt" style="color:#f59e0b">Сделано, но с оговоркой</div><div class="bd">
+            сквозной ключ джойна надёжен в вертикали аудита и расследования, в остальных цепочках
+            связь по строковому полю · слоты объявлены у немногих навыков — веер запускается только
+            по тем, у кого предмет описан · родительские трассы для параллельных ветвей неполные ·
+            живой стрим прогона зафиксирован контрактом, но отдаёт 501</div></div>
+          <div class="box"><div class="bt" style="color:#f87171">Не начато</div><div class="bd">
+            вторая реплика воркера и распределённые локи (Хартия v3.5) · песочница Python для
+            навыков-расчётчиков · мультитенантность источников (общие креды против BYO)</div></div>
         </div>
         <div class="grid g4">
-          <div class="box"><div class="bt">Каталог навыков</div><div class="bd">58 всего · 53 со строгой схемой · 37 с областью данных · 6 с доставкой · 1 со слотом · 100% объявляют инструменты</div></div>
-          <div class="box"><div class="bt">Сквозной ключ</div><div class="bd">джойн по идентификатору есть только в вертикали аудита и расследования; в остальных цепочках связь по строковому полю</div></div>
-          <div class="box"><div class="bt">Пропускная способность</div><div class="bd">2 воркера · 1 задание на пользователя · 3 вызова LLM на прогон · 12 на процесс — десять веток упрутся в бокс, не в код</div></div>
-          <div class="box hl"><div class="bt">Дешёвый первый шаг</div><div class="bd">fan-out по предмету: один агент × много проектов параллельно. Слоты и scope уже есть, граф с условиями не нужен</div></div>
+          <div class="box"><div class="bt">Каталог навыков</div><div class="bd">59 всего · 54 с контрактом и схемой · 38 с областью данных · 6 с доставкой · 5 справочных (стилевые гайды, в цепочку не встраиваются)</div></div>
+          <div class="box"><div class="bt">Проверено живьём</div><div class="bd">веер по трём проектам — 24 записи сведены по ключу «проект + пункт»; расхождение по пункту RM-05 разрешено правилом тяжести</div></div>
+          <div class="box"><div class="bt">Пропускная способность</div><div class="bd">4 воркера · параллельность навыков 8 · аудит 1С — 7 вызовов модели, ~210 с, 0 ₽ на своём боксе</div></div>
+          <div class="box hl"><div class="bt">Регрессия</div><div class="bd">11 эталонных запросов: подбор, предмет и исполнимость — 100%; 242 теста в репозитории</div></div>
         </div>
       </div>
 
