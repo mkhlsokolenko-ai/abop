@@ -405,7 +405,8 @@ def _apply_scope(rows: list, scope: dict) -> list:
 async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_sources,
                    load_body, chat_fn, blocked_entities=None, knowledge_fn=None, data_scope=None,
                    findings_context=None, user_context="", skill_schemas=None, should_cancel=None,
-                   tool_loop=None, actor: str = "", trace_id: str = "", on_progress=None) -> dict:
+                   tool_loop=None, actor: str = "", trace_id: str = "", on_progress=None,
+                   budget: dict | None = None) -> dict:
     """НАСТОЯЩИЙ прогон: governance-каркас (run_agent) + для каждого навыка с data-scope
     собирает РЕАЛЬНЫЕ данные из canonical store (data_query) и прогоняет их через LLM
     (тело навыка = методика) → находки на доску. Числа — только из данных (анти-галлюцинация).
@@ -419,6 +420,24 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
     skills = [n for n in (graph.get("nodes") or []) if n.get("kind") == "skill"]  # УЗЛЫ (несут per-node output)
     sem = asyncio.Semaphore(_LLM_CONCURRENCY)  # rate-limiter: не больше N одновременных вызовов к RouteAI
     produced: dict[str, dict] = {}   # выходы навыков предыдущих волн: sid → structured (вход для следующих)
+    # Бюджет прогона: {max_tokens, max_rub, max_sec}. Пусто — без ограничений, как раньше.
+    _bud = {k: float(v) for k, v in (budget or {}).items() if str(k).startswith("max_") and v}
+    _spent = {"tokens": 0, "rub": 0.0, "skills": 0}
+    _t_start = time.perf_counter()
+    _stopped: list[str] = []
+
+    def _budget_gap() -> str:
+        """Чего уже не хватает на следующий навык. Пустая строка — можно работать."""
+        if not _bud:
+            return ""
+        if _bud.get("max_tokens") and _spent["tokens"] >= _bud["max_tokens"]:
+            return f"бюджет токенов исчерпан ({_spent['tokens']} из {int(_bud['max_tokens'])})"
+        if _bud.get("max_rub") and _spent["rub"] >= _bud["max_rub"]:
+            return f"бюджет денег исчерпан ({round(_spent['rub'], 2)} из {_bud['max_rub']} ₽)"
+        if _bud.get("max_sec") and (time.perf_counter() - _t_start) >= _bud["max_sec"]:
+            return f"бюджет времени исчерпан ({int(time.perf_counter() - _t_start)} с из {int(_bud['max_sec'])})"
+        return ""
+
 
     async def _notify(sid: str, state: str, **kw) -> None:
         """Прогресс навыка наружу (очередь → статус задания → UI). Ошибка колбэка прогон не ломает."""
@@ -441,6 +460,14 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
         return out
 
     async def _analyze_inner(node, sid):
+        # Бюджет проверяем ДО вызова модели: перерасход должен останавливать работу явной пометкой,
+        # а не выглядеть как «прогон не выполнен» по общему таймауту задания.
+        _gap = _budget_gap()
+        if _gap:
+            _stopped.append(sid)
+            await _notify(sid, "skipped", reason=_gap)
+            return {"skill": sid, "entities": [], "model": "", "input_tokens": 0, "output_tokens": 0,
+                    "text": "⏹ пропущен: " + _gap, "skipped": True, "budget_stop": True}
         # Контракт навыка нужен ДО сборки промпта: из него берётся вход от предыдущих волн.
         _custom = skill_schemas.get(sid)
         # Обязательный вход из навыка не готов — запускать рано. Раньше навык всё равно шёл в модель и
@@ -588,6 +615,14 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
             except Exception as ex:  # noqa: BLE001
                 tool_calls = [{"error": f"{type(ex).__name__}: {ex}"}]
         async with sem:  # батчинг: семафор пускает по _LLM_CONCURRENCY вызовов за раз
+            # Пока навык стоял в очереди к модели, бюджет могли израсходовать соседние ветви. Проверяем
+            # ещё раз: десять ветвей на двенадцати слотах иначе пробьют лимит все разом.
+            _gap2 = _budget_gap()
+            if _gap2:
+                _stopped.append(sid)
+                await _notify(sid, "skipped", reason=_gap2)
+                return {"skill": sid, "entities": entities, "model": "", "input_tokens": 0, "output_tokens": 0,
+                        "text": "⏹ пропущен: " + _gap2, "skipped": True, "budget_stop": True}
             # backoff-ретрай (429/таймаут): рост параллелизма не должен портить вывод скилла —
             # при перегрузе RouteAI ждём и повторяем, а не отдаём «LLM недоступен». Качество без изменений.
             resp = None
@@ -666,10 +701,35 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
             if not r:
                 continue
             findings.append(r)
+            # расход копим по ходу, иначе лимит нечем проверять перед следующей волной
+            _ti, _to = int(r.get("input_tokens") or 0), int(r.get("output_tokens") or 0)
+            _spent["tokens"] += _ti + _to
+            if r.get("model"):
+                from . import pricing as _pr
+                _spent["rub"] = round(_spent["rub"] + _pr.cost_rub(r["model"], _ti, _to), 4)
+                _spent["skills"] += 1
             st = r.get("structured")
             if isinstance(st, dict) and r.get("skill"):
                 produced[r["skill"]] = st        # доступно навыкам следующих волн по их контракту
     base["run_metrics"]["waves"] = len(_waves(skills, graph.get("edges") or []))
+    if _bud or _stopped:
+        _sec = round(time.perf_counter() - _t_start, 1)
+        # Лимит означает «после превышения не начинать новое», а не «не превысить ни при каких
+        # условиях»: расход одного вызова известен только после ответа модели. Превышение показываем
+        # честно, иначе цифры в отчёте выглядели бы противоречиво.
+        _over = {}
+        if _bud.get("max_tokens") and _spent["tokens"] > _bud["max_tokens"]:
+            _over["tokens"] = _spent["tokens"] - int(_bud["max_tokens"])
+        if _bud.get("max_rub") and _spent["rub"] > _bud["max_rub"]:
+            _over["rub"] = round(_spent["rub"] - _bud["max_rub"], 4)
+        if _bud.get("max_sec") and _sec > _bud["max_sec"]:
+            _over["sec"] = round(_sec - _bud["max_sec"], 1)
+        base["run_metrics"]["budget"] = {
+            "limit": {k: (int(v) if k != "max_rub" else v) for k, v in _bud.items()},
+            "spent": {"tokens": _spent["tokens"], "rub": round(_spent["rub"], 4), "sec": _sec},
+            "stopped_skills": _stopped, "overrun": _over or None,
+            "note": ("лимит остановил работу: новые навыки не запускались" if _stopped else "в рамках бюджета"),
+        }
     for f in findings:
         for tc in (f.get("tool_calls") or []):
             if tc.get("tool"):

@@ -3765,6 +3765,7 @@ async def _handle_job(job: dict) -> dict:
     out = await execute_agent_run(agent, contract, job["actor"], use_cache=bool(p.get("use_cache", False)),
                                   user_context=p.get("user_context") or "", deliver_filter=p.get("deliver_filter") or "",
                                   data_scope=p.get("data_scope") or None,   # предмет работы едет с заданием
+                                  budget=p.get("budget") or None,
                                   trigger=p.get("trigger"), job_id=job["id"])
     return {"run_id": out["saved"]["id"]}
 
@@ -3819,7 +3820,9 @@ async def _pipeline_graph_job(job: dict) -> dict:
             try:
                 res = await execute_agent_run(agent, contract, actor, use_cache=False,
                                               user_context="\n\n".join(parts), deliver_filter=deliver,
-                                              data_scope=st.get("scope") or None, job_id=job["id"])
+                                              data_scope=st.get("scope") or None,
+                                              budget=st.get("budget") or (p.get("budget") or None),
+                                              job_id=job["id"])
                 result = res["result"]
                 data = {o.get("skill"): o.get("structured") for o in (result.get("skill_outputs") or [])
                         if isinstance(o.get("structured"), dict)}
@@ -3926,7 +3929,8 @@ async def _contract_for_agent(agent: dict, audit_id: str = "") -> dict:
 
 async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, trigger: dict | None = None,
                             use_cache: bool = True, user_context: str = "", deliver_filter: str = "",
-                            job_id: str | None = None, data_scope: dict | None = None) -> dict:
+                            job_id: str | None = None, data_scope: dict | None = None,
+                            budget: dict | None = None) -> dict:
     """Ядро прогона (LLM-раскладка + находки audit1c + сохранение + аудит). Переиспользуется
     POST /api/runs и планировщиком триггеров (server/triggers.py). Возвращает {saved, result}.
     Кэш результатов (multi-user): при попадании возвращает сохранённый вывод без LLM/доставки."""
@@ -4040,6 +4044,7 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
                                    skill_sources=ape.skill_datasources_resolved,
                                    load_body=ape.load_skill_body,
                                    chat_fn=clients.chat, blocked_entities=blocked, data_scope=data_scope,
+                                   budget=budget,
                                    knowledge_fn=_agent_knowledge_fn(agent, started_by),
                                    skill_schemas=_skill_schemas,
                                    findings_context=_ctx, user_context=user_context,
@@ -4226,6 +4231,10 @@ async def run_start(body: dict, u: dict = Depends(user),
     # отключалась — прогон выглядел успешным, но наружу не уходило ничего.
     # Предмет работы из слота навыка: {поле: значение}. Сужает выборку данных, чтобы агент не
     # смешивал проекты. Приходит из карточки уточнения в интерфейсе.
+    # Бюджет прогона: {max_tokens, max_rub, max_sec}. Перерасход останавливает работу пометкой, а не
+    # общим таймаутом задания, который читается как «прогон не выполнен».
+    _bd = (body or {}).get("budget") if isinstance((body or {}).get("budget"), dict) else {}
+    _budget = {k: v for k, v in _bd.items() if k in ("max_tokens", "max_rub", "max_sec") and v}
     _ds = (body or {}).get("scope") if isinstance((body or {}).get("scope"), dict) else {}
     _data_scope = {str(k): str(v) for k, v in _ds.items() if str(v or "").strip()} or None
     _dv = (body or {}).get("deliver")
@@ -4245,6 +4254,7 @@ async def run_start(body: dict, u: dict = Depends(user),
                                       payload={"contract_audit_id": agent.get("contract_audit_id") or audit_id,
                                                "use_cache": use_cache, "user_context": user_context,
                                                "deliver_filter": deliver_filter, "data_scope": _data_scope,
+                                               "budget": _budget or None,
                                                "trace_id": obs.current_trace_id()},
                                       priority=int((body or {}).get("priority") or 5))
         await run_bus.bus().publish_request(job, obs.current_trace_id())
@@ -4254,6 +4264,7 @@ async def run_start(body: dict, u: dict = Depends(user),
                              "deduped": bool(job.get("deduped"))}, status_code=202)
     async with _run_lock(lock_key):
         out = await execute_agent_run(agent, contract, actor, use_cache=use_cache, data_scope=_data_scope,
+                                      budget=_budget or None,
                                       user_context=user_context, deliver_filter=deliver_filter)
     return JSONResponse({"run_id": out["saved"]["id"], **out["result"]}, status_code=201)
 
@@ -4304,6 +4315,52 @@ async def run_jobs_mine(limit: int = 30, u: dict = Depends(user)) -> dict:
     all_ = u.get("level") in ("admin", "support")
     jobs = await run_queue.list_jobs(actor=None if all_ else actor, limit=max(1, min(200, limit)))
     return {"jobs": [run_queue.public(j) for j in jobs]}
+
+
+@app.get("/api/runs/groups/{group_id}")
+async def run_group_status(group_id: str, u: dict = Depends(user)) -> dict:
+    """Состояние группы заданий: сколько в каком статусе, что стоило, какие ветви упали.
+
+    Веер по предмету — это десятки заданий; без группы человек видел бы их как несвязанный список."""
+    st = await run_queue.group_status(group_id)
+    if not st.get("jobs"):
+        raise HTTPException(404, "нет заданий с такой группой")
+    return st
+
+
+@app.post("/api/runs/groups/{group_id}/cancel")
+async def run_group_cancel(group_id: str, u: dict = Depends(user)) -> dict:
+    """Отменить всю группу заданий (manager+): человек останавливает работу, а не каждую ветвь."""
+    require_level(u, "manager")
+    n = await run_queue.cancel_group(group_id, actor=u.get("name") or u.get("sub") or "dev")
+    await audit_store.record(u.get("name") or "dev", "run.group_cancel", group_id, {"cancelled": n})
+    return {"group_id": group_id, "cancelled": n}
+
+
+@app.post("/api/runs/jobs/{job_id}/retry-step")
+async def run_retry_step(job_id: str, body: dict = None, u: dict = Depends(user)) -> dict:
+    """Повторить ОДИН шаг цепочки, не перезапуская остальные (manager+).
+
+    Тело: {step: "id шага"}. Раньше повтор был только целым заданием с самого начала, поэтому одна
+    упавшая ветвь заставляла прогонять заново всё, что уже посчиталось и стоило денег."""
+    require_level(u, "manager")
+    step = str((body or {}).get("step") or "").strip()
+    if not step:
+        raise HTTPException(422, "нужен идентификатор шага")
+    job = await run_queue.get(job_id)
+    if not job:
+        raise HTTPException(404, "нет такого задания")
+    cp = dict(job.get("checkpoint") or {})
+    steps = list(cp.get("steps") or [])
+    if not any(d.get("id") == step for d in steps):
+        raise HTTPException(404, f"в задании нет шага «{step}»")
+    cp["steps"] = [d for d in steps if d.get("id") != step]
+    (cp.get("results") or {}).pop(step, None)
+    await run_queue.set_checkpoint(job_id, cp)
+    # задание возвращается в очередь: чекпоинт уже без этого шага, поэтому повторится только он
+    await run_queue.fail(job_id, "повтор шага «%s» по запросу оператора" % step, requeue=True)
+    await audit_store.record(u.get("name") or "dev", "run.retry_step", job_id, {"step": step})
+    return {"job_id": job_id, "step": step, "requeued": True}
 
 
 @app.get("/api/runs/queue")

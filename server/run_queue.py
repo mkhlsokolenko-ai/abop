@@ -54,6 +54,8 @@ ALTER TABLE run_jobs ADD COLUMN IF NOT EXISTS checkpoint JSONB;
 CREATE INDEX IF NOT EXISTS idx_run_jobs_status ON run_jobs (status, priority, created_at);
 CREATE INDEX IF NOT EXISTS idx_run_jobs_actor ON run_jobs (actor, status);
 CREATE INDEX IF NOT EXISTS idx_run_jobs_dedupe ON run_jobs (dedupe_key) WHERE status IN ('queued','running','awaiting_hitl');
+ALTER TABLE run_jobs ADD COLUMN IF NOT EXISTS group_id TEXT;
+CREATE INDEX IF NOT EXISTS idx_run_jobs_group ON run_jobs(group_id);
 """
 
 WORKERS = max(1, int(os.getenv("ABOP_RUN_WORKERS", "2")))
@@ -122,7 +124,7 @@ async def init() -> None:
         await conn.execute(SCHEMA)
 
 
-_COLS = ("id,kind,agent_id,actor,dedupe_key,payload,checkpoint,status,priority,attempts,locked_by,heartbeat_at,"
+_COLS = ("id,kind,agent_id,actor,dedupe_key,payload,checkpoint,status,priority,attempts,locked_by,heartbeat_at,group_id,"
          "cancel_requested,run_id,error,created_at,started_at,finished_at")
 _KEYS = _COLS.split(",")
 
@@ -135,7 +137,7 @@ def _row(r) -> dict:
 
 
 async def enqueue(*, agent_id: str, actor: str, payload: dict, dedupe_key: str | None = None,
-                  priority: int = 5, kind: str = "run") -> dict:
+                  priority: int = 5, kind: str = "run", group_id: str | None = None) -> dict:
     """Положить задание. Если такое же (dedupe_key) уже активно — вернуть его (deduped)."""
     if dedupe_key:
         cur = await find_active(dedupe_key)
@@ -148,14 +150,15 @@ async def enqueue(*, agent_id: str, actor: str, payload: dict, dedupe_key: str |
             _MEM[jid] = {"id": jid, "kind": kind, "agent_id": agent_id, "actor": actor, "dedupe_key": dedupe_key,
                          "payload": payload, "checkpoint": None, "status": "queued", "priority": priority,
                          "attempts": 0, "locked_by": None, "heartbeat_at": None, "cancel_requested": False,
-                         "run_id": None, "error": None, "created_at": _iso(_now()), "started_at": None,
-                         "finished_at": None}
+                         "run_id": None, "error": None, "group_id": group_id,
+                         "created_at": _iso(_now()), "started_at": None, "finished_at": None}
             return dict(_MEM[jid])
     from .db import _conn
     async with _conn() as conn:
         await conn.execute(
-            "INSERT INTO run_jobs (id,kind,agent_id,actor,dedupe_key,payload,priority) VALUES (%s,%s,%s,%s,%s,%s,%s)",
-            (jid, kind, agent_id, actor, dedupe_key, json.dumps(payload, ensure_ascii=False), priority))
+            "INSERT INTO run_jobs (id,kind,agent_id,actor,dedupe_key,payload,priority,group_id) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+            (jid, kind, agent_id, actor, dedupe_key, json.dumps(payload, ensure_ascii=False), priority, group_id))
     return await get(jid)
 
 
@@ -367,6 +370,51 @@ async def cancel(job_id: str, actor: str | None = None, admin: bool = False) -> 
                 await conn.execute("UPDATE run_jobs SET cancel_requested=TRUE WHERE id=%s", (job_id,))
         return await get(job_id)
     return j
+
+
+async def cancel_group(group_id: str, actor: str = "") -> int:
+    """Отменить все незавершённые задания группы. Веер по предмету — это десятки заданий, и отменять
+    их по одному нельзя: человек нажимает «стоп» на всей работе, а не на каждой ветви."""
+    gid = str(group_id or "").strip()
+    if not gid:
+        return 0
+    if not _has_pg():
+        n = 0
+        for j in _MEM.values():
+            if j.get("group_id") == gid and j.get("status") in ("queued", "running", "awaiting_hitl"):
+                j["cancel_requested"] = True
+                _CANCEL_FLAGS.add(j["id"])
+                n += 1
+        return n
+    from .db import _conn
+    async with _conn() as conn:
+        cur = await conn.execute(
+            "UPDATE run_jobs SET cancel_requested=true WHERE group_id=%s "
+            "AND status IN ('queued','running','awaiting_hitl') RETURNING id", (gid,))
+        rows = await cur.fetchall()
+    for r in rows:
+        _CANCEL_FLAGS.add(r[0])
+    return len(rows)
+
+
+async def group_status(group_id: str) -> dict:
+    """Состояние группы: сколько заданий в каком статусе и что уже стоило."""
+    gid = str(group_id or "").strip()
+    jobs: list[dict] = []
+    if not _has_pg():
+        jobs = [dict(j) for j in _MEM.values() if j.get("group_id") == gid]
+    else:
+        from .db import _conn
+        async with _conn() as conn:
+            cur = await conn.execute(f"SELECT {_COLS} FROM run_jobs WHERE group_id=%s ORDER BY created_at", (gid,))
+            jobs = [_row(r) for r in await cur.fetchall()]
+    by: dict[str, int] = {}
+    for j in jobs:
+        by[j.get("status") or "?"] = by.get(j.get("status") or "?", 0) + 1
+    return {"group_id": gid, "jobs": len(jobs), "by_status": by,
+            "done": by.get("done", 0), "failed": by.get("failed", 0),
+            "items": [{"id": j["id"], "agent_id": j.get("agent_id"), "status": j.get("status"),
+                       "error": j.get("error"), "run_id": j.get("run_id")} for j in jobs]}
 
 
 async def requeue_stale() -> int:
