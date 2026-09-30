@@ -120,6 +120,66 @@ export async function mount(root, ctx) {
       <span style="font-size:13px;font-weight:600;color:var(--ink)">${esc(String(head).slice(0, 300))}</span>${body}</div>`;
   }
 
+  let boardData = null, boardErr = "";
+  async function loadBoard() {
+    try { boardData = await api(R + "/board/" + encodeURIComponent(open)); boardErr = ""; }
+    catch (e) { boardErr = humanError(e); }
+    render();
+  }
+
+  // ── доска прогона: чей это вывод и чем кончился спор ──
+  // Запись доски показываем человеческой строкой «поле: значение · поле: значение», а не сырым JSON:
+  // на доску попадает результат навыка, и читать его должен человек, а не разработчик.
+  function recordLine(x) {
+    if (x == null) return "—";
+    if (typeof x !== "object") return String(x).slice(0, 220);
+    const parts = Object.entries(x)
+      .filter(([, v]) => v != null && typeof v !== "object" && String(v) !== "")
+      .slice(0, 4)
+      .map(([k, v]) => `${k}: ${String(v).slice(0, 90)}`);
+    return parts.length ? parts.join(" · ") : JSON.stringify(x).slice(0, 220);
+  }
+  function valueHTML(v) {
+    if (v == null) return "—";
+    if (typeof v !== "object") return esc(String(v).slice(0, 300));
+    if (Array.isArray(v)) {
+      return v.slice(0, 6).map((x) => `<div style="font-size:12px;color:var(--ink-2);margin:2px 0">• ${esc(recordLine(x))}</div>`).join("")
+        + (v.length > 6 ? `<div style="font-size:11.5px;color:var(--ink-3)">…ещё ${v.length - 6}</div>` : "");
+    }
+    const rows = Object.entries(v).slice(0, 8).map(([k, x]) => `<div style="display:grid;grid-template-columns:150px 1fr;gap:10px;font-size:12px;margin-top:3px">
+      <span style="color:var(--ink-3)">${esc(k)}</span><span style="color:var(--ink-2)">${esc(Array.isArray(x) ? x.slice(0, 3).map(recordLine).join(" · ") + (x.length > 3 ? " …" : "") : recordLine(x))}</span></div>`).join("");
+    return rows || `<span style="font-size:12px;color:var(--ink-3)">пусто</span>`;
+  }
+  function boardHTML() {
+    if (boardErr) return `<div style="font-size:12.5px;color:var(--warn-ink)">Доска не открылась: ${esc(boardErr)}</div>`;
+    if (!boardData) return `<div class="skeleton" style="height:90px"></div>`;
+    const b = boardData;
+    const entries = b.entries || [], contr = b.contradictions || [], arb = b.arbitration || {};
+    if (!entries.length) {
+      return `<div style="font-size:12.5px;color:var(--ink-3)">Навыки этого прогона ничего не выкладывали на общую доску — она нужна, когда над задачей работают несколько ветвей.</div>`;
+    }
+    const snap = b.data_snapshot && b.data_snapshot.taken_at
+      ? `<div style="font-size:11.5px;color:var(--ink-3);margin-bottom:8px">Снимок данных на старте: ${esc(b.data_snapshot.taken_at)}${(b.data_snapshot.drift || []).length ? ` · данные с тех пор менялись: ${esc((b.data_snapshot.drift || []).join(", "))}` : " · данные не менялись"}</div>` : "";
+    // Решения арбитра идут первыми: это то, что человеку важнее всего увидеть.
+    const decisions = (arb.decisions || []).map((d) => `<div style="padding:10px 12px;border-radius:10px;border:1px solid var(--ok-line);background:var(--ok-bg);margin:6px 0">
+      <div style="font-size:12.5px;font-weight:600">Спор о «${esc(d.key)}»${d.item ? " · " + esc(d.item) : ""} разрешён</div>
+      <div style="font-size:12px;color:var(--ink-2);margin-top:4px">Выбрано: ${valueHTML(d.chosen)}</div>
+      <div style="font-size:11.5px;color:var(--ink-3);margin-top:4px">Кем: ${esc(d.by || "—")}${d.reason ? " · " + esc(d.reason) : ""}</div></div>`).join("");
+    const open = contr.filter((c) => !(arb.decisions || []).some((d) => d.key === c.key && (d.item || "") === (c.item || "")));
+    const disputes = open.map((c) => `<div style="padding:10px 12px;border-radius:10px;border:1px solid var(--warn-line);background:var(--warn-bg);margin:6px 0">
+      <div style="font-size:12.5px;font-weight:600">Ветви разошлись: «${esc(c.key)}»${c.item ? " · " + esc(c.item) : ""}</div>
+      <div style="font-size:11.5px;color:var(--ink-3);margin-top:3px">расходятся поля: ${esc((c.fields || []).join(", ") || "—")}</div>
+      ${(c.variants || []).map((v) => `<div style="margin-top:6px"><div style="font-size:11.5px;color:var(--ink-3)">${esc((v.authors || []).join(", "))}</div>${valueHTML(v.value)}</div>`).join("")}
+      <div style="font-size:11.5px;color:var(--ink-3);margin-top:6px">Решения нет — вопрос ждёт человека.</div></div>`).join("");
+    const rows = entries.map((e) => `<div style="padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--field);margin:6px 0">
+      <div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
+        <span style="font-size:12.5px;font-weight:600">${esc(e.key || "")}</span>
+        <span style="font-size:11.5px;color:var(--ink-3)">выложил: ${esc(e.author || "—")}${e.at ? " · " + esc(e.at) : ""}</span></div>
+      <div style="margin-top:5px">${valueHTML(e.value)}</div></div>`).join("");
+    return `${snap}${decisions}${disputes}
+      <div style="${LBL};margin:12px 0 4px">что выложено на доску</div>${rows}`;
+  }
+
   function openHTML() {
     if (openErr) return `<div style="${CARD};border-color:var(--danger-line)"><div style="font-weight:700">Прогон не открылся</div><div style="font-size:12.5px;color:var(--ink-2)">${esc(openErr)}</div><button class="btn sm" id="oRetry" style="align-self:flex-start">Повторить</button></div>`;
     if (!openData) return `<div style="${CARD}"><div class="skeleton" style="height:18px;width:50%"></div><div class="skeleton" style="height:120px"></div></div>`;
@@ -129,7 +189,9 @@ export async function mount(root, ctx) {
     const so = d.skill_outputs || [];
     const rm = d.run_metrics || {};
     const miss = so.filter((o) => (o.schema_miss || []).length);
-    const tabs = [["findings", "Находки · " + fnd.length], ["skills", "Навыки · " + so.length], ["delivery", "Доставка"], ["metrics", "Затраты"]]
+    const bs = (rm.board || {});
+    const tabs = [["findings", "Находки · " + fnd.length], ["skills", "Навыки · " + so.length],
+                  ["board", "Доска" + (bs.entries ? " · " + bs.entries : "")], ["delivery", "Доставка"], ["metrics", "Затраты"]]
       .map(([id, t]) => `<button type="button" class="btn sm rtab${id === openTab ? " primary" : ""}" data-tab="${id}">${esc(t)}</button>`).join("");
     let body = "";
     if (openTab === "findings") {
@@ -142,6 +204,8 @@ export async function mount(root, ctx) {
         ${(o.schema_miss || []).length ? `<div style="font-size:11.5px;color:var(--warn-ink);margin-top:4px">не заполнено: ${esc((o.schema_miss || []).join(", "))}</div>` : ""}
         <div style="font-size:12px;color:var(--ink-2);margin-top:5px;white-space:pre-wrap">${esc(JSON.stringify(o.structured || {}, null, 1).slice(0, 2500))}</div></div>`).join("")
         : `<div style="font-size:12.5px;color:var(--ink-3)">Навыки не вернули структурного результата.</div>`;
+    } else if (openTab === "board") {
+      body = boardHTML();
     } else if (openTab === "delivery") {
       const dl = d.delivery || [];
       body = dl.length ? dl.map((x) => `<div style="font-size:12.5px;color:var(--ink-2);margin:5px 0">${esc(x.channel || "")}${x.to ? " → " + esc(x.to) : ""} · ${esc(x.mode || "")}${x.subject ? " · «" + esc(x.subject) + "»" : ""}</div>`).join("")
@@ -201,9 +265,9 @@ export async function mount(root, ctx) {
       root.querySelectorAll(".rrow").forEach((b) => { b.onclick = () => openRun(b.dataset.id); });
       return;
     }
-    if ($("oBack")) $("oBack").onclick = () => { open = null; openData = null; render(); };
+    if ($("oBack")) $("oBack").onclick = () => { open = null; openData = null; boardData = null; boardErr = ""; render(); };
     if ($("oRetry")) $("oRetry").onclick = () => openRun(open);
-    root.querySelectorAll(".rtab").forEach((b) => { b.onclick = () => { openTab = b.dataset.tab; render(); }; });
+    root.querySelectorAll(".rtab").forEach((b) => { b.onclick = async () => { openTab = b.dataset.tab; render(); if (openTab === "board" && !boardData && !boardErr) await loadBoard(); }; });
     if ($("oPdf")) $("oPdf").onclick = async (e) => {
       const tpl = $("oTpl") ? $("oTpl").value : "";
       e.target.disabled = true; e.target.textContent = "…";

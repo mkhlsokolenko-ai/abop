@@ -17,7 +17,7 @@ from . import modules as modules_pkg
 # Явный список модулей — используется, если авто-обход не сработал (PyInstaller frozen:
 # pkgutil.iter_modules по замороженному пакету может вернуть пусто). Новый модуль:
 # добавь папку в modules/ И имя сюда — так он подхватится и в dev, и в собранном .exe.
-_FALLBACK = ["chat", "agents", "runs", "graphlens", "opslens", "ocr", "connectors", "security", "cabinet"]
+_FALLBACK = ["chat", "agents", "runs", "findings", "graphlens", "opslens", "ocr", "connectors", "security", "cabinet"]
 
 
 def _names() -> list[str]:

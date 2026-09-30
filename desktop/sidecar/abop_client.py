@@ -295,9 +295,32 @@ def agent_restore(agent_id: str) -> dict:
     return _req("POST", "/api/agents/" + urllib.request.quote(agent_id) + "/restore", {}, timeout=30)
 
 
+def agent_rollback_preview(agent_id: str) -> dict:
+    """Что изменится при откате: предыдущая версия и разница по узлам графа."""
+    return _req("GET", "/api/agents/" + urllib.request.quote(agent_id) + "/rollback", timeout=30)
+
+
+def agent_rollback(agent_id: str) -> dict:
+    """Откат: предыдущая версия снова в работе, текущая уходит в архив (обратимо)."""
+    return _req("POST", "/api/agents/" + urllib.request.quote(agent_id) + "/rollback", {}, timeout=30)
+
+
 def run_full(run_id: str) -> dict:
     """Полная запись прогона: находки целиком, доска, вердикт, метрики."""
     return _req("GET", "/api/runs/" + urllib.request.quote(run_id), timeout=60)
+
+
+def findings_journal(limit: int = 120, runs: int = 12, agent_id: str = "") -> dict:
+    """Журнал находок пилота 1С: карточки расхождений по последним прогонам + метрики пилота."""
+    qs = f"?limit={int(limit)}&runs={int(runs)}"
+    if agent_id:
+        qs += "&agent_id=" + urllib.request.quote(agent_id)
+    return _req("GET", "/api/findings" + qs, timeout=90)
+
+
+def run_board(run_id: str) -> dict:
+    """Доска прогона: выводы навыков с авторством, расхождения и решения арбитра."""
+    return _req("GET", "/api/runs/" + urllib.request.quote(run_id) + "/board", timeout=30)
 
 
 def run_diff(run_id: str) -> dict:

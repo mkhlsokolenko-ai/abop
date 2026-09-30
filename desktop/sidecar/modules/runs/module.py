@@ -76,6 +76,15 @@ def run_item(run_id: str):
         return _err(e)
 
 
+@router.get("/board/{run_id:path}")
+def run_board(run_id: str):
+    """Доска прогона: что выложил каждый навык, где ветви разошлись и чем спор кончился."""
+    try:
+        return abop.run_board(run_id)
+    except abop.AbopError as e:
+        return _err(e)
+
+
 @router.get("/diff/{run_id:path}")
 def run_diff(run_id: str):
     """Что изменилось против предыдущего прогона того же агента."""

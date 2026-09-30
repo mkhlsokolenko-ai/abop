@@ -62,6 +62,7 @@ export async function mount(root, ctx) {
             <div style="font-size:11.5px;color:var(--ink-3)">автономия ${esc(a.autonomy_max || "?")} · v${esc(String(a.version || 1))}${a.owner ? " · мой" : " · общий"}${a.outward ? " · действует наружу 🛡" : ""}</div>
             <div style="display:flex;gap:8px">
               ${a.owner ? `<button class="btn cfg" data-id="${esc(a.id)}" title="Настроить моего агента — сохранит новую версию" style="flex:none">✎ Настроить</button>` : ""}
+              ${(a.version || 1) > 1 ? `<button class="btn back" data-id="${esc(a.id)}" data-name="${esc(a.name)}" title="Вернуться к предыдущей версии агента" style="flex:none">↺ Версии</button>` : ""}
               <button class="btn primary run" data-id="${esc(a.id)}" data-name="${esc(a.name)}" title="Откроет чат и запустит агента там" style="flex:1;white-space:nowrap">▶ Запустить</button>
             </div>
           </div>`).join("") : (loadErr ? "" : `<div class="faint" style="padding:20px;grid-column:1/-1">${tab === "mine" ? "У вас пока нет своих агентов — нажмите «＋ Собрать агента»." : "Нет общих агентов, доступных вашей роли."}</div>`)}
@@ -73,8 +74,36 @@ export async function mount(root, ctx) {
     root.querySelectorAll(".run").forEach((b) => (b.onclick = () => ctx.open("chat", { runAgent: { id: b.dataset.id, name: b.dataset.name } })));
     root.querySelectorAll(".cfg").forEach((b) => (b.onclick = () => reconfig(b.dataset.id)));
     root.querySelectorAll(".del").forEach((b) => (b.onclick = () => deleteAgent(b.dataset.id, b.dataset.name)));
+    root.querySelectorAll(".back").forEach((b) => (b.onclick = () => rollbackAgent(b.dataset.id, b.dataset.name)));
     const el = root.querySelector("#errLogin"); if (el) el.onclick = () => ctx.login();
     const er = root.querySelector("#errRetry"); if (er) er.onclick = async () => { await loadAgents(); render(); };
+  }
+
+  // Откат показывает РАЗНИЦУ до действия: «вернуться к прошлой версии» без списка изменений —
+  // это просьба довериться на слово.
+  async function rollbackAgent(id, name) {
+    let p;
+    try { p = await api(A + "/rollback/" + encodeURIComponent(id)); }
+    catch (e) { toast("Не удалось посмотреть версии: " + humanError(e), "danger"); return; }
+    if (p && p.ok === false) { toast(humanError(p.error), "danger"); return; }
+    if (!p.prev) {
+      ctx.modal(`Версии агента «${name}»`,
+        `<div style="font-size:12.5px;color:var(--ink-2);line-height:1.6">Сейчас версия ${esc(String(p.version || 1))}, и это единственная — откатывать некуда.</div>`,
+        null, "", { kicker: "агент" });
+      return;
+    }
+    const diff = (p.diff || []).map((d) => `<div style="font-size:12.5px;color:var(--ink-2);margin:3px 0"><span style="font-family:var(--mono);color:var(--ink-3)">${esc(d.sign)}</span> ${esc(d.text)}</div>`).join("");
+    const ok = await confirmDialog({
+      title: `Вернуться к версии ${esc(String(p.prev_version))}?`,
+      kicker: "откат агента",
+      okLabel: "Откатить",
+      danger: false,
+      text: `<div style="font-size:12.5px;color:var(--ink-2);margin-bottom:8px">Сейчас работает версия ${esc(String(p.version))}. После отката работать будет версия ${esc(String(p.prev_version))}, а нынешняя уйдёт в архив — вернуть её можно в любой момент.</div>${diff}`,
+    });
+    if (!ok) return;
+    try { await api(A + "/rollback/" + encodeURIComponent(id), { method: "POST" }); toast(`«${name}» вернулся к версии ${p.prev_version}`, "ok"); }
+    catch (e) { toast("Откат не удался: " + humanError(e), "danger"); return; }
+    await loadAgents(); render();
   }
 
   // Удаление было только жёстким: сносило все версии безвозвратно. Сервер умеет архив, поэтому

@@ -150,6 +150,24 @@ def resolve(entity: str, q: str = "", limit: int = 8):
         return _err(e)
 
 
+@router.get("/rollback/{agent_id:path}")
+def rollback_preview(agent_id: str):
+    """Что вернётся и что уйдёт при откате на предыдущую версию — показываем ДО действия."""
+    try:
+        return abop.agent_rollback_preview(agent_id)
+    except abop.AbopError as e:
+        return _err(e)
+
+
+@router.post("/rollback/{agent_id:path}")
+def rollback(agent_id: str):
+    """Откат на предыдущую версию: текущая уходит в архив, её можно вернуть."""
+    try:
+        return abop.agent_rollback(agent_id)
+    except abop.AbopError as e:
+        return _err(e)
+
+
 @router.post("/retire/{agent_id}")
 def retire(agent_id: str):
     """Убрать агента в архив (обратимо) — мягкая альтернатива удалению всех версий."""
