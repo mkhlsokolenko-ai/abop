@@ -417,5 +417,35 @@
       }
     }
   },
-  "max_tokens": 5000
+  "max_tokens": 5000,
+  "inputs": {
+    "required": [
+      {
+        "from": "data",
+        "entity": "document",
+        "fields": [
+          "id",
+          "title"
+        ]
+      }
+    ],
+    "optional": [
+      {
+        "from": "context",
+        "note": "описание процесса словами участников"
+      }
+    ]
+  },
+  "produces": [
+    {
+      "path": "as_is",
+      "key": "шаг",
+      "join": "шаг_процесса"
+    },
+    {
+      "path": "узкие_места",
+      "key": "шаг",
+      "join": "шаг_процесса"
+    }
+  ]
 }

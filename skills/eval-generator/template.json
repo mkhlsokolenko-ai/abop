@@ -283,5 +283,43 @@
       }
     }
   },
-  "max_tokens": 4000
+  "max_tokens": 4000,
+  "inputs": {
+    "required": [
+      {
+        "from": "context",
+        "note": "что проверяем: навык, агент или требование"
+      }
+    ],
+    "optional": [
+      {
+        "from": "skill",
+        "skill": "spec-reviewer",
+        "path": "критерии_приёмки",
+        "fields": [
+          "id"
+        ]
+      },
+      {
+        "from": "data",
+        "entity": "document",
+        "fields": [
+          "id",
+          "title"
+        ]
+      }
+    ]
+  },
+  "produces": [
+    {
+      "path": "критерии_приёмки",
+      "key": "id",
+      "join": "критерий"
+    },
+    {
+      "path": "кейсы",
+      "key": "id",
+      "join": "кейс"
+    }
+  ]
 }

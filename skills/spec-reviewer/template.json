@@ -349,5 +349,33 @@
       }
     }
   },
-  "max_tokens": 5000
+  "max_tokens": 5000,
+  "inputs": {
+    "required": [
+      {
+        "from": "context",
+        "note": "спецификация или требования на ревью"
+      }
+    ],
+    "optional": [
+      {
+        "from": "skill",
+        "skill": "bft-draft",
+        "path": "критерии_приёмки",
+        "fields": [
+          "id",
+          "дано",
+          "когда",
+          "тогда"
+        ]
+      }
+    ]
+  },
+  "produces": [
+    {
+      "path": "критерии_приёмки",
+      "key": "id",
+      "join": "критерий"
+    }
+  ]
 }

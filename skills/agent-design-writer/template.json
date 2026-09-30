@@ -354,5 +354,20 @@
       }
     }
   },
-  "max_tokens": 5000
+  "max_tokens": 5000,
+  "inputs": {
+    "required": [
+      {
+        "from": "context",
+        "note": "назначение агента и границы ответственности"
+      }
+    ]
+  },
+  "produces": [
+    {
+      "path": "tool_surface",
+      "key": "инструмент",
+      "join": "инструмент"
+    }
+  ]
 }

@@ -290,5 +290,35 @@
       }
     }
   },
-  "max_tokens": 4000
+  "max_tokens": 4000,
+  "inputs": {
+    "required": [
+      {
+        "from": "context",
+        "note": "вопрос исследования"
+      }
+    ],
+    "optional": [
+      {
+        "from": "data",
+        "entity": "document",
+        "fields": [
+          "id",
+          "title"
+        ]
+      }
+    ]
+  },
+  "produces": [
+    {
+      "path": "находки",
+      "key": "находка",
+      "join": "находка_ресёрча"
+    },
+    {
+      "path": "конкуренты",
+      "key": "конкурент",
+      "join": "конкурент"
+    }
+  ]
 }

@@ -199,5 +199,35 @@
       }
     }
   },
-  "max_tokens": 3200
+  "max_tokens": 3200,
+  "inputs": {
+    "required": [
+      {
+        "from": "data",
+        "entity": "issue",
+        "fields": [
+          "id",
+          "title"
+        ]
+      }
+    ],
+    "optional": [
+      {
+        "from": "skill",
+        "skill": "dashboard-builder",
+        "path": "дерево_метрик",
+        "fields": [
+          "метрика",
+          "источник"
+        ]
+      }
+    ]
+  },
+  "produces": [
+    {
+      "path": "метрики",
+      "key": "метрика",
+      "join": "метрика"
+    }
+  ]
 }

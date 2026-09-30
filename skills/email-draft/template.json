@@ -199,5 +199,39 @@
       }
     }
   },
-  "max_tokens": 3200
+  "max_tokens": 3200,
+  "inputs": {
+    "required": [
+      {
+        "from": "context",
+        "note": "повод письма и адресат"
+      }
+    ],
+    "optional": [
+      {
+        "from": "data",
+        "entity": "email",
+        "fields": [
+          "id",
+          "subject"
+        ]
+      },
+      {
+        "from": "skill",
+        "skill": "email-thread-reconstruct",
+        "path": "решения",
+        "fields": [
+          "решение",
+          "основание"
+        ]
+      }
+    ]
+  },
+  "produces": [
+    {
+      "path": "факты_из_данных",
+      "key": "факт",
+      "join": "факт"
+    }
+  ]
 }

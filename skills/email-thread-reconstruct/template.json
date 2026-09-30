@@ -356,5 +356,30 @@
       }
     }
   },
-  "max_tokens": 5000
+  "max_tokens": 5000,
+  "inputs": {
+    "required": [
+      {
+        "from": "data",
+        "entity": "email",
+        "fields": [
+          "id",
+          "from",
+          "subject"
+        ]
+      }
+    ]
+  },
+  "produces": [
+    {
+      "path": "решения",
+      "key": "решение",
+      "join": "решение"
+    },
+    {
+      "path": "хронология",
+      "key": "дата",
+      "join": "событие"
+    }
+  ]
 }

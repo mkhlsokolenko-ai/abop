@@ -4,30 +4,152 @@
   "json_schema": {
     "type": "object",
     "additionalProperties": false,
-    "required": ["дата", "приоритетные", "очередь", "риски", "итог"],
+    "required": [
+      "дата",
+      "приоритетные",
+      "очередь",
+      "риски",
+      "итог"
+    ],
     "properties": {
-      "дата": {"type": "string", "description": "ГГГГ-ММ-ДД плана"},
+      "дата": {
+        "type": "string",
+        "description": "ГГГГ-ММ-ДД плана"
+      },
       "приоритетные": {
         "type": "array",
         "description": "ровно 2 элемента",
         "items": {
-          "type": "object", "additionalProperties": false,
-          "required": ["задача", "почему_сегодня", "факт", "срок", "шаги", "оценка_времени", "результат", "кому_отчитаться"],
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "задача",
+            "почему_сегодня",
+            "факт",
+            "срок",
+            "шаги",
+            "оценка_времени",
+            "результат",
+            "кому_отчитаться"
+          ],
           "properties": {
-            "задача": {"type": "string"},
-            "почему_сегодня": {"type": "string", "description": "срочность × важность одним предложением"},
-            "факт": {"type": "string", "description": "фраза письма или срок, на который опирается приоритет"},
-            "срок": {"type": "string"},
-            "шаги": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["шаг", "что_сделать", "минуты"], "properties": {"шаг": {"type": "integer"}, "что_сделать": {"type": "string"}, "минуты": {"type": "integer"}}}},
-            "оценка_времени": {"type": "string", "description": "суммарно, напр. «2 ч 30 мин»"},
-            "результат": {"type": "string", "description": "что будет на выходе (документ, письмо, решение)"},
-            "кому_отчитаться": {"type": "string"}
+            "задача": {
+              "type": "string"
+            },
+            "почему_сегодня": {
+              "type": "string",
+              "description": "срочность × важность одним предложением"
+            },
+            "факт": {
+              "type": "string",
+              "description": "фраза письма или срок, на который опирается приоритет"
+            },
+            "срок": {
+              "type": "string"
+            },
+            "шаги": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "шаг",
+                  "что_сделать",
+                  "минуты"
+                ],
+                "properties": {
+                  "шаг": {
+                    "type": "integer"
+                  },
+                  "что_сделать": {
+                    "type": "string"
+                  },
+                  "минуты": {
+                    "type": "integer"
+                  }
+                }
+              }
+            },
+            "оценка_времени": {
+              "type": "string",
+              "description": "суммарно, напр. «2 ч 30 мин»"
+            },
+            "результат": {
+              "type": "string",
+              "description": "что будет на выходе (документ, письмо, решение)"
+            },
+            "кому_отчитаться": {
+              "type": "string"
+            }
           }
         }
       },
-      "очередь": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["задача", "когда", "почему_не_сегодня"], "properties": {"задача": {"type": "string"}, "когда": {"type": "string"}, "почему_не_сегодня": {"type": "string"}}}},
-      "риски": {"type": "array", "items": {"type": "string"}, "description": "что может сорвать план: нет данных, ждём ответа, зависимость"},
-      "итог": {"type": "string"}
+      "очередь": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "задача",
+            "когда",
+            "почему_не_сегодня"
+          ],
+          "properties": {
+            "задача": {
+              "type": "string"
+            },
+            "когда": {
+              "type": "string"
+            },
+            "почему_не_сегодня": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "риски": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "что может сорвать план: нет данных, ждём ответа, зависимость"
+      },
+      "итог": {
+        "type": "string"
+      }
     }
-  }
+  },
+  "inputs": {
+    "required": [
+      {
+        "from": "skill",
+        "skill": "mail-triage",
+        "path": "задачи",
+        "fields": [
+          "задача",
+          "срок",
+          "критичность",
+          "ответственный",
+          "основание"
+        ]
+      }
+    ],
+    "optional": [
+      {
+        "from": "data",
+        "entity": "email",
+        "fields": [
+          "id",
+          "subject"
+        ]
+      }
+    ]
+  },
+  "produces": [
+    {
+      "path": "приоритетные",
+      "key": "задача",
+      "join": "задача"
+    }
+  ]
 }
