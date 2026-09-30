@@ -3002,7 +3002,7 @@ class Component extends DCLogic {
       }
     } catch (e) {}
     const fromHash = (window.location.hash || '').replace('#', '');
-    const screens = ['overview','ingress','canvas','data','skills','agents','settings','security','lk']; this.loadBackend(); this.loadMe(); this.loadRuns(); this.reloadAgents();
+    const screens = ['overview','ingress','canvas','data','skills','agents','settings','security','lk']; this.loadBackend(); this.loadMe(); this.loadRuns(); this.reloadAgents(); this.loadOutChannels();   // каналы вывода — с сервера, а не из списка в вёрстке
     this.sanitize();
 
     const legacyLens = { fleet: 'ops', map: 'ops', runs: 'run', passport: 'envelope' };
@@ -3119,6 +3119,9 @@ class Component extends DCLogic {
 
   route(screen) {
     try { if ((window.location.hash || '').replace('#', '') !== screen) window.location.hash = screen; } catch (e) {}
+    // Канва спрашивает у сервера, куда на самом деле можно доставить результат: список каналов
+    // объявлен рядом с кодом доставки, а не в вёрстке.
+    if (screen === 'canvas') this.loadOutChannels();
     this.persist();
   }
 
@@ -4953,12 +4956,18 @@ class Component extends DCLogic {
       fireTrigger: () => this.fireTriggerNode(),
       selIsOut: !!selNode && selNode.kind === 'out',
       selOutChannel: ((selNode && selNode.out && selNode.out.channel) || 'email'),
-      outChannelOptions: [['email','Почта (Mailpit · демо)'],['yandex','Яндекс.Почта (реально)'],['bookstack','BookStack (вики)'],['yougile','YouGile (задача)'],['pdf','PDF-файл'],['file','Файл']].map(function(x){ return { value: x[0], label: x[1] }; }),
+      // Каналы приходят с сервера (/api/out-channels): там они объявлены рядом с кодом, который их
+      // исполняет. Зашитый в вёрстке список разошёлся с рантаймом — предлагал YouGile, которого нет
+      // на стенде, и не предлагал Redmine, куда уходит аудит 1С.
+      outChannelOptions: (s.outChannels || []).map(function(c){
+        return { value: c.id, label: c.label + (c.registered ? '' : ' · нет в реестре'),
+                 sel: ((selNode && selNode.out && selNode.out.channel) || 'email') === c.id }; }),
       setOutChannel: (e) => { this.setOut({ channel: e.target.value }); },
       selOutTo: ((selNode && selNode.out && (selNode.out.to || selNode.out.book_id)) || ''),
-      selOutToLabel: (function(){ var ch=(selNode&&selNode.out&&selNode.out.channel)||'email'; return ch==='bookstack'?'книга BookStack (book_id)':ch==='yougile'?'колонка YouGile (column_id)':(ch==='pdf'||ch==='file')?'имя файла':'адрес получателя'; })(),
-      selOutToPh: (function(){ var ch=(selNode&&selNode.out&&selNode.out.channel)||'email'; return ch==='bookstack'?'1':ch==='yougile'?'ID колонки YouGile':ch==='yandex'?'user@yandex.ru':(ch==='pdf'||ch==='file')?'report':'glavbuh@demo.local'; })(),
-      setOutTo: (e) => { var v = e.target.value; var ch = (selNode&&selNode.out&&selNode.out.channel)||'email'; if (ch==='bookstack') { this.setOut({ book_id: parseInt(v,10)||1 }); } else { this.setOut({ to: v }); } },
+      selOutToLabel: (function(){ var c = Component.outChannelOf(s, selNode); return (c.to || {}).label || 'адрес'; })(),
+      selOutToPh: (function(){ var c = Component.outChannelOf(s, selNode); return (c.to || {}).placeholder || ''; })(),
+      setOutTo: (e) => { var v = e.target.value; var c = Component.outChannelOf(s, selNode); var f = (c.to || {}).field;
+        if (f === 'book_id') { this.setOut({ book_id: parseInt(v, 10) || 1 }); } else { this.setOut({ to: v }); } },
       selOutSubject: ((selNode && selNode.out && selNode.out.subject) || ''),
       setOutSubject: (e) => { this.setOut({ subject: e.target.value }); },
       selOutFormat: ((selNode && selNode.out && selNode.out.format) || 'pdf'),
@@ -4975,7 +4984,10 @@ class Component extends DCLogic {
       outHitlBg: (!!(selNode&&selNode.out&&selNode.out.hitl) ? 'rgba(16,185,129,.18)' : 'var(--w5)'),
       outHitlFg: (!!(selNode&&selNode.out&&selNode.out.hitl) ? 'var(--ok-ink)' : 'var(--w55)'),
       outHitlBorder: (!!(selNode&&selNode.out&&selNode.out.hitl) ? 'rgba(16,185,129,.5)' : 'var(--w14)'),
-      selOutInfo: (function(){ var o=(selNode&&selNode.out)||{}; var ch=o.channel||'email'; var dest=ch==='bookstack'?('книга '+(o.book_id||1)):ch==='yougile'?('колонка '+(o.to||'?')):(ch==='email'||ch==='yandex')?(o.to||'адрес?'):(o.to||'report'); var real=o.run&&!o.hitl; return 'канал: '+ch+' → '+dest+' · '+(o.format||'pdf')+' · '+(real?'РЕАЛЬНАЯ отправка':'dry_run (превью)')+(o.hitl?' · под HITL':''); })(),
+      selOutInfo: (function(){ var o = (selNode && selNode.out) || {}; var c = Component.outChannelOf(s, selNode);
+        var dest = ((c.to || {}).field === 'book_id') ? ('книга ' + (o.book_id || 1)) : (o.to || ((c.to || {}).label || 'адрес') + '?');
+        var warn = c.id && !c.allowed ? ' · ' + (c.note || 'канал недоступен') : '';
+        return (c.label || o.channel || 'канал') + ' → ' + dest + ' · ' + (o.run ? 'реальная отправка' : 'пробный прогон') + (o.hitl ? ' · под подтверждением' : '') + warn; })(),
       selIsSource: !!selNode && (selNode.kind === 'source' || selNode.kind === 'doc'),
       sourceRecipeOptions: [{ value: '', label: '— не привязан' }].concat((s.recipesList||[]).map(r => ({ value: r.id, label: r.title + ' · ' + r.adapter + ' → ' + (r.entity||'?') }))),
       selSourceRecipe: (selNode && selNode.recipe) || (_effRecipe ? _effRecipe.id : ''),
@@ -5641,6 +5653,23 @@ class Component extends DCLogic {
         self.showToast(res.j.note || 'Собрано');
         self.reloadAgents(); self.loadChains();
       }).catch(function(){ self.showToast('ABOP недоступен'); });
+  }
+
+  // Описание выбранного канала: подпись адреса, подсказка, доступность. Раньше это были три
+  // тернарника в вёрстке, каждый со своим списком каналов.
+  static outChannelOf(state, node) {
+    var id = (node && node.out && node.out.channel) || 'email';
+    var list = state.outChannels || [];
+    for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
+    return { id: id, label: id, to: {}, allowed: true, registered: true };
+  }
+
+  loadOutChannels() {
+    if (this.state.outChannels) return;
+    var self = this;
+    fetch('/api/out-channels').then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(d){ if (d) self.setState({ outChannels: d.channels || [] }); })
+      .catch(function(){ /* канал выберут вручную — список не критичен для сборки */ });
   }
 
   checkPlan() {

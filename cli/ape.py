@@ -2839,25 +2839,58 @@ register_adapter("audit1c", _adapter_audit1c, {
                     "placeholder": "documents · documents.РеализацияТоваровУслуг · catalogs.Контрагенты"}]})
 
 # ── Реестр canonical-схем (Canonical Schema): обязательные поля сущности. Расширяется вертикалями. ──
+# `join` — поля, по которым запись СОПОСТАВЛЯЕТСЯ с записями других сущностей. Это не то же самое,
+# что `id`: у пунктов дорожной карты, отчётов подрядчиков и решений приёмки идентификаторы разные по
+# построению («PRJ-2451/RM-02/ООО Стек-Интегро» против «PRJ-2451/RM-02/приёмка»), а говорят они об
+# одном и том же пункте одного проекта. Без объявленного join ключ сведения приходилось угадывать.
 CANONICAL_SCHEMAS = {
-    "email":       {"required": ["id", "from", "subject"], "hint": "письмо: from/subject/received_at/body"},
-    "transaction": {"required": ["id", "amount"],          "hint": "транзакция: amount/date/customer"},
-    "customer":    {"required": ["id"],                    "hint": "клиент: name/email/segment"},
-    "issue":       {"required": ["id", "title"],           "hint": "тикет: title/status/assignee"},
-    "document":    {"required": ["id"],                    "hint": "документ: kind/title/text"},
-    "meeting":     {"required": ["id"],                    "hint": "встреча: attendees/decisions/actions"},
+    "email":       {"required": ["id", "from", "subject"], "join": ["id"],
+                    "hint": "письмо: from/subject/received_at/body"},
+    "transaction": {"required": ["id", "amount"],          "join": ["id"],
+                    "hint": "транзакция: amount/date/customer"},
+    "customer":    {"required": ["id"],                    "join": ["id"],
+                    "hint": "клиент: name/email/segment"},
+    "issue":       {"required": ["id", "title"],           "join": ["id"],
+                    "hint": "тикет: title/status/assignee"},
+    "document":    {"required": ["id"],                    "join": ["id"],
+                    "hint": "документ: kind/title/text"},
+    "meeting":     {"required": ["id"],                    "join": ["id"],
+                    "hint": "встреча: attendees/decisions/actions"},
     # 1С-Аудитор (демо-вертикаль): имена сущностей ASCII (иначе _data_path схлопнет кириллицу в «_»)
-    "doc1c":       {"required": ["id"],                    "hint": "документ 1С: тип/Номер/Дата/Организация/Контрагент/СуммаДокумента/ДокументОснование/Проводки/Товары"},
-    "ref1c":       {"required": ["id"],                    "hint": "элемент справочника 1С: тип/Код/Наименование/ИНН/КПП/реквизиты"},
+    # Цепочки документов идут по ДокументОснование → uuid, то есть по тому же id.
+    "doc1c":       {"required": ["id"],                    "join": ["id"],
+                    "hint": "документ 1С: тип/Номер/Дата/Организация/Контрагент/СуммаДокумента/ДокументОснование/Проводки/Товары"},
+    "ref1c":       {"required": ["id"],                    "join": ["id"],
+                    "hint": "элемент справочника 1С: тип/Код/Наименование/ИНН/КПП/реквизиты"},
+    # Проектная вертикаль: план, факт подрядчика и решение приёмки говорят об ОДНОМ пункте одного
+    # проекта, но каждый со своей стороны. Сквозной ключ — пара «проект + пункт».
+    "project":     {"required": ["id", "name"],            "join": ["id"],
+                    "hint": "проект: name/goal/manager/customer/contractors/budget_hours/commissioning"},
+    "roadmap_item": {"required": ["id", "проект", "пункт"], "join": ["проект", "пункт"],
+                     "hint": "пункт дорожной карты: этап/название/часы_план/план_старт/план_финиш/ответственный/критично_для_ввода"},
+    "contractor_report": {"required": ["id", "проект", "пункт"], "join": ["проект", "пункт"],
+                          "hint": "отчёт подрядчика по пункту: подрядчик/статус/часы_факт/факт_финиш/причина_срыва/отклонение_дней/перерасход_часов/за_границами_ввода/предлагаемое_мероприятие"},
+    "acceptance":  {"required": ["id", "проект", "пункт"], "join": ["проект", "пункт"],
+                    "hint": "решение приёмки по пункту: решение_приёмки/дата_акта/часы_подтверждено/замечание/критично_для_ввода/источник"},
 }
 
 
 def data_schema(entity: str) -> dict:
-    """Data Contract: описание сущности (обязательные поля + подсказка). Агент берёт данные по контракту."""
+    """Data Contract: чем запись опознаётся (`required`), чем соединяется с другими (`join`), что в ней есть (`hint`)."""
     sc = CANONICAL_SCHEMAS.get(entity)
     if sc:
-        return {"entity": entity, "known": True, **sc}
-    return {"entity": entity, "known": False, "required": ["id"], "hint": "произвольная сущность (нет в реестре схем)"}
+        return {"entity": entity, "known": True, "join": ["id"], **sc}
+    return {"entity": entity, "known": False, "required": ["id"], "join": ["id"],
+            "hint": "произвольная сущность (нет в реестре схем)"}
+
+
+def entity_join_key(entity: str) -> list:
+    """По каким полям сопоставлять записи этой сущности с записями других.
+
+    Отвечает на вопрос «что считать одной и той же записью» — тот самый, который раньше решался
+    догадкой в сводке группы заданий.
+    """
+    return list((data_schema(entity) or {}).get("join") or ["id"])
 
 
 def _validate_canonical(entity: str, rec: dict) -> list:

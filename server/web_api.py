@@ -1479,7 +1479,8 @@ async def schema_template_get(tid: str, u: dict = Depends(user)) -> dict:
 @app.post("/api/schema-templates/import")
 async def schema_templates_import(body: dict, u: dict = Depends(user)) -> dict:
     """Импорт шаблонов извлечения в БД (источник правды в рантайме) БЕЗ пересборки образа:
-    body {templates:[{id,name,instruction,json_schema,max_tokens}], source:"repo"|"manual", force:bool}.
+    body {templates:[{id,name,instruction,json_schema,max_tokens,tool_steps,delivery,inputs,produces,slots}],
+    source:"repo"|"manual", force:bool}. Контракт (inputs/produces/slots) переносится вместе со схемой.
     source=repo → builtin (маркер отпечатка, посев идемпотентен); ручные (builtin=false) без force не перезаписываются.
     Каждая схема проверяется на strict-совместимость. Admin-уровень."""
     require_level(u, "admin")
@@ -1504,10 +1505,19 @@ async def schema_templates_import(body: dict, u: dict = Depends(user)) -> dict:
         cur = await schema_store.get(tid)
         if cur and not cur.get("builtin") and not force:
             skipped.append(tid); continue
+        # Контракт навыка (inputs/produces/slots) и лимит шагов инструментов переносятся ВМЕСТЕ со
+        # схемой. Без них заливка молча обнуляла контракты всего каталога — а на них держатся план по
+        # контрактам, проверка покрытия входов, доска прогона и арбитраж.
+        _CARRY = ("name", "instruction", "json_schema", "max_tokens", "tool_steps",
+                  "delivery", "inputs", "produces", "slots")
         card = {"name": raw.get("name") or tid, "instruction": raw.get("instruction"), "json_schema": raw["json_schema"],
                 "max_tokens": int(raw.get("max_tokens") or 0) or None,
+                "tool_steps": raw.get("tool_steps"),
                 "delivery": raw.get("delivery") if isinstance(raw.get("delivery"), dict) and raw.get("delivery") else None,
-                "fingerprint": skill_templates.fingerprint({k: raw[k] for k in ("name", "instruction", "json_schema", "max_tokens", "delivery") if k in raw})}
+                "inputs": raw.get("inputs") if isinstance(raw.get("inputs"), dict) else {},
+                "produces": raw.get("produces") if isinstance(raw.get("produces"), (dict, list)) else {},
+                "slots": raw.get("slots") if isinstance(raw.get("slots"), list) else [],
+                "fingerprint": skill_templates.fingerprint({k: raw[k] for k in _CARRY if k in raw})}
         await skill_templates.upsert(schema_store, tid, card, editor=editor, builtin=(source == "repo"))
         imported.append(tid)
     await audit_store.record(editor, "schema_template.import", source, {"imported": len(imported), "skipped": len(skipped), "errors": len(errors)})
@@ -3817,6 +3827,62 @@ def _out_nodes(agent: dict) -> list:
 _CHANNEL_SYSTEM = {"redmine": "redmine", "bookstack": "bookstack", "email": "mailpit",
                    "yandex": "mailpit", "yougile": "yougile", "twenty": "twenty", "nocodb": "nocodb"}
 
+# Каталог каналов OUT-узла: объявлен РЯДОМ с кодом, который их исполняет (`_send_channel`), и
+# отдаётся интерфейсу. Раньше список жил в вёрстке канвы и разошёлся с рантаймом: предлагался
+# YouGile, которого нет на стенде, и отсутствовал Redmine, в который уходит аудит 1С.
+# `to` описывает, что именно спрашивать у человека для адреса: у вики это номер книги, у почты
+# адрес, у файла имя. Эти подписи тоже были тремя тернарниками в вёрстке.
+OUT_CHANNELS = [
+    {"id": "redmine",   "label": "Redmine — задача",        "system": "redmine",
+     "to": {"label": "проект трекера", "placeholder": "demo", "kind": "text"}},
+    {"id": "bookstack", "label": "BookStack — страница вики", "system": "bookstack",
+     "to": {"label": "книга BookStack (book_id)", "placeholder": "1", "kind": "int", "field": "book_id"}},
+    {"id": "email",     "label": "Почта стенда (Mailpit)",  "system": "mailpit",
+     "to": {"label": "адрес получателя", "placeholder": "glavbuh@demo.local", "kind": "email"}},
+    {"id": "yandex",    "label": "Яндекс.Почта",            "system": "mailpit",
+     "to": {"label": "адрес получателя", "placeholder": "user@yandex.ru", "kind": "email"}},
+    {"id": "yougile",   "label": "YouGile — задача",        "system": "yougile",
+     "to": {"label": "колонка YouGile (column_id)", "placeholder": "ID колонки", "kind": "text"}},
+    {"id": "pdf",       "label": "PDF-файл",                "system": None,
+     "to": {"label": "имя файла", "placeholder": "report", "kind": "text"}},
+    {"id": "file",      "label": "Файл",                    "system": None,
+     "to": {"label": "имя файла", "placeholder": "report", "kind": "text"}},
+]
+
+
+@app.get("/api/out-channels")
+async def out_channels(family: str = "", u: dict = Depends(user)) -> dict:
+    """Куда узел вывода может доставить результат — по факту, а не по списку в вёрстке.
+
+    Канал показывается всегда (чтобы было видно, что платформа умеет), но помечается: есть ли его
+    система в реестре и открыт ли к ней доступ отделу. Собирать узел на систему, которой нет, —
+    та же ошибка, что показывать демо-данные как настоящие.
+    """
+    known = {s.get("id"): s for s in (await systems_store.all() or [])}
+    fam = str(family or "").strip()
+    out = []
+    for c in OUT_CHANNELS:
+        sysid = c.get("system")
+        entry = {**c, "registered": True, "allowed": True, "note": ""}
+        if sysid:
+            sysrec = known.get(sysid)
+            entry["registered"] = bool(sysrec)
+            if not sysrec:
+                entry["allowed"] = False
+                entry["note"] = f"системы «{sysid}» нет в реестре — узел соберётся, но доставки не будет"
+            elif fam:
+                try:
+                    chk = await access_check({"family": fam, "system_id": sysid}, u)
+                    entry["allowed"] = bool(chk.get("allowed"))
+                    if not entry["allowed"]:
+                        entry["note"] = str(chk.get("reason") or "отделу закрыт доступ к этой системе")
+                except Exception:  # noqa: BLE001 — проверка доступа усиление, а не условие показа
+                    pass
+        else:
+            entry["note"] = "локальный файл, наружу не уходит"
+        out.append(entry)
+    return {"channels": out, "family": fam}
+
 
 async def _send_channel(cfg: dict, agent_name: str, html_report: str, real: bool) -> str:
     """Отправка отчёта в канал OUT-узла (почта/BookStack/YouGile/Яндекс/PDF). real=False → dry_run
@@ -4948,7 +5014,10 @@ async def run_fan_out(body: dict, u: dict = Depends(user)) -> dict:
                      "user_context": (ctx + f"\n\n=== ПРЕДМЕТ РАБОТЫ ({slot['name']}) ===\n" +
                                       "\n".join(f"{k}: {v}" for k, v in it["record"].items()
                                                  if not isinstance(v, (dict, list)))).strip(),
-                     "trace_id": obs.current_trace_id(), "fan_item": it["value"], "fan_label": label})
+                     "trace_id": obs.current_trace_id(), "fan_item": it["value"], "fan_label": label,
+                     # предмет и сущность нужны сводке: по ним она берёт сквозной ключ из контракта,
+                     # а не угадывает его по содержимому результата
+                     "fan_slot": slot["name"], "fan_entity": entity})
         await run_bus.bus().publish_request(job, obs.current_trace_id())
         jobs.append({"job_id": job["id"], "item": it["value"], "label": label})
     obs.log_event("info", "fanout.started", group=gid, agent=agent_id, slot=slot["name"], jobs=len(jobs),
@@ -4959,6 +5028,38 @@ async def run_fan_out(body: dict, u: dict = Depends(user)) -> dict:
             "jobs": jobs, "count": len(jobs), "skipped_over_limit": cut,
             "board_scope": gid, "data_snapshot": _snap, "parent_trace_id": _parent_trace,
             "note": f"запущено заданий: {len(jobs)}" + (f"; за пределом лимита осталось {cut}" if cut else "")}
+
+
+async def _group_join_keys(st: dict, results: dict) -> list[str]:
+    """Чем сводить результаты ветвей — берём из ОБЪЯВЛЕННОГО, а не угадываем по содержимому.
+
+    Два источника, оба уже описаны в контрактах:
+      * предмет веера (имя слота, по которому разворачивали группу) — он отличает ветви друг от
+        друга: номера пунктов у разных проектов совпадают, и без него чужие записи схлопнутся;
+      * `produces.key` тех навыков, что в этих прогонах отдали списки, — он опознаёт запись внутри
+        ветви.
+    Если не объявлено ничего — честный запасной вариант `id`, как и раньше.
+    """
+    keys: list[str] = []
+    # предмет веера
+    for it in (st.get("items") or [])[:1]:
+        job = await run_queue.get(it.get("id") or "")
+        slot = ((job or {}).get("payload") or {}).get("fan_slot")
+        if slot:
+            keys.append(str(slot))
+    # ключи записей от навыков, которые действительно отработали
+    tpls = {t["id"]: t for t in (await schema_store.all() or [])}
+    seen: set[str] = set()
+    for r in results.values():
+        for sid in (r.get("skills") or []):
+            if sid in seen:
+                continue
+            seen.add(sid)
+            for p in skill_contract.produces_list((tpls.get(sid) or {}).get("produces")):
+                k = str(p.get("key") or "").strip()
+                if k and k not in keys:
+                    keys.append(k)
+    return keys or ["id"]
 
 
 @app.get("/api/runs/groups/{group_id}/summary")
@@ -4986,11 +5087,11 @@ async def run_group_summary(group_id: str, key: str = "", u: dict = Depends(user
             for k, v in (o.get("structured") or {}).items():
                 flat.setdefault(k, v)
         label = ((await run_queue.get(it["id"])) or {}).get("payload", {}).get("fan_label") or it.get("agent_id")
-        results[it["id"]] = {"data": flat, "agent_name": label, "run_id": rid}
+        results[it["id"]] = {"data": flat, "agent_name": label, "run_id": rid,
+                             "skills": [o.get("skill") for o in (run.get("skill_outputs") or []) if o.get("skill")]}
     keys = [k.strip() for k in str(key or "").split(",") if k.strip()]
     if not keys:
-        first = next(iter(results.values()), None)
-        keys = ["проект", "пункт"] if first and "исполнение" in (first["data"] or {}) else ["id"]
+        keys = await _group_join_keys(st, results)
     merged = pipeline_graph.merge({"policy": "by_key", "from": list(results), "key": keys}, results)
     # Таблица на 24 строки — ещё не ответ руководителю. Сводим шапки ветвей: по каждому предмету
     # короткая выжимка (без списков) и суммы по числовым полям, чтобы было видно общую картину.

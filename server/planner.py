@@ -124,6 +124,10 @@ def _match_score(task_words: set[str], sid: str, meta: dict, index: dict | None 
     canon_out = set()
     for it in sc.produces_list((meta or {}).get("produces")):
         canon_out |= _concepts(str(it.get("path") or ""))
+        # Сквозное понятие объявлено ровно для этого: «как называется то, что навык отдаёт, на общем
+        # языке каталога». Без него declared join оставался украшением, и навык с редким именем
+        # списка не находился по обычному слову задачи.
+        canon_out |= _concepts(str(it.get("join") or ""))
     canon_out |= _concepts(str((meta or {}).get("title") or ""))
     canon_task = task_concepts or set()
     gives = (len(canon_task & canon_out) / max(1, len(canon_task))) if canon_out and canon_task else 0.0

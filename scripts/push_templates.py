@@ -55,7 +55,10 @@ def main() -> int:
         if errs or not raw.get("instruction"):
             bad[sid] = errs or ["нужна instruction"]
             continue
-        items.append({"id": sid, **{k: raw[k] for k in ("name", "instruction", "json_schema", "max_tokens", "delivery") if k in raw}})
+        # Контракт навыка едет вместе со схемой: без него заливка обнулит inputs/produces/slots в базе.
+        _CARRY = ("name", "instruction", "json_schema", "max_tokens", "tool_steps",
+                  "delivery", "inputs", "produces", "slots")
+        items.append({"id": sid, **{k: raw[k] for k in _CARRY if k in raw}})
     print(f"локально валидны: {len(items)}, с ошибками: {len(bad)}")
     for sid, errs in bad.items():
         print("  FAIL", sid, "|", "; ".join(errs[:3]))
