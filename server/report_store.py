@@ -148,6 +148,23 @@ _BASE_CSS = (
     ".sk{margin:10px 0}.sk h3{font-size:13.5px;color:#4338ca;margin:0 0 4px}.sk pre{white-space:pre-wrap;background:#f8fafc;border-radius:8px;padding:10px;font-size:12.5px;margin:0}"
     ".dl{font-size:12px;color:#475569;margin:4px 0}"
     ".ft{color:#94a3b8;font-size:11px;border-top:1px solid #e2e8f0;margin-top:26px;padding-top:10px}"
+    # ── карточка находки аудита: существенность, код, группа и четыре подписанных поля ──
+    ".ahd{border-bottom:2px solid #1e293b;padding-bottom:12px;margin-bottom:16px}"
+    ".ahd h1{color:#0f172a;font-size:22px;margin:0 0 6px}"
+    ".ahd .line{font-size:12.5px;color:#475569;margin:3px 0}"
+    ".ahd .line b{color:#0f172a}"
+    ".ahd .meth{font-size:11.5px;color:#64748b;margin-top:8px;line-height:1.45}"
+    ".ac{border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin:10px 0;page-break-inside:avoid}"
+    ".ac-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:5px}"
+    ".ac-h .sev{font-size:10px;font-weight:800;letter-spacing:.06em;border-radius:5px;padding:2px 7px;color:#fff}"
+    ".ac-h .sev.hi{background:#b91c1c}.ac-h .sev.mid{background:#b45309}.ac-h .sev.low{background:#0369a1}"
+    ".ac-h .code{font-family:Consolas,monospace;font-size:11.5px;color:#334155;font-weight:700}"
+    ".ac-h .grp{font-size:11px;color:#64748b}"
+    ".ac-t{font-size:14px;font-weight:700;color:#0f172a;margin:2px 0 8px}"
+    ".ac-f{width:100%;border-collapse:collapse;font-size:12.5px}"
+    ".ac-f td{padding:4px 0;vertical-align:top;color:#1e293b}"
+    ".ac-f td.k{width:140px;color:#64748b;font-weight:600;padding-right:12px}"
+    ".ac-f .pf{font-size:11.5px;color:#64748b;margin-top:3px;font-family:Consolas,monospace;word-break:break-all}"
 )
 _HEAD = ("<!DOCTYPE html><html><head><meta charset='utf-8'><style>{{css}}</style></head><body>"
          "<div class='hd'><h1>{{title}}</h1><div class='sub'>Агент: {{agent}} · {{date}}</div>"
@@ -162,13 +179,28 @@ _DEFAULT_HTML = (_HEAD +
     "{{findings}}{{investigations}}{{skills}}"
     "<h2>Доставка</h2>{{deliveries}}" + _FOOT)
 
-# Аудитор 1С: акцент на находках A/B/C/D + нормы + график по классам.
-_AUDIT_HTML = (_HEAD +
-    "<div class='sum'><div class='card'><h3>Находок аудита</h3><div class='num'>{{findings_total}}</div></div></div>"
-    "{{by_class}}{{charts}}"
-    "<h2>Находки аудита</h2>{{findings}}"
-    "{{skills}}"
-    "<h2>Доставка</h2>{{deliveries}}" + _FOOT)
+# Аудитор 1С. Форма отчёта согласована с заказчиком: шапка с объёмом проверки и методом, затем
+# находки карточками «что не сходится / откуда / чем грозит / что проверить». Отчёт читает главный
+# бухгалтер, а не разработчик: из строки «класс B · проверка» решение принять нельзя.
+_AUDIT_HTML = (
+    "<!DOCTYPE html><html><head><meta charset='utf-8'><style>{{css}}</style></head><body>"
+    "<div class='ahd'>"
+    "<h1>{{title}}</h1>"
+    "<div class='line'>Автоматический аудит · агентный процесс ABOP · агент «{{agent}}» · {{date}}</div>"
+    "<div class='line'>{{audit_scope}}</div>"
+    "<div class='line'>{{audit_found}}</div>"
+    "<div class='meth'>Метод: находки вычислены детерминированно по реальным ссылкам 1С; "
+    "нормативное обоснование — из базы знаний (НК РФ / ФСБУ). Числа не оцениваются моделью.</div>"
+    "</div>"
+    "{{summary}}"
+    "<h2>Находки по существенности</h2>{{audit_cards}}"
+    "{{charts}}"
+    "{{schema_notes}}"
+    "<h2>Доставка</h2>{{deliveries}}"
+    "<div class='ft'>Сформировано автоматически агентным процессом ABOP. Каждая находка сопровождается "
+    "ссылкой на первичный документ и подлежит подтверждению ответственным (HITL) перед принятием "
+    "решения. Отчёт не заменяет заключение аудитора. · {{agent}} · {{date}}</div>"
+    "</body></html>")
 
 # Расследование от симптома: акцент на цепочках реализация→взаиморасчёты→НДС + график расхождений.
 _INVEST_HTML = (_HEAD +

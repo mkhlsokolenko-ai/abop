@@ -3227,6 +3227,68 @@ def _auto_template_id(result: dict) -> str:
     return "default"
 
 
+def _audit_cards_html(result: dict) -> str:
+    """Находки аудита карточками: существенность, код, группа проверки и четыре подписанных поля.
+
+    Поля собираем тем же кодом, что и карточки интерфейса (findings.card_from_finding): отчёт и экран
+    не должны объяснять находку по-разному.
+    """
+    import html as _html
+    esc = lambda x: _html.escape(str(x if x is not None else ""))  # noqa: E731
+    rows = []
+    fnds = [f for f in (result.get("findings") or []) if isinstance(f, dict) and f.get("проверка")]
+    for i, f in enumerate(fnds, 1):
+        try:
+            c = findings.card_from_finding(result, f, None)
+        except Exception:  # noqa: BLE001 — одна кривая находка не должна ронять весь отчёт
+            continue
+        sev = (c.get("severity") or "").upper()
+        sev_cls = "hi" if sev.startswith("ВЫС") else ("mid" if sev.startswith("СРЕД") else "low")
+        ex = c.get("explain") or {}
+        doc = c.get("doc") or {}
+        # «Откуда»: документ с датой и контрагентом. У находок по НСИ документа нет вовсе — тогда не
+        # пишем «Документ от .», а показываем то, что действительно известно.
+        where = esc(c.get("doc_line") or "")
+        ctr = str(doc.get("Контрагент") or "")
+        # Контрагент уже входит в строку документа — второй раз его писать не нужно.
+        if ctr and ctr not in (c.get("doc_line") or ""):
+            where = (where + ", контрагент «" + esc(ctr) + "»") if where else ("контрагент «" + esc(ctr) + "»")
+        proof = str(f.get("доказательство") or "")
+        # «Чем грозит» — только риск и норма; «Что проверить» — только действие. Раньше сюда
+        # сливались ещё и последствия вместе с действиями, и обе графы говорили одно и то же.
+        nm = c.get("norm") or {}
+        # Ссылка на норму — это «ФСБУ 5/2019» или «гл. 21 НК РФ», а не название самой проверки:
+        # title нормы у нас совпадает с заголовком находки и в скобках выглядел маслом масляным.
+        # Только настоящая ссылка на норму («ФСБУ 5/2019», «гл. 21 НК РФ»). Заголовок секции
+        # эксперта нормой не является: в скобках он читался как выдуманное основание.
+        ref = (ex.get("risk_ref") or "").strip()
+        grozit = (ex.get("risk") or "").strip()
+        if not grozit:
+            grozit = "; ".join(str(x) for x in (ex.get("consequences") or [])[:1])
+        if ref and ref.lower() not in grozit.lower():
+            grozit = (grozit + f" ({ref})") if grozit else ref
+        grozit = grozit or "—"
+        action = (ex.get("action") or "").strip() or "; ".join(str(x) for x in (ex.get("consequences") or [])[:1]) or "—"
+        code = esc(c.get("id") or f"{c.get('cls') or '?'}{i}")
+        url = c.get("doc_url") or ""
+        rows.append(
+            "<div class='ac'>"
+            f"<div class='ac-h'><span class='sev {sev_cls}'>{esc(sev or '—')}</span>"
+            f"<span class='code'>{code}</span>"
+            f"<span class='grp'>{esc(c.get('cls') or '')} · {esc(c.get('kind') or '')}</span></div>"
+            f"<div class='ac-t'>{esc(c.get('check') or '')}</div>"
+            "<table class='ac-f'>"
+            f"<tr><td class='k'>Что не сходится</td><td>{esc(ex.get('what') or '—')}</td></tr>"
+            f"<tr><td class='k'>Откуда</td><td>{where or '—'}"
+            + (f"<div class='pf'>Доказательство: {esc(proof)}</div>" if proof else "")
+            + (f"<div class='pf'><a href='{esc(url)}'>открыть документ в 1С</a></div>" if url else "")
+            + "</td></tr>"
+            f"<tr><td class='k'>Чем грозит</td><td>{esc(grozit)}</td></tr>"
+            f"<tr><td class='k'>Что проверить</td><td>{esc(action)}</td></tr>"
+            "</table></div>")
+    return "".join(rows)
+
+
 def _report_context(agent: dict, result: dict) -> dict:
     """Контекст для шаблона отчёта (report_store.render): готовые HTML-блоки под ВСЕ формы результата
     (аудит-находки A/B/C/D, расследования-цепочки, structured-вывод навыков вроде «Дайджест задач»).
@@ -3368,7 +3430,32 @@ def _report_context(agent: dict, result: dict) -> dict:
                + (f" · волн {len(result.get('waves') or [])}" if result.get("waves") else ""))
     dls = "".join(f"<div class='dl'>{esc(d.get('channel'))} → {esc(d.get('to') or '—')} · {esc(d.get('mode'))}</div>"
                   for d in (result.get("delivery") or []))
+    # Область проверки: без неё «найдено 10 расхождений» повисает в воздухе — десять из скольких?
+    _sc = result.get("audit_scope") or {}
+    scope_html = ""
+    if _sc:
+        scope_html = ("Проверено документов: <b>" + esc(_sc.get("документов")) + "</b> · "
+                      "справочных элементов: <b>" + esc(_sc.get("справочных_элементов")) + "</b> · "
+                      "связей «основание»: <b>" + esc(_sc.get("связей_основание")) + "</b>")
+    _bc = (result.get("findings_summary") or {}).get("by_class") or {}
+    found_html = ""
+    if result.get("findings_summary"):
+        _parts = " · ".join(f"{k}: {v}" for k, v in _bc.items() if v)
+        found_html = ("Найдено расхождений: <b>" + esc((result.get("findings_summary") or {}).get("total"))
+                      + "</b>" + (f" ({esc(_parts)})" if _parts else ""))
+
+    # Пояснения навыков собираем В ОДИН блок с заголовками: отдельные плейсхолдеры оставляли в
+    # отчёте висячие заголовки над пустотой, если навык в агента не входил.
+    _EXPL = [("skill_audit1c_explain", "Пояснения по находкам"),
+             ("skill_audit1c_rank", "Ранжирование по существенности"),
+             ("skill_audit1c_root_cause", "Первопричины"),
+             ("skill_audit1c_match_weak", "Слабые сопоставления")]
+    _expl = "".join(f"<h2>{t}</h2>{per_skill[k]}" for k, t in _EXPL if (per_skill.get(k) or "").strip())
+
     return {"summary": summary_html, "schema_notes": schema_notes_html,
+            "audit_cards": _audit_cards_html(result), "audit_explain": _expl,
+            "audit_title": "Отчёт аудита данных 1С",
+            "audit_scope": scope_html, "audit_found": found_html,
             "title": esc(agent.get("name") or "Отчёт агента ABOP"), "agent": esc(agent.get("name") or ""),
             "date": _dtm.datetime.now().strftime("%d.%m.%Y %H:%M"), "verdict": verdict,
             "findings_total": (result.get("findings_summary") or {}).get("total") or len(struct),
@@ -4146,10 +4233,21 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
     # Детерминированные находки/расследования считаем ДО прогона (истина, считает КОД) — чтобы навыки в LLM
     # их ОБЪЯСНЯЛИ (grounded), а не искали заново на сэмпле-дайджесте (иначе LLM ложно пишет «расхождений нет»).
     _skills = [n.get("skill") for n in (agent.get("graph") or {}).get("nodes", [])]
-    _det_findings, _det_findings_err = [], None
+    _det_findings, _det_findings_err, _audit_scope = [], None, None
     if "audit1c-checks" in _skills:
         try:
-            _det_findings = await _asyncio.to_thread(lambda: ape.audit1c_run_checks(ape.audit1c_build_graph()))
+            def _checks_with_scope():
+                g = ape.audit1c_build_graph()
+                # Объём проверки берём из того же графа, по которому считались находки: иначе шапка
+                # отчёта и его содержимое могли бы разойтись.
+                scope = {"документов": len(g.get("docs") or []),
+                         "справочных_элементов": len(g.get("refs") or []),
+                         "связей_основание": len(g.get("edges") or []),
+                         "по_типам": {k: len(v) for k, v in (g.get("by_type") or {}).items()},
+                         "организаций": len(g.get("org_inns") or []),
+                         "инн_с_дублями": sum(1 for v in (g.get("ctr_by_inn") or {}).values() if len(v) > 1)}
+                return ape.audit1c_run_checks(g), scope
+            _det_findings, _audit_scope = await _asyncio.to_thread(_checks_with_scope)
         except Exception as ex:  # noqa: BLE001
             _det_findings_err = f"{type(ex).__name__}: {ex}"
     _det_invs, _det_invs_err = [], None
@@ -4243,6 +4341,8 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
                 "total": len(_det_findings),
                 "by_class": {c: sum(1 for f in _det_findings if f.get("класс") == c) for c in ("A", "B", "C", "D")},
             }
+            if _audit_scope:
+                result["audit_scope"] = _audit_scope
     # Демо-сценарий №2 «расследование от симптома»: цепочки реализация→взаиморасчёты→НДС.
     if "invest1c-trace" in _skills:
         if _det_invs_err:

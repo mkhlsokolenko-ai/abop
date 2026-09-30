@@ -296,9 +296,14 @@ def test_report_templates_from_repo_and_run_report_html(client):
     import asyncio
     from server import report_store, run_store
     files = report_store.load_files()
-    assert {"default", "audit1c", "invest", "digest"} <= set(files) and "{{skill_audit1c_rank}}" in files["audit1c"]["html"]
+    assert {"default", "audit1c", "invest", "digest"} <= set(files)
+    # Форма отчёта аудита согласована с заказчиком: шапка с объёмом проверки, карточки находок и
+    # единый блок пояснений навыков. Отдельные плейсхолдеры на каждый навык оставляли в отчёте
+    # висячие заголовки над пустотой, если навык в агента не входил.
+    _ah = files["audit1c"]["html"]
+    assert all(p in _ah for p in ("{{audit_scope}}", "{{audit_found}}", "{{audit_cards}}", "{{audit_explain}}"))
     tpls = {t["id"]: t for t in client.get("/api/report-templates").json()["templates"]}
-    assert tpls["audit1c"]["builtin"] and "{{skill_audit1c_explain}}" in tpls["audit1c"]["html"] and ".tbl" in tpls["audit1c"]["css"]
+    assert tpls["audit1c"]["builtin"] and "{{audit_cards}}" in tpls["audit1c"]["html"] and ".tbl" in tpls["audit1c"]["css"]
     html = report_store.struct_html({"порог_существенности": {"сумма": "100 000 ₽", "как_выведен": "медиана"},
                                      "рейтинг": [{"место": 1, "id": "B", "ранг": "критично", "сумма_влияния": "210 000 ₽"}],
                                      "топ_3_действия": ["выставить СФ", "проверить договор"], "итог": "и" * 130})
@@ -317,7 +322,9 @@ def test_report_templates_from_repo_and_run_report_html(client):
     r = client.get(f"/api/runs/{rid}/report")
     assert r.status_code == 200 and "text/html" in r.headers["content-type"]
     body = r.text
-    assert "Ранжирование по существенности" in body and "<th>ранг</th>" in body and "выставить СФ" in body and "нет СФ" in body
+    assert "Ранжирование по существенности" in body and "<th>ранг</th>" in body and "выставить СФ" in body
+    # находка приходит карточкой с подписанными графами, а не строкой
+    assert "Что не сходится" in body and "Что проверить" in body and "нет СФ" in body
     assert "{{" not in body   # все плейсхолдеры подставлены (пустые → пусто)
     r2 = client.get(f"/api/runs/{rid}/report?template=digest")
     assert r2.status_code == 200 and "Задачи и сводка" in r2.text and "<th>ранг</th>" in r2.text
