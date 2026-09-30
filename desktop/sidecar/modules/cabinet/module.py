@@ -14,6 +14,24 @@ MANIFEST = {"id": "cabinet", "title": "Кабинет", "icon": "cabinet", "ui":
 router = APIRouter()
 
 
+@router.get("/guides")
+def guides() -> dict:
+    """Руководства поставки, которые отдаёт ABOP. Ссылки делаем абсолютными: десктоп открывает их
+    во внешнем браузере, а относительный путь там не разрешится."""
+    from ... import config  # noqa: PLC0415 — локальный импорт: реестр модулей не должен тянуть конфиг
+    try:
+        data = abop._req("GET", "/api/guides")
+    except Exception as e:  # noqa: BLE001 — отсутствие руководств не должно ронять кабинет
+        return {"guides": [], "error": str(e)[:200]}
+    base = config.ABOP.rstrip("/")
+    out = []
+    for g in ((data or {}).get("guides") or []) if isinstance(data, dict) else []:
+        out.append({**g,
+                    "html": (base + g["html"]) if g.get("html") else "",
+                    "pdf": (base + g["pdf"]) if g.get("pdf") else ""})
+    return {"guides": out}
+
+
 @router.get("/usage")
 def usage() -> dict:
     """Профиль пользователя из ABOP (отдел/роли/уровень). Детальный расход токенов/стоимость —

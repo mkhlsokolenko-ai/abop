@@ -231,6 +231,34 @@ async def _observability(request, call_next):
 
 # ═══════════════ READ: реальные вызовы ядра ═══════════════
 
+# Руководства поставки отдаём статикой: документ, лежащий только в репозитории, до пользователя не
+# доходит. Каталога может не быть (например, в урезанной сборке) — тогда просто не монтируем.
+_GUIDE_DIR = Path(__file__).resolve().parents[1] / "docs" / "guide"
+if _GUIDE_DIR.is_dir():
+    app.mount("/guide", StaticFiles(directory=str(_GUIDE_DIR), html=True), name="guide")
+
+
+@app.get("/api/guides")
+def guides() -> dict:
+    """Какие руководства доступны в этой установке. Пустой список — каталог не вошёл в сборку."""
+    if not _GUIDE_DIR.is_dir():
+        return {"guides": [], "note": "руководства не включены в сборку"}
+    out = []
+    for name, title, about in (
+            ("RUKOVODSTVO_POLZOVATELYA", "Руководство пользователя",
+             "Как поставить задачу и получить результат: десктоп, веб, карточки, подтверждения, бюджеты"),
+            ("RUKOVODSTVO_ADMINISTRATORA", "Руководство администратора",
+             "Установка, окружение, доступы, модель, источники данных, навыки, лимиты, диагностика")):
+        html, pdf = _GUIDE_DIR / f"{name}.html", _GUIDE_DIR / f"{name}.pdf"
+        if not html.exists():
+            continue
+        out.append({"id": name, "title": title, "about": about,
+                    "html": f"/guide/{name}.html",
+                    "pdf": (f"/guide/{name}.pdf" if pdf.exists() else ""),
+                    "size_kb": round(html.stat().st_size / 1024)})
+    return {"guides": out}
+
+
 @app.get("/api/health")
 def health() -> dict:
     return {"ok": True, "families": len(ape.AGENT_FAMILIES), "skills": len(ape.SKILLS),

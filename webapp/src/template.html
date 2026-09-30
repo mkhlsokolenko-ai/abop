@@ -4142,7 +4142,10 @@ class Component extends DCLogic {
         this.route('canvas');
         this.showToast('Агент выведен в прод · зафиксирован конверт LUDA');
       },
-      openHelp: () => this.setState({ modal: 'help' }),
+      openHelp: () => { this.setState({ modal: 'help' }); this.loadGuides(); },
+      guides: (s.guidesList || []).map((g) => ({
+        title: g.title, about: g.about, html: g.html, pdf: g.pdf, hasPdf: !!g.pdf })),
+      guidesNone: !!(s.guidesList && !s.guidesList.length),
       helpPanel: s.modal === 'help',
       helpQuery: s.helpQuery || '',
       setHelpQuery: (e) => this.setState({ helpQuery: e.target.value }),
@@ -5562,6 +5565,16 @@ class Component extends DCLogic {
         ];
         self.setState({ planChecking: false, planOk: true, planSteps: steps, planWavesReal: waves });
       }).catch(function(){ self.setState({ planChecking: false, planOk: false, planSteps: [{ text: 'ABOP недоступен — план не проверен', ok: false }] }); });
+  }
+
+  loadGuides() {
+    // Руководства могут не входить в урезанную сборку — тогда список пуст, и панель честно
+    // говорит об этом вместо битых ссылок.
+    if (this.state.guidesList) return;
+    var self = this;
+    fetch('/api/guides').then(function(r){ return r.json(); })
+      .then(function(j){ self.setState({ guidesList: (j && j.guides) || [] }); })
+      .catch(function(){ self.setState({ guidesList: [] }); });
   }
 
   loadEntities() {

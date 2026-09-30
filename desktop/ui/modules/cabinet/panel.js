@@ -24,13 +24,24 @@ export async function mount(root, ctx) {
   // отдел «—», уровень «—», источников 0. Теперь сбой виден, и есть чем его повторить.
   let loadError = "";
   const keep = (e) => { if (!loadError) loadError = humanError(e); return null; };
-  const [u, me, pol, agents, conns] = await Promise.all([
+  // Руководства отдаёт сам ABOP: документ, лежащий в репозитории, до пользователя не доходит.
+  const [u, me, pol, agents, conns, guides] = await Promise.all([
     api(C + "/usage").catch(keep),
     api(SEC + "/me").catch(keep),
     api(SEC + "/policy").catch(keep),
     api(AG + "/catalog").catch(keep),
     api(K + "/list").catch(keep),
+    api(C + "/guides").catch(() => ({ guides: [] })),
   ]).then((r) => r.map((x, i) => x === null ? (i === 3 ? [] : {}) : x));
+
+  // Ссылки открываем во внешнем браузере: руководство — документ на 90 страниц, ему не место в окне чата.
+  const guideRows = ((guides && guides.guides) || []).map((g) => `
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--ink-2)">
+      <span style="font-weight:600;color:var(--ink)">${esc(g.title)}</span>
+      <a href="${esc(g.html)}" target="_blank" rel="noopener" class="btn" style="padding:4px 10px;font-size:11.5px;text-decoration:none">Открыть</a>
+      ${g.pdf ? `<a href="${esc(g.pdf)}" target="_blank" rel="noopener" class="btn" style="padding:4px 10px;font-size:11.5px;text-decoration:none">PDF</a>` : ""}
+      <span style="color:var(--ink-3)">${esc(g.about || "")}</span>
+    </div>`).join("");
   if (loadError && !(u && u.ok)) {
     root.innerHTML = `<div style="flex:1;padding:30px;display:flex;flex-direction:column;gap:10px;max-width:560px">
       <div style="font-size:16px;font-weight:700">Кабинет не загрузился</div>
@@ -104,6 +115,10 @@ export async function mount(root, ctx) {
           <textarea id="persona" rows="3" placeholder="Например: я руководитель отдела продаж; отвечай кратко, по пунктам, на «вы»; суммы в рублях"></textarea>
           <span id="personaNote" style="font-size:11.5px;color:var(--ink-3)"></span>
         </label>
+        ${guideRows ? `<div style="display:flex;flex-direction:column;gap:9px">
+          <span style="font-size:12.5px;font-weight:600">Руководства</span>
+          ${guideRows}
+        </div>` : ""}
         <div style="display:flex;flex-direction:column;gap:9px">
           <span style="font-size:12.5px;font-weight:600">Горячие клавиши</span>
           ${SHORTCUTS.map((s) => `<span style="display:flex;align-items:center;gap:10px;font-size:12px;color:var(--ink-2)"><span style="font-family:var(--mono);font-size:11px;padding:3px 8px;border-radius:7px;background:var(--hover);border:1px solid var(--line);white-space:nowrap">${esc(s[0])}</span>${esc(s[1])}</span>`).join("")}

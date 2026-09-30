@@ -984,6 +984,24 @@
           <div style="flex: 1; font-size: 18px; font-weight: 700;">Помощь</div>
           <button onClick="{{ ov.closeModal }}" style="width: 30px; height: 30px; border: 1px solid var(--w12); border-radius: 9px; background: var(--w5); color: var(--ink);">✕</button>
         </div>
+        <div style="display: flex; flex-direction: column; gap: 9px;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .9px; text-transform: uppercase; color: var(--w55);">руководства</span>
+          <sc-for list="{{ ov.guides }}" as="g" hint-placeholder-count="2">
+            <div style="padding: 13px 15px; border-radius: 12px; background: rgba(99,102,241,.10); border: 1px solid rgba(129,140,248,.28); display: flex; flex-direction: column; gap: 7px;">
+              <div style="font-size: 13.5px; font-weight: 600; color: var(--ink);">{{ g.title }}</div>
+              <div style="font-size: 12px; line-height: 1.5; color: var(--w62);">{{ g.about }}</div>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <a href="{{ g.html }}" target="_blank" rel="noopener" style="padding: 6px 12px; border-radius: 9px; border: 1px solid rgba(129,140,248,.35); background: rgba(99,102,241,.16); color: var(--acc-ink2); font-size: 12px; font-weight: 600; text-decoration: none;">Открыть</a>
+                <sc-if value="{{ g.hasPdf }}" hint-placeholder-val="{{ true }}">
+                  <a href="{{ g.pdf }}" target="_blank" rel="noopener" style="padding: 6px 12px; border-radius: 9px; border: 1px solid var(--w14); background: var(--w5); color: var(--w70); font-size: 12px; text-decoration: none;">PDF</a>
+                </sc-if>
+              </div>
+            </div>
+          </sc-for>
+          <sc-if value="{{ ov.guidesNone }}" hint-placeholder-val="{{ false }}">
+            <div style="font-size: 12px; color: var(--w50);">Руководства не включены в эту сборку — запросите их у администратора.</div>
+          </sc-if>
+        </div>
         <input value="{{ ov.helpQuery }}" onChange="{{ ov.setHelpQuery }}" placeholder="Спросите про конверт, HITL, рецепты…" style="padding: 12px 14px; border-radius: 12px; border: 2px solid var(--w12); background: var(--s60); color: var(--ink); font-size: 13px;" style-focus="border-color: #6366f1;">
         <div style="display: flex; flex-direction: column; gap: 10px;">
           <sc-for list="{{ ov.helpTopics }}" as="h" hint-placeholder-count="4">

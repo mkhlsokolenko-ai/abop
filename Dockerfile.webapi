@@ -17,6 +17,8 @@ COPY reports ./reports
 COPY webapp ./webapp
 COPY demo ./demo
 COPY desktop/ui ./desktop/ui
+# руководства поставки — отдаются по /guide и открываются из «Помощи»
+COPY docs/guide ./docs/guide
 
 EXPOSE 8091
 CMD ["uvicorn", "server.web_api:app", "--host", "0.0.0.0", "--port", "8091"]
