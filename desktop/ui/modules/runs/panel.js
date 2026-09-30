@@ -14,7 +14,11 @@ const fmtDate = (s) => {
   const d = new Date(s);
   return isNaN(d) ? String(s || "") : d.toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 };
-const fmtCost = (c) => (c == null ? "" : (Number(c) === 0 ? "0 ₽" : Number(c).toFixed(2) + " ₽"));
+// Стоимость приходит то числом, то блоком метрик {rub, input_tokens, …}: Number({...}) даёт NaN,
+// и в журнале вместо цены стояло «NaN ₽».
+const rub = (c) => (c && typeof c === "object" ? c.rub : c);
+const fmtCost = (c) => { const v = Number(rub(c)); return (rub(c) == null || !isFinite(v)) ? ""
+  : (v === 0 ? "0 ₽" : v.toFixed(2) + " ₽"); };
 
 export async function mount(root, ctx) {
   const { api, toast, humanError } = ctx;

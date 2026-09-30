@@ -1,0 +1,1653 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ABOP · Руководство администратора</title>
+<style>
+/* ──────────────────────────────────────────────────────────────────────────────
+   Фирменный стиль руководств ABOP (тот же, что у руководства пользователя).
+   Шрифты — только системные: документ должен одинаково выглядеть без интернета и в PDF.
+   ────────────────────────────────────────────────────────────────────────────── */
+:root {
+  --paper:#FBFAF7; --card:#FFFFFF; --ink:#16181D; --ink2:#4A4F58; --ink3:#767C86;
+  --acc:#5B4BE0; --acc2:#8B5CF6; --acc-soft:#EFECFE; --line:#E6E3DC; --line2:#D8D4CB;
+  --ok:#256B3A; --ok-bg:#E8F5EC; --warn:#8A5A06; --warn-bg:#FDF3E2; --crit:#A32D2D; --crit-bg:#FBEBEB;
+  --mono:"JetBrains Mono","Cascadia Mono",Consolas,"SF Mono",Menlo,monospace;
+  --sans:"Inter","Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+}
+* { box-sizing:border-box; }
+html { -webkit-text-size-adjust:100%; }
+body { margin:0; background:var(--paper); color:var(--ink); font-family:var(--sans); font-size:16px;
+  line-height:1.62; font-feature-settings:"liga" 1,"kern" 1; }
+.wrap { max-width:960px; margin:0 auto; padding:0 28px 120px; }
+.cover { min-height:92vh; display:flex; flex-direction:column; justify-content:center; gap:34px; padding:60px 0 40px; }
+.cover-top { display:flex; align-items:center; gap:18px; }
+.cover-top .name { font-family:var(--mono); font-size:26px; font-weight:700; letter-spacing:-.5px; }
+.cover-top .ver { font-size:13px; color:var(--ink3); font-family:var(--mono); }
+.cover h1 { font-size:60px; line-height:1.03; margin:0; letter-spacing:-1.6px; font-weight:700; }
+.cover h1 span { color:var(--acc); }
+.cover .lead { font-size:21px; color:var(--ink2); max-width:660px; margin:0; line-height:1.5; }
+.cover-meta { display:flex; gap:12px; flex-wrap:wrap; margin-top:8px; }
+.chip { display:inline-flex; align-items:center; gap:8px; padding:8px 14px; border-radius:999px;
+  border:1px solid var(--line2); background:var(--card); font-size:13px; color:var(--ink2); font-family:var(--mono); }
+.chip b { color:var(--ink); font-weight:600; }
+.cover-note { border-left:3px solid var(--acc); padding:4px 0 4px 18px; color:var(--ink2); font-size:15px; max-width:640px; }
+.toc { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:28px 32px; margin:0 0 56px; }
+.toc h2 { margin:0 0 18px; font-size:15px; letter-spacing:1.4px; text-transform:uppercase; color:var(--ink3);
+  font-family:var(--mono); font-weight:600; }
+.toc ol { margin:0; padding:0; list-style:none; counter-reset:toc; columns:2; column-gap:44px; }
+.toc li { counter-increment:toc; break-inside:avoid; margin:0 0 9px; padding-left:34px; position:relative; font-size:15px; }
+.toc li::before { content:counter(toc); position:absolute; left:0; top:1px; width:24px; text-align:right;
+  font-family:var(--mono); font-size:12.5px; color:var(--acc); font-weight:600; }
+.toc a { color:var(--ink); text-decoration:none; border-bottom:1px solid transparent; }
+.toc a:hover { border-bottom-color:var(--acc); }
+h2.sec { font-size:34px; letter-spacing:-.8px; margin:76px 0 6px; padding-top:26px; border-top:2px solid var(--ink);
+  line-height:1.15; scroll-margin-top:20px; }
+h2.sec .num { display:block; font-family:var(--mono); font-size:13px; color:var(--acc); letter-spacing:1px;
+  margin-bottom:10px; font-weight:600; }
+h3 { font-size:23px; margin:46px 0 10px; letter-spacing:-.4px; line-height:1.25; scroll-margin-top:20px; }
+h4 { font-size:17px; margin:30px 0 8px; letter-spacing:-.2px; }
+p { margin:0 0 15px; }
+.sec-lead { font-size:18px; color:var(--ink2); margin:0 0 26px; line-height:1.55; }
+code { font-family:var(--mono); font-size:.87em; background:var(--acc-soft); color:#3A2FA8; padding:1.5px 6px; border-radius:5px; }
+pre { background:#15171C; color:#E6E8EC; border-radius:12px; padding:18px 20px; overflow-x:auto;
+  font-family:var(--mono); font-size:13px; line-height:1.6; margin:0 0 20px; }
+pre code { background:none; color:inherit; padding:0; font-size:inherit; }
+pre .c { color:#8A94A0; } pre .k { color:#C4B5FD; } pre .s { color:#86EFAC; }
+ul, ol { margin:0 0 16px; padding-left:24px; }
+li { margin:0 0 7px; }
+li > ul, li > ol { margin-top:7px; }
+b, strong { font-weight:650; }
+a { color:var(--acc); }
+.steps { counter-reset:step; list-style:none; padding:0; margin:0 0 26px; }
+.steps > li { counter-increment:step; position:relative; padding:0 0 4px 52px; margin:0 0 20px; }
+.steps > li::before { content:counter(step); position:absolute; left:0; top:-2px; width:32px; height:32px;
+  border-radius:16px; background:var(--acc); color:#fff; font-family:var(--mono); font-size:15px; font-weight:700;
+  display:flex; align-items:center; justify-content:center; }
+.steps > li b.t { display:block; font-size:17px; margin-bottom:3px; }
+figure { margin:26px 0 30px; }
+figure img { width:100%; display:block; border-radius:12px; border:1px solid var(--line2); box-shadow:0 2px 14px rgba(20,23,28,.07); }
+figcaption { font-size:13.5px; color:var(--ink3); margin-top:10px; line-height:1.5; }
+figcaption b { color:var(--ink2); }
+.callouts { list-style:none; padding:0; margin:14px 0 0; display:grid; gap:9px; }
+.callouts li { display:grid; grid-template-columns:28px 1fr; gap:12px; align-items:start; font-size:14.5px; color:var(--ink2); }
+.callouts .n { width:24px; height:24px; border-radius:12px; background:#F97316; color:#fff; font-family:var(--mono);
+  font-size:13px; font-weight:700; display:flex; align-items:center; justify-content:center; margin-top:1px; }
+.callouts b { color:var(--ink); }
+table { width:100%; border-collapse:collapse; margin:0 0 24px; font-size:14.5px; }
+th, td { text-align:left; padding:11px 14px; border-bottom:1px solid var(--line); vertical-align:top; }
+th { font-size:12px; text-transform:uppercase; letter-spacing:.9px; color:var(--ink3); font-family:var(--mono);
+  font-weight:600; border-bottom:2px solid var(--line2); }
+tbody tr:nth-child(even) { background:#FCFBF9; }
+td code { font-size:.85em; }
+.t-narrow td:first-child, .t-narrow th:first-child { width:230px; }
+.t-env td:first-child { width:290px; font-family:var(--mono); font-size:13px; }
+.t-env td:nth-child(2) { width:120px; font-family:var(--mono); font-size:13px; color:var(--ink2); }
+.note, .warn, .tip, .danger { border-radius:12px; padding:16px 20px; margin:0 0 22px; font-size:15px; line-height:1.55; }
+.note { background:var(--acc-soft); border-left:3px solid var(--acc); }
+.tip { background:var(--ok-bg); border-left:3px solid var(--ok); }
+.warn { background:var(--warn-bg); border-left:3px solid var(--warn); }
+.danger { background:var(--crit-bg); border-left:3px solid var(--crit); }
+.note .lb, .warn .lb, .tip .lb, .danger .lb { display:block; font-family:var(--mono); font-size:11.5px;
+  letter-spacing:1.1px; text-transform:uppercase; margin-bottom:6px; font-weight:600; }
+.note .lb { color:var(--acc); } .tip .lb { color:var(--ok); } .warn .lb { color:var(--warn); } .danger .lb { color:var(--crit); }
+.cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:16px; margin:0 0 26px; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:18px 20px; }
+.card h4 { margin:0 0 6px; font-size:16px; }
+.card p { margin:0; font-size:14.5px; color:var(--ink2); }
+.kbd { font-family:var(--mono); font-size:12.5px; background:var(--card); border:1px solid var(--line2);
+  border-bottom-width:2px; border-radius:6px; padding:2px 7px; }
+.gloss dt { font-weight:650; font-size:16px; margin:18px 0 3px; }
+.gloss dd { margin:0; color:var(--ink2); font-size:15px; }
+.topo { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:22px 24px; margin:0 0 26px;
+  font-family:var(--mono); font-size:12.5px; line-height:1.75; color:var(--ink2); overflow-x:auto; white-space:pre; }
+@media print {
+  body { background:#fff; font-size:10.5pt; }
+  .wrap { max-width:none; padding:0; }
+  .cover { min-height:auto; padding:0 0 30pt; page-break-after:always; }
+  .toc { page-break-after:always; }
+  h2.sec { page-break-before:always; margin-top:0; }
+  figure, table, .note, .warn, .tip, .danger, .steps > li, .card, pre, .topo { page-break-inside:avoid; }
+  pre { white-space:pre-wrap; }
+  a { color:var(--ink); text-decoration:none; }
+}
+@page { size:A4; margin:18mm 16mm 20mm; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="cover">
+  <div class="cover-top">
+    <svg width="54" height="54" viewBox="0 0 72 72" fill="none" aria-hidden="true">
+      <defs>
+        <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1F1B3A"/><stop offset="1" stop-color="#1e1b4b"/></linearGradient>
+        <linearGradient id="g2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6366f1"/><stop offset=".5" stop-color="#818cf8"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient>
+        <linearGradient id="g3" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8b5cf6" stop-opacity=".9"/><stop offset=".5" stop-color="#6366f1" stop-opacity=".35"/><stop offset="1" stop-color="#34d399" stop-opacity=".75"/></linearGradient>
+      </defs>
+      <rect width="72" height="72" rx="20" fill="url(#g1)"/>
+      <rect x="1.2" y="1.2" width="69.6" height="69.6" rx="19" stroke="url(#g3)" stroke-width="2.4"/>
+      <rect x="34.4" y="10" width="3.2" height="8" rx="1.6" fill="#818cf8" opacity=".85"/>
+      <circle cx="36" cy="8.4" r="3.6" fill="#34d399"/>
+      <rect x="53" y="38" width="7" height="16" rx="3.5" fill="#6366f1" opacity=".85"/>
+      <path d="M17 39a19 19 0 0 1 38 0v15a9 9 0 0 1-9 9H26a9 9 0 0 1-9-9Z" fill="url(#g2)"/>
+      <rect x="24" y="60" width="11" height="8" rx="4" fill="#6366f1"/>
+      <rect x="38" y="60" width="11" height="8" rx="4" fill="#6366f1"/>
+      <rect x="23.5" y="34" width="25" height="14" rx="7" fill="#1F1B3A"/>
+      <rect x="26.5" y="37" width="10" height="4" rx="2" fill="#E6E8EC" opacity=".2"/>
+    </svg>
+    <div>
+      <div class="name">ABOP</div>
+      <div class="ver">Agent Build &amp; Operations Platform</div>
+    </div>
+  </div>
+
+  <h1>Руководство<br><span>администратора</span></h1>
+  <p class="lead">Как развернуть ABOP у себя, подключить свои системы, завести данные и навыки,
+  раздать доступы и держать платформу под контролем.</p>
+
+  <div class="cover-meta">
+    <span class="chip">версия платформы <b>1.1</b></span>
+    <span class="chip">навыков <b>58</b></span>
+    <span class="chip">адаптеров данных <b>13</b></span>
+    <span class="chip">дата <b>30.09.2026</b></span>
+  </div>
+
+  <p class="cover-note">Все команды в документе проверены на работающей установке. Пути и имена томов
+  указаны точно: они важны — часть данных живёт только в томе, и запуск контейнера без него
+  приводит к потере канонических записей.</p>
+</header>
+
+<nav class="toc">
+  <h2>Содержание</h2>
+  <ol>
+    <li><a href="#a1">Состав поставки и топология</a></li>
+    <li><a href="#a2">Требования и подготовка</a></li>
+    <li><a href="#a3">Установка</a></li>
+    <li><a href="#a4">Переменные окружения</a></li>
+    <li><a href="#a5">Авторизация, роли и доступ</a></li>
+    <li><a href="#a6">Модель: свой бокс или облако</a></li>
+    <li><a href="#a7">Реестр систем и коннекторы</a></li>
+    <li><a href="#a8">Data Plane: рецепты и сущности</a></li>
+    <li><a href="#a9">Навыки: файлы, шаблоны, контракты</a></li>
+    <li><a href="#a10">Агенты и семьи</a></li>
+    <li><a href="#a11">Лимиты и бюджеты</a></li>
+    <li><a href="#a12">Подбор агента по фразе</a></li>
+    <li><a href="#a13">Очередь, группы и веер</a></li>
+    <li><a href="#a14">Шина и коннектор-воркер</a></li>
+    <li><a href="#a15">Доставка и шаблоны отчётов</a></li>
+    <li><a href="#a16">Аудит и безопасность</a></li>
+    <li><a href="#a17">Наблюдаемость</a></li>
+    <li><a href="#a18">Биллинг и квоты</a></li>
+    <li><a href="#a19">Резервное копирование и обновление</a></li>
+    <li><a href="#a20">Диагностика</a></li>
+    <li><a href="#a21">Приложение А. Эндпоинты API</a></li>
+    <li><a href="#a22">Приложение Б. Переменные окружения</a></li>
+    <li><a href="#a23">Приложение В. Порты</a></li>
+  </ol>
+</nav>
+
+<!-- ════════════════════════ 1 ════════════════════════ -->
+<h2 class="sec" id="a1"><span class="num">РАЗДЕЛ 1</span>Состав поставки и топология</h2>
+<p class="sec-lead">ABOP ставится одним контейнером на сервер заказчика. Всё остальное —
+опционально и включается по мере надобности.</p>
+
+<h3>1.1 Обязательный минимум</h3>
+<table class="t-narrow">
+  <thead><tr><th>Компонент</th><th>Что делает</th><th>Где работает</th></tr></thead>
+  <tbody>
+    <tr><td><b>ABOP Web API</b></td><td>Ядро: REST и SSE для веба, десктопа и агентов; внутри процесса — воркеры очереди прогонов</td><td>docker, порт 8091</td></tr>
+    <tr><td><b>Postgres</b></td><td>Агенты, контракты, прогоны, очередь заданий, шаблоны навыков и отчётов, рецепты, доступы, память, заявки на подтверждение</td><td>docker или внешний, порт 5432/5433</td></tr>
+    <tr><td><b>Том данных</b> <code>abop_ape</code></td><td>Канонические записи Data Plane (<code>/root/.ape/data/*.jsonl</code>)</td><td>docker volume</td></tr>
+    <tr><td><b>Модель</b></td><td>LLM с OpenAI-совместимым API: свой бокс с vLLM или облачный шлюз</td><td>свой сервер или внешний</td></tr>
+  </tbody>
+</table>
+
+<h3>1.2 Опциональные компоненты</h3>
+<table class="t-narrow">
+  <thead><tr><th>Компонент</th><th>Когда нужен</th></tr></thead>
+  <tbody>
+    <tr><td><b>Keycloak</b></td><td>Всегда в продуктивной установке: без него аутентификация не настроена и API отвечает 401. Может быть ваш существующий</td></tr>
+    <tr><td><b>Шина (Kafka/Redpanda)</b></td><td>Когда нужны события из систем как триггеры и асинхронная доставка команд</td></tr>
+    <tr><td><b>Коннектор-воркер</b></td><td>Исполняет команды в ваших системах (создать задачу, отправить письмо, опубликовать страницу)</td></tr>
+    <tr><td><b>Prometheus + Grafana</b></td><td>Наблюдаемость: прогоны, очередь, стоимость, шина</td></tr>
+    <tr><td><b>Сервис HTML→PDF</b></td><td>Отчёты в PDF</td></tr>
+    <tr><td><b>Граф-RAG</b></td><td>Навыки, обязанные ссылаться на нормы и регламенты</td></tr>
+    <tr><td><b>S3-хранилище</b></td><td>Хранение отчётов и больших выгрузок</td></tr>
+  </tbody>
+</table>
+
+<h3>1.3 Как это связано</h3>
+<div class="topo">┌──────────────┐        ┌──────────────┐
+│ Веб-браузер  │        │ ABOP Desktop │      рабочие места
+└──────┬───────┘        └──────┬───────┘
+       │  HTTPS (JWT)          │  HTTP 127.0.0.1 → сайдкар → HTTPS (JWT)
+       └───────────┬───────────┘
+                   ▼
+        ┌────────────────────────┐        ┌───────────────┐
+        │   ABOP Web API :8091   │───────▶│  Keycloak     │  проверка токена
+        │  ┌──────────────────┐  │        └───────────────┘
+        │  │ очередь прогонов │  │        ┌───────────────┐
+        │  └──────────────────┘  │───────▶│  Модель (LLM) │  OpenAI-совместимый API
+        └───┬───────────┬────────┘        └───────────────┘
+            │           │
+            ▼           ▼
+    ┌────────────┐  ┌──────────────────┐
+    │ Postgres   │  │ том abop_ape     │   канонические данные
+    └────────────┘  └──────────────────┘
+            │
+            ▼  (опционально)
+    ┌────────────┐   команды   ┌──────────────────┐   REST   ┌──────────────┐
+    │ Шина       │────────────▶│ коннектор-воркер │─────────▶│ ваши системы │
+    │ Kafka      │◀────────────│                  │◀─────────│ трекер/вики/ │
+    └────────────┘   события   └──────────────────┘          │ почта/учёт   │
+                                                             └──────────────┘</div>
+
+<div class="note">
+  <span class="lb">Ключевой принцип</span>
+  ABOP ничего не отправляет в ваши системы сам. Он формирует команду, показывает человеку, что
+  именно уйдёт, и только после подтверждения публикует её. Исполняет команду отдельный воркер, у
+  которого есть доступ к системам, — у ядра этих доступов нет.
+</div>
+
+<!-- ════════════════════════ 2 ════════════════════════ -->
+<h2 class="sec" id="a2"><span class="num">РАЗДЕЛ 2</span>Требования и подготовка</h2>
+
+<h3>2.1 Сервер приложения</h3>
+<table class="t-narrow">
+  <tbody>
+    <tr><td><b>ОС</b></td><td>Linux x86-64 с Docker 24+ (проверено на Ubuntu 22.04/24.04)</td></tr>
+    <tr><td><b>Процессор</b></td><td>4 ядра — минимум; 8 ядер — комфортно при 20+ пользователях</td></tr>
+    <tr><td><b>Память</b></td><td>4 ГБ минимум. Контейнеру ядра выделяется 1,5 ГБ: этого хватает на 4 воркера прогонов</td></tr>
+    <tr><td><b>Диск</b></td><td>20 ГБ на систему и образы, плюс объём под данные Postgres и канонический слой</td></tr>
+    <tr><td><b>Сеть</b></td><td>Исходящий доступ к модели; входящий — только к порту веб-интерфейса, желательно за обратным прокси с TLS</td></tr>
+  </tbody>
+</table>
+
+<h3>2.2 Сервер модели</h3>
+<p>Модель — отдельная история. Есть два пути.</p>
+<table class="t-narrow">
+  <thead><tr><th>Путь</th><th>Что нужно</th><th>Когда выбирать</th></tr></thead>
+  <tbody>
+    <tr><td><b>Свой бокс</b></td><td>GPU от 48 ГБ памяти (L40S, A6000, 6000 Ada), vLLM, модель уровня Qwen3-30B-A3B в FP8</td><td>Данные не должны покидать контур; нужен предсказуемый расход</td></tr>
+    <tr><td><b>Облачный шлюз</b></td><td>Только ключ доступа к OpenAI-совместимому API</td><td>Быстрый старт, пилот, небольшие объёмы</td></tr>
+  </tbody>
+</table>
+
+<div class="tip">
+  <span class="lb">Рекомендация по модели</span>
+  Для продуктивной работы берите модель с поддержкой строгого структурного вывода
+  (<code>response_format: json_schema</code>). ABOP опирается на схемы результата: если модель умеет
+  соблюдать схему на уровне декодирования, качество и стоимость заметно лучше, чем при разборе
+  «свободного» ответа.
+</div>
+
+<h3>2.3 Что подготовить заранее</h3>
+<ul>
+  <li><b>Учётные записи</b> в системах, из которых агенты будут читать данные, — с правами только на
+  чтение;</li>
+  <li><b>Отдельные учётные записи</b> для систем, в которые агенты будут писать (трекер, вики,
+  почта), — чтобы действия агентов отличались от действий людей;</li>
+  <li><b>Список отделов</b> и того, какие системы каждому доступны: это ляжет в основу правил
+  доступа;</li>
+  <li><b>Realm в Keycloak</b> (или доступ к существующему) с ролями <code>admin</code>,
+  <code>support</code>, <code>manager</code>, <code>analyst</code>.</li>
+</ul>
+
+<!-- ════════════════════════ 3 ════════════════════════ -->
+<h2 class="sec" id="a3"><span class="num">РАЗДЕЛ 3</span>Установка</h2>
+<p class="sec-lead">Базовая установка занимает около получаса: разложить файлы, заполнить окружение,
+собрать образ, запустить, проверить.</p>
+
+<ol class="steps">
+  <li><b class="t">Разложите поставку</b>
+  Каталог <code>/opt/abop</code>. В нём должны оказаться <code>server/</code>, <code>cli/</code>,
+  <code>skills/</code>, <code>webapp/</code>, <code>reports/</code>, <code>desktop/ui/</code>,
+  <code>ops/</code> и <code>Dockerfile.webapi</code>.
+<pre><code>mkdir -p /opt/abop &amp;&amp; cd /opt/abop
+tar -xf abop-&lt;версия&gt;.tar</code></pre></li>
+
+  <li><b class="t">Поднимите Postgres</b>
+  Можно взять существующий. Для отдельного:
+<pre><code>docker run -d --name abop-pg --restart unless-stopped \
+  -e POSTGRES_PASSWORD=<span class="s">'…'</span> -e POSTGRES_DB=abop -e POSTGRES_USER=abop \
+  -p 127.0.0.1:5433:5432 -v ape_pg:/var/lib/postgresql/data postgres:16</code></pre>
+  <span class="c">Порт наружу не открывайте: ядро ходит в базу по петле.</span></li>
+
+  <li><b class="t">Заполните <code>.env</code></b>
+  Минимальный рабочий набор — в разделе 4. Файл лежит рядом: <code>/opt/abop/.env</code>, права
+  <code>600</code>.</li>
+
+  <li><b class="t">Соберите и запустите</b>
+<pre><code>cd /opt/abop &amp;&amp; bash ops/deploy-webapi.sh</code></pre>
+  Скрипт собирает образ, пересоздаёт контейнер с нужным томом и ждёт готовности. Эквивалент вручную:
+<pre><code>docker build -q -f Dockerfile.webapi -t abop-webapi .
+docker rm -f abop-webapi 2&gt;/dev/null || true
+docker run -d --name abop-webapi --network host --restart unless-stopped --memory=1536m \
+  --env-file /opt/abop/.env -v abop_ape:/root/.ape abop-webapi</code></pre></li>
+
+  <li><b class="t">Проверьте</b>
+<pre><code>curl -s http://127.0.0.1:8091/api/health
+<span class="c"># {"ok":true,"families":10,"skills":58,"adapters":[...]}</span></code></pre>
+  Если <code>skills</code> равно нулю — каталог навыков не попал в образ.</li>
+
+  <li><b class="t">Закройте периметр</b>
+  Порт 8091 наружу отдавайте только через обратный прокси с TLS. Прямой доступ к Postgres,
+  Keycloak и шине снаружи должен быть закрыт.</li>
+</ol>
+
+<div class="danger">
+  <span class="lb">Никогда не запускайте без тома</span>
+  Флаг <code>-v abop_ape:/root/.ape</code> обязателен. В этом томе лежат канонические записи Data
+  Plane. Контейнер, запущенный без него, стартует и выглядит здоровым, но все данные, выгруженные
+  рецептами, пропадут при следующем пересоздании.
+</div>
+
+<h3>3.1 Первый вход</h3>
+<p>Откройте <code>https://&lt;ваш-адрес&gt;/</code>. Вход идёт через Keycloak: ABOP проксирует логин,
+поэтому сам Keycloak можно держать закрытым от внешней сети. После входа в правом нижнем углу
+появится ваше имя, уровень доступа и отдел.</p>
+
+<div class="warn">
+  <span class="lb">Режим разработки</span>
+  Переменная <code>ABOP_DEV_AUTH=1</code> отключает проверку токенов и делает любого анонима
+  администратором. Она предназначена для локальной разработки и автотестов. В продуктивной установке
+  её быть не должно — проверьте перед сдачей: <code>docker exec abop-webapi printenv | grep DEV_AUTH</code>
+  не должен ничего вернуть.
+</div>
+
+<h3>3.2 Установка десктоп-клиента</h3>
+<p>Клиент ставится на машины пользователей отдельно. Установщик собирается командой
+<code>npm run dist</code> в каталоге <code>desktop/</code> и публикуется вашим способом раздачи ПО.
+Клиенту нужно знать адрес сервера — он задаётся переменной окружения <code>ABOP_BASE_URL</code> при
+сборке или в конфигурации приложения.</p>
+<p>Интерфейс десктопа подтягивается с сервера при каждом запуске (<code>/desktop-ui-bundle</code>),
+поэтому обновления интерфейса доезжают до пользователей без переустановки приложения — переустановка
+нужна только при смене версии оболочки или локального движка.</p>
+<!-- ════════════════════════ 4 ════════════════════════ -->
+<h2 class="sec" id="a4"><span class="num">РАЗДЕЛ 4</span>Переменные окружения</h2>
+<p class="sec-lead">Файл <code>/opt/abop/.env</code> — единственный источник настроек уровня среды.
+Полный список с умолчаниями — в приложении Б; здесь минимум, который нужно заполнить осознанно.</p>
+
+<h3>4.1 Минимальный рабочий набор</h3>
+<pre><code><span class="c"># ── база ──</span>
+POSTGRES_DSN=postgresql://abop:<span class="s">пароль</span>@127.0.0.1:5433/abop
+
+<span class="c"># ── авторизация ──</span>
+KEYCLOAK_ISSUER=https://auth.example.ru/realms/abop
+KEYCLOAK_JWKS_URI=https://auth.example.ru/realms/abop/protocol/openid-connect/certs
+KEYCLOAK_AUDIENCE=abop-web
+
+<span class="c"># ── модель: свой бокс ──</span>
+LOCAL_LLM_BASE_URL=http://10.0.0.20:8000/v1
+LOCAL_LLM_MODEL=qwen3-30b-a3b
+LOCAL_LLM_API_KEY=EMPTY
+
+<span class="c"># ── исполнение прогонов ──</span>
+ABOP_RUN_WORKERS=4
+ABOP_RUN_TIMEOUT=600
+ABOP_USER_CONCURRENT=1
+ABOP_RUN_LLM_TRUNCATE=0</code></pre>
+
+<h3>4.2 Что стоит поменять под нагрузку</h3>
+<table class="t-env">
+  <thead><tr><th>Переменная</th><th>По умолч.</th><th>Когда менять</th></tr></thead>
+  <tbody>
+    <tr><td>ABOP_RUN_WORKERS</td><td>2</td><td>Сколько прогонов исполняется одновременно. Каждый воркер — это ещё один параллельный поток запросов к модели. Поднимайте вместе с ёмкостью модели</td></tr>
+    <tr><td>ABOP_USER_CONCURRENT</td><td>1</td><td>Сколько прогонов одного пользователя идут одновременно. Единица защищает от того, что один человек займёт всю очередь</td></tr>
+    <tr><td>ABOP_RUN_TIMEOUT</td><td>600</td><td>Потолок на задание в секундах. Длинные аудиты по большим выгрузкам требуют больше</td></tr>
+    <tr><td>ABOP_RUN_LLM_CONCURRENCY</td><td>3</td><td>Сколько навыков внутри одного прогона идут в модель одновременно</td></tr>
+    <tr><td>ABOP_LLM_MAX_INFLIGHT</td><td>12</td><td>Общий потолок одновременных запросов к модели. Ставьте по ёмкости бокса</td></tr>
+    <tr><td>ABOP_RUN_LLM_TRUNCATE</td><td>1</td><td><b>На проде поставьте 0.</b> Единица режет промпты и выборки для быстрой отладки</td></tr>
+    <tr><td>ABOP_RUN_CACHE</td><td>1</td><td>Кэш одинаковых прогонов. Ноль — всегда считать заново</td></tr>
+    <tr><td>ABOP_FANOUT_MAX</td><td>20</td><td>Максимум заданий в одном веере — защита от случайного запуска по двумстам предметам</td></tr>
+    <tr><td>ABOP_SCHEDULER</td><td>1</td><td>Планировщик регулярных запусков. Ноль — выключить</td></tr>
+  </tbody>
+</table>
+
+<div class="note">
+  <span class="lb">Лимиты прогона больше не живут в окружении</span>
+  Длина ответа навыка, шаги инструментов, размер выборки и параллельность настраиваются из
+  интерфейса — <b>Настройки → Прогон</b> (раздел 11). Переменные окружения остались умолчаниями:
+  настройка из интерфейса их перекрывает и действует со следующего прогона, без перезапуска.
+</div>
+
+<!-- ════════════════════════ 5 ════════════════════════ -->
+<h2 class="sec" id="a5"><span class="num">РАЗДЕЛ 5</span>Авторизация, роли и доступ</h2>
+<p class="sec-lead">ABOP не ведёт своих учётных записей. Пользователи и роли живут в вашем Keycloak,
+а платформа читает их из токена.</p>
+
+<h3>5.1 Настройка Keycloak</h3>
+<ol class="steps">
+  <li><b class="t">Создайте realm</b>
+  Например <code>abop</code>. Если у вас уже есть корпоративный realm — используйте его.</li>
+
+  <li><b class="t">Заведите клиента для веба</b>
+  <code>abop-web</code>, тип «public», поток «Direct access grants» включён — через него ABOP
+  проксирует вход, не выставляя Keycloak наружу.</li>
+
+  <li><b class="t">Заведите роли уровня realm</b>
+  <code>admin</code>, <code>support</code>, <code>manager</code>, <code>analyst</code>.</li>
+
+  <li><b class="t">Добавьте атрибут отдела</b>
+  Атрибут пользователя <code>department</code> со значением-идентификатором семьи
+  (<code>management</code>, <code>finance</code>, <code>audit</code>…). Пропишите его в маппер
+  токена, чтобы он попадал в JWT. Значение <code>*</code> означает «все области».</li>
+
+  <li><b class="t">Пропишите адреса в <code>.env</code></b>
+  <code>KEYCLOAK_ISSUER</code> и <code>KEYCLOAK_JWKS_URI</code>. Если Keycloak внутри той же сети,
+  а issuer публичный, задайте <code>KEYCLOAK_JWKS_INTERNAL</code> — ключи будут забираться по
+  внутреннему адресу, а issuer проверяться по публичному.</li>
+</ol>
+
+<h3>5.2 Четыре уровня доступа</h3>
+<table>
+  <thead><tr><th>Уровень</th><th>Может</th><th>Не может</th></tr></thead>
+  <tbody>
+    <tr><td><b>analyst</b><br>аналитик</td><td>Смотреть агентов, навыки, данные и прогоны своей области. Запускать прогоны</td><td>Менять агентов, навыки, данные, настройки. Подтверждать внешние действия</td></tr>
+    <tr><td><b>manager</b><br>менеджер</td><td>Всё, что аналитик, плюс собирать и публиковать агентов в своём отделе, подтверждать внешние действия, править лимиты прогона</td><td>Менять шаблоны навыков, управлять доступом, трогать чужие отделы</td></tr>
+    <tr><td><b>support</b><br>поддержка</td><td>Сквозное чтение по всем отделам для разбора обращений</td><td>Менять что-либо</td></tr>
+    <tr><td><b>admin</b><br>администратор</td><td>Всё: навыки, шаблоны, системы, доступы, удаление агентов</td><td>—</td></tr>
+  </tbody>
+</table>
+
+<figure>
+  <img src="img/w17-adm-users.jpg" alt="Админ-панель: пользователи">
+  <figcaption><b>Рис. 5.1.</b> Админ-панель, вкладка «Пользователи»: кто заведён, с каким уровнем и
+  в какой области. Список читается из Keycloak.</figcaption>
+</figure>
+
+<figure>
+  <img src="img/w18-adm-roles.jpg" alt="Админ-панель: роли и области">
+  <figcaption><b>Рис. 5.2.</b> «Роли и области»: сколько людей на каждом уровне, какие права он даёт
+  и какие отделы за ним закреплены.</figcaption>
+</figure>
+
+<h3>5.3 Доступ к данным: ABAC по отделу</h3>
+<p>Кроме уровня доступа, действует правило области. Агент принадлежит семье (отделу), а каждая
+система в реестре объявляет, каким семьям она доступна. Если сущность наполняется рецептом из
+системы, недоступной семье агента, — агент эту сущность не читает. В прогоне появляется явная
+пометка «доступ к данным запрещён», а отказ пишется в аудит.</p>
+
+<div class="tip">
+  <span class="lb">Как это проверить</span>
+  Откройте результат прогона: блок «доступ» показывает, какие системы были разрешены агенту и по
+  какой причине. Ничего не скрывается: видно и разрешённые, и закрытые.
+</div>
+
+<h3>5.4 Аудит</h3>
+<figure>
+  <img src="img/w20-adm-audit.jpg" alt="Админ-панель: аудит">
+  <figcaption><b>Рис. 5.3.</b> Аудит-след: кто, что и когда сделал, с пометкой критичности.</figcaption>
+</figure>
+<p>В аудит попадают: запуски прогонов, сохранение и удаление агентов, правка навыков и шаблонов,
+изменение настроек и лимитов, подтверждения и отклонения внешних действий, отказы по правам доступа.
+Запись содержит исполнителя, объект, время и краткое описание.</p>
+
+<!-- ════════════════════════ 6 ════════════════════════ -->
+<h2 class="sec" id="a6"><span class="num">РАЗДЕЛ 6</span>Модель: свой бокс или облако</h2>
+<p class="sec-lead">ABOP работает с любым OpenAI-совместимым API. Адрес модели можно сменить на лету,
+не перезапуская сервис.</p>
+
+<figure>
+  <img src="img/w11-nastr-modeli.jpg" alt="Настройки: модели">
+  <figcaption><b>Рис. 6.1.</b> «Настройки → Модели»: текущий адрес, модель и состояние проверки
+  связи. Здесь же — переключение на запасной канал.</figcaption>
+</figure>
+
+<h3>6.1 Свой бокс с vLLM</h3>
+<pre><code>vllm serve Qwen/Qwen3-30B-A3B-Instruct-2507-FP8 \
+  --port 8000 --max-model-len 32768 --gpu-memory-utilization 0.92 \
+  --guided-decoding-backend xgrammar</code></pre>
+<p>Проверьте, что модель отвечает:</p>
+<pre><code>curl -s http://10.0.0.20:8000/v1/models</code></pre>
+<p>Затем пропишите адрес в <code>.env</code> (<code>LOCAL_LLM_BASE_URL</code>,
+<code>LOCAL_LLM_MODEL</code>) или задайте из интерфейса — «Настройки → Модели → Применить эндпоинт».
+Настройка из интерфейса переживает перезапуск контейнера: она хранится в базе.</p>
+
+<h3>6.2 Облачный шлюз</h3>
+<p>Задайте базовый адрес и ключ вашего провайдера. Каскад моделей описывается списком: если первая
+не отвечает, запрос уходит следующей. Откаты видны в метрике <code>abop_llm_fallback_total</code> —
+если она растёт, основная модель нестабильна.</p>
+
+<h3>6.3 Три профиля запроса</h3>
+<table class="t-narrow">
+  <tbody>
+    <tr><td><code>standard</code></td><td>Агентский движок: все прогоны навыков</td></tr>
+    <tr><td><code>code</code></td><td>Работа с кодом и таблицами</td></tr>
+    <tr><td><code>research</code></td><td>Длинные разборы и исследования</td></tr>
+  </tbody>
+</table>
+<p>Каждому профилю можно назначить свой каскад — например, тяжёлую модель только для исследований.</p>
+
+<h3>6.4 Проверка после смены модели</h3>
+<ol>
+  <li><code>GET /api/llm/status</code> — адрес, активная модель, результат проверки связи;</li>
+  <li>Запустите короткий прогон с бюджетом «короткий» — убедитесь, что ответ приходит и соблюдает
+  схему;</li>
+  <li>Посмотрите в результате прогона поле стоимости: если тариф для новой модели не задан, расход
+  будет считаться нулевым.</li>
+</ol>
+
+<div class="warn">
+  <span class="lb">Структурный вывод</span>
+  Если модель не поддерживает <code>response_format: json_schema</code>, включите
+  <code>ABOP_RUN_STRUCTURED=0</code>. Схема результата тогда проверяется после ответа: навык, не
+  уложившийся в схему, будет переспрошен один раз, а если и это не помогло — в результате появится
+  честная пометка о несоблюдении схемы вместо выдуманных полей.
+</div>
+
+<!-- ════════════════════════ 7 ════════════════════════ -->
+<h2 class="sec" id="a7"><span class="num">РАЗДЕЛ 7</span>Реестр систем и коннекторы</h2>
+<p class="sec-lead">Реестр систем — единый справочник того, куда ABOP вообще может ходить. Ни рецепт,
+ни доставка не работают с «просто адресом»: они ссылаются на систему из реестра.</p>
+
+<figure>
+  <img src="img/w12-nastr-podkl.jpg" alt="Настройки: подключения">
+  <figcaption><b>Рис. 7.1.</b> «Настройки → Подключения»: системы реестра с адресами и состоянием.</figcaption>
+</figure>
+
+<h3>7.1 Что описывает запись системы</h3>
+<table class="t-narrow">
+  <tbody>
+    <tr><td><b>Идентификатор</b></td><td>короткий slug: <code>redmine</code>, <code>bookstack</code>, <code>erp</code></td></tr>
+    <tr><td><b>Тип</b></td><td><code>rest</code>, <code>postgres</code>, <code>s3</code>, <code>smtp</code>, <code>kafka</code></td></tr>
+    <tr><td><b>Адрес</b></td><td>базовый URL или строка подключения</td></tr>
+    <tr><td><b>Выход наружу</b></td><td><code>internal</code> — внутри контура, <code>external</code> — за его пределами. Влияет на правила и на то, требуется ли подтверждение</td></tr>
+    <tr><td><b>Области (scope)</b></td><td>каким семьям система доступна. Пусто — доступна всем</td></tr>
+    <tr><td><b>Топики шины</b></td><td>если включена шина, системе выделяется пара топиков: события и команды</td></tr>
+  </tbody>
+</table>
+
+<h3>7.2 Заведение системы</h3>
+<ol class="steps">
+  <li><b class="t">Добавьте запись в реестр</b>
+  «Настройки → Подключения → добавить». Укажите slug, тип, адрес и области доступа.</li>
+
+  <li><b class="t">Создайте коннектор</b>
+  «Данные → Коннекторы». Коннектор — это способ авторизации: токен, логин и пароль, заголовок.
+  Секреты хранятся на сервере и в интерфейсе больше не показываются.</li>
+
+  <li><b class="t">Проверьте связь</b>
+  Кнопка проверки делает настоящий запрос и показывает, сколько строк вернулось и какие колонки
+  найдены. Если источник ответил, но строк ноль — скорее всего, данные лежат под другим ключом:
+  укажите корневой путь.</li>
+
+  <li><b class="t">Закройте лишнее</b>
+  Учётная запись коннектора должна иметь ровно те права, которые нужны: чтение — для источников,
+  запись — только для систем доставки.</li>
+</ol>
+
+<h3>7.3 Защита от выхода не туда</h3>
+<p>Запросы наружу проходят через проверку адреса: запрещены обращения к внутренним и служебным
+подсетям, если система не объявлена внутренней. Это защита от того, что подставленный адрес в
+рецепте заставит платформу сходить по внутреннему адресу вашей сети.</p>
+
+<div class="danger">
+  <span class="lb">Раздельные учётные записи</span>
+  Не используйте одну учётную запись для чтения и записи. Если агент читает трекер и он же в нём
+  создаёт задачи — ошибка в правиле доставки превращается в массовое создание задач под правами
+  чтения-записи. Разделите: одна запись читает, другая пишет, и только в один проект.
+</div>
+<!-- ════════════════════════ 8 ════════════════════════ -->
+<h2 class="sec" id="a8"><span class="num">РАЗДЕЛ 8</span>Data Plane: рецепты и сущности</h2>
+<p class="sec-lead">Агент никогда не читает вашу систему напрямую. Между ними стоит рецепт: он
+забирает данные, приводит их к каноническому виду, проверяет и кладёт в хранилище с указанием
+происхождения. Навык объявляет сущность — и получает чистые записи, не зная, откуда они.</p>
+
+<div class="topo">источник ──▶ маппинг и типизация ──▶ правила ──▶ canonical JSON ──▶ запрос навыка
+ (CSV, REST,        (колонка → поле,      (проверки,      (data/&lt;сущность&gt;.jsonl   (data_query)
+  Postgres, S3)      приведение типа)      маскировка)      + провенанс)</div>
+
+<h3>8.1 Адаптеры источников</h3>
+<p>Поставка включает 13 адаптеров:</p>
+<table class="t-narrow">
+  <tbody>
+    <tr><td><b>Файлы</b></td><td><code>csv</code>, <code>json</code>, <code>xlsx</code>, <code>text</code>, <code>pdf</code></td></tr>
+    <tr><td><b>Базы</b></td><td><code>postgres</code>, <code>sqlite</code></td></tr>
+    <tr><td><b>Сеть</b></td><td><code>http</code> (REST), <code>mailpit</code> (почта), <code>vector</code> (векторное хранилище)</td></tr>
+    <tr><td><b>Специальные</b></td><td><code>audit1c</code> (выгрузка учётной системы), <code>slava</code> (граф-RAG по нормам), <code>computed</code> (вычисляемая сущность)</td></tr>
+  </tbody>
+</table>
+
+<h3>8.2 Как устроен рецепт</h3>
+<pre><code>{
+  <span class="k">"recipe"</span>: <span class="s">"sales"</span>,
+  <span class="k">"version"</span>: 1,
+  <span class="k">"source"</span>: { <span class="k">"kind"</span>: <span class="s">"csv"</span>, <span class="k">"path"</span>: <span class="s">"/data/sales.csv"</span> },
+  <span class="k">"entity"</span>: <span class="s">"transaction"</span>,
+  <span class="k">"system_id"</span>: <span class="s">"erp"</span>,
+  <span class="k">"map"</span>: {
+    <span class="k">"id"</span>:       { <span class="k">"col"</span>: <span class="s">"order_id"</span> },
+    <span class="k">"customer"</span>: { <span class="k">"col"</span>: <span class="s">"email"</span>, <span class="k">"cast"</span>: <span class="s">"lower"</span> },
+    <span class="k">"amount"</span>:   { <span class="k">"col"</span>: <span class="s">"total"</span>, <span class="k">"cast"</span>: <span class="s">"money"</span> },
+    <span class="k">"date"</span>:     { <span class="k">"col"</span>: <span class="s">"created_at"</span> }
+  },
+  <span class="k">"rules"</span>: [
+    { <span class="k">"assert"</span>: <span class="s">"amount &gt; 0"</span> },
+    { <span class="k">"pii_mask"</span>: [<span class="s">"customer"</span>] }
+  ],
+  <span class="k">"emit"</span>: { <span class="k">"schema"</span>: <span class="s">"transaction"</span>, <span class="k">"schema_version"</span>: <span class="s">"1.0"</span>, <span class="k">"ttl_sec"</span>: 86400 }
+}</code></pre>
+
+<table class="t-narrow">
+  <thead><tr><th>Секция</th><th>Назначение</th></tr></thead>
+  <tbody>
+    <tr><td><code>source</code></td><td>откуда брать: адаптер и адрес. Для REST — ещё <code>root</code> (путь к массиву в ответе) и заголовки</td></tr>
+    <tr><td><code>entity</code></td><td>в какую каноническую сущность превращается строка</td></tr>
+    <tr><td><code>system_id</code></td><td>система реестра — по ней работают правила доступа отдела</td></tr>
+    <tr><td><code>map</code></td><td>колонка источника → поле сущности, с приведением типа (<code>money</code>, <code>lower</code>, <code>date</code>, <code>int</code>)</td></tr>
+    <tr><td><code>rules</code></td><td>проверки (<code>assert</code>) и маскировка персональных данных (<code>pii_mask</code>). Строка, не прошедшая проверку, отбрасывается с подсчётом</td></tr>
+    <tr><td><code>emit</code></td><td>имя схемы, версия и время жизни записи</td></tr>
+  </tbody>
+</table>
+
+<h3>8.3 Прогон рецепта</h3>
+<figure>
+  <img src="img/w08-dannye-recepty.jpg" alt="Раздел Данные: рецепты">
+  <figcaption><b>Рис. 8.1.</b> Рецепты: адаптер, адрес источника, статус. Три действия у каждого —
+  прогнать, посмотреть данные, удалить.</figcaption>
+  <ul class="callouts">
+    <li><span class="n">1</span><span><b>Рецепты.</b> Правила «источник → сущность».</span></li>
+    <li><span class="n">2</span><span><b>Коннекторы.</b> Подключения к системам.</span></li>
+    <li><span class="n">3</span><span><b>Карта.</b> Что откуда наполняется и кто это читает.</span></li>
+  </ul>
+</figure>
+
+<p>Результат прогона рецепта — честная сводка: <i>записано / отброшено правилами / не прошло проверку
+схемы</i>. Если отброшено много — смотрите правила: скорее всего, источник изменил формат.</p>
+
+<h3>8.4 Версии и время жизни записей</h3>
+<p>Хранилище append-only: повторный прогон рецепта не затирает старое, а добавляет новую версию
+записи. При чтении отдаётся последняя созданная версия. Важное свойство: <b>последняя версия не
+протухает по времени</b> — данные не исчезают сами. Время жизни (<code>ttl_sec</code>) вытесняет
+только перекрытые старые версии.</p>
+
+<div class="tip">
+  <span class="lb">Практика</span>
+  Ставьте <code>ttl_sec: 0</code> для справочников (они меняются редко) и сутки-двое для
+  операционных данных. Регулярный прогон рецептов удобно повесить на планировщик через
+  агента-обновлятора либо внешним cron через API.
+</div>
+
+<h3>8.5 Карта данных</h3>
+<figure>
+  <img src="img/w10-dannye-karta.jpg" alt="Карта данных">
+  <figcaption><b>Рис. 8.2.</b> Карта: сущности, их источники и навыки-потребители. Разрывы видны
+  сразу — сущность объявлена навыком, но рецепта под неё нет.</figcaption>
+</figure>
+
+<p>Карта — первое место, куда стоит смотреть, когда прогоны возвращают ноль находок. Эндпоинт
+<code>GET /api/data/entities</code> отдаёт тот же список машинно: имя сущности, сколько записей
+лежит, сколько навыков её объявили.</p>
+
+<!-- ════════════════════════ 9 ════════════════════════ -->
+<h2 class="sec" id="a9"><span class="num">РАЗДЕЛ 9</span>Навыки: файлы, шаблоны, контракты</h2>
+<p class="sec-lead">Навык — это методика плюс контракт. Он живёт в двух файлах и в базе: файлы едут с
+поставкой, база — источник правды для исполнения.</p>
+
+<h3>9.1 Файлы навыка</h3>
+<pre><code>skills/&lt;идентификатор&gt;/
+  SKILL.md        <span class="c"># методика: что делать, когда применять, чего не делать</span>
+  template.json   <span class="c"># контракт: схема результата, вход, выход, лимиты, доставка</span></code></pre>
+
+<h4>SKILL.md</h4>
+<pre><code>---
+name: acceptance-check
+description: Смотрит на пункты проекта глазами приёмки заказчика…
+tools: data_query, data_get, data_schema
+---
+
+# Приёмка заказчика по пунктам проекта
+
+Ты отвечаешь на вопрос принимающей стороны: что из заявленного подрядчиком
+заказчик действительно принял…
+
+## Когда применять
+## Метод
+## Чего не делать
+## Результат</code></pre>
+
+<p>Заголовок (frontmatter) объявляет идентификатор, назначение и инструменты, которыми навык может
+пользоваться. Тело — методика: она уходит в системное сообщение модели и определяет, как навык
+думает. Раздел «Чего не делать» не декоративный: он снимает типовые ошибки модели.</p>
+
+<h4>template.json</h4>
+<table class="t-narrow">
+  <thead><tr><th>Поле</th><th>Назначение</th></tr></thead>
+  <tbody>
+    <tr><td><code>name</code></td><td>человеческое название навыка</td></tr>
+    <tr><td><code>instruction</code></td><td>инструкция по заполнению результата: как считать, чего не смешивать</td></tr>
+    <tr><td><code>json_schema</code></td><td>строгая схема результата. Ответ проверяется по ней; не уложившийся навык переспрашивают</td></tr>
+    <tr><td><code>slots</code></td><td>предмет работы: какую сущность нужно уточнить у человека, по каким полям искать, как показывать</td></tr>
+    <tr><td><code>inputs</code></td><td>чем кормить: из данных, из навыка, из слота, из контекста, с доски прогона</td></tr>
+    <tr><td><code>produces</code></td><td>что отдаёт: какой раздел результата и по какому ключу он соединяется с другими</td></tr>
+    <tr><td><code>delivery</code></td><td>куда уходит результат: система, тип команды, шаблон полей</td></tr>
+    <tr><td><code>max_tokens</code></td><td>лимит ответа этого навыка</td></tr>
+    <tr><td><code>tool_steps</code></td><td>сколько раз навык может сходить в инструменты до ответа; ноль — не ходит</td></tr>
+  </tbody>
+</table>
+
+<h3>9.2 Контракт: вход и выход</h3>
+<pre><code><span class="k">"inputs"</span>: {
+  <span class="k">"required"</span>: [
+    { <span class="k">"from"</span>: <span class="s">"slot"</span>,  <span class="k">"name"</span>: <span class="s">"проект"</span> },
+    { <span class="k">"from"</span>: <span class="s">"data"</span>,  <span class="k">"entity"</span>: <span class="s">"roadmap_item"</span>,
+      <span class="k">"fields"</span>: [<span class="s">"проект"</span>, <span class="s">"пункт"</span>, <span class="s">"план_финиш"</span>, <span class="s">"часы_план"</span>] },
+    { <span class="k">"from"</span>: <span class="s">"skill"</span>, <span class="k">"skill"</span>: <span class="s">"roadmap-fact"</span>, <span class="k">"path"</span>: <span class="s">"исполнение"</span> },
+    { <span class="k">"from"</span>: <span class="s">"board"</span>, <span class="k">"key"</span>: <span class="s">"исполнение"</span> }
+  ],
+  <span class="k">"optional"</span>: [ … ]
+},
+<span class="k">"produces"</span>: [
+  { <span class="k">"path"</span>: <span class="s">"исполнение"</span>, <span class="k">"key"</span>: <span class="s">"пункт"</span>, <span class="k">"join"</span>: <span class="s">"пункт_плана"</span> }
+]</code></pre>
+
+<table class="t-narrow">
+  <thead><tr><th>Источник входа</th><th>Что означает</th></tr></thead>
+  <tbody>
+    <tr><td><code>data</code></td><td>записи канонической сущности, с перечнем нужных полей</td></tr>
+    <tr><td><code>skill</code></td><td>результат другого навыка — так собираются цепочки. Пока вход не готов, навык не запускается</td></tr>
+    <tr><td><code>slot</code></td><td>предмет работы, который уточняется у человека</td></tr>
+    <tr><td><code>context</code></td><td>формулировка задачи и приложенные файлы</td></tr>
+    <tr><td><code>board</code></td><td>вывод другой ветви с доски прогона по объявленному ключу</td></tr>
+  </tbody>
+</table>
+
+<div class="note">
+  <span class="lb">Зачем контракт</span>
+  По контракту среда знает <i>до запуска</i>, исполнима ли цепочка: покрыты ли обязательные входы,
+  есть ли поставщик нужного выхода. Без контракта это выяснялось бы на середине прогона — уже
+  потратив деньги.
+</div>
+
+<h3>9.3 Добавление своего навыка</h3>
+<ol class="steps">
+  <li><b class="t">Создайте каталог</b>
+  <code>skills/my-skill/</code> с двумя файлами. Идентификатор — латиницей, через дефис.</li>
+
+  <li><b class="t">Опишите методику</b>
+  В <code>SKILL.md</code>: когда применять, метод по шагам, чего не делать, что на выходе. Пишите
+  так, как объясняли бы новому сотруднику.</li>
+
+  <li><b class="t">Опишите контракт</b>
+  В <code>template.json</code>: схема результата (строгая, <code>additionalProperties: false</code>),
+  входы, выходы, при необходимости слот предмета работы.</li>
+
+  <li><b class="t">Объявите источники данных</b>
+  Какие сущности навык читает. Это можно сделать и из интерфейса — карточка навыка, блок
+  «Источники данных».</li>
+
+  <li><b class="t">Проверьте схему</b>
+<pre><code>python scripts/check_templates.py skills/my-skill/template.json</code></pre></li>
+
+  <li><b class="t">Доставьте на сервер</b>
+  Либо пересборкой образа (навыки едут в образе), либо посевом шаблонов без пересборки:
+<pre><code>python scripts/push_templates.py --base https://&lt;адрес&gt; \
+  --user &lt;admin&gt; --password '…' --only my-skill</code></pre></li>
+</ol>
+
+<h3>9.4 Правка навыка из интерфейса</h3>
+<figure>
+  <img src="img/w05-navyk-card.jpg" alt="Карточка навыка">
+  <figcaption><b>Рис. 9.1.</b> Карточка навыка: назначение, шаблон результата, лимиты, контракт,
+  безопасность, семьи и источники данных — всё правится здесь.</figcaption>
+</figure>
+
+<p>Правки из интерфейса имеют приоритет над поставкой: посев из репозитория больше не перекрывает
+такой навык. Кнопка «Вернуть версию репо» откатывает навык к поставочному состоянию.</p>
+
+<table class="t-narrow">
+  <thead><tr><th>Что правится</th><th>Кем</th><th>Где</th></tr></thead>
+  <tbody>
+    <tr><td>Назначение и описание</td><td>admin</td><td>карточка навыка</td></tr>
+    <tr><td>Лимит ответа и шаги инструментов</td><td>admin</td><td>карточка навыка, блок лимитов</td></tr>
+    <tr><td>Контракт (вход, выход)</td><td>admin</td><td>карточка навыка, блок контракта</td></tr>
+    <tr><td>Источники данных</td><td>admin</td><td>карточка навыка, правая колонка</td></tr>
+    <tr><td>Семьи (кому доступен)</td><td>admin</td><td>карточка навыка, правая колонка</td></tr>
+    <tr><td>Методика (SKILL.md)</td><td>—</td><td>только файлом, с пересборкой образа</td></tr>
+  </tbody>
+</table>
+
+<h3>9.5 Инструменты навыка</h3>
+<p>Навык может ходить за данными сам — это называется инструментами. Доступные инструменты
+объявляются в заголовке <code>SKILL.md</code>:</p>
+<table class="t-narrow">
+  <tbody>
+    <tr><td><code>data_query</code></td><td>запросить записи сущности с фильтром</td></tr>
+    <tr><td><code>data_get</code></td><td>получить одну запись по идентификатору</td></tr>
+    <tr><td><code>data_schema</code></td><td>узнать, какие поля есть у сущности</td></tr>
+    <tr><td><code>compute</code></td><td>посчитать выражение детерминированно, без модели</td></tr>
+    <tr><td><code>chart</code></td><td>построить график по данным</td></tr>
+  </tbody>
+</table>
+<p>Число шагов ограничено: по умолчанию два. Каждый шаг — это дополнительный вызов модели, поэтому
+увеличивать стоит осознанно.</p>
+
+<!-- ════════════════════════ 10 ════════════════════════ -->
+<h2 class="sec" id="a10"><span class="num">РАЗДЕЛ 10</span>Агенты и семьи</h2>
+<p class="sec-lead">Агент — навыки, собранные под работу, с именем, отделом и границами. Семья
+определяет, что агенту доступно.</p>
+
+<h3>10.1 Семьи</h3>
+<p>В поставке десять семей: аналитика, архитектура, аудит, инженер, кредитование, критик,
+менеджмент, ресёрч, решения, финансы. Семья — это отдел или направление: она задаёт, какие системы и
+данные видят агенты, и какие навыки им доступны.</p>
+<p>Свои семьи заводятся в интерфейсе (карточка навыка, блок «семьи», поле «своя семья») или через
+API. Идентификатор — латиницей: он же используется как значение атрибута <code>department</code> в
+Keycloak.</p>
+
+<h3>10.2 Сборка агента</h3>
+<figure>
+  <img src="img/w07-kanva.jpg" alt="Канва сборки агента">
+  <figcaption><b>Рис. 10.1.</b> Канва: палитра узлов, холст и инспектор. Слева — сценарии, сверху —
+  режимы и полоса зрелости агента.</figcaption>
+</figure>
+
+<p>Порядок работы: выбрать сценарий или создать нового агента, вытянуть узлы из палитры, соединить,
+настроить каждый в инспекторе, проверить и сохранить. Проверка перед сохранением не даст собрать
+агента, нарушающего конверт, — например, поставить узел внешнего действия без подтверждения при
+недостаточном потолке автономии.</p>
+
+<h3>10.3 Конверт и автономия</h3>
+<table class="t-narrow">
+  <thead><tr><th>Уровень</th><th>Что разрешено</th></tr></thead>
+  <tbody>
+    <tr><td><code>A0</code></td><td>только подготовка, ничего не исполняет</td></tr>
+    <tr><td><code>A1</code></td><td>чтение данных и выводы</td></tr>
+    <tr><td><code>A2</code></td><td>подготовка изменений и документов; наружу — только через подтверждение</td></tr>
+    <tr><td><code>A3</code></td><td>исполнение согласованных действий в оговорённых системах</td></tr>
+    <tr><td><code>A4</code></td><td>полная автономия в своей области (в поставке не используется)</td></tr>
+  </tbody>
+</table>
+
+<p>Конверт задаётся контрактом и проверяется дважды: при сохранении агента и при каждом прогоне.
+Результат проверки виден в вердикте прогона.</p>
+
+<h3>10.4 Жизненный цикл</h3>
+<p><b>Черновик</b> → <b>Проверен</b> → <b>В прогоне</b> → <b>В проде</b>. Черновик перезаписывается
+без создания версий: автосохранение не плодит историю. Осознанный пересмотр создаёт новую версию.
+Вывод из работы — «В Лимб» (архив): агент недоступен для запуска, но прогоны и находки остаются.
+Полное удаление доступно администратору и требует подтверждения вводом имени.</p>
+
+<!-- ════════════════════════ 11 ════════════════════════ -->
+<h2 class="sec" id="a11"><span class="num">РАЗДЕЛ 11</span>Лимиты и бюджеты</h2>
+<p class="sec-lead">Четыре уровня, от общего к точному. Каждый следующий перекрывает предыдущий,
+применённые значения видны в результате прогона.</p>
+
+<table>
+  <thead><tr><th>Уровень</th><th>Где задаётся</th><th>Кто</th><th>На что действует</th></tr></thead>
+  <tbody>
+    <tr><td>код и окружение</td><td><code>.env</code> сервера</td><td>администратор сервера</td><td>умолчания, если ничего не настроено</td></tr>
+    <tr><td><b>среда</b></td><td>Настройки → Прогон</td><td>manager и выше</td><td>все прогоны всех агентов</td></tr>
+    <tr><td><b>навык</b></td><td>карточка навыка</td><td>admin</td><td>везде, где стоит этот навык</td></tr>
+    <tr><td><b>прогон</b></td><td>окно «Новый прогон»</td><td>тот, кто запускает</td><td>только этот запуск</td></tr>
+  </tbody>
+</table>
+
+<figure>
+  <img src="img/w14-nastr-progon.jpg" alt="Настройки: лимиты прогона">
+  <figcaption><b>Рис. 11.1.</b> «Настройки → Прогон»: одиннадцать полей с умолчаниями и границами.
+  У каждого видно, задано оно вручную или взято по умолчанию.</figcaption>
+  <ul class="callouts">
+    <li><span class="n">1</span><span><b>Лимит ответа навыка со схемой.</b> Сколько токенов навык
+    может потратить на структурный ответ.</span></li>
+    <li><span class="n">2</span><span><b>Шагов инструментов.</b> Сколько раз навык ходит за данными
+    до ответа; ноль — не ходит.</span></li>
+    <li><span class="n">3</span><span><b>Параллельных навыков.</b> Сколько вызовов модели идут
+    одновременно внутри прогона.</span></li>
+    <li><span class="n">4</span><span><b>Применить.</b> Настройка действует со следующего прогона,
+    перезапуск не нужен.</span></li>
+    <li><span class="n">5</span><span><b>Сбросить.</b> Вернуть поле к умолчанию.</span></li>
+  </ul>
+</figure>
+
+<h3>11.1 Одиннадцать настраиваемых полей</h3>
+<table>
+  <thead><tr><th>Поле</th><th>Умолч.</th><th>Границы</th><th>Что делает</th></tr></thead>
+  <tbody>
+    <tr><td>лимит ответа навыка со схемой</td><td>1600</td><td>200…32000</td><td>длина структурного ответа</td></tr>
+    <tr><td>лимит ответа рассуждающего навыка</td><td>3600</td><td>200…32000</td><td>длина письма, плана, записки</td></tr>
+    <tr><td>лимит ответа навыка с подробной схемой</td><td>3200</td><td>200…32000</td><td>потолок для сложных шаблонов</td></tr>
+    <tr><td>шагов инструментов до ответа</td><td>2</td><td>0…8</td><td>сколько раз навык ходит за данными</td></tr>
+    <tr><td>параллельных навыков</td><td>3</td><td>1…12</td><td>одновременные вызовы модели в прогоне</td></tr>
+    <tr><td>повторов при сбое модели</td><td>2</td><td>0…5</td><td>ретраи при перегрузе и таймауте</td></tr>
+    <tr><td>строк данных на сущность</td><td>5000</td><td>50…50000</td><td>сколько записей тянуть для точного счёта</td></tr>
+    <tr><td>записей в примере для модели</td><td>20</td><td>1…200</td><td>сколько строк уходит в промпт на больших наборах</td></tr>
+    <tr><td>до скольких записей показываем целиком</td><td>120</td><td>1…2000</td><td>порог, ниже которого модель видит всю выборку</td></tr>
+    <tr><td>знаков методики навыка</td><td>8000</td><td>500…40000</td><td>сколько методики попадает в системное сообщение</td></tr>
+    <tr><td>знаков данных в промпте</td><td>20000</td><td>500…60000</td><td>потолок блока данных</td></tr>
+  </tbody>
+</table>
+
+<div class="note">
+  <span class="lb">Значение вне границ не отвергается молча</span>
+  Оно подрезается до границы, и это видно в поле. Опечатка вроде «200000 токенов» иначе положила бы
+  все прогоны до тех пор, пока кто-нибудь не догадался бы заглянуть в настройки.
+</div>
+
+<h3>11.2 Лимит и бюджет — разные вещи</h3>
+<table>
+  <thead><tr><th></th><th>Лимит</th><th>Бюджет</th></tr></thead>
+  <tbody>
+    <tr><td><b>Ограничивает</b></td><td>один вызов модели</td><td>весь прогон</td></tr>
+    <tr><td><b>Влияет на</b></td><td>качество: малый лимит обрывает ответ</td><td>расход: после превышения новые навыки не запускаются</td></tr>
+    <tr><td><b>Единицы</b></td><td>токены ответа, шаги, строки</td><td>токены, рубли, секунды</td></tr>
+  </tbody>
+</table>
+
+<p>Бюджет проверяется дважды: перед запуском навыка и ещё раз после ожидания в очереди к модели —
+иначе десять ветвей на двенадцати слотах пробили бы лимит все разом. Превышение показывается честно:
+расход одного вызова известен только после ответа модели.</p>
+<!-- ════════════════════════ 12 ════════════════════════ -->
+<h2 class="sec" id="a12"><span class="num">РАЗДЕЛ 12</span>Подбор агента по фразе</h2>
+<p class="sec-lead">Когда человек пишет задачу словами, среда должна понять, кто её выполнит. Подбор
+идёт двумя способами одновременно: по словам и по смыслу.</p>
+
+<figure>
+  <img src="img/w13-nastr-podbor.jpg" alt="Настройки: подбор">
+  <figcaption><b>Рис. 12.1.</b> «Настройки → Подбор»: пороги уверенности, песочница разбора фразы и
+  словарь слов, по которым находят агента.</figcaption>
+</figure>
+
+<h3>12.1 Как устроен подбор</h3>
+<ol>
+  <li><b>Разбор на этапы.</b> Длинная фраза режется на смысловые шаги: у каждого своё действие и
+  свой исполнитель.</li>
+  <li><b>Словарь.</b> У каждого агента есть набор слов и словоформ, по которым его находят. Он
+  сеется автоматически из имени, роли и навыков, и дополняется вручную.</li>
+  <li><b>Смысл.</b> Если словарь не дал уверенного совпадения, включается сравнение по смыслу.</li>
+  <li><b>Порог.</b> Совпадение ниже порога помечается как слабое — человеку показывают это честно,
+  а не выдают наугад выбранного агента.</li>
+</ol>
+
+<h3>12.2 Настройки подбора</h3>
+<table class="t-narrow">
+  <tbody>
+    <tr><td><b>Предупреждать, если уверенность ниже</b></td><td>порог, ниже которого подбор считается сомнительным (по умолчанию 0.35)</td></tr>
+    <tr><td><b>Шаг считать слабым ниже</b></td><td>порог для отдельного этапа разбора (0.2)</td></tr>
+    <tr><td><b>Уточнение моделью</b></td><td>включать ли сравнение по смыслу. Выключенное — быстрее и дешевле, но хуже на непривычных формулировках</td></tr>
+  </tbody>
+</table>
+
+<h3>12.3 Песочница</h3>
+<p>Поле «Проверить фразу» показывает разбор без запуска: на какие этапы разложилась задача, какой
+агент подобран на каждый и с какой уверенностью. Это основной инструмент настройки: если пользователи
+жалуются, что «выбирается не тот агент», прогоните их формулировки здесь и дополните словарь.</p>
+
+<div class="tip">
+  <span class="lb">Практика</span>
+  Соберите десяток реальных формулировок от пользователей и прогоните их через песочницу после
+  каждого добавления агента. Это дешевле, чем разбирать жалобы постфактум.
+</div>
+
+<!-- ════════════════════════ 13 ════════════════════════ -->
+<h2 class="sec" id="a13"><span class="num">РАЗДЕЛ 13</span>Очередь, группы и веер</h2>
+<p class="sec-lead">Прогоны исполняются не прямо в запросе, а через очередь. Это даёт предсказуемость
+под нагрузкой и возможность отменить работу.</p>
+
+<h3>13.1 Как работает очередь</h3>
+<table class="t-narrow">
+  <tbody>
+    <tr><td><b>Воркеры</b></td><td><code>ABOP_RUN_WORKERS</code> потоков внутри процесса разбирают задания</td></tr>
+    <tr><td><b>Приоритет</b></td><td>чем меньше число, тем раньше задание; прогоны из чата приоритетнее регулярных</td></tr>
+    <tr><td><b>Один на пользователя</b></td><td><code>ABOP_USER_CONCURRENT</code> ограничивает одновременные прогоны одного человека</td></tr>
+    <tr><td><b>Таймаут</b></td><td><code>ABOP_RUN_TIMEOUT</code>; задание, не уложившееся в него, помечается честно, а не висит бесконечно</td></tr>
+    <tr><td><b>Дедупликация</b></td><td>повторный одинаковый запрос того же пользователя не создаёт второе задание</td></tr>
+  </tbody>
+</table>
+
+<p>Состояние очереди — <code>GET /api/runs/queue</code>: сколько ждёт, сколько выполняется, среднее
+время ожидания, занятая память. Те же числа уходят в метрики.</p>
+
+<h3>13.2 Группы заданий</h3>
+<p>Несколько заданий можно объединить в группу — тогда ими управляют как одним целым:</p>
+<ul>
+  <li><code>GET /api/runs/groups/{id}</code> — состояние: сколько в каком статусе;</li>
+  <li><code>POST /api/runs/groups/{id}/cancel</code> — отменить всю группу;</li>
+  <li><code>GET /api/runs/groups/{id}/summary</code> — сводка: результаты сведены по составному
+  ключу, с итогами и разрешением расхождений;</li>
+  <li><code>POST /api/runs/jobs/{id}/retry-step</code> — перезапустить одну ветвь, не трогая
+  остальные.</li>
+</ul>
+
+<h3>13.3 Веер по предмету</h3>
+<p>Веер — запуск одного агента сразу по многим предметам: по всем проектам, всем договорам, всем
+контрагентам. Каждый предмет становится отдельным заданием со своим сужением данных, но с общей
+доской и общим снимком данных.</p>
+
+<pre><code>POST /api/runs/fan-out
+{
+  <span class="k">"agent_id"</span>: <span class="s">"authored-…-контролёр-проектов.v1"</span>,
+  <span class="k">"slot"</span>: <span class="s">"проект"</span>,
+  <span class="k">"query"</span>: <span class="s">""</span>,
+  <span class="k">"budget"</span>: { <span class="k">"max_tokens"</span>: 60000 },
+  <span class="k">"limit"</span>: 10
+}</code></pre>
+
+<p>Предметы берутся из явного списка (<code>values</code>), подбираются по запросу
+(<code>query</code>) или берутся все доступные записи сущности слота. Размер веера ограничен
+<code>ABOP_FANOUT_MAX</code>.</p>
+
+<h3>13.4 Общая память и арбитраж</h3>
+<p>Ветви одного запроса делят доску: выводы кладутся под ключами вместе с авторством, а читаются
+только те ключи, которые навык объявил во входах. Если две ветви разошлись в общем поле одной и той
+же записи, расхождение разрешается по возрастанию цены: правило (большинство, наиболее тяжёлый
+статус, число по краю, наличие первоисточника) → навык-арбитр → человек.</p>
+
+<p>Спор о сроке, деньгах или предлагаемом мероприятии правилом не закрывается никогда: он остаётся
+открытым и явно адресован человеку. Нерешённое расхождение видно в записи свода, а не подчищено.</p>
+
+<div class="note">
+  <span class="lb">Снимок данных</span>
+  При запуске веера фиксируется объём и отпечаток выборки. Ветвь, увидевшая другой набор, помечает
+  расхождение данных отдельно от спора ветвей — иначе разные цифры выглядели бы противоречием, хотя
+  считали их по разным данным.
+</div>
+
+<!-- ════════════════════════ 14 ════════════════════════ -->
+<h2 class="sec" id="a14"><span class="num">РАЗДЕЛ 14</span>Шина и коннектор-воркер</h2>
+<p class="sec-lead">Шина нужна для двух вещей: принимать события из ваших систем как триггеры и
+доставлять команды на исполнение. Без неё платформа работает, но события и внешние действия
+отключены.</p>
+
+<figure>
+  <img src="img/w15-nastr-shina.jpg" alt="Настройки: шина">
+  <figcaption><b>Рис. 14.1.</b> «Настройки → Шина»: топики, поток сообщений и очередь
+  недоставленных.</figcaption>
+</figure>
+
+<h3>14.1 Топики</h3>
+<table class="t-narrow">
+  <tbody>
+    <tr><td><code>abop.runs.requests</code></td><td>задания на прогон</td></tr>
+    <tr><td><code>abop.runs.results</code></td><td>результаты прогонов</td></tr>
+    <tr><td><code>abop.&lt;система&gt;.events</code></td><td>события из системы: пришло письмо, создана задача</td></tr>
+    <tr><td><code>abop.&lt;система&gt;.commands</code></td><td>команды в систему: создать задачу, отправить письмо</td></tr>
+    <tr><td><code>abop.dlq</code></td><td>недоставленные сообщения</td></tr>
+  </tbody>
+</table>
+
+<h3>14.2 Подключение</h3>
+<pre><code>ABOP_KAFKA_BROKERS=10.0.0.30:9092
+ABOP_KAFKA_SASL_USER=abop
+ABOP_KAFKA_SASL_PASSWORD=<span class="s">'…'</span>
+ABOP_KAFKA_PARTITIONS=3</code></pre>
+<p>Порты брокера открывайте только для сервера приложения и коннектор-воркера.</p>
+
+<h3>14.3 Коннектор-воркер</h3>
+<p>Отдельный процесс, который читает топики команд и исполняет их в ваших системах. У него —
+секреты доступа на запись; у ядра ABOP их нет. Воркер ведёт собственный учёт исполненных команд,
+поэтому повторная доставка одного сообщения не создаёт вторую задачу.</p>
+
+<p>Здоровье воркера: <code>/healthz</code> и <code>/metrics</code> на его порту. Метрики
+<code>abop_connector_{consumed,done,failed,dlq,duplicate}</code> показывают, что он делает.</p>
+
+<h3>14.4 Очередь недоставленных</h3>
+<p>Сообщение, которое не удалось обработать, уходит в <code>abop.dlq</code> с указанием причины.
+Разбор — из интерфейса или через API:</p>
+<ul>
+  <li><code>GET /api/bus/dlq</code> — что лежит и почему;</li>
+  <li><code>POST /api/bus/dlq/replay</code> — повторить обработку после устранения причины;</li>
+  <li><code>POST /api/bus/dlq/ack</code> — признать сообщение разобранным.</li>
+</ul>
+
+<div class="warn">
+  <span class="lb">Следите за DLQ</span>
+  Растущая очередь недоставленных означает, что часть работы агентов не доезжает до систем. Заведите
+  оповещение на <code>abop_bus_dlq_total</code>.
+</div>
+
+<!-- ════════════════════════ 15 ════════════════════════ -->
+<h2 class="sec" id="a15"><span class="num">РАЗДЕЛ 15</span>Доставка и шаблоны отчётов</h2>
+<p class="sec-lead">Куда уходит результат навыка, описывается в самом навыке — секцией
+<code>delivery</code>. Платформа ничего не отправляет сама: команда становится заявкой на
+подтверждение.</p>
+
+<h3>15.1 Секция доставки</h3>
+<pre><code><span class="k">"delivery"</span>: {
+  <span class="k">"system"</span>: <span class="s">"redmine"</span>,              <span class="c">// система из реестра</span>
+  <span class="k">"type"</span>:   <span class="s">"issue.create"</span>,         <span class="c">// тип команды коннектора</span>
+  <span class="k">"each"</span>:   <span class="s">"находки"</span>,              <span class="c">// массив → по команде на элемент</span>
+  <span class="k">"where"</span>:  { <span class="k">"ранг"</span>: [<span class="s">"критично"</span>, <span class="s">"существенно"</span>] },
+  <span class="k">"limit"</span>:  10,                       <span class="c">// максимум команд за прогон</span>
+  <span class="k">"title"</span>:  <span class="s">"Задача: {{заголовок}}"</span>,  <span class="c">// заголовок карточки подтверждения</span>
+  <span class="k">"payload"</span>: {
+    <span class="k">"subject"</span>:     <span class="s">"Находка {{id}}: {{описание}}"</span>,
+    <span class="k">"description"</span>: <span class="s">"{{$.итог}}\n\n{{#действия}}"</span>,
+    <span class="k">"project"</span>:     <span class="s">"abop"</span>
+  }
+}</code></pre>
+
+<table class="t-narrow">
+  <thead><tr><th>Подстановка</th><th>Что берёт</th></tr></thead>
+  <tbody>
+    <tr><td><code>{{путь.к.полю}}</code></td><td>значение из элемента (или из корня, если <code>each</code> не задан)</td></tr>
+    <tr><td><code>{{$.путь}}</code></td><td>значение из корня ответа навыка</td></tr>
+    <tr><td><code>{{#путь}}</code></td><td>список маркированными строками</td></tr>
+  </tbody>
+</table>
+
+<p>Списки склеиваются через «; », объекты — как «ключ: значение». Ограничение <code>limit</code>
+обязательно для массовых доставок: без него одна находка на сотню строк превращается в сотню задач.</p>
+
+<h3>15.2 Путь команды</h3>
+<div class="topo">навык отдал результат
+        │
+        ▼
+  сборка команды по секции delivery
+        │
+        ▼
+  заявка на подтверждение  ──▶ человек видит ПОЛНЫЙ текст того, что уйдёт
+        │ «разрешить»
+        ▼
+  публикация в топик команд ──▶ коннектор-воркер ──▶ ваша система
+        │
+        ▼
+  событие с результатом (id, ссылка) ──▶ обратно в карточку прогона</div>
+
+<h3>15.3 Шаблоны отчётов</h3>
+<p>Отчёт — это HTML-шаблон с подстановками, из которого собирается документ и, при наличии сервиса
+рендера, PDF. Шаблоны лежат в <code>reports/&lt;идентификатор&gt;.html</code> и сеются в базу при
+старте; правка в веб-редакторе имеет приоритет и переживает обновление.</p>
+
+<table class="t-narrow">
+  <thead><tr><th>Подстановка</th><th>Что подставляется</th></tr></thead>
+  <tbody>
+    <tr><td><code>{{title}}</code>, <code>{{agent}}</code>, <code>{{date}}</code></td><td>шапка отчёта</td></tr>
+    <tr><td><code>{{verdict}}</code></td><td>итог проверки прогона</td></tr>
+    <tr><td><code>{{findings_total}}</code>, <code>{{investigations_total}}</code></td><td>количества</td></tr>
+    <tr><td><code>{{findings}}</code></td><td>таблица находок</td></tr>
+  </tbody>
+</table>
+
+<!-- ════════════════════════ 16 ════════════════════════ -->
+<h2 class="sec" id="a16"><span class="num">РАЗДЕЛ 16</span>Аудит и безопасность</h2>
+<p class="sec-lead">Три контура защиты: кто и что может (RBAC), к каким данным допущен (ABAC) и что
+может уйти наружу (подтверждение).</p>
+
+<h3>16.1 Что закрыто по умолчанию</h3>
+<table class="t-narrow">
+  <tbody>
+    <tr><td><b>Аутентификация</b></td><td>Без настроенного Keycloak API отвечает 401. Открытого режима в продуктивной сборке нет</td></tr>
+    <tr><td><b>Внешние действия</b></td><td>Ничего не уходит без подтверждения человека. Это свойство платформы, а не настройка агента</td></tr>
+    <tr><td><b>Данные вне области</b></td><td>Сущность из системы, недоступной семье агента, не читается; отказ пишется в аудит</td></tr>
+    <tr><td><b>Ввод пользователя</b></td><td>Задача человека, приложенные файлы, данные и наблюдения инструментов приходят модели помеченными блоками данных. Инструкции внутри них не исполняются — методика и роль не меняются</td></tr>
+    <tr><td><b>Выход в сеть</b></td><td>Запросы к внутренним и служебным адресам запрещены, если система не объявлена внутренней</td></tr>
+    <tr><td><b>Персональные данные</b></td><td>Маскировка задаётся правилом рецепта (<code>pii_mask</code>) и применяется до попадания записи в хранилище</td></tr>
+  </tbody>
+</table>
+
+<h3>16.2 Проверка перед сдачей заказчику</h3>
+<ol class="steps">
+  <li><b class="t">Убедитесь, что режим разработки выключен</b>
+<pre><code>docker exec abop-webapi printenv | grep -i dev_auth   <span class="c"># должно быть пусто</span>
+curl -si https://&lt;адрес&gt;/api/agents | head -1          <span class="c"># 401 без токена</span></code></pre></li>
+
+  <li><b class="t">Проверьте области систем</b>
+  В реестре у каждой системы должен быть явный список семей. Пустой список означает «доступна
+  всем» — это осознанное решение, а не умолчание по невнимательности.</li>
+
+  <li><b class="t">Проверьте учётные записи коннекторов</b>
+  Читающие — только на чтение. Пишущие — только в нужный проект или раздел.</li>
+
+  <li><b class="t">Смените пароли по умолчанию</b>
+  Панель наблюдаемости, база, брокер шины.</li>
+
+  <li><b class="t">Закройте порты</b>
+  Наружу — только обратный прокси. Postgres, Keycloak, брокер и воркер недоступны из внешней сети.</li>
+
+  <li><b class="t">Проверьте аудит</b>
+  Запустите прогон, подтвердите внешнее действие, откройте «Админ-панель → Аудит ИБ»: обе операции
+  должны быть в списке с вашим именем.</li>
+</ol>
+
+<h3>16.3 Штатное расписание</h3>
+<figure>
+  <img src="img/w19-adm-staff.jpg" alt="Админ-панель: штат">
+  <figcaption><b>Рис. 16.1.</b> «Штат»: соответствие людей и учётных записей — по нему видно, чьи
+  действия стоят за каждым прогоном.</figcaption>
+</figure>
+
+<!-- ════════════════════════ 17 ════════════════════════ -->
+<h2 class="sec" id="a17"><span class="num">РАЗДЕЛ 17</span>Наблюдаемость</h2>
+<p class="sec-lead">Метрики в формате Prometheus отдаются по <code>/metrics</code>. Панель с готовым
+дашбордом поднимается из состава поставки.</p>
+
+<pre><code>cd /opt/abop
+docker compose -f ops/docker-compose.observability.yml up -d</code></pre>
+
+<h3>17.1 Что смотреть каждый день</h3>
+<table>
+  <thead><tr><th>Метрика</th><th>О чём говорит</th><th>Когда тревожно</th></tr></thead>
+  <tbody>
+    <tr><td><code>abop_runs_total{ok}</code></td><td>прогоны: успешные и с замечаниями</td><td>доля неуспешных растёт</td></tr>
+    <tr><td><code>abop_run_seconds</code></td><td>длительность прогона</td><td>p95 уходит к таймауту</td></tr>
+    <tr><td><code>abop_run_queue_depth</code></td><td>сколько заданий ждёт</td><td>очередь не рассасывается — мало воркеров или ёмкости модели</td></tr>
+    <tr><td><code>abop_run_cost_rub_total</code></td><td>расход в деньгах</td><td>резкий рост при неизменной нагрузке</td></tr>
+    <tr><td><code>abop_llm_fallback_total</code></td><td>откаты на запасную модель</td><td>любое ненулевое значение — основная модель нестабильна</td></tr>
+    <tr><td><code>abop_run_soft_errors_total</code></td><td>нефатальные сбои шагов</td><td>растёт — что-то отваливается тихо</td></tr>
+    <tr><td><code>abop_bus_dlq_total</code></td><td>недоставленные сообщения</td><td>любое ненулевое — часть работы не доехала</td></tr>
+    <tr><td><code>abop_arbitration_human_total</code></td><td>расхождения, ждущие человека</td><td>растёт — источники данных разъехались</td></tr>
+  </tbody>
+</table>
+
+<h3>17.2 Сквозная трасса</h3>
+<p>У каждого прогона есть идентификатор трассы; он же передаётся в сообщениях шины заголовком.
+По нему собирается полный путь: запрос → задание → прогон → команда → исполнение в системе. Ветви
+веера ссылаются на родительскую трассу, поэтому картина «один запрос → двадцать ветвей» собирается
+целиком.</p>
+
+<h3>17.3 Журнал событий</h3>
+<p>Процесс пишет структурированный журнал: одна строка — одно событие в JSON. Полезные события:
+<code>agent.run.done</code>, <code>run_limits.changed</code>, <code>board.save_failed</code>,
+<code>fanout.started</code>, <code>skill_schemas.bound</code>.</p>
+<pre><code>docker logs -f abop-webapi | grep -v '"level":"debug"'</code></pre>
+
+<!-- ════════════════════════ 18 ════════════════════════ -->
+<h2 class="sec" id="a18"><span class="num">РАЗДЕЛ 18</span>Биллинг и квоты</h2>
+<p class="sec-lead">Стоимость считается по фактическим токенам ответа модели и тарифу, а не
+оценочно.</p>
+
+<figure>
+  <img src="img/w16-nastr-billing.jpg" alt="Настройки: биллинг">
+  <figcaption><b>Рис. 18.1.</b> «Настройки → Биллинг»: израсходовано за период, самые дорогие
+  навыки, средняя цена вызова.</figcaption>
+</figure>
+
+<h3>18.1 Как считается</h3>
+<p>После каждого вызова модели фиксируются входные и выходные токены. Стоимость получается
+умножением на тариф модели. Если тариф не задан (например, своя модель на своём железе), расход
+считается нулевым — и это честно: денег действительно не тратится.</p>
+
+<h3>18.2 Квоты</h3>
+<table class="t-narrow">
+  <tbody>
+    <tr><td><b>Квота токенов</b></td><td>задаётся в админ-настройках; видна пользователю в шапке и в кабинете</td></tr>
+    <tr><td><b>Мягкий предел</b></td><td>70% — счётчик желтеет, 90% — краснеет</td></tr>
+    <tr><td><b>Бюджет прогона</b></td><td>дополнительная защита на уровне одного запуска (раздел 11)</td></tr>
+  </tbody>
+</table>
+
+<h3>18.3 Как снизить расход</h3>
+<ul>
+  <li><b>Сужайте предмет работы.</b> Прогон по одному проекту дешевле прогона по всем сразу в разы.</li>
+  <li><b>Уменьшите «записей в примере для модели»</b> на больших наборах: истину считает код, модель
+  объясняет — ей не нужны все строки.</li>
+  <li><b>Уменьшите шаги инструментов</b> у навыков, которым не нужен поиск: каждый шаг — отдельный
+  вызов модели.</li>
+  <li><b>Включите кэш прогонов</b> (<code>ABOP_RUN_CACHE=1</code>): повторный одинаковый запрос
+  вернёт сохранённый результат.</li>
+  <li><b>Свой бокс.</b> На собственном железе расход в деньгах равен нулю; ограничением становится
+  время, а не бюджет.</li>
+</ul>
+<!-- ════════════════════════ 19 ════════════════════════ -->
+<h2 class="sec" id="a19"><span class="num">РАЗДЕЛ 19</span>Резервное копирование и обновление</h2>
+<p class="sec-lead">Данные ABOP живут в двух местах. Потерять можно и то и другое — бэкап нужен для
+обоих.</p>
+
+<h3>19.1 Что где лежит</h3>
+<table class="t-narrow">
+  <thead><tr><th>Где</th><th>Что</th><th>Потеря означает</th></tr></thead>
+  <tbody>
+    <tr><td><b>Postgres</b></td><td>Агенты, контракты, прогоны и очередь, шаблоны навыков и отчётов, определения рецептов и коннекторов, настройки, доступы, память, заявки на подтверждение, разметка находок</td><td>Потерю всей истории и всех настроек</td></tr>
+    <tr><td><b>Том <code>abop_ape</code></b></td><td>Канонические записи Data Plane (<code>/root/.ape/data/*.jsonl</code>), файловые копии рецептов</td><td>Потерю выгруженных данных — их придётся собрать рецептами заново</td></tr>
+    <tr><td><b>Том коннектора</b></td><td>Учёт исполненных команд (защита от дублей)</td><td>Риск повторного исполнения команд при переигровке очереди</td></tr>
+  </tbody>
+</table>
+
+<h3>19.2 Резервное копирование</h3>
+<pre><code><span class="c"># база</span>
+docker exec abop-pg pg_dump -U abop abop | gzip &gt; /backup/abop-$(date +%F).sql.gz
+
+<span class="c"># том с каноническими данными</span>
+docker run --rm -v abop_ape:/src -v /backup:/dst alpine \
+  tar czf /dst/abop_ape-$(date +%F).tar.gz -C /src .</code></pre>
+
+<p>Проверяйте восстановление раз в квартал: бэкап, который никогда не восстанавливали, — это
+надежда, а не резервная копия.</p>
+
+<h3>19.3 Восстановление</h3>
+<pre><code><span class="c"># база</span>
+gunzip -c /backup/abop-2026-09-30.sql.gz | docker exec -i abop-pg psql -U abop abop
+
+<span class="c"># том</span>
+docker run --rm -v abop_ape:/dst -v /backup:/src alpine \
+  sh -c "cd /dst &amp;&amp; tar xzf /src/abop_ape-2026-09-30.tar.gz"</code></pre>
+
+<h3>19.4 Обновление</h3>
+<ol class="steps">
+  <li><b class="t">Снимите бэкап</b>
+  Оба хранилища, прямо перед обновлением.</li>
+
+  <li><b class="t">Убедитесь, что очередь пуста</b>
+<pre><code>curl -s http://127.0.0.1:8091/api/runs/queue</code></pre>
+  Обновление во время работающего прогона приведёт к его перезапуску.</li>
+
+  <li><b class="t">Разложите новую поставку и пересоберите</b>
+<pre><code>cd /opt/abop &amp;&amp; tar -xf abop-&lt;новая версия&gt;.tar &amp;&amp; bash ops/deploy-webapi.sh</code></pre></li>
+
+  <li><b class="t">Проверьте здоровье и каталог</b>
+<pre><code>curl -s http://127.0.0.1:8091/api/health</code></pre>
+  Число навыков не должно уменьшиться.</li>
+
+  <li><b class="t">Прогоните проверочный прогон</b>
+  Любой лёгкий агент с бюджетом «короткий»: убедитесь, что модель отвечает и данные читаются.</li>
+</ol>
+
+<div class="warn">
+  <span class="lb">Откат</span>
+  Предыдущий образ остаётся в докере. Откат — пересоздать контейнер из него с тем же томом и
+  восстановить базу из бэкапа, если менялись схемы.
+</div>
+
+<h3>19.5 Обновление шаблонов навыков без пересборки</h3>
+<p>Рантайм читает шаблоны из базы, репозиторий — источник посева. Обновить шаблоны на работающей
+системе:</p>
+<pre><code>python scripts/check_templates.py skills/*/template.json
+python scripts/push_templates.py --base https://&lt;адрес&gt; --user &lt;admin&gt; --password '…'</code></pre>
+<p>Навыки, правленные из интерфейса, без флага <code>--force</code> не перезаписываются.</p>
+
+<!-- ════════════════════════ 20 ════════════════════════ -->
+<h2 class="sec" id="a20"><span class="num">РАЗДЕЛ 20</span>Диагностика</h2>
+<p class="sec-lead">Таблица симптомов. В каждом случае начинайте с идентификатора прогона: по нему
+поднимается весь след.</p>
+
+<table>
+  <thead><tr><th>Симптом</th><th>Причина</th><th>Что проверить</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><b>Прогон отрабатывает за секунду, находок ноль, модель не звалась</b></td>
+      <td>Data Plane пуст: том не смонтирован или рецепты не прогоняли</td>
+      <td><code>docker inspect abop-webapi --format '{{json .Mounts}}' | grep abop_ape</code>, затем <code>docker exec abop-webapi wc -l /root/.ape/data/*.jsonl</code>. Пусто — прогнать рецепты</td>
+    </tr>
+    <tr>
+      <td><b>API отвечает 401 на всё</b></td>
+      <td>Не настроена или сломалась проверка токенов</td>
+      <td><code>KEYCLOAK_JWKS_URI</code> доступен из контейнера; issuer совпадает с тем, что в токене; часы сервера синхронны</td>
+    </tr>
+    <tr>
+      <td><b>«свой бокс не отвечает», прогоны уходят в облако</b></td>
+      <td>Модель недоступна по заданному адресу</td>
+      <td><code>GET /api/llm/status</code>; <code>curl</code> к <code>/v1/models</code> модели с сервера приложения; адрес в «Настройки → Модели»</td>
+    </tr>
+    <tr>
+      <td><b>Очередь растёт, прогоны ждут</b></td>
+      <td>Мало воркеров или ёмкости модели</td>
+      <td><code>GET /api/runs/queue</code>; поднять <code>ABOP_RUN_WORKERS</code> и <code>ABOP_LLM_MAX_INFLIGHT</code> согласованно с ёмкостью бокса</td>
+    </tr>
+    <tr>
+      <td><b>Ответы навыков обрываются на полуслове</b></td>
+      <td>Мал лимит ответа</td>
+      <td>«Настройки → Прогон» — лимит ответа; для одного навыка — его карточка. В результате прогона видно, какие лимиты применялись</td>
+    </tr>
+    <tr>
+      <td><b>Навык вернул не те поля</b></td>
+      <td>Навык привязан к чужому шаблону результата или схема не строгая</td>
+      <td>Карточка навыка: «шаблон результата» — тот ли. В результате прогона поле <code>schema_miss</code> перечисляет незаполненные обязательные поля</td>
+    </tr>
+    <tr>
+      <td><b>Результат смешал несколько предметов</b></td>
+      <td>Предмет работы не задан, данные пришли по всем</td>
+      <td>У навыка должен быть объявлен слот. Проверьте <code>GET /api/skills/{id}/slots</code></td>
+    </tr>
+    <tr>
+      <td><b>Внешние действия не исполняются после подтверждения</b></td>
+      <td>Коннектор-воркер не работает или нет доступа к системе</td>
+      <td><code>/healthz</code> воркера; <code>GET /api/bus/dlq</code>; права учётной записи в целевой системе</td>
+    </tr>
+    <tr>
+      <td><b>Задания выполняются дважды</b></td>
+      <td>Обновление сервиса во время работающего прогона</td>
+      <td>Обновляйтесь при пустой очереди; задание с <code>attempts&gt;1</code> в журнале это подтвердит</td>
+    </tr>
+    <tr>
+      <td><b>Контейнер перезапускается по памяти</b></td>
+      <td>Слишком много воркеров при заданном лимите памяти</td>
+      <td><code>abop_process_rss_mb</code>; уменьшить <code>ABOP_RUN_WORKERS</code> или поднять <code>--memory</code></td>
+    </tr>
+    <tr>
+      <td><b>В редакторе контракта не та сущность</b></td>
+      <td>Сущность есть в данных, но не в списке — устаревший клиент</td>
+      <td><code>GET /api/data/entities</code> должен её возвращать; обновите страницу с очисткой кэша</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>20.1 Быстрая проверка установки</h3>
+<pre><code><span class="c"># ядро живо и каталог на месте</span>
+curl -s http://127.0.0.1:8091/api/health
+
+<span class="c"># модель отвечает</span>
+curl -s http://127.0.0.1:8091/api/llm/status
+
+<span class="c"># данные есть</span>
+curl -s http://127.0.0.1:8091/api/data/entities
+
+<span class="c"># очередь разгружена</span>
+curl -s http://127.0.0.1:8091/api/runs/queue
+
+<span class="c"># метрики отдаются</span>
+curl -s http://127.0.0.1:8091/metrics | head -20</code></pre>
+
+<!-- ════════════════════════ 21 ════════════════════════ -->
+<h2 class="sec" id="a21"><span class="num">РАЗДЕЛ 21</span>Приложение А. Эндпоинты API</h2>
+<p class="sec-lead">Основные группы. Все требуют токена, кроме <code>/api/health</code> и
+<code>/metrics</code>. Уровень доступа указан там, где он выше аналитика.</p>
+
+<h3>Состояние и служебное</h3>
+<table class="t-narrow">
+  <tbody>
+    <tr><td><code>GET /api/health</code></td><td>живость, число семей, навыков, адаптеров</td></tr>
+    <tr><td><code>GET /metrics</code></td><td>метрики Prometheus</td></tr>
+    <tr><td><code>GET /api/llm/status</code></td><td>адрес модели, каскад, результат проверки</td></tr>
+    <tr><td><code>GET /api/me</code></td><td>кто вы: уровень, отдел, роли</td></tr>
+    <tr><td><code>GET /api/observability</code></td><td>сводка наблюдаемости</td></tr>
+  </tbody>
+</table>
+
+<h3>Прогоны</h3>
+<table class="t-narrow">
+  <tbody>
+    <tr><td><code>POST /api/runs</code></td><td>запустить прогон; тело: агент, контекст, предмет, бюджет, лимиты</td></tr>
+    <tr><td><code>GET /api/runs</code></td><td>журнал прогонов</td></tr>
+    <tr><td><code>GET /api/runs/{id}</code></td><td>прогон целиком: находки, доска, метрики</td></tr>
+    <tr><td><code>GET /api/runs/{id}/findings</code></td><td>находки отдельно</td></tr>
+    <tr><td><code>GET /api/runs/{id}/report</code></td><td>отчёт по шаблону</td></tr>
+    <tr><td><code>GET /api/runs/{id}/diff</code></td><td>отличия от предыдущего прогона агента</td></tr>
+    <tr><td><code>GET /api/runs/{id}/board</code></td><td>доска прогона: выводы с авторством</td></tr>
+    <tr><td><code>GET /api/runs/search</code></td><td>поиск внутри прогонов по содержимому</td></tr>
+    <tr><td><code>GET /api/runs/queue</code></td><td>состояние очереди</td></tr>
+    <tr><td><code>POST /api/runs/jobs/{id}/cancel</code></td><td>отменить задание</td></tr>
+  </tbody>
+</table>
+
+<h3>Группы и веер</h3>
+<table class="t-narrow">
+  <tbody>
+    <tr><td><code>POST /api/runs/fan-out</code></td><td>запуск по многим предметам (manager+)</td></tr>
+    <tr><td><code>GET /api/runs/groups/{id}</code></td><td>состояние группы</td></tr>
+    <tr><td><code>GET /api/runs/groups/{id}/summary</code></td><td>сводка с итогами и арбитражем</td></tr>
+    <tr><td><code>GET /api/runs/groups/{id}/board</code></td><td>общая доска группы</td></tr>
+    <tr><td><code>POST /api/runs/groups/{id}/cancel</code></td><td>отменить группу (manager+)</td></tr>
+    <tr><td><code>POST /api/runs/jobs/{id}/retry-step</code></td><td>перезапустить одну ветвь</td></tr>
+  </tbody>
+</table>
+
+<h3>Агенты и навыки</h3>
+<table class="t-narrow">
+  <tbody>
+    <tr><td><code>GET /api/agents</code></td><td>список агентов</td></tr>
+    <tr><td><code>POST /api/agents</code></td><td>сохранить агента (manager+)</td></tr>
+    <tr><td><code>POST /api/agents/author</code></td><td>собрать агента из набора навыков (manager+)</td></tr>
+    <tr><td><code>POST /api/agents/match</code></td><td>подобрать агента по фразе</td></tr>
+    <tr><td><code>GET /api/agents/{id}/slots</code></td><td>какие предметы работы нужны агенту</td></tr>
+    <tr><td><code>POST /api/agents/{id}/retire</code></td><td>в архив (manager+)</td></tr>
+    <tr><td><code>GET /api/skills</code></td><td>каталог навыков</td></tr>
+    <tr><td><code>GET /api/skills/{id}/contract</code></td><td>контракт навыка</td></tr>
+    <tr><td><code>POST /api/schema-templates/{id}</code></td><td>править шаблон навыка (admin)</td></tr>
+    <tr><td><code>POST /api/schema-templates/{id}/reset</code></td><td>вернуть версию поставки (admin)</td></tr>
+    <tr><td><code>GET /api/catalog/coverage</code></td><td>покрытие каталога контрактами</td></tr>
+  </tbody>
+</table>
+
+<h3>Данные</h3>
+<table class="t-narrow">
+  <tbody>
+    <tr><td><code>GET /api/data/entities</code></td><td>сущности: реестр, записи в хранилище, использование навыками</td></tr>
+    <tr><td><code>GET /api/data/recipes</code></td><td>рецепты</td></tr>
+    <tr><td><code>POST /api/data/recipes/{name}/run</code></td><td>прогнать рецепт</td></tr>
+    <tr><td><code>POST /api/data/recipe/preview</code></td><td>предпросмотр без записи</td></tr>
+    <tr><td><code>GET /api/data/connectors</code></td><td>коннекторы</td></tr>
+    <tr><td><code>POST /api/data/connectors/test</code></td><td>проверить подключение</td></tr>
+    <tr><td><code>GET /api/data/query/{entity}</code></td><td>прочитать канонические записи</td></tr>
+    <tr><td><code>GET /api/data/lineage</code></td><td>карта: источник → сущность → потребитель</td></tr>
+    <tr><td><code>GET /api/resolve/{entity}</code></td><td>подобрать предмет работы по запросу</td></tr>
+  </tbody>
+</table>
+
+<h3>Настройки и доступ</h3>
+<table class="t-narrow">
+  <tbody>
+    <tr><td><code>GET /api/admin/run-limits</code></td><td>действующие лимиты, умолчания, границы</td></tr>
+    <tr><td><code>POST /api/admin/run-limits</code></td><td>изменить лимиты (manager+)</td></tr>
+    <tr><td><code>GET/POST /api/admin/llm</code></td><td>адрес и модель</td></tr>
+    <tr><td><code>GET/POST /api/admin/config</code></td><td>настройки среды (manager+)</td></tr>
+    <tr><td><code>GET /api/admin/users</code></td><td>пользователи из Keycloak (admin/support)</td></tr>
+    <tr><td><code>GET /api/admin/audit</code></td><td>аудит-след (admin/support)</td></tr>
+    <tr><td><code>GET /api/systems</code></td><td>реестр систем</td></tr>
+    <tr><td><code>GET /api/billing</code></td><td>расход и квоты</td></tr>
+  </tbody>
+</table>
+
+<h3>Подтверждения и шина</h3>
+<table class="t-narrow">
+  <tbody>
+    <tr><td><code>GET /api/hitl/queue</code></td><td>очередь подтверждений</td></tr>
+    <tr><td><code>POST /api/hitl/{id}/approve</code></td><td>разрешить или отклонить (manager+)</td></tr>
+    <tr><td><code>GET /api/bus</code></td><td>состояние шины</td></tr>
+    <tr><td><code>GET /api/bus/dlq</code></td><td>недоставленные сообщения</td></tr>
+    <tr><td><code>POST /api/bus/dlq/replay</code></td><td>повторить обработку (admin)</td></tr>
+  </tbody>
+</table>
+
+<!-- ════════════════════════ 22 ════════════════════════ -->
+<h2 class="sec" id="a22"><span class="num">РАЗДЕЛ 22</span>Приложение Б. Переменные окружения</h2>
+
+<h3>Обязательные</h3>
+<table class="t-env">
+  <thead><tr><th>Переменная</th><th>Умолч.</th><th>Назначение</th></tr></thead>
+  <tbody>
+    <tr><td>POSTGRES_DSN</td><td>—</td><td>строка подключения к базе</td></tr>
+    <tr><td>KEYCLOAK_ISSUER</td><td>—</td><td>адрес realm</td></tr>
+    <tr><td>KEYCLOAK_JWKS_URI</td><td>—</td><td>адрес ключей проверки токена</td></tr>
+    <tr><td>KEYCLOAK_AUDIENCE</td><td>course-mcp</td><td>ожидаемый получатель токена</td></tr>
+  </tbody>
+</table>
+
+<h3>Модель</h3>
+<table class="t-env">
+  <tbody>
+    <tr><td>LOCAL_LLM_BASE_URL</td><td>—</td><td>адрес своей модели (OpenAI-совместимый)</td></tr>
+    <tr><td>LOCAL_LLM_MODEL</td><td>—</td><td>имя модели</td></tr>
+    <tr><td>LOCAL_LLM_API_KEY</td><td>EMPTY</td><td>ключ, если требуется</td></tr>
+    <tr><td>ROUTEAI_BASE_URL</td><td>—</td><td>адрес облачного шлюза</td></tr>
+    <tr><td>ROUTEAI_API_KEY</td><td>—</td><td>ключ шлюза</td></tr>
+    <tr><td>ROUTEAI_STANDARD_CASCADE</td><td>—</td><td>каскад моделей для агентов</td></tr>
+    <tr><td>ABOP_LLM_TIMEOUT</td><td>120</td><td>таймаут запроса к модели, с</td></tr>
+    <tr><td>ABOP_LOCAL_LLM_TIMEOUT</td><td>300</td><td>таймаут для своей модели, с</td></tr>
+    <tr><td>ABOP_LLM_MAX_INFLIGHT</td><td>12</td><td>общий потолок одновременных запросов</td></tr>
+  </tbody>
+</table>
+
+<h3>Исполнение прогонов</h3>
+<table class="t-env">
+  <tbody>
+    <tr><td>ABOP_RUN_WORKERS</td><td>2</td><td>воркеров очереди</td></tr>
+    <tr><td>ABOP_RUN_TIMEOUT</td><td>600</td><td>потолок задания, с</td></tr>
+    <tr><td>ABOP_RUN_STALE_SEC</td><td>таймаут+120</td><td>когда задание считается зависшим</td></tr>
+    <tr><td>ABOP_USER_CONCURRENT</td><td>1</td><td>одновременных прогонов на пользователя</td></tr>
+    <tr><td>ABOP_USER_RATE_MAX</td><td>30</td><td>запусков в окне</td></tr>
+    <tr><td>ABOP_USER_RATE_WINDOW</td><td>300</td><td>окно ограничения, с</td></tr>
+    <tr><td>ABOP_RUN_CACHE</td><td>1</td><td>кэш одинаковых прогонов</td></tr>
+    <tr><td>ABOP_RUN_MEM_SOFT_MB</td><td>1500</td><td>мягкий предел памяти процесса</td></tr>
+    <tr><td>ABOP_FANOUT_MAX</td><td>20</td><td>максимум заданий в веере</td></tr>
+  </tbody>
+</table>
+
+<h3>Умолчания лимитов (перекрываются настройками)</h3>
+<table class="t-env">
+  <tbody>
+    <tr><td>ABOP_RUN_LLM_CONCURRENCY</td><td>3</td><td>параллельных навыков в прогоне</td></tr>
+    <tr><td>ABOP_RUN_LLM_RETRIES</td><td>2</td><td>повторов при сбое модели</td></tr>
+    <tr><td>ABOP_RUN_LLM_BACKOFF</td><td>1.5</td><td>база задержки между повторами</td></tr>
+    <tr><td>ABOP_RUN_LLM_TRUNCATE</td><td>1</td><td><b>на проде 0</b> — иначе промпты режутся</td></tr>
+    <tr><td>ABOP_RUN_MAX_TOKENS</td><td>1600</td><td>лимит структурного ответа</td></tr>
+    <tr><td>ABOP_RUN_MAX_TOKENS_FREE</td><td>3600</td><td>лимит свободного ответа</td></tr>
+    <tr><td>ABOP_RUN_MAX_TOKENS_TEMPLATE</td><td>3200</td><td>лимит для подробных схем</td></tr>
+    <tr><td>ABOP_RUN_STRUCTURED</td><td>1</td><td>строгий структурный вывод модели</td></tr>
+    <tr><td>ABOP_TOOL_STEPS</td><td>2</td><td>шагов инструментов у навыка</td></tr>
+  </tbody>
+</table>
+
+<h3>Шина и планировщик</h3>
+<table class="t-env">
+  <tbody>
+    <tr><td>ABOP_BUS</td><td>—</td><td>включение шины</td></tr>
+    <tr><td>ABOP_KAFKA_BROKERS</td><td>—</td><td>адреса брокеров</td></tr>
+    <tr><td>ABOP_KAFKA_SASL_USER / _PASSWORD</td><td>—</td><td>учётные данные брокера</td></tr>
+    <tr><td>ABOP_KAFKA_PARTITIONS</td><td>3</td><td>партиций у создаваемых топиков</td></tr>
+    <tr><td>ABOP_KAFKA_TOPIC_REQUESTS</td><td>abop.runs.requests</td><td>топик заданий</td></tr>
+    <tr><td>ABOP_KAFKA_TOPIC_RESULTS</td><td>abop.runs.results</td><td>топик результатов</td></tr>
+    <tr><td>ABOP_KAFKA_TOPIC_DLQ</td><td>abop.dlq</td><td>недоставленные</td></tr>
+    <tr><td>ABOP_SCHEDULER</td><td>1</td><td>планировщик регулярных запусков</td></tr>
+    <tr><td>ABOP_SCHEDULER_TICK</td><td>45</td><td>период опроса расписаний, с</td></tr>
+    <tr><td>ABOP_SCHEDULER_MIN_INTERVAL</td><td>60</td><td>минимальный интервал между запусками, с</td></tr>
+    <tr><td>ABOP_SCHEDULER_MAX_FIRES</td><td>3</td><td>сколько расписаний срабатывает за тик</td></tr>
+  </tbody>
+</table>
+
+<h3>Прочее</h3>
+<table class="t-env">
+  <tbody>
+    <tr><td>ABOP_DEV_AUTH</td><td>—</td><td><b>только разработка.</b> Отключает проверку токенов</td></tr>
+    <tr><td>ABOP_EXTRA_JWKS</td><td>—</td><td>дополнительные наборы ключей (несколько realm)</td></tr>
+    <tr><td>ABOP_JWT_CACHE_TTL</td><td>60</td><td>время жизни кэша проверенных токенов, с</td></tr>
+    <tr><td>MINIO_* / STORAGE_LIMIT_BYTES</td><td>—</td><td>объектное хранилище для отчётов</td></tr>
+    <tr><td>LANGFUSE_*</td><td>—</td><td>трассировка вызовов модели</td></tr>
+    <tr><td>LOG_LEVEL</td><td>INFO</td><td>уровень журнала</td></tr>
+  </tbody>
+</table>
+
+<!-- ════════════════════════ 23 ════════════════════════ -->
+<h2 class="sec" id="a23"><span class="num">РАЗДЕЛ 23</span>Приложение В. Порты</h2>
+
+<table>
+  <thead><tr><th>Сервис</th><th>Порт</th><th>Кому открывать</th></tr></thead>
+  <tbody>
+    <tr><td><b>ABOP Web API</b></td><td>8091</td><td>Обратному прокси. Наружу — только через TLS</td></tr>
+    <tr><td>Postgres</td><td>5432 / 5433</td><td>Только петля сервера приложения</td></tr>
+    <tr><td>Keycloak</td><td>8080 / 8811</td><td>Прокси или внутренняя сеть; наружу не обязателен — вход идёт через ABOP</td></tr>
+    <tr><td>Модель (vLLM)</td><td>8000</td><td>Только сервер приложения</td></tr>
+    <tr><td>Брокер шины</td><td>9092</td><td>Только сервер приложения и коннектор-воркер</td></tr>
+    <tr><td>Админ брокера</td><td>9644</td><td>Только сбор метрик</td></tr>
+    <tr><td>Коннектор-воркер</td><td>9105</td><td>Только сбор метрик и петля</td></tr>
+    <tr><td>Prometheus</td><td>9091</td><td>Внутренняя сеть</td></tr>
+    <tr><td>Grafana</td><td>3300</td><td>Внутренняя сеть; сменить пароль по умолчанию</td></tr>
+    <tr><td>Рендер PDF</td><td>3050</td><td>Только сервер приложения</td></tr>
+    <tr><td>Объектное хранилище</td><td>9000</td><td>Сервер приложения; публичные ссылки — через прокси</td></tr>
+    <tr><td>Десктоп-клиент (локально)</td><td>8799</td><td>Только петля на машине пользователя</td></tr>
+  </tbody>
+</table>
+
+<div class="note" style="margin-top:56px">
+  <span class="lb">Сопутствующие документы</span>
+  <b>«ABOP · Руководство пользователя»</b> — как работать с платформой каждый день.<br>
+  В составе поставки также: описание архитектуры, регламент контрактов навыков, описание общей
+  памяти и арбитража, справочник лимитов прогона.
+</div>
+
+</div><!-- /wrap -->
+</body>
+</html>
