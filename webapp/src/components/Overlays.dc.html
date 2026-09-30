@@ -1018,6 +1018,115 @@
     </div>
   </sc-if>
 
+  <sc-if value="{{ ov.fanModal }}" hint-placeholder-val="{{ false }}">
+    <div style="position: fixed; inset: 0; z-index: 66; display: flex; align-items: flex-start; justify-content: center; padding: 48px 24px 24px;">
+      <div onClick="{{ ov.closeFanout }}" style="position: absolute; inset: 0; background: rgba(4,7,18,.62); backdrop-filter: blur(5px);"></div>
+      <div style="position: relative; width: 760px; max-width: 95vw; max-height: 86vh; overflow-y: auto; border-radius: 18px; background: var(--bg2); border: 1px solid var(--w14); box-shadow: 0 24px 70px var(--sh50); padding: 26px 28px; display: flex; flex-direction: column; gap: 16px;">
+
+        <div style="display: flex; align-items: flex-start; gap: 12px;">
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 5px;">
+            <div style="font-size: 19px; font-weight: 700;">Запуск по многим предметам</div>
+            <div style="font-size: 13px; color: var(--w60); line-height: 1.5;">Агент «{{ ov.fanAgentName }}» отработает по каждому выбранному предмету отдельно. Ветви видят общую доску и один снимок данных, а результаты сводятся в одну таблицу.</div>
+          </div>
+          <button onClick="{{ ov.closeFanout }}" style="width: 32px; height: 32px; border: 1px solid var(--w12); border-radius: 9px; background: var(--w5); color: var(--ink);">✕</button>
+        </div>
+
+        <sc-if value="{{ ov.fanError }}" hint-placeholder-val="{{ false }}">
+          <div style="padding: 12px 14px; border-radius: 11px; background: rgba(239,68,68,.10); border: 1px solid rgba(239,68,68,.3); color: var(--err-ink); font-size: 13px;">{{ ov.fanError }}</div>
+        </sc-if>
+
+        <sc-if value="{{ ov.fanHasSummary }}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; flex-direction: column; gap: 14px;">
+            <div style="padding: 13px 15px; border-radius: 12px; background: rgba(16,185,129,.10); border: 1px solid rgba(16,185,129,.3);">
+              <div style="font-size: 13.5px; font-weight: 600; color: var(--ok-ink);">Сводка по группе</div>
+              <div style="font-size: 12.5px; color: var(--w70); margin-top: 4px; line-height: 1.5;">{{ ov.fanSumNote }}</div>
+              <sc-if value="{{ ov.fanSnapshot }}" hint-placeholder-val="{{ false }}">
+                <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w50); margin-top: 6px;">📷 {{ ov.fanSnapshot }}</div>
+              </sc-if>
+            </div>
+
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <sc-for list="{{ ov.fanSumTotals }}" as="t" hint-placeholder-count="4">
+                <span style="padding: 7px 12px; border-radius: 10px; background: var(--w5); border: 1px solid var(--w10); font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--w75);">{{ t.k }}: <b style="color: var(--ink);">{{ t.v }}</b></span>
+              </sc-for>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 7px;">
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w55);">по предметам</span>
+              <sc-for list="{{ ov.fanSumItems }}" as="it" hint-placeholder-count="3">
+                <div style="padding: 10px 12px; border-radius: 10px; background: var(--w3); border: 1px solid var(--w9);">
+                  <div style="font-size: 13px; font-weight: 600; color: var(--ink);">{{ it.subject }}</div>
+                  <div style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--w60); margin-top: 3px;">{{ it.metrics }}</div>
+                </div>
+              </sc-for>
+            </div>
+
+            <sc-if value="{{ ov.fanArbNote }}" hint-placeholder-val="{{ false }}">
+              <div style="display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 12px; background: var(--w3); border: 1px solid var(--w12);">
+                <div style="font-size: 12.5px; color: var(--w70);">⚖ {{ ov.fanArbNote }}</div>
+                <sc-for list="{{ ov.fanArbOpen }}" as="d" hint-placeholder-count="2">
+                  <div style="font-size: 12px; color: var(--warn-ink);">{{ d.text }} — {{ d.why }}</div>
+                </sc-for>
+              </div>
+            </sc-if>
+
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w55);">сведённые записи</span>
+              <sc-for list="{{ ov.fanSumRows }}" as="r" hint-placeholder-count="5">
+                <div style="padding: 9px 11px; border-radius: 9px; background: var(--w3); border-left: 2px solid var(--w14);">
+                  <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--ink);">{{ r.key }}</div>
+                  <div style="font-size: 12px; color: var(--w62); margin-top: 2px;">{{ r.text }}</div>
+                  <sc-if value="{{ r.hasArb }}" hint-placeholder-val="{{ false }}">
+                    <div style="font-size: 11.5px; color: var(--warn-ink); margin-top: 3px;">⚖ {{ r.arb }}</div>
+                  </sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ ov.fanRunning }}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 12px; background: rgba(99,102,241,.10); border: 1px solid rgba(129,140,248,.28);">
+            <span style="font-size: 13px; color: var(--acc-ink2); font-weight: 600;">Идёт работа</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--w70);">{{ ov.fanProgress }}</span>
+            <button sc-camel-on-click="{{ ov.cancelFanGroup }}" style="margin-left: auto; padding: 7px 13px; border: 1px solid rgba(239,68,68,.3); border-radius: 9px; background: rgba(239,68,68,.1); color: var(--err-ink); font-size: 12px; font-weight: 600;">Отменить группу</button>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ ov.fanCanStart }}" hint-placeholder-val="{{ true }}">
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+              <span style="font-size: 12.5px; color: var(--w62);">предмет работы</span>
+              <select value="{{ ov.fanSlotName }}" onChange="{{ ov.setFanSlot }}" style="padding: 8px 11px; border-radius: 9px; border: 1px solid var(--w14); background: var(--s70); color: var(--ink); font-size: 12.5px;">
+                <sc-for list="{{ ov.fanSlotOpts }}" as="o" hint-placeholder-count="1"><option value="{{ o.value }}">{{ o.label }}</option></sc-for>
+              </select>
+              <div style="flex: 1;"></div>
+              <button sc-camel-on-click="{{ ov.fanPickAll }}" style="padding: 6px 11px; border: 1px solid var(--w14); border-radius: 8px; background: var(--w5); color: var(--w70); font-size: 11.5px;">выбрать все</button>
+              <button sc-camel-on-click="{{ ov.fanPickNone }}" style="padding: 6px 11px; border: 1px solid var(--w14); border-radius: 8px; background: var(--w5); color: var(--w70); font-size: 11.5px;">снять</button>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fill,minmax(220px,1fr)); gap: 8px; max-height: 280px; overflow-y: auto;">
+              <sc-for list="{{ ov.fanItems }}" as="it" hint-placeholder-count="6">
+                <button sc-camel-on-click="{{ it.toggle }}" style="display: flex; flex-direction: column; gap: 3px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--w10); background: {{ it.bg }}; text-align: left;">
+                  <span style="font-size: 13px; color: var(--ink); font-weight: 600;">{{ it.label }}</span>
+                  <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w55);">{{ it.value }} {{ it.note }}</span>
+                </button>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <sc-if value="{{ ov.fanCanStart }}" hint-placeholder-val="{{ true }}">
+            <button sc-camel-on-click="{{ ov.startFanout }}" style="padding: 12px 20px; border-radius: 11px; border: 1px solid rgba(129,140,248,.35); background: rgba(99,102,241,.16); color: var(--acc-ink2); font-size: 13.5px; font-weight: 600;">Запустить по {{ ov.fanPickedCount }} предметам</button>
+          </sc-if>
+          <span style="font-size: 11.5px; color: var(--w45); line-height: 1.45;">Каждая ветвь — отдельное задание со своим сужением данных. Бюджет из окна запуска действует на каждую ветвь.</span>
+        </div>
+
+      </div>
+    </div>
+  </sc-if>
+
   <sc-if value="{{ ov.cmdkOpen }}" hint-placeholder-val="{{ false }}">
     <div style="position: fixed; inset: 0; z-index: 70; display: flex; align-items: flex-start; justify-content: center; padding: 96px 24px 24px;">
       <div onClick="{{ ov.closeModal }}" style="position: absolute; inset: 0; background: rgba(4,7,18,.65); backdrop-filter: blur(6px);"></div>

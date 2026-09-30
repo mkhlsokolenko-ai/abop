@@ -1411,7 +1411,7 @@
           </div>
         </sc-if>
 
-        <sc-if value="{{ isAgents }}" hint-placeholder-val="{{ false }}"><div style="display:flex;flex-direction:column;gap:20px;animation:ab-in .35s ease-out;"><div style="display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap;"><div style="display:flex;flex-direction:column;gap:7px;"><h1 style="margin:0;font-size:32px;font-weight:800;letter-spacing:-.8px;">Агенты</h1><p style="margin:0;font-size:13.5px;color:var(--w50);">Собранные агенты и Лимб (архив выведенных из эксплуатации).</p></div><div style="margin-left:auto;display:flex;gap:6px;padding:4px;border-radius:12px;background:var(--w5);border:1px solid var(--w10);"><sc-for list="{{ agentTabs }}" as="t" hint-placeholder-count="2"><button sc-camel-on-click="{{ t.pick }}" style="padding:9px 18px;border:none;border-radius:9px;background:{{ t.bg }};color:{{ t.fg }};font-size:13px;font-weight:600;">{{ t.label }}</button></sc-for></div></div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;"><sc-for list="{{ agentPortfolio }}" as="a" hint-placeholder-count="3"><div style="display:flex;flex-direction:column;gap:10px;padding:18px;border-radius:16px;background:var(--w5);border:1px solid var(--w10);backdrop-filter:blur(16px);"><span sc-camel-on-click="{{ a.open }}" style="display:flex;flex-direction:column;gap:6px;cursor:pointer;"><span style="font-size:15px;font-weight:600;color:var(--ink);">{{ a.name }}</span><span style="font-family:monospace;font-size:11.5px;color:var(--w50);">{{ a.meta }}</span></span><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:auto;"><sc-if value="{{ a.isLimbo }}" hint-placeholder-val="{{ false }}"><button sc-camel-on-click="{{ a.restore }}" style="padding:7px 12px;border:1px solid rgba(129,140,248,.4);border-radius:9px;background:rgba(99,102,241,.16);color:var(--acc-ink2);font-size:12px;font-weight:600;">Восстановить</button></sc-if><sc-if value="{{ a.isActive }}" hint-placeholder-val="{{ true }}"><button sc-camel-on-click="{{ a.retire }}" style="padding:7px 12px;border:1px solid rgba(245,158,11,.35);border-radius:9px;background:rgba(245,158,11,.12);color:var(--warn-ink);font-size:12px;font-weight:600;">В Лимб</button></sc-if><sc-if value="{{ a.isLimbo }}" hint-placeholder-val="{{ false }}"><button sc-camel-on-click="{{ a.del }}" title="Необратимо: все версии агента" style="padding:7px 12px;border:1px solid rgba(239,68,68,.3);border-radius:9px;background:rgba(239,68,68,.1);color:var(--err-ink);font-size:12px;font-weight:600;">Удалить навсегда</button></sc-if></div></div></sc-for></div><sc-if value="{{ agentPortfolioEmpty }}" hint-placeholder-val="{{ false }}"><div style="padding:56px;border-radius:16px;border:1px dashed var(--w14);display:flex;flex-direction:column;align-items:center;gap:14px;color:var(--w60);font-size:14px;">Здесь пока пусто. Соберите агента на канве (Граф) и сохраните — он появится тут.</div></sc-if></div></sc-if><sc-if value="{{ isData }}" hint-placeholder-val="{{ false }}">
+        <sc-if value="{{ isAgents }}" hint-placeholder-val="{{ false }}"><div style="display:flex;flex-direction:column;gap:20px;animation:ab-in .35s ease-out;"><div style="display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap;"><div style="display:flex;flex-direction:column;gap:7px;"><h1 style="margin:0;font-size:32px;font-weight:800;letter-spacing:-.8px;">Агенты</h1><p style="margin:0;font-size:13.5px;color:var(--w50);">Собранные агенты и Лимб (архив выведенных из эксплуатации).</p></div><div style="margin-left:auto;display:flex;gap:6px;padding:4px;border-radius:12px;background:var(--w5);border:1px solid var(--w10);"><sc-for list="{{ agentTabs }}" as="t" hint-placeholder-count="2"><button sc-camel-on-click="{{ t.pick }}" style="padding:9px 18px;border:none;border-radius:9px;background:{{ t.bg }};color:{{ t.fg }};font-size:13px;font-weight:600;">{{ t.label }}</button></sc-for></div></div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;"><sc-for list="{{ agentPortfolio }}" as="a" hint-placeholder-count="3"><div style="display:flex;flex-direction:column;gap:10px;padding:18px;border-radius:16px;background:var(--w5);border:1px solid var(--w10);backdrop-filter:blur(16px);"><span sc-camel-on-click="{{ a.open }}" style="display:flex;flex-direction:column;gap:6px;cursor:pointer;"><span style="font-size:15px;font-weight:600;color:var(--ink);">{{ a.name }}</span><span style="font-family:monospace;font-size:11.5px;color:var(--w50);">{{ a.meta }}</span></span><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:auto;"><sc-if value="{{ a.isLimbo }}" hint-placeholder-val="{{ false }}"><button sc-camel-on-click="{{ a.restore }}" style="padding:7px 12px;border:1px solid rgba(129,140,248,.4);border-radius:9px;background:rgba(99,102,241,.16);color:var(--acc-ink2);font-size:12px;font-weight:600;">Восстановить</button></sc-if><sc-if value="{{ a.isActive }}" hint-placeholder-val="{{ true }}"><button sc-camel-on-click="{{ a.fanout }}" title="Запустить агента сразу по многим предметам: по проектам, договорам, контрагентам" style="padding:7px 12px;border:1px solid rgba(129,140,248,.4);border-radius:9px;background:rgba(99,102,241,.16);color:var(--acc-ink2);font-size:12px;font-weight:600;">По многим предметам</button></sc-if><sc-if value="{{ a.isActive }}" hint-placeholder-val="{{ true }}"><button sc-camel-on-click="{{ a.retire }}" style="padding:7px 12px;border:1px solid rgba(245,158,11,.35);border-radius:9px;background:rgba(245,158,11,.12);color:var(--warn-ink);font-size:12px;font-weight:600;">В Лимб</button></sc-if><sc-if value="{{ a.isLimbo }}" hint-placeholder-val="{{ false }}"><button sc-camel-on-click="{{ a.del }}" title="Необратимо: все версии агента" style="padding:7px 12px;border:1px solid rgba(239,68,68,.3);border-radius:9px;background:rgba(239,68,68,.1);color:var(--err-ink);font-size:12px;font-weight:600;">Удалить навсегда</button></sc-if></div></div></sc-for></div><sc-if value="{{ agentPortfolioEmpty }}" hint-placeholder-val="{{ false }}"><div style="padding:56px;border-radius:16px;border:1px dashed var(--w14);display:flex;flex-direction:column;align-items:center;gap:14px;color:var(--w60);font-size:14px;">Здесь пока пусто. Соберите агента на канве (Граф) и сохраните — он появится тут.</div></sc-if></div></sc-if><sc-if value="{{ isData }}" hint-placeholder-val="{{ false }}">
           <div style="display: flex; flex-direction: column; gap: 20px; animation: ab-in .35s ease-out;">
             <div style="display: flex; align-items: flex-end; gap: 18px; flex-wrap: wrap;">
               <div style="display: flex; flex-direction: column; gap: 7px;">
@@ -4374,7 +4374,7 @@ class Component extends DCLogic {
           empty: !(inp.required || []).length && !(inp.optional || []).length && !outs.length
         };
       })(),
-      skillCards, agentPortfolio: (s.showLimbo ? s.limboList : s.agentsList).map(a => ({ name: a.name, open: () => this.openAgent(a), meta: (a.role || '—') + ' · ' + (a.family || '') + ' · ' + a.status + ' · ' + (a.autonomy_max || ''), isLimbo: a.status === 'retired', isActive: a.status !== 'retired', retire: () => this.retireAgent(a.id), restore: () => this.restoreAgent(a.id), del: () => this.deleteAgent(a.id, a.name) })), agentPortfolioEmpty: (s.showLimbo ? s.limboList : s.agentsList).length === 0, showLimbo: s.showLimbo, toggleLimbo: () => this.setState({ showLimbo: !s.showLimbo }), limboToggleLabel: s.showLimbo ? ('← Активные (' + s.agentsList.length + ')') : ('Лимб / архив (' + s.limboList.length + ')'), skillShown: filtered.length, skillTotal: s.skillList.length, skillsEmpty: filtered.length === 0,
+      skillCards, agentPortfolio: (s.showLimbo ? s.limboList : s.agentsList).map(a => ({ name: a.name, open: () => this.openAgent(a), meta: (a.role || '—') + ' · ' + (a.family || '') + ' · ' + a.status + ' · ' + (a.autonomy_max || ''), isLimbo: a.status === 'retired', isActive: a.status !== 'retired', retire: () => this.retireAgent(a.id), restore: () => this.restoreAgent(a.id), del: () => this.deleteAgent(a.id, a.name), fanout: () => this.openFanout(a) })), agentPortfolioEmpty: (s.showLimbo ? s.limboList : s.agentsList).length === 0, showLimbo: s.showLimbo, toggleLimbo: () => this.setState({ showLimbo: !s.showLimbo }), limboToggleLabel: s.showLimbo ? ('← Активные (' + s.agentsList.length + ')') : ('Лимб / архив (' + s.limboList.length + ')'), skillShown: filtered.length, skillTotal: s.skillList.length, skillsEmpty: filtered.length === 0,
       coverageLine: s.coverageTotals ? ('Со схемой ' + s.coverageTotals['схема'] + ', с контрактом входа ' + s.coverageTotals['вход'] + ', с областью данных ' + s.coverageTotals['данные'] + ', с предметом ' + s.coverageTotals['слоты'] + ', с доставкой ' + s.coverageTotals['доставка'] + '.') : '',
       modeFilters, familyFilters,
       resetFilters: () => this.setState({ modeFilter: 'Все', familyFilter: 'Все' }),
@@ -4571,7 +4571,51 @@ class Component extends DCLogic {
       rebindWarnGainText: (((s.rebindWarn||{}).gain||[]).join(', ')) || '— (пока никто)',
       rebindWarnApply: () => this.applyRebindWarn(),
       rebindWarnClose: () => this.setState({ modal: null, rebindWarn: null }),
-      rebindCanUndo: !!s.rebindUndo, rebindUndoLabel: s.rebindUndo ? ('↩ Отменить: вернуть «'+s.rebindUndo.recipe+'» на «'+s.rebindUndo.prev+'»') : '', doUndoRebind: () => this.undoRebind(),  isAgents: s.screen === 'agents', agentDrawerOpen: s.modal === 'agentModal', closeAgent: () => this.setState({ modal: null }), agentDrawerTitle: s.agentDrawerName || ((s.agentDetail || {}).family_title ? (s.agentDetail.family_title + ' · ' + s.agentDetail.role_title) : 'Агент'), agentDrawerRole: (s.agentDetail || {}).role_title || '', agentDrawerFamily: (s.agentDetail || {}).family_title || '', agentDrawerMission: (s.agentDetail || {}).mission || '', agentDrawerAutonomy: ((s.agentDetail || {}).envelope || {}).autonomy_max || '—', agentDrawerEnv: (function(){ var e = (s.agentDetail || {}).envelope || {}; var out = [e.mode || 'read', e.egress || 'internal']; if (e.cite) out.push('cite'); return out.map(function(x){ return { label: x }; }); })(), agentDrawerSkills: ((s.agentDetail || {}).skills || []).map(function(x){ return { id: x.id, title: x.title, short: x.short, mode: (x.safety || {}).mode || 'read' }; }), agentDrawerBecome: ((s.agentDetail || {}).transitions || []).map(function(t){ return { title: t.title, member: t.member }; }), agentDrawerScope: ((s.agentDetail || {}).data_scope || []).map(function(x){ return { entity: x.entity, recipe: x.recipe || 'нет рецепта — создать', fields: (x.fields || []).join(', ') }; }),  agentTabs: [['work', 'В работе (' + s.agentsList.length + ')'], ['limbo', 'Лимб / архив (' + s.limboList.length + ')']].map(t => { var id = t[0], label = t[1], on = (s.showLimbo === (id === 'limbo')); return { label: label, pick: () => this.setState({ showLimbo: id === 'limbo' }), bg: on ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : 'transparent', fg: on ? 'var(--ink)' : 'var(--w55)' }; }), 
+      rebindCanUndo: !!s.rebindUndo, rebindUndoLabel: s.rebindUndo ? ('↩ Отменить: вернуть «'+s.rebindUndo.recipe+'» на «'+s.rebindUndo.prev+'»') : '', doUndoRebind: () => this.undoRebind(),  fanModal: s.modal === 'fanout',
+      fanAgentName: (s.fanAgent || {}).name || '',
+      fanError: s.fanError || '',
+      fanBusy: !!s.fanBusy,
+      fanSlotName: (s.fanSlot || {}).label || (s.fanSlot || {}).name || '',
+      fanEntity: (s.fanSlot || {}).entity || '',
+      fanSlotOpts: (s.fanSlots || []).map((sl) => ({ value: sl.name, label: (sl.label || sl.name) + ' · ' + sl.entity })),
+      setFanSlot: (e) => { const sl = (s.fanSlots || []).filter((x) => x.name === e.target.value)[0]; if (sl) { this.setState({ fanSlot: sl }); this.loadFanItems(sl); } },
+      fanItems: (s.fanItems || []).map((it) => ({
+        label: it.label, note: it.note, value: it.value, on: !!(s.fanPicked || {})[it.value],
+        bg: (s.fanPicked || {})[it.value] ? 'rgba(99,102,241,.16)' : 'var(--w4)',
+        toggle: () => { const p = Object.assign({}, s.fanPicked || {}); p[it.value] = !p[it.value]; this.setState({ fanPicked: p }); } })),
+      fanPickedCount: String(Object.keys(s.fanPicked || {}).filter((k) => (s.fanPicked || {})[k]).length),
+      fanPickAll: () => { const p = {}; (s.fanItems || []).forEach((x) => { p[x.value] = true; }); this.setState({ fanPicked: p }); },
+      fanPickNone: () => this.setState({ fanPicked: {} }),
+      fanCanStart: !s.fanGroup && Object.keys(s.fanPicked || {}).filter((k) => (s.fanPicked || {})[k]).length > 0,
+      startFanout: () => this.startFanout(),
+      cancelFanGroup: () => this.cancelFanGroup(),
+      closeFanout: () => this.setState({ modal: null, fanGroup: null, fanSummary: null }),
+      fanRunning: !!s.fanGroup && !s.fanSummary,
+      fanProgress: (function(){
+        const st = s.fanStatus; if (!st) return s.fanGroup ? ('запущено заданий: ' + (s.fanGroup.count || 0)) : '';
+        const by = st.by_status || {};
+        return 'ветвей ' + (st.jobs || 0) + ' · готово ' + (by.done || 0) + (by.failed ? (' · с ошибкой ' + by.failed) : '')
+             + (by.running ? (' · выполняется ' + by.running) : '') + (by.queued ? (' · ждёт ' + by.queued) : '');
+      })(),
+      fanHasSummary: !!s.fanSummary,
+      fanSumNote: (s.fanSummary || {}).note || '',
+      fanSumTotals: Object.entries(((s.fanSummary || {})['суммы']) || {}).map((e) => ({
+        // Ключ приходит с путём («сводка.просрочено»): человеку нужен сам показатель.
+        k: String(e[0]).split('.').pop().replace(/_/g, ' '), v: String(e[1]) })),
+      fanSumItems: (((s.fanSummary || {})['по_предметам']) || []).map((x) => ({
+        subject: x['предмет'] || x.job_id,
+        metrics: Object.entries(x['показатели'] || {}).slice(0, 6).map((e) => e[0] + ': ' + e[1]).join(' · ') })),
+      fanSumRows: ((((s.fanSummary || {}).merged || {})['сведено']) || []).slice(0, 40).map((r) => ({
+        key: Object.entries(r).filter((e) => !String(e[0]).startsWith('_')).slice(0, 2).map((e) => String(e[1])).join(' · '),
+        text: Object.entries(r).filter((e) => !String(e[0]).startsWith('_')).slice(2, 7).map((e) => e[0] + ': ' + String(e[1]).slice(0, 60)).join(' · '),
+        arb: r['_арбитраж'] ? Object.entries(r['_арбитраж']).map((e) => e[0] + ' → ' + (e[1]['решение'] || '')).join('; ') : '',
+        hasArb: !!r['_арбитраж'] })),
+      fanArbNote: ((s.fanSummary || {}).arbitration || {}).note || '',
+      fanArbOpen: (((s.fanSummary || {}).arbitration || {}).open || []).map((d) => ({
+        text: [d.item, d.field].filter(Boolean).join(' · '), why: d.reason || '' })),
+      fanSnapshot: (function(){ const sn = (s.fanSummary || {}).data_snapshot; if (!sn) return '';
+        return 'снимок ' + (sn.id || '') + ' · записей ' + (sn.rows_total || 0) + (sn.note ? (' · ' + sn.note) : ''); })(),
+      isAgents: s.screen === 'agents', agentDrawerOpen: s.modal === 'agentModal', closeAgent: () => this.setState({ modal: null }), agentDrawerTitle: s.agentDrawerName || ((s.agentDetail || {}).family_title ? (s.agentDetail.family_title + ' · ' + s.agentDetail.role_title) : 'Агент'), agentDrawerRole: (s.agentDetail || {}).role_title || '', agentDrawerFamily: (s.agentDetail || {}).family_title || '', agentDrawerMission: (s.agentDetail || {}).mission || '', agentDrawerAutonomy: ((s.agentDetail || {}).envelope || {}).autonomy_max || '—', agentDrawerEnv: (function(){ var e = (s.agentDetail || {}).envelope || {}; var out = [e.mode || 'read', e.egress || 'internal']; if (e.cite) out.push('cite'); return out.map(function(x){ return { label: x }; }); })(), agentDrawerSkills: ((s.agentDetail || {}).skills || []).map(function(x){ return { id: x.id, title: x.title, short: x.short, mode: (x.safety || {}).mode || 'read' }; }), agentDrawerBecome: ((s.agentDetail || {}).transitions || []).map(function(t){ return { title: t.title, member: t.member }; }), agentDrawerScope: ((s.agentDetail || {}).data_scope || []).map(function(x){ return { entity: x.entity, recipe: x.recipe || 'нет рецепта — создать', fields: (x.fields || []).join(', ') }; }),  agentTabs: [['work', 'В работе (' + s.agentsList.length + ')'], ['limbo', 'Лимб / архив (' + s.limboList.length + ')']].map(t => { var id = t[0], label = t[1], on = (s.showLimbo === (id === 'limbo')); return { label: label, pick: () => this.setState({ showLimbo: id === 'limbo' }), bg: on ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : 'transparent', fg: on ? 'var(--ink)' : 'var(--w55)' }; }), 
       adapters, sourceLabel: adapter.srcLabel, sourceValue: s.sourceValue,
       adapterNote: adapter.note, adapterNoteColor: adapter.noteColor,
       setSource: (e) => this.setState({ sourceValue: e.target.value }),
@@ -5565,6 +5609,86 @@ class Component extends DCLogic {
         ];
         self.setState({ planChecking: false, planOk: true, planSteps: steps, planWavesReal: waves });
       }).catch(function(){ self.setState({ planChecking: false, planOk: false, planSteps: [{ text: 'ABOP недоступен — план не проверен', ok: false }] }); });
+  }
+
+  openFanout(a) {
+    // Веер запускается по ПРЕДМЕТУ работы агента: сначала спрашиваем, какой слот разворачиваем,
+    // и только потом — по каким записям. Без предмета веер бессмысленен: агент двадцать раз посчитает
+    // одно и то же.
+    var self = this;
+    this.setState({ modal: 'fanout', fanAgent: a, fanSlot: null, fanItems: [], fanPicked: {},
+                    fanGroup: null, fanSummary: null, fanBusy: false, fanError: '' });
+    fetch('/api/agents/' + encodeURIComponent(a.id) + '/slots')
+      .then(function(r){ return r.json(); })
+      .then(function(j){
+        var sl = (j.slots || []).filter(function(x){ return x.entity; });
+        if (!sl.length) { self.setState({ fanError: 'У агента не объявлен предмет работы — веер запускать не по чему. Добавьте слот в карточке навыка.' }); return; }
+        self.setState({ fanSlot: sl[0], fanSlots: sl });
+        self.loadFanItems(sl[0]);
+      }).catch(function(){ self.setState({ fanError: 'ABOP недоступен' }); });
+  }
+  loadFanItems(slot) {
+    var self = this;
+    this.setState({ fanBusy: true });
+    fetch('/api/resolve/' + encodeURIComponent(slot.entity) + '?q=&limit=50')
+      .then(function(r){ return r.json(); })
+      .then(function(j){
+        var items = (j.candidates || []).map(function(c){
+          var rec = c.record || {};
+          return { value: String(rec.id || rec['название'] || rec.name || ''),
+                   label: String(rec.name || rec['название'] || rec.id || ''),
+                   note: String(rec.customer || rec['заказчик'] || rec.commissioning || '') };
+        }).filter(function(x){ return x.value; });
+        var picked = {};
+        items.slice(0, 20).forEach(function(x){ picked[x.value] = true; });
+        self.setState({ fanItems: items, fanPicked: picked, fanBusy: false });
+      }).catch(function(){ self.setState({ fanBusy: false, fanError: 'Не удалось получить список предметов' }); });
+  }
+  startFanout() {
+    var self = this, st = this.state, a = st.fanAgent || {}, slot = st.fanSlot || {};
+    var values = Object.keys(st.fanPicked || {}).filter(function(k){ return st.fanPicked[k]; });
+    if (!values.length) { this.showToast('Выберите хотя бы один предмет'); return; }
+    var body = { agent_id: a.id, slot: slot.name, values: values, deliver: 'chat', limit: values.length };
+    var bd = this._budgetBody(); if (bd) body.budget = bd;
+    this.setState({ fanBusy: true, fanError: '' });
+    fetch('/api/runs/fan-out', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      .then(function(r){ return r.json().then(function(j){ return { ok: r.ok, j: j || {} }; }); })
+      .then(function(res){
+        if (!res.ok) { self.setState({ fanBusy: false, fanError: res.j.detail || 'не запустилось' }); return; }
+        self.setState({ fanGroup: res.j, fanBusy: false });
+        self.showToast('Запущено заданий: ' + res.j.count);
+        self.pollFanGroup(res.j.group_id);
+      }).catch(function(){ self.setState({ fanBusy: false, fanError: 'ABOP недоступен' }); });
+  }
+  pollFanGroup(gid) {
+    // Опрашиваем состояние группы, пока все ветви не закончатся; затем один раз берём сводку.
+    var self = this, tries = 0;
+    var tick = function() {
+      if (self.state.modal !== 'fanout' || !self.state.fanGroup) return;
+      fetch('/api/runs/groups/' + encodeURIComponent(gid)).then(function(r){ return r.json(); })
+        .then(function(st){
+          self.setState({ fanStatus: st });
+          var by = st.by_status || {};
+          var done = (by.done || 0) + (by.failed || 0) + (by.cancelled || 0);
+          if (done >= (st.jobs || 0) || ++tries > 240) { self.loadFanSummary(gid); return; }
+          setTimeout(tick, 4000);
+        }).catch(function(){ setTimeout(tick, 6000); });
+    };
+    setTimeout(tick, 2500);
+  }
+  loadFanSummary(gid) {
+    var self = this;
+    fetch('/api/runs/groups/' + encodeURIComponent(gid) + '/summary')
+      .then(function(r){ return r.json(); })
+      .then(function(j){ self.setState({ fanSummary: j }); })
+      .catch(function(){ self.setState({ fanError: 'Сводка не собралась' }); });
+  }
+  cancelFanGroup() {
+    var self = this, g = this.state.fanGroup || {};
+    if (!g.group_id) return;
+    fetch('/api/runs/groups/' + encodeURIComponent(g.group_id) + '/cancel', { method: 'POST' })
+      .then(function(){ self.showToast('Группа отменена'); self.loadFanSummary(g.group_id); })
+      .catch(function(){ self.showToast('Не удалось отменить'); });
   }
 
   loadGuides() {
