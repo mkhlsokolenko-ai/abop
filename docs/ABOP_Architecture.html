@@ -68,7 +68,7 @@
 <body>
 <div class="wrap">
   <h1>ABOP — Архитектура платформы</h1>
-  <p class="sub">Инженерная платформа для сборки и управления ИИ-агентами · десктоп-чат как рабочая среда пользователя · self-host LLM на GPU-боксе (данные не выходят наружу) · шина Redpanda + коннектор-воркер на server-2: результат навыка уходит в систему только после HITL-превью · предмет работы (проект, контрагент) сужает выборку данных до прогона</p>
+  <p class="sub">Инженерная платформа для сборки и управления ИИ-агентами · десктоп-чат как рабочая среда пользователя · self-host LLM на GPU-боксе (данные не выходят наружу) · шина Redpanda + коннектор-воркер на server-2: результат навыка уходит в систему только после HITL-превью · предмет работы (проект, контрагент) сужает выборку данных до прогона · навыки связаны контрактами: цепочка собирается из тех, кто реально выполнится на текущих данных, выводы ветвей ложатся на общую доску, расхождения разрешаются правилом или человеком</p>
 
   <div class="cols">
     <!-- ЛЕВАЯ КОЛОНКА: легенда / домены / коммуникация -->
@@ -169,6 +169,13 @@
                   <div class="box hl"><div class="bt">RunBus · tool-calling</div><div class="bd">pg | kafka · инструменты навыков · publish_command_governed</div></div>
                   <div class="box hl"><div class="bt">delivery.py</div><div class="bd">structured-ответ → команды коннектора → HITL-заявки канала command</div></div>
                   <div class="box"><div class="bt">safety.py</div><div class="bd">system/user разделение · санитизация недоверенных данных · auth fail-closed</div></div>
+                  <div class="box hl"><div class="bt">Контракт навыка</div><div class="bd">skill_contract.py · вход (data/skill/slot/context) · produces (path·key·join) · реестр имён</div></div>
+                  <div class="box hl"><div class="bt">Волны со структурой</div><div class="bd">между шагами едет объект, а не пересказ прозой</div></div>
+                  <div class="box hl"><div class="bt">Ветвление и слияние</div><div class="bd">pipeline_graph.py · after/when/scope · 4 политики слияния · составной ключ</div></div>
+                  <div class="box hl"><div class="bt">Бюджет и лимиты</div><div class="bd">код → настройка → навык → прогон · проверка перед каждым шагом · честная остановка</div></div>
+                  <div class="box hl"><div class="bt">Доска прогона</div><div class="bd">blackboard.py · выводы с авторством · снимок данных на группу · дрейф</div></div>
+                  <div class="box hl"><div class="bt">Арбитраж расхождений</div><div class="bd">arbiter.py · большинство → тяжесть → край → происхождение → навык → человек</div></div>
+                  <div class="box hl"><div class="bt">Группы заданий (веер)</div><div class="bd">один агент по многим предметам · сводка · отмена группы · повтор ветви</div></div>
                 </div>
               </div>
               <div class="card">
@@ -181,8 +188,10 @@
                 <div class="bd" style="color:var(--ink3);font-size:9.5px;margin-top:5px">58 навыков в каталоге, 55 со строгой схемой (vLLM xgrammar) · 6 с доставкой · 1 со слотом предмета · ответ сверяется со схемой: недобор → повтор с бОльшим лимитом, остаток помечается в прогоне и в отчёте · правка в UI / POST /schema-templates/import без пересборки · отчёт: default · audit1c · invest · digest</div>
               </div>
               <div class="card">
-                <div class="sec">Планировщик</div>
+                <div class="sec">Планирование</div>
                 <div class="box"><div class="bt">scheduler_loop</div><div class="bd">leader-election · cron · только последняя версия агента (без дублей)</div></div>
+                <div class="box hl"><div class="bt">planner.py — план по контрактам</div><div class="bd">этапы задачи → навыки, которые реально выполнятся на текущих данных · достройка поставщиков · волны · шаблон отчёта</div></div>
+                <div class="box hl"><div class="bt">Правило достаточности</div><div class="bd">по двум словам не угадываем: причина + три вопроса + пример формулировки</div></div>
               </div>
             </div>
 

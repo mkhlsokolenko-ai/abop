@@ -1,6 +1,6 @@
 # ABOP — Справочник эндпоинтов и портов
 
-> Актуально на 2026-09-27. Источник истины: `server/web_api.py` (роуты, `grep -n '@app\.' server/web_api.py`), `server/systems_store.py` + `ops/prometheus.yml` + `connector/worker.py` (порты). Обновлять при добавлении роутов/сервисов. Runbook — [`DEPLOY.md`](DEPLOY.md).
+> Актуально на 2026-09-30. Источник истины: `server/web_api.py` (роуты, `grep -n '@app\.' server/web_api.py`), `server/systems_store.py` + `ops/prometheus.yml` + `connector/worker.py` (порты). Обновлять при добавлении роутов/сервисов. Runbook — [`DEPLOY.md`](DEPLOY.md).
 
 ---
 
@@ -99,6 +99,7 @@
 |---|---|---|---|
 | GET | `/api/agents` | Список агентов (ABAC по семье; `?contract=`, `?archived=`) | user/ABAC |
 | GET | `/api/agents/{agent_id}` | Полный AgentVersion (граф + метаданные) | user |
+| GET | `/api/agents/{agent_id}/slots` | Слоты всех навыков агента: что спросить у человека до запуска | user |
 | GET | `/api/agents/spec` | Spec агента по `{family,member}` (ADR-032) | user |
 | POST | `/api/agents` | Сохранить граф как AgentVersion (draft; `revise=true` — новая версия) | manager+ |
 | POST | `/api/agents/check` | Governance-проверка графа без сохранения | user |
@@ -120,13 +121,22 @@
 | Метод | Путь | Назначение | Доступ |
 |---|---|---|---|
 | POST | `/api/runs` | Запуск прогона `{agent_id}` или `{contract_audit_id}`. Синхронно → 201 с результатом; `{async:true}` или `?async=1` → **202** `{job_id, status, position, poll}` | user |
+| POST | `/api/runs` (бюджет) | В теле `budget:{tokens,rub,seconds}` — честная остановка на исчерпании; факт в `run_metrics.budget` | user |
+| POST | `/api/runs/fan-out` | Запуск агента по МНОГИМ предметам сразу: одна группа заданий, по заданию на предмет | user |
 | GET | `/api/runs/jobs/{job_id}` | Статус задания: queued (позиция) / running (progress) / awaiting_hitl / done (+ результат) / failed / cancelled | user |
 | POST | `/api/runs/jobs/{job_id}/cancel` | Отмена: из очереди сразу, выполняющееся — кооперативно | user |
 | GET | `/api/runs/jobs` | Мои задания (admin/support — все) | user |
 | GET | `/api/runs/queue` | Состояние очереди: глубина по статусам, воркеры, лимиты, RSS, шина | support+ |
+| POST | `/api/runs/jobs/{job_id}/retry-step` | Повторить ОДИН шаг цепочки, не перезапуская остальные | manager+ |
+| GET | `/api/runs/groups/{group_id}` | Состояние группы заданий: статусы, стоимость, упавшие ветви | user |
+| GET | `/api/runs/groups/{group_id}/summary` | Сводка по группе: результаты завершённых заданий в одной таблице | user |
+| GET | `/api/runs/groups/{group_id}/board` | Что ветви группы выложили в общую память: ключ, автор, значение, расхождения | user |
+| POST | `/api/runs/groups/{group_id}/cancel` | Отменить всю группу целиком | manager+ |
 | GET | `/api/runs` | Журнал прогонов (ABAC; `?agent_id=`, `?limit=1..500`) | user/ABAC |
+| GET | `/api/runs/search?q=` | Поиск по СОДЕРЖИМОМУ прогонов: находки, ответы навыков, доставка (jsonb → текст) | user/ABAC |
 | GET | `/api/runs/{run_id}` | Полный прогон: findings/investigations/delivery/soft_errors/trace/`skill_outputs`/trace_id | user |
 | GET | `/api/runs/{run_id}/metrics` | RunMetrics (`abop.run_metrics/1.0`) | user |
+| GET | `/api/runs/{run_id}/board` | Доска прогона: выводы навыков с авторством и решения арбитра по расхождениям | user |
 | GET | `/api/runs/{run_id}/diff?vs=` | Сравнение прогонов: находки и расследования (появились/ушли/изменились), навыки, метрики; без `vs` — предыдущий прогон агента | user |
 | GET | `/api/runs/{run_id}/report` | Отчёт прогона по шаблону: `?template=<id>&format=html|pdf` (default/audit1c/invest/digest; PDF через рендерер ABOP) | user |
 | GET | `/api/runs/{run_id}/stream` | SSE-стрим прогона (501 — контракт зафиксирован, не реализован) | user |
@@ -169,6 +179,7 @@
 | GET | `/api/report-templates` / `/{tid}` | Шаблоны отчётов (HTML+CSS+pdf_options; посев из `reports/`) | user |
 | POST | `/api/report-templates/{tid}` | Создать/править шаблон (плейсхолдеры `{{title}}/{{findings}}/{{skills}}/{{skill_<sid>}}/…`) | admin |
 | POST | `/api/report-templates/{tid}/preview` | Превью рендера на демо-данных → HTML | user |
+| POST | `/api/report-templates/{tid}/reset` | Вернуть шаблон к версии из поставки (`reports/<id>.html`); нужен после ручной правки через интерфейс | admin |
 | DELETE | `/api/report-templates/{tid}` | Удалить | admin |
 
 ### 2.10 Находки пилота 1С
@@ -185,6 +196,7 @@
 | Метод | Путь | Назначение | Доступ |
 |---|---|---|---|
 | GET | `/api/data/lineage` | Граф данных (источники→сущности→навыки→агенты) | user |
+| GET | `/api/data/entities` | Сущности, которые РЕАЛЬНО существуют: реестр схем + строки в хранилище (по ним планировщик решает, чем навык может работать) | user |
 | GET | `/api/impact?kind=&id=` | Анализ воздействия: что затронет правка сущности/рецепта/навыка/системы/семьи, ₽/токены | user |
 | GET | `/api/data/adapters` | Каталог адаптеров источников | user |
 | GET | `/api/data/schema/{entity}` | Data Contract сущности | user |
@@ -205,6 +217,11 @@
 | GET | `/api/skills` / `/{sid}` | Каталог/тело навыка (+PG-правки поверх `.md`, `tools:` из frontmatter) | user/ABAC |
 | POST | `/api/skills/{sid}` | Правка навыка новой версией (→PG; `output`, `schema_template_id`) | user |
 | POST | `/api/skills/{sid}/datasources` | Data-need навыка (→PG) | user |
+| GET | `/api/skills/{sid}/contract` | Контракт навыка: `inputs`, `produces`, `slots`, ошибки валидации, подсказки по именам полей | user |
+| GET | `/api/skills/{sid}/slots` | Какие предметы навык обязан получить до запуска | user |
+| GET | `/api/catalog/coverage` | Готовность каталога: схема, вход, выход, данные, слоты, доставка по каждому навыку | user |
+| GET | `/api/catalog/fields` | Словарь понятий: канонические имена, синонимы, где одно понятие названо по-разному | user |
+| GET | `/api/resolve/{entity}` | Кандидаты предмета по данным: точное совпадение, вхождение, нечёткое сходство | user |
 | GET / POST | `/api/families` | Единый реестр семей (сид из кода + кастомные) | user / manager+ |
 | DELETE | `/api/families/{fid}` | Удалить кастомную семью | admin |
 | GET / POST | `/api/memory/{scope}` | Память агента/процесса (общая, PG) | user |
@@ -214,6 +231,8 @@
 |---|---|---|---|
 | GET | `/api/admin/users` / `/staff` / `/audit` / `/rbac` | Пользователи Keycloak / штат из Redmine / журнал аудита / RBAC-матрица | support+ |
 | GET / POST | `/api/admin/config` | Админ-настройки в PG (модели/квоты/пороги/дерево; `llmOverride`) | user / manager+ |
+| GET / POST | `/api/admin/run-limits` | Лимиты прогона: что задано кодом, что изменено настройкой, в каких границах (пустое поле → умолчание) | user / manager+ |
+| GET | `/api/guides` | Поставочные руководства пользователя и администратора (HTML и PDF, отдаются с `/guide`) | user |
 | GET | `/api/systems` / `/{sid}` | Реестр систем: эндпоинты, egress, scope семей, Kafka-топики | user |
 | POST / DELETE | `/api/systems/{sid}` | Сохранить / удалить систему | manager+ |
 | GET | `/api/access/manifest?key=` | Least-privilege манифест области | user |
@@ -236,6 +255,8 @@
 |---|---|---|---|
 | GET / POST | `/api/canvas/layout/{key}` | Раскладка узлов канвы | user |
 | POST | `/api/plan` | Превью декомпозиции цели по семьям (без LLM) | user |
+| POST | `/api/plan/auto` | **Этап 8.** Исполнимая цепочка ПО КОНТРАКТАМ на фактических данных: `steps`, `waves`, `missing`, `ask_slots`, `report_template`; короткий запрос → `need_more` и вопросы вместо догадки | user |
+| POST | `/api/plan/auto/build` | Из плана — агенты под шаги и цепочка с зависимостями | manager+ |
 
 ---
 
