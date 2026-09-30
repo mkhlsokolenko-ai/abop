@@ -1411,7 +1411,7 @@
           </div>
         </sc-if>
 
-        <sc-if value="{{ isAgents }}" hint-placeholder-val="{{ false }}"><div style="display:flex;flex-direction:column;gap:20px;animation:ab-in .35s ease-out;"><div style="display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap;"><div style="display:flex;flex-direction:column;gap:7px;"><h1 style="margin:0;font-size:32px;font-weight:800;letter-spacing:-.8px;">Агенты</h1><p style="margin:0;font-size:13.5px;color:var(--w50);">Собранные агенты и Лимб (архив выведенных из эксплуатации).</p></div><div style="margin-left:auto;display:flex;gap:6px;padding:4px;border-radius:12px;background:var(--w5);border:1px solid var(--w10);"><sc-for list="{{ agentTabs }}" as="t" hint-placeholder-count="2"><button sc-camel-on-click="{{ t.pick }}" style="padding:9px 18px;border:none;border-radius:9px;background:{{ t.bg }};color:{{ t.fg }};font-size:13px;font-weight:600;">{{ t.label }}</button></sc-for></div></div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;"><sc-for list="{{ agentPortfolio }}" as="a" hint-placeholder-count="3"><div style="display:flex;flex-direction:column;gap:10px;padding:18px;border-radius:16px;background:var(--w5);border:1px solid var(--w10);backdrop-filter:blur(16px);"><span sc-camel-on-click="{{ a.open }}" style="display:flex;flex-direction:column;gap:6px;cursor:pointer;"><span style="font-size:15px;font-weight:600;color:var(--ink);">{{ a.name }}</span><span style="font-family:monospace;font-size:11.5px;color:var(--w50);">{{ a.meta }}</span></span><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:auto;"><sc-if value="{{ a.isLimbo }}" hint-placeholder-val="{{ false }}"><button sc-camel-on-click="{{ a.restore }}" style="padding:7px 12px;border:1px solid rgba(129,140,248,.4);border-radius:9px;background:rgba(99,102,241,.16);color:var(--acc-ink2);font-size:12px;font-weight:600;">Восстановить</button></sc-if><sc-if value="{{ a.isActive }}" hint-placeholder-val="{{ true }}"><button sc-camel-on-click="{{ a.fanout }}" title="Запустить агента сразу по многим предметам: по проектам, договорам, контрагентам" style="padding:7px 12px;border:1px solid rgba(129,140,248,.4);border-radius:9px;background:rgba(99,102,241,.16);color:var(--acc-ink2);font-size:12px;font-weight:600;">По многим предметам</button></sc-if><sc-if value="{{ a.isActive }}" hint-placeholder-val="{{ true }}"><button sc-camel-on-click="{{ a.retire }}" style="padding:7px 12px;border:1px solid rgba(245,158,11,.35);border-radius:9px;background:rgba(245,158,11,.12);color:var(--warn-ink);font-size:12px;font-weight:600;">В Лимб</button></sc-if><sc-if value="{{ a.isLimbo }}" hint-placeholder-val="{{ false }}"><button sc-camel-on-click="{{ a.del }}" title="Необратимо: все версии агента" style="padding:7px 12px;border:1px solid rgba(239,68,68,.3);border-radius:9px;background:rgba(239,68,68,.1);color:var(--err-ink);font-size:12px;font-weight:600;">Удалить навсегда</button></sc-if></div></div></sc-for></div><sc-if value="{{ agentPortfolioEmpty }}" hint-placeholder-val="{{ false }}"><div style="padding:56px;border-radius:16px;border:1px dashed var(--w14);display:flex;flex-direction:column;align-items:center;gap:14px;color:var(--w60);font-size:14px;">Здесь пока пусто. Соберите агента на канве (Граф) и сохраните — он появится тут.</div></sc-if></div></sc-if><sc-if value="{{ isData }}" hint-placeholder-val="{{ false }}">
+        <sc-if value="{{ isAgents }}" hint-placeholder-val="{{ false }}"><div style="display:flex;flex-direction:column;gap:20px;animation:ab-in .35s ease-out;"><div style="display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap;"><div style="display:flex;flex-direction:column;gap:7px;"><h1 style="margin:0;font-size:32px;font-weight:800;letter-spacing:-.8px;">Агенты</h1><p style="margin:0;font-size:13.5px;color:var(--w50);">Собранные агенты и Лимб (архив выведенных из эксплуатации).</p></div><div style="margin-left:auto;display:flex;gap:6px;padding:4px;border-radius:12px;background:var(--w5);border:1px solid var(--w10);"><sc-for list="{{ agentTabs }}" as="t" hint-placeholder-count="2"><button sc-camel-on-click="{{ t.pick }}" style="padding:9px 18px;border:none;border-radius:9px;background:{{ t.bg }};color:{{ t.fg }};font-size:13px;font-weight:600;">{{ t.label }}</button></sc-for></div></div><sc-if value="{{ isChainsTab }}" hint-placeholder-val="{{ false }}"><div style="display:flex;flex-direction:column;gap:12px;"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;"><span style="font-size:13px;color:var(--w60);line-height:1.5;flex:1;min-width:260px;">Цепочка — несколько агентов по графу: шаги идут волнами, ветви можно пустить параллельно, условия пропускают лишнее, узел слияния сводит результаты.</span><button sc-camel-on-click="{{ newChain }}" style="padding:9px 16px;border:1px solid rgba(129,140,248,.4);border-radius:10px;background:rgba(99,102,241,.16);color:var(--acc-ink2);font-size:13px;font-weight:600;">＋ Новая цепочка</button></div><sc-for list="{{ chainsList }}" as="c" hint-placeholder-count="2"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 16px;border-radius:14px;background:var(--w5);border:1px solid var(--w10);"><div style="flex:1;min-width:220px;display:flex;flex-direction:column;gap:4px;"><span style="font-size:14.5px;font-weight:600;color:var(--ink);">{{ c.name }}</span><span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--w55);">{{ c.meta }}</span></div><button sc-camel-on-click="{{ c.open }}" style="padding:7px 12px;border:1px solid var(--w14);border-radius:9px;background:var(--w5);color:var(--ink);font-size:12px;">Изменить</button><button sc-camel-on-click="{{ c.run }}" style="padding:7px 12px;border:1px solid rgba(16,185,129,.35);border-radius:9px;background:rgba(16,185,129,.12);color:var(--ok-ink);font-size:12px;font-weight:600;">Запустить</button><button sc-camel-on-click="{{ c.del }}" style="padding:7px 12px;border:1px solid rgba(239,68,68,.3);border-radius:9px;background:rgba(239,68,68,.1);color:var(--err-ink);font-size:12px;">Удалить</button></div></sc-for><sc-if value="{{ chainsEmpty }}" hint-placeholder-val="{{ true }}"><div style="padding:48px;border-radius:16px;border:1px dashed var(--w14);text-align:center;color:var(--w60);font-size:14px;">Цепочек пока нет. Соберите первую: два агента, второй после первого.</div></sc-if></div></sc-if><sc-if value="{{ isAgentsTab }}" hint-placeholder-val="{{ true }}"><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;"><sc-for list="{{ agentPortfolio }}" as="a" hint-placeholder-count="3"><div style="display:flex;flex-direction:column;gap:10px;padding:18px;border-radius:16px;background:var(--w5);border:1px solid var(--w10);backdrop-filter:blur(16px);"><span sc-camel-on-click="{{ a.open }}" style="display:flex;flex-direction:column;gap:6px;cursor:pointer;"><span style="font-size:15px;font-weight:600;color:var(--ink);">{{ a.name }}</span><span style="font-family:monospace;font-size:11.5px;color:var(--w50);">{{ a.meta }}</span></span><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:auto;"><sc-if value="{{ a.isLimbo }}" hint-placeholder-val="{{ false }}"><button sc-camel-on-click="{{ a.restore }}" style="padding:7px 12px;border:1px solid rgba(129,140,248,.4);border-radius:9px;background:rgba(99,102,241,.16);color:var(--acc-ink2);font-size:12px;font-weight:600;">Восстановить</button></sc-if><sc-if value="{{ a.isActive }}" hint-placeholder-val="{{ true }}"><button sc-camel-on-click="{{ a.fanout }}" title="Запустить агента сразу по многим предметам: по проектам, договорам, контрагентам" style="padding:7px 12px;border:1px solid rgba(129,140,248,.4);border-radius:9px;background:rgba(99,102,241,.16);color:var(--acc-ink2);font-size:12px;font-weight:600;">По многим предметам</button></sc-if><sc-if value="{{ a.isActive }}" hint-placeholder-val="{{ true }}"><button sc-camel-on-click="{{ a.retire }}" style="padding:7px 12px;border:1px solid rgba(245,158,11,.35);border-radius:9px;background:rgba(245,158,11,.12);color:var(--warn-ink);font-size:12px;font-weight:600;">В Лимб</button></sc-if><sc-if value="{{ a.isLimbo }}" hint-placeholder-val="{{ false }}"><button sc-camel-on-click="{{ a.del }}" title="Необратимо: все версии агента" style="padding:7px 12px;border:1px solid rgba(239,68,68,.3);border-radius:9px;background:rgba(239,68,68,.1);color:var(--err-ink);font-size:12px;font-weight:600;">Удалить навсегда</button></sc-if></div></div></sc-for></div></sc-if><sc-if value="{{ agentPortfolioEmpty }}" hint-placeholder-val="{{ false }}"><div style="padding:56px;border-radius:16px;border:1px dashed var(--w14);display:flex;flex-direction:column;align-items:center;gap:14px;color:var(--w60);font-size:14px;">Здесь пока пусто. Соберите агента на канве (Граф) и сохраните — он появится тут.</div></sc-if></div></sc-if><sc-if value="{{ isData }}" hint-placeholder-val="{{ false }}">
           <div style="display: flex; flex-direction: column; gap: 20px; animation: ab-in .35s ease-out;">
             <div style="display: flex; align-items: flex-end; gap: 18px; flex-wrap: wrap;">
               <div style="display: flex; flex-direction: column; gap: 7px;">
@@ -4615,7 +4615,43 @@ class Component extends DCLogic {
         text: [d.item, d.field].filter(Boolean).join(' · '), why: d.reason || '' })),
       fanSnapshot: (function(){ const sn = (s.fanSummary || {}).data_snapshot; if (!sn) return '';
         return 'снимок ' + (sn.id || '') + ' · записей ' + (sn.rows_total || 0) + (sn.note ? (' · ' + sn.note) : ''); })(),
-      isAgents: s.screen === 'agents', agentDrawerOpen: s.modal === 'agentModal', closeAgent: () => this.setState({ modal: null }), agentDrawerTitle: s.agentDrawerName || ((s.agentDetail || {}).family_title ? (s.agentDetail.family_title + ' · ' + s.agentDetail.role_title) : 'Агент'), agentDrawerRole: (s.agentDetail || {}).role_title || '', agentDrawerFamily: (s.agentDetail || {}).family_title || '', agentDrawerMission: (s.agentDetail || {}).mission || '', agentDrawerAutonomy: ((s.agentDetail || {}).envelope || {}).autonomy_max || '—', agentDrawerEnv: (function(){ var e = (s.agentDetail || {}).envelope || {}; var out = [e.mode || 'read', e.egress || 'internal']; if (e.cite) out.push('cite'); return out.map(function(x){ return { label: x }; }); })(), agentDrawerSkills: ((s.agentDetail || {}).skills || []).map(function(x){ return { id: x.id, title: x.title, short: x.short, mode: (x.safety || {}).mode || 'read' }; }), agentDrawerBecome: ((s.agentDetail || {}).transitions || []).map(function(t){ return { title: t.title, member: t.member }; }), agentDrawerScope: ((s.agentDetail || {}).data_scope || []).map(function(x){ return { entity: x.entity, recipe: x.recipe || 'нет рецепта — создать', fields: (x.fields || []).join(', ') }; }),  agentTabs: [['work', 'В работе (' + s.agentsList.length + ')'], ['limbo', 'Лимб / архив (' + s.limboList.length + ')']].map(t => { var id = t[0], label = t[1], on = (s.showLimbo === (id === 'limbo')); return { label: label, pick: () => this.setState({ showLimbo: id === 'limbo' }), bg: on ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : 'transparent', fg: on ? 'var(--ink)' : 'var(--w55)' }; }), 
+      isAgents: s.screen === 'agents', agentDrawerOpen: s.modal === 'agentModal', closeAgent: () => this.setState({ modal: null }), agentDrawerTitle: s.agentDrawerName || ((s.agentDetail || {}).family_title ? (s.agentDetail.family_title + ' · ' + s.agentDetail.role_title) : 'Агент'), agentDrawerRole: (s.agentDetail || {}).role_title || '', agentDrawerFamily: (s.agentDetail || {}).family_title || '', agentDrawerMission: (s.agentDetail || {}).mission || '', agentDrawerAutonomy: ((s.agentDetail || {}).envelope || {}).autonomy_max || '—', agentDrawerEnv: (function(){ var e = (s.agentDetail || {}).envelope || {}; var out = [e.mode || 'read', e.egress || 'internal']; if (e.cite) out.push('cite'); return out.map(function(x){ return { label: x }; }); })(), agentDrawerSkills: ((s.agentDetail || {}).skills || []).map(function(x){ return { id: x.id, title: x.title, short: x.short, mode: (x.safety || {}).mode || 'read' }; }), agentDrawerBecome: ((s.agentDetail || {}).transitions || []).map(function(t){ return { title: t.title, member: t.member }; }), agentDrawerScope: ((s.agentDetail || {}).data_scope || []).map(function(x){ return { entity: x.entity, recipe: x.recipe || 'нет рецепта — создать', fields: (x.fields || []).join(', ') }; }),  agentTabs: [['work', 'В работе (' + s.agentsList.length + ')'], ['limbo', 'Лимб / архив (' + s.limboList.length + ')'], ['chains', 'Цепочки (' + ((s.chains || []).length) + ')']].map(t => { var id = t[0], label = t[1]; var cur = s.agentTab || (s.showLimbo ? 'limbo' : 'work'); var on = (cur === id); return { label: label, pick: () => { this.setState({ agentTab: id, showLimbo: id === 'limbo' }); if (id === 'chains') this.loadChains(); }, bg: on ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : 'transparent', fg: on ? 'var(--ink)' : 'var(--w55)' }; }),
+      isChainsTab: (s.agentTab || 'work') === 'chains',
+      isAgentsTab: (s.agentTab || 'work') !== 'chains',
+      chainsList: (s.chains || []).map((p) => ({ name: p.name, id: p.id,
+        meta: (p.steps || []).length + ' шагов · ' + (p.steps || []).map((x) => x.agent_name || x.agent_id).slice(0, 3).join(' → '),
+        open: () => this.openChain(p), run: () => this.runChain(p.id), del: () => this.deleteChain(p.id) })),
+      chainsEmpty: !((s.chains || []).length),
+      newChain: () => this.openChain(null),
+      chainModal: s.modal === 'chain',
+      chainName: s.chainName || '',
+      setChainName: (e) => this.setState({ chainName: e.target.value }),
+      chainError: s.chainError || '',
+      chainAgentOpts: [{ value: '', label: '— выберите агента —' }].concat((s.agentsList || []).map((a) => ({ value: a.id, label: a.name }))),
+      chainJoinOpts: [{ value: '', label: 'обычный шаг' }, { value: 'all', label: 'слияние: всё вместе' },
+        { value: 'first', label: 'слияние: первый успешный' }, { value: 'by_key', label: 'слияние: по ключу' },
+        { value: 'vote', label: 'слияние: голосование' }],
+      chainDeliverOpts: [{ value: 'chat', label: 'в чат' }, { value: 'email', label: 'письмом' },
+        { value: 'redmine', label: 'задачей в трекер' }, { value: 'bookstack', label: 'страницей в вики' }],
+      chainStepRows: (s.chainSteps || []).map((x, i) => ({
+        n: String(i + 1), id: x.id, agent: x.agent_id, deliver: x.deliver, after: x.after,
+        whenHas: x.when_has, joinPolicy: x.join_policy, joinKey: x.join_key, joinFrom: x.join_from,
+        scopeField: x.scope_field, scopeValue: x.scope_value,
+        isJoin: !!x.join_policy,
+        setId: (e) => this.editChainStep(i, { id: e.target.value }),
+        setAgent: (e) => this.editChainStep(i, { agent_id: e.target.value }),
+        setDeliver: (e) => this.editChainStep(i, { deliver: e.target.value }),
+        setAfter: (e) => this.editChainStep(i, { after: e.target.value }),
+        setWhen: (e) => this.editChainStep(i, { when_has: e.target.value }),
+        setJoin: (e) => this.editChainStep(i, { join_policy: e.target.value }),
+        setJoinKey: (e) => this.editChainStep(i, { join_key: e.target.value }),
+        setJoinFrom: (e) => this.editChainStep(i, { join_from: e.target.value }),
+        setScopeField: (e) => this.editChainStep(i, { scope_field: e.target.value }),
+        setScopeValue: (e) => this.editChainStep(i, { scope_value: e.target.value }),
+        remove: () => this.removeChainStep(i) })),
+      addChainStep: () => this.addChainStep(),
+      saveChain: () => this.saveChain(),
+      closeChain: () => this.setState({ modal: null }), 
       adapters, sourceLabel: adapter.srcLabel, sourceValue: s.sourceValue,
       adapterNote: adapter.note, adapterNoteColor: adapter.noteColor,
       setSource: (e) => this.setState({ sourceValue: e.target.value }),
@@ -5609,6 +5645,95 @@ class Component extends DCLogic {
         ];
         self.setState({ planChecking: false, planOk: true, planSteps: steps, planWavesReal: waves });
       }).catch(function(){ self.setState({ planChecking: false, planOk: false, planSteps: [{ text: 'ABOP недоступен — план не проверен', ok: false }] }); });
+  }
+
+  loadChains() {
+    var self = this;
+    fetch('/api/pipelines').then(function(r){ return r.json(); })
+      .then(function(j){ self.setState({ chains: j.pipelines || [] }); })
+      .catch(function(){ self.showToast('Цепочки не загрузились'); });
+  }
+  openChain(p) {
+    // Список агентов нужен редактору сразу: если открыть окно до его загрузки, выпадающий список
+    // окажется пустым и шаг будет некому назначить.
+    if (!(this.state.agentsList || []).length) this.reloadAgents();
+    // Правим копию: незаконченная правка не должна менять сохранённую цепочку.
+    var steps = (p && p.steps || []).map(function(x, i){
+      return { id: x.id || ('s' + (i + 1)), agent_id: x.agent_id || '', deliver: x.deliver || 'chat',
+               after: (x.after || []).join(', '), when_has: ((x.when || {}).has) || '',
+               join_policy: ((x.join || {}).policy) || '', join_key: ((x.join || {}).key || ''),
+               join_from: ((x.join || {}).from || []).join(', '),
+               scope_field: Object.keys(x.scope || {})[0] || '', scope_value: Object.values(x.scope || {})[0] || '' };
+    });
+    if (!steps.length) steps = [{ id: 's1', agent_id: '', deliver: 'chat', after: '', when_has: '', join_policy: '', join_key: '', join_from: '', scope_field: '', scope_value: '' },
+                                { id: 's2', agent_id: '', deliver: 'chat', after: 's1', when_has: '', join_policy: '', join_key: '', join_from: '', scope_field: '', scope_value: '' }];
+    this.setState({ modal: 'chain', chainId: (p && p.id) || '', chainName: (p && p.name) || '',
+                    chainSteps: steps, chainError: '', chainWaves: null });
+  }
+  _chainPayload() {
+    // Плоские поля формы → шаги графа. Пустые поля не отправляем: пустое условие это отсутствие
+    // условия, а не условие «пусто».
+    return (this.state.chainSteps || []).map(function(x){
+      var st = { id: (x.id || '').trim(), agent_id: x.agent_id, deliver: x.deliver || 'chat' };
+      var after = (x.after || '').split(',').map(function(v){ return v.trim(); }).filter(Boolean);
+      if (after.length) st.after = after;
+      if ((x.when_has || '').trim()) st.when = { has: x.when_has.trim() };
+      if ((x.join_policy || '').trim()) {
+        st.join = { policy: x.join_policy };
+        var from = (x.join_from || '').split(',').map(function(v){ return v.trim(); }).filter(Boolean);
+        if (from.length) st.join.from = from;
+        if ((x.join_key || '').trim()) st.join.key = x.join_key.split(',').map(function(v){ return v.trim(); }).filter(Boolean);
+      }
+      if ((x.scope_field || '').trim() && (x.scope_value || '').trim()) {
+        st.scope = {}; st.scope[x.scope_field.trim()] = x.scope_value.trim();
+      }
+      return st;
+    });
+  }
+  saveChain() {
+    var self = this, st = this.state;
+    if (!(st.chainName || '').trim()) { this.showToast('Дайте цепочке имя'); return; }
+    var body = { name: st.chainName.trim(), steps: this._chainPayload() };
+    if (st.chainId) body.id = st.chainId;
+    fetch('/api/pipelines', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      .then(function(r){ return r.json().then(function(j){ return { ok: r.ok, j: j || {} }; }); })
+      .then(function(res){
+        if (!res.ok) { self.setState({ chainError: res.j.detail || 'не сохранилось' }); return; }
+        self.setState({ chainId: res.j.id, chainError: '' });
+        self.showToast('Цепочка сохранена');
+        self.loadChains();
+      }).catch(function(){ self.setState({ chainError: 'ABOP недоступен' }); });
+  }
+  runChain(pid) {
+    var self = this;
+    fetch('/api/pipelines/' + encodeURIComponent(pid) + '/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) })
+      .then(function(r){ return r.json().then(function(j){ return { ok: r.ok, j: j || {} }; }); })
+      .then(function(res){
+        if (!res.ok) { self.showToast('Цепочка: ' + (res.j.detail || 'не запустилась')); return; }
+        self.showToast('Цепочка запущена — результат появится в журнале прогонов');
+      }).catch(function(){ self.showToast('ABOP недоступен'); });
+  }
+  deleteChain(pid) {
+    var self = this;
+    if (!window.confirm('Удалить цепочку? Прогоны, уже сделанные по ней, останутся в журнале.')) return;
+    fetch('/api/pipelines/' + encodeURIComponent(pid), { method: 'DELETE' })
+      .then(function(){ self.loadChains(); self.showToast('Цепочка удалена'); })
+      .catch(function(){ self.showToast('Не удалось удалить'); });
+  }
+  addChainStep() {
+    var steps = (this.state.chainSteps || []).slice();
+    var n = steps.length + 1;
+    steps.push({ id: 's' + n, agent_id: '', deliver: 'chat', after: steps.length ? steps[steps.length - 1].id : '',
+                 when_has: '', join_policy: '', join_key: '', join_from: '', scope_field: '', scope_value: '' });
+    this.setState({ chainSteps: steps });
+  }
+  editChainStep(i, patch) {
+    var steps = (this.state.chainSteps || []).slice();
+    steps[i] = Object.assign({}, steps[i], patch);
+    this.setState({ chainSteps: steps, chainWaves: null });
+  }
+  removeChainStep(i) {
+    this.setState({ chainSteps: (this.state.chainSteps || []).filter(function(_, j){ return j !== i; }), chainWaves: null });
   }
 
   openFanout(a) {

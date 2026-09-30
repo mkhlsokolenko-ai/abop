@@ -1018,6 +1018,92 @@
     </div>
   </sc-if>
 
+  <sc-if value="{{ ov.chainModal }}" hint-placeholder-val="{{ false }}">
+    <div style="position: fixed; inset: 0; z-index: 67; display: flex; align-items: flex-start; justify-content: center; padding: 40px 24px 24px;">
+      <div onClick="{{ ov.closeChain }}" style="position: absolute; inset: 0; background: rgba(4,7,18,.62); backdrop-filter: blur(5px);"></div>
+      <div style="position: relative; width: 900px; max-width: 96vw; max-height: 88vh; overflow-y: auto; border-radius: 18px; background: var(--bg2); border: 1px solid var(--w14); box-shadow: 0 24px 70px var(--sh50); padding: 26px 28px; display: flex; flex-direction: column; gap: 16px;">
+
+        <div style="display: flex; align-items: flex-start; gap: 12px;">
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 6px;">
+            <div style="font-size: 19px; font-weight: 700;">Цепочка агентов</div>
+            <div style="font-size: 12.5px; color: var(--w60); line-height: 1.5;">Шаг идёт после тех, что указаны в «после». Шаги одной волны выполняются параллельно. Условие пропускает шаг, если нужного результата нет. Узел слияния сводит результаты нескольких ветвей.</div>
+          </div>
+          <button onClick="{{ ov.closeChain }}" style="width: 32px; height: 32px; border: 1px solid var(--w12); border-radius: 9px; background: var(--w5); color: var(--ink);">✕</button>
+        </div>
+
+        <input value="{{ ov.chainName }}" onChange="{{ ov.setChainName }}" placeholder="Название цепочки — например «Сверка и приёмка по проекту»" style="padding: 12px 14px; border-radius: 11px; border: 1px solid var(--w14); background: var(--s70); color: var(--ink); font-size: 14px;">
+
+        <sc-if value="{{ ov.chainError }}" hint-placeholder-val="{{ false }}">
+          <div style="padding: 11px 14px; border-radius: 11px; background: rgba(239,68,68,.10); border: 1px solid rgba(239,68,68,.3); color: var(--err-ink); font-size: 12.5px;">{{ ov.chainError }}</div>
+        </sc-if>
+
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <sc-for list="{{ ov.chainStepRows }}" as="st" hint-placeholder-count="2">
+            <div style="display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border-radius: 13px; background: var(--w4); border: 1px solid var(--w10);">
+              <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                <span style="width: 24px; height: 24px; border-radius: 12px; background: rgba(99,102,241,.2); color: var(--acc-ink2); font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center;">{{ st.n }}</span>
+                <input value="{{ st.id }}" onChange="{{ st.setId }}" placeholder="имя шага" style="width: 110px; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--w12); background: var(--s70); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+                <select value="{{ st.agent }}" onChange="{{ st.setAgent }}" style="flex: 1; min-width: 190px; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--w12); background: var(--s70); color: var(--ink); font-size: 12.5px;">
+                  <sc-for list="{{ ov.chainAgentOpts }}" as="o" hint-placeholder-count="3"><option value="{{ o.value }}">{{ o.label }}</option></sc-for>
+                </select>
+                <select value="{{ st.deliver }}" onChange="{{ st.setDeliver }}" style="padding: 7px 10px; border-radius: 8px; border: 1px solid var(--w12); background: var(--s70); color: var(--ink); font-size: 12.5px;">
+                  <sc-for list="{{ ov.chainDeliverOpts }}" as="o" hint-placeholder-count="4"><option value="{{ o.value }}">{{ o.label }}</option></sc-for>
+                </select>
+                <button sc-camel-on-click="{{ st.remove }}" title="Убрать шаг" style="width: 30px; height: 30px; border: 1px solid var(--w12); border-radius: 8px; background: var(--w5); color: var(--w60);">✕</button>
+              </div>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <label style="display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 150px;">
+                  <span style="font-size: 11px; color: var(--w55);">после каких шагов</span>
+                  <input value="{{ st.after }}" onChange="{{ st.setAfter }}" placeholder="s1, s2 — пусто значит первый" style="padding: 7px 10px; border-radius: 8px; border: 1px solid var(--w12); background: var(--s70); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+                </label>
+                <label style="display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 170px;">
+                  <span style="font-size: 11px; color: var(--w55);">запускать, если есть</span>
+                  <input value="{{ st.whenHas }}" onChange="{{ st.setWhen }}" placeholder="s1.находки — пусто значит всегда" style="padding: 7px 10px; border-radius: 8px; border: 1px solid var(--w12); background: var(--s70); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+                </label>
+                <label style="display: flex; flex-direction: column; gap: 3px; min-width: 150px;">
+                  <span style="font-size: 11px; color: var(--w55);">роль шага</span>
+                  <select value="{{ st.joinPolicy }}" onChange="{{ st.setJoin }}" style="padding: 7px 10px; border-radius: 8px; border: 1px solid var(--w12); background: var(--s70); color: var(--ink); font-size: 12.5px;">
+                    <sc-for list="{{ ov.chainJoinOpts }}" as="o" hint-placeholder-count="5"><option value="{{ o.value }}">{{ o.label }}</option></sc-for>
+                  </select>
+                </label>
+              </div>
+              <sc-if value="{{ st.isJoin }}" hint-placeholder-val="{{ false }}">
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                  <label style="display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 150px;">
+                    <span style="font-size: 11px; color: var(--w55);">сводить шаги</span>
+                    <input value="{{ st.joinFrom }}" onChange="{{ st.setJoinFrom }}" placeholder="s2, s3" style="padding: 7px 10px; border-radius: 8px; border: 1px solid var(--w12); background: var(--s70); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+                  </label>
+                  <label style="display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 150px;">
+                    <span style="font-size: 11px; color: var(--w55);">ключ сведения</span>
+                    <input value="{{ st.joinKey }}" onChange="{{ st.setJoinKey }}" placeholder="проект, пункт" style="padding: 7px 10px; border-radius: 8px; border: 1px solid var(--w12); background: var(--s70); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+                  </label>
+                </div>
+              </sc-if>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <label style="display: flex; flex-direction: column; gap: 3px; min-width: 140px;">
+                  <span style="font-size: 11px; color: var(--w55);">предмет: поле</span>
+                  <input value="{{ st.scopeField }}" onChange="{{ st.setScopeField }}" placeholder="проект" style="padding: 7px 10px; border-radius: 8px; border: 1px solid var(--w12); background: var(--s70); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+                </label>
+                <label style="display: flex; flex-direction: column; gap: 3px; min-width: 160px;">
+                  <span style="font-size: 11px; color: var(--w55);">предмет: значение</span>
+                  <input value="{{ st.scopeValue }}" onChange="{{ st.setScopeValue }}" placeholder="PRJ-2451" style="padding: 7px 10px; border-radius: 8px; border: 1px solid var(--w12); background: var(--s70); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+                </label>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+          <button sc-camel-on-click="{{ ov.addChainStep }}" style="padding: 9px 15px; border: 1px dashed var(--w16); border-radius: 10px; background: transparent; color: var(--w70); font-size: 12.5px;">＋ шаг</button>
+          <div style="flex: 1;"></div>
+          <button sc-camel-on-click="{{ ov.saveChain }}" style="padding: 11px 20px; border-radius: 11px; border: 1px solid rgba(129,140,248,.35); background: rgba(99,102,241,.16); color: var(--acc-ink2); font-size: 13.5px; font-weight: 600;">Сохранить цепочку</button>
+        </div>
+        <span style="font-size: 11.5px; color: var(--w45); line-height: 1.45;">Граф проверяется при сохранении: ссылка на несуществующий шаг, цикл или неверное слияние не пройдут. Ошибку покажем здесь, а не посреди прогона.</span>
+
+      </div>
+    </div>
+  </sc-if>
+
   <sc-if value="{{ ov.fanModal }}" hint-placeholder-val="{{ false }}">
     <div style="position: fixed; inset: 0; z-index: 66; display: flex; align-items: flex-start; justify-content: center; padding: 48px 24px 24px;">
       <div onClick="{{ ov.closeFanout }}" style="position: absolute; inset: 0; background: rgba(4,7,18,.62); backdrop-filter: blur(5px);"></div>
