@@ -211,12 +211,25 @@ export async function mount(root, ctx) {
       body = dl.length ? dl.map((x) => `<div style="font-size:12.5px;color:var(--ink-2);margin:5px 0">${esc(x.channel || "")}${x.to ? " → " + esc(x.to) : ""} · ${esc(x.mode || "")}${x.subject ? " · «" + esc(x.subject) + "»" : ""}</div>`).join("")
         : `<div style="font-size:12.5px;color:var(--ink-3)">Ничего наружу не уходило.</div>`;
     } else {
-      const rows = [["Время", rm.ms ? Math.round(rm.ms / 100) / 10 + " с" : "—"],
+      // Время и токены лежат в run_metrics.timings и run_metrics.cost, а не в корне: раньше вкладка
+      // показывала «—» и «0 → 0» ровно там, где человек спрашивает «сколько это стоило».
+      const tm = rm.timings || {}, cst = rm.cost || {};
+      const sec = (ms) => Math.round((ms || 0) / 100) / 10 + " с";
+      const rows = [["Время", tm.total_ms ? sec(tm.total_ms) : "—"],
         ["Стоимость", fmtCost(rm.cost != null ? rm.cost : d.cost)],
-        ["Токены", (rm.input_tokens || 0) + " → " + (rm.output_tokens || 0)],
-        ["Волн", String((d.waves || []).length || "—")]];
+        ["Токены", cst.input_tokens != null ? ((cst.input_tokens || 0).toLocaleString("ru-RU") + " → " + (cst.output_tokens || 0).toLocaleString("ru-RU")) : "—"],
+        ["Вызовов модели", cst.calls != null ? String(cst.calls) : "—"],
+        ["Модель", Object.keys(cst.by_model || {}).join(", ") || "—"],
+        ["Волн", String((d.waves || []).length || "—")],
+        ["Дольше всех", tm.slowest ? (tm.slowest.skill + " · " + sec(tm.slowest.ms)) : "—"]];
+      const bySkill = Object.entries(tm.by_skill_ms || {}).sort((a, b) => b[1] - a[1]);
       body = `<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-size:12.5px">`
-        + rows.map(([k, x]) => `<div style="color:var(--ink-3)">${esc(k)}</div><div>${esc(x)}</div>`).join("") + `</div>`;
+        + rows.map(([k, x]) => `<div style="color:var(--ink-3)">${esc(k)}</div><div>${esc(x)}</div>`).join("") + `</div>`
+        + (bySkill.length ? `<div style="${LBL};margin:14px 0 6px">сколько занял каждый навык</div>`
+          + bySkill.map(([sid, ms]) => `<div style="display:grid;grid-template-columns:1fr auto;gap:10px;font-size:12px;margin-top:4px">
+              <span style="color:var(--ink-2)">${esc(sid)}</span><span style="font-family:var(--mono);color:var(--ink-3)">${esc(sec(ms))}</span></div>`).join("") : "")
+        + (rm.limits ? `<div style="${LBL};margin:14px 0 6px">лимиты, по которым шёл прогон</div>
+            <div style="font-size:12px;color:var(--ink-2)">ответ навыка ${esc(rm.limits.max_tokens)} · со схемой ${esc(rm.limits.max_tokens_template)} · рассуждающий ${esc(rm.limits.max_tokens_free)} · шаги инструментов ${esc(rm.limits.tool_steps)} · параллельность ${esc(rm.limits.concurrency)}<br>источник: ${esc(rm.limits.source || "по умолчанию")}</div>` : "");
     }
     const tplOpts = templates.length
       ? `<select id="oTpl" style="${INP}">${templates.map((t) => `<option value="${esc(t.id)}">${esc(t.name || t.id)}</option>`).join("")}</select>` : "";
