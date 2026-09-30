@@ -30,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, arbiter, assembly, audit_store, blackboard, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, report_store, run_cache_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, arbiter, assembly, audit_store, blackboard, planner, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, report_store, run_cache_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
@@ -2087,6 +2087,112 @@ async def canvas_layout_save(key: str, body: dict, u: dict = Depends(user)) -> d
     return {"key": key, "saved": True, "updated_at": saved.get("updated_at")}
 
 
+@app.post("/api/plan/auto")
+async def plan_auto(body: dict, u: dict = Depends(user)) -> dict:
+    """Собрать исполнимую цепочку под задачу ПО КОНТРАКТАМ навыков (этап 8).
+
+    Отличие от подбора по фразе: тот отвечает на вопрос «кто похож», а этот — «что из похожего
+    вообще сможет выполниться здесь и сейчас». Планировщик смотрит на фактическое состояние среды:
+    какие сущности наполнены, какой предмет работы известен, что отдают предыдущие шаги, — и
+    достраивает недостающие звенья теми навыками, которые их производят.
+
+    Тело: {task, slots?: {имя: значение}, max_steps?}. Пустой план — это ответ: он говорит, чего не
+    хватает, вместо того чтобы собрать красивую цепочку и упасть на середине.
+    """
+    task = str((body or {}).get("task") or (body or {}).get("goal") or "").strip()
+    if not task:
+        raise HTTPException(422, "нужна задача")
+    max_steps = max(1, min(6, int((body or {}).get("max_steps") or 4)))
+
+    # каталог: методика, контракт и то, что навык отдаёт
+    catalog: dict = {}
+    tpls = {t["id"]: t for t in (await schema_store.all() or [])}
+    fam = access.scope_key(family=str((body or {}).get("family") or "")) if (body or {}).get("family") else ""
+    for sid in list(ape.SKILLS):
+        meta = ape.SKILLS.get(sid) or ()
+        tpl = tpls.get(sid) or {}
+        catalog[sid] = {
+            "title": meta[0] if len(meta) > 0 else sid,
+            "short": meta[1] if len(meta) > 1 else "",
+            # Полная методика, а не однострочное описание: по короткой фразе навык не отличить от
+            # соседнего, и планировщик выбирал похожий, а не подходящий.
+            "body": (ape.load_skill_body(sid) or (meta[2] if len(meta) > 2 else ""))[:6000],
+            "inputs": tpl.get("inputs") or {},
+            "produces": tpl.get("produces") or {},
+            "mode": (ape.skill_safety(sid) or {}).get("mode") or "read",
+        }
+
+    # сущности, в которых РЕАЛЬНО есть данные: навык на пустой сущности не отработает
+    ents = {e["entity"] for e in ((await data_entities(u)).get("entities") or []) if (e.get("rows") or 0) > 0}
+    slots_given = {str(k) for k, v in ((body or {}).get("slots") or {}).items() if str(v or "").strip()}
+
+    # подсказки по смыслу: у подбора агентов уже есть словарь и сравнение по смыслу — используем их
+    hints: dict = {}
+    try:
+        m = await agents_match({"q": task}, u)
+        for it in (m.get("matches") or [])[:5]:
+            ag = await agent_store.get(it.get("id") or "")
+            for n in (((ag or {}).get("graph") or {}).get("nodes") or []):
+                if n.get("skill"):
+                    hints[n["skill"]] = max(float(hints.get(n["skill"]) or 0), float(it.get("score") or 0))
+    except Exception:  # noqa: BLE001 — подсказки усиление, а не условие работы планировщика
+        hints = {}
+
+    p = planner.plan(task, catalog, entities=ents, slots=slots_given, max_steps=max_steps, hints=hints)
+    p["report_template"] = planner.report_template(p.get("steps") or [], catalog)
+    p["entities_ready"] = sorted(ents)
+    p["family"] = fam
+    obs.log_event("info", "plan.auto", task=task[:80], steps=len(p.get("steps") or []),
+                  ok=bool(p.get("ok")))
+    return p
+
+
+@app.post("/api/plan/auto/build")
+async def plan_auto_build(body: dict, u: dict = Depends(user)) -> dict:
+    """Собрать из плана настоящих агентов и цепочку — один шаг от плана к исполнению.
+
+    Каждый шаг плана становится агентом из одного навыка (семья берётся из навыка), а сами шаги —
+    цепочкой с зависимостями. Пока планировщик умеет только это: собирать новых агентов, а не
+    подбирать существующих, — зато цепочка исполнима по построению.
+    """
+    require_level(u, "manager")
+    steps = (body or {}).get("steps") or []
+    if not steps:
+        raise HTTPException(422, "нечего собирать: план пуст")
+    name = str((body or {}).get("name") or "Цепочка по плану").strip()
+    made, ids = [], {}
+    for st in steps:
+        sid = str(st.get("skill") or "")
+        if sid not in ape.SKILLS:
+            raise HTTPException(422, f"нет навыка «{sid}»")
+        fams = [f for f, spec in ape.AGENT_FAMILIES.items()
+                if any(sid in (m[1] or []) for m in (spec.get("members") or {}).values())]
+        fam = fams[0] if fams else "management"
+        resp = await agent_author({"name": f"{st.get('title') or sid}", "family": fam,
+                                   "skills": [sid]}, u)
+        # agent_author отдаёт JSONResponse (201) — достаём тело, иначе id потеряется молча
+        import json as _json  # noqa: PLC0415 — модуль импортируется по месту, как и в соседних роутах
+        ag = _json.loads(bytes(resp.body).decode()) if hasattr(resp, "body") else (resp or {})
+        if not ag.get("id"):
+            raise HTTPException(500, f"агент по навыку «{sid}» не собрался")
+        ids[sid] = ag["id"]
+        made.append({"skill": sid, "agent_id": ag["id"], "family": fam})
+    pl_steps = []
+    for i, st in enumerate(steps, 1):
+        sid = str(st.get("skill") or "")
+        step = {"id": "p" + str(i), "agent_id": ids[sid], "deliver": "chat"}
+        after = [f"p{j}" for j, prev in enumerate(steps, 1) if str(prev.get('skill')) in (st.get("after") or [])]
+        if after:
+            step["after"] = after
+        pl_steps.append(step)
+    if len(pl_steps) < 2:
+        return {"ok": True, "agents": made, "pipeline": None,
+                "note": "в плане один шаг — цепочка не нужна, запускайте агента напрямую"}
+    pl = await pipeline_save({"name": name, "steps": pl_steps}, u)
+    return {"ok": True, "agents": made, "pipeline": pl.get("id"), "name": pl.get("name"),
+            "note": f"собрано агентов: {len(made)}, цепочка из {len(pl_steps)} шагов"}
+
+
 @app.post("/api/plan")
 def plan(body: dict, u: dict = Depends(user)) -> dict:
     """Превью декомпозиции цели по семьям (детерминированно, без LLM). §9.1 запуск."""
@@ -2874,6 +2980,16 @@ async def agents_match(body: dict, u: dict = Depends(user)) -> dict:
     q = str((body or {}).get("q") or "").strip()
     if not q:
         return {"matches": []}
+    # Правило достаточности: по двум словам подбирать нельзя. Под «сделай отчёт» подходит десяток
+    # навыков, и уверенный выбор из них — обман. Возвращаем не пустоту, а конкретные вопросы,
+    # ответы на которые делают запрос рабочим.
+    if not bool((body or {}).get("force")):
+        _enough = planner.sufficiency(q, {sid: {"title": (ape.SKILLS[sid] or ("",))[0],
+                                                "body": ape.load_skill_body(sid) or ""}
+                                          for sid in list(ape.SKILLS)})
+        if not _enough["ok"]:
+            return {"matches": [], "need_more": True, "sufficiency": _enough,
+                    "note": _enough["почему"]}
     briefs = await agent_store.list_for(None)
     agents = []
     for b in briefs:

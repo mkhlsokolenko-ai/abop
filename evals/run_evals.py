@@ -57,6 +57,13 @@ def check_match(base: str, case: dict, agents: dict) -> dict:
     r = safe(base, "/api/agents/match", {"q": case["фраза"]}, "POST", timeout=120)
     if "_error" in r:
         return {"ok": False, "note": "подбор недоступен: " + r["_error"]}
+    # Правило достаточности: на короткую фразу среда обязана доспросить, а не подобрать исполнителя.
+    if exp.get("просит_уточнить"):
+        su = r.get("sufficiency") or {}
+        asked = bool(r.get("need_more")) and bool(su.get("вопросы"))
+        return {"ok": asked or not (r.get("matches") or []),
+                "note": ("задан вопрос: " + su["вопросы"][0][:60]) if asked else
+                        ("подобран агент там, где описания не хватает" if r.get("matches") else "исполнителя нет")}
     items = r.get("matches") or r.get("agents") or []
     top = items[0] if items else {}
     score = float(top.get("score") or 0)

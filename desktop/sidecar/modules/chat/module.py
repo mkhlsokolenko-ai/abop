@@ -126,9 +126,13 @@ class MatchIn(BaseModel):
 
 @router.post("/match")
 def match(body: MatchIn) -> dict:
-    """Подбор агента под задачу (дерево решений чата): лексика+семантика на стороне ABOP."""
+    """Подбор агента под задачу (дерево решений чата): лексика+семантика на стороне ABOP.
+
+    Если описания не хватает, ABOP возвращает не пустоту, а вопросы — их и показываем: по двум словам
+    выбирать исполнителя нельзя, под такое описание подходит десяток навыков.
+    """
     try:
-        return {"matches": abop.match_agents(body.q)}
+        return abop.match_full(body.q)
     except abop.AbopError:
         return {"matches": []}
 

@@ -288,12 +288,13 @@ export async function mount(root, ctx) {
       : (meta.run_agent ? runCard(meta.run_agent)
         : (meta.pipeline_result ? pipelineHTML(meta.pipeline_result)
           : (meta.chain_suggest ? chainSuggestHTML(meta.chain_suggest)
+            : (meta.clarify ? clarifyHTML(meta.clarify)
             : (meta.decision ? decisionHTML(meta.decision)
             : (meta.slot_ask ? slotCardHTML(meta.slot_ask)
             : (meta.slot_picked ? slotPickedHTML(meta.slot_picked)
-            : (meta.notice ? noticeHTML(meta.notice, m.content) : md(m.content))))))));
+            : (meta.notice ? noticeHTML(meta.notice, m.content) : md(m.content)))))))));
     const cost = meta.model ? `<span style="margin-left:4px;font-family:var(--mono);font-size:11px;color:var(--ink-3)">${esc(meta.model)} · ${meta.cost_rub ?? 0} ₽</span>` : "";
-    const isCard = !!(meta.run_agent || meta.pipeline_result || meta.chain_suggest || meta.decision || meta.notice);
+    const isCard = !!(meta.run_agent || meta.pipeline_result || meta.chain_suggest || meta.decision || meta.clarify || meta.notice);
     const acts = mine
       ? `<button type="button" data-edit="${idx}" class="msgact">✎ изменить</button>`
       : `<button type="button" data-copy="${idx}" class="msgact">⧉ копировать</button>${meta.decision || meta.chain_suggest || meta.notice ? "" : `<button type="button" data-regen="${idx}" class="msgact">↻ ещё раз</button>`}${cost}`;
@@ -347,6 +348,13 @@ export async function mount(root, ctx) {
     $("col").querySelectorAll(".mkRecurring").forEach((b) => b.onclick = () => recurringModal(b.dataset.agent, b.dataset.name));
     $("col").querySelectorAll(".dcRun").forEach((b) => b.onclick = () => { const dc = _decisionOf(b); runAbopAgentDeliver(b.dataset.id, b.dataset.name, dc ? dc.text : "", b.dataset.deliver || ""); });
     $("col").querySelectorAll(".dcChat").forEach((b) => b.onclick = () => { const dc = _decisionOf(b); if (dc) sendPrompt(dc.text); });
+    // «Дописать задачу» возвращает исходную фразу в поле ввода — человек дополняет её, а не набирает заново.
+    $("col").querySelectorAll(".clDraft").forEach((b) => b.onclick = () => {
+      const t = $("inp"); if (!t) return;
+      t.value = b.dataset.t + " "; t.focus();
+      try { t.setSelectionRange(t.value.length, t.value.length); } catch { /* не критично */ }
+    });
+    $("col").querySelectorAll(".clChat").forEach((b) => b.onclick = () => sendPrompt(b.dataset.t));
     $("col").querySelectorAll(".dcChain").forEach((b) => b.onclick = () => { const dc = _decisionOf(b); if (dc) suggestChain(dc.text); });
     // выбор предмета работы: подставляем запись и запускаем агента уже по ней
     $("col").querySelectorAll(".slotPick").forEach((b) => b.onclick = async () => {
@@ -882,14 +890,26 @@ export async function mount(root, ctx) {
     // подробно описал задачу. Длина больше не отменяет подбор; вставленный по хоткею фрагмент —
     // по-прежнему работа в чате, а не команда агенту.
     if (!isPasted) {
-      let matches = [];
-      try { const r = await api(M + "/match", { method: "POST", body: JSON.stringify({ q: v }) }); matches = (r && r.matches) || []; } catch { /* без подсказки */ }
+      let matches = [], need = null;
+      try {
+        const r = await api(M + "/match", { method: "POST", body: JSON.stringify({ q: v }) });
+        matches = (r && r.matches) || [];
+        if (r && r.need_more) need = r.sufficiency || {};
+      } catch { /* без подсказки */ }
+      // Описания не хватает — не угадываем исполнителя, а спрашиваем ровно о недостающем.
+      if (need) { await clarifyCard(v, need); return; }
       const top = matches[0];
       // уверенный подбор — карточка решения; средняя уверенность — тоже карточка, но с оговоркой,
       // потому что раньше в этом диапазоне агент не предлагался вовсе, а подсказки уже стирались
       if (top && top.score >= 0.32) { await decisionCard(v, matches); return; }
     }
     sendPrompt(v);
+  }
+  // карточка уточнения: описания не хватает, чтобы выбрать исполнителя уверенно
+  async function clarifyCard(text, need) {
+    await ensureThread(text.slice(0, 50));
+    await note("нужно уточнить задачу", { clarify: { text, need } });
+    render(); scrollDown(true);
   }
   // карточка выбора: агент + куда положить результат (чат / Redmine / почта / BookStack / просто ответить)
   async function decisionCard(text, matches) {
@@ -988,6 +1008,24 @@ export async function mount(root, ctx) {
     const pairs = Object.entries(r).filter(([k, v]) => v !== "" && v != null && typeof v !== "object").slice(0, 10);
     return `=== ПРЕДМЕТ РАБОТЫ (${p.slot}) ===\n` + pairs.map(([k, v]) => `${k}: ${v}`).join("\n")
       + `\nРаботай только по этой записи, другие не бери.`;
+  }
+
+  // Описания не хватило: показываем ЧЕГО именно, задаём конкретные вопросы и даём образец фразы.
+  // Это честнее, чем выбрать исполнителя по двум словам: под «сделай отчёт» подходит десяток навыков.
+  function clarifyHTML(c) {
+    const need = c.need || {};
+    const qs = (need["вопросы"] || []).map((q) => `<li style="margin:3px 0">${esc(q)}</li>`).join("");
+    return `<div style="display:flex;flex-direction:column;gap:9px">
+      <div class="ape-label">нужно уточнить задачу</div>
+      <div style="font-size:13px;color:var(--ink-2);line-height:1.5">${esc(need["почему"] || "Описания не хватает, чтобы выбрать исполнителя уверенно.")}</div>
+      ${qs ? `<ul style="margin:0;padding-left:18px;font-size:12.5px;color:var(--ink)">${qs}</ul>` : ""}
+      <div style="font-size:12px;color:var(--ink-3);line-height:1.5">${esc(need["подсказка"] || "")}</div>
+      ${need["пример"] ? `<div style="font-size:12px;color:var(--ink-2);background:var(--surface-2);border:1px solid var(--line);border-radius:9px;padding:8px 10px;line-height:1.5">Например: ${esc(need["пример"])}</div>` : ""}
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button type="button" class="btn clDraft" data-t="${esc(c.text)}" style="padding:7px 13px;font-size:12px">Дописать задачу</button>
+        <button type="button" class="btn clChat" data-t="${esc(c.text)}" style="padding:7px 13px;font-size:12px">Просто ответь в чате</button>
+      </div>
+    </div>`;
   }
 
   function decisionHTML(dc) {

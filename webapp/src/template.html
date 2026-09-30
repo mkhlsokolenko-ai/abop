@@ -5077,6 +5077,9 @@ class Component extends DCLogic {
       budgetPresetFull: () => this.setState({ budTokens: '120000', budRub: '40', budSec: '540' }),
       budgetPresetNone: () => this.setState({ budTokens: '', budRub: '', budSec: '' }),
       planWaves: (s.planWavesReal || []), planEmpty: !(s.planWavesReal && s.planWavesReal.length), planEstimate: (s.contract && s.contract.audit_id) ? ('агент: ' + (s.contract.family || s.contract.audit_id) + ' · автономия по контракту ' + (s.contract.autonomy || '') + ' · стоимость считается по факту прогона') : ('агента на канве нет — будет собран демо-агент сценария «' + s.scenario + '» · стоимость по факту прогона'),
+      planCanBuild: !!(s.planAuto && s.planAuto.ok && ((s.planAuto.steps || []).length > 1)),
+      planBuildLabel: 'Собрать цепочку по плану (' + (((s.planAuto || {}).steps || []).length) + ' шага)',
+      buildFromPlan: () => this.buildFromPlan(),
       startRun: () => { if (s.runBusy || s.planChecking) return; if (!s.planOk) { this.checkPlan(); return; } this.launchReal(); },
 
       hitlModal: s.modal === 'hitl', stopModal: s.modal === 'stop', nodePopover: s.modal === 'node',
@@ -5626,24 +5629,64 @@ class Component extends DCLogic {
     this.loadFleet();
   }
 
+  buildFromPlan() {
+    // Из плана — сразу к исполнению: собираем агентов под шаги и связываем их цепочкой.
+    var self = this, p = this.state.planAuto || {};
+    if (!p.ok || !(p.steps || []).length) { this.showToast('Плана нет'); return; }
+    fetch('/api/plan/auto/build', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ steps: p.steps, name: (this.state.goalText || 'Цепочка по плану').slice(0, 60) }) })
+      .then(function(r){ return r.json().then(function(j){ return { ok: r.ok, j: j || {} }; }); })
+      .then(function(res){
+        if (!res.ok) { self.showToast('Не собралось: ' + (res.j.detail || '')); return; }
+        self.showToast(res.j.note || 'Собрано');
+        self.reloadAgents(); self.loadChains();
+      }).catch(function(){ self.showToast('ABOP недоступен'); });
+  }
+
   checkPlan() {
     if (this.state.planChecking) return;
     var self = this, goal = (this.state.goalText || '').trim();
     if (!goal) { this.showToast('Опишите цель прогона'); return; }
     this.setState({ planChecking: true, planOk: false, planSteps: [{ text: 'Спрашиваю среду: какие семьи агентов подходят под цель…', ok: false }] });
-    fetch('/api/plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ goal: goal }) })
+    // План собирается ПО КОНТРАКТАМ навыков: среда смотрит, что реально сможет выполниться на
+    // текущих данных, и показывает это до того, как потрачены деньги. Перечисление семей агентов
+    // (старый /api/plan) отвечало на вопрос «кто похож», а не «что запустится».
+    fetch('/api/plan/auto', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ task: goal }) })
       .then(function(r){ return r.json().then(function(j){ return { ok: r.ok, j: j || {} }; }); })
       .then(function(res){
         if (!res.ok) { self.setState({ planChecking: false, planOk: false, planSteps: [{ text: 'План не собран: ' + ((res.j && res.j.detail) || 'ошибка ABOP'), ok: false }] }); return; }
-        var waves = (res.j.preview_waves || []).map(function(w, i){ var parts = (w || []).map(function(t){ var st = String(t.task || ''); var k = st.indexOf(' — аспект: '); return k >= 0 ? st.slice(k + 11) : st; }); return { n: i + 1, text: (parts.length > 1 ? 'аспекты: ' : '') + parts.join(' · '), family: (w || []).map(function(t){ return t.family; }).join(' · ') }; });
+        var p = res.j || {};
+        var waves = (p.waves || []).map(function(w, i){ return { n: i + 1, text: (w || []).join(' · '), family: '' }; });
         var c = self.state.contract, hasContract = !!(c && c.audit_id);
-        var steps = [
-          { text: 'Семьи агентов под цель: ' + ((res.j.families || []).join(', ') || 'по умолчанию'), ok: true },
-          { text: hasContract ? ('Запустится агент на канве (контракт ' + c.audit_id + ')') : ('Агента на канве нет — среда соберёт демо-агента сценария «' + self.state.scenario + '»'), ok: true },
-          { text: 'Действия наружу (письмо, задача) — только после вашего подтверждения', ok: true },
-          { text: 'Стоимость и автономия фиксируются по факту прогона, не по оценке', ok: true }
-        ];
-        self.setState({ planChecking: false, planOk: true, planSteps: steps, planWavesReal: waves });
+        var steps = [];
+        if (p.need_more) {
+          // Короткий запрос не угадываем: показываем, чего не хватает, и как дописать.
+          var su = p.sufficiency || {};
+          steps.push({ text: 'Описания не хватает: ' + (su['почему'] || ''), ok: false });
+          (su['вопросы'] || []).forEach(function(q){ steps.push({ text: '? ' + q, ok: false }); });
+          if (su['подсказка']) steps.push({ text: su['подсказка'], ok: true });
+          if (su['пример']) steps.push({ text: 'Пример: ' + su['пример'], ok: true });
+          self.setState({ planChecking: false, planOk: false, planSteps: steps, planWavesReal: [], planAuto: p });
+          return;
+        }
+        if (p.ok && (p.steps || []).length) {
+          steps.push({ text: 'Цепочка по контрактам: ' + (p.steps || []).map(function(x){ return x.title || x.skill; }).join(' → '), ok: true });
+          (p.steps || []).slice(0, 5).forEach(function(x){
+            steps.push({ text: '· ' + (x.title || x.skill) + ' — ' + (x.why || ''), ok: true });
+          });
+          if ((p.ask_slots || []).length) steps.push({ text: 'Уточним предмет работы: ' + p.ask_slots.join(', '), ok: true });
+          (p.unclear || []).forEach(function(u){
+            steps.push({ text: 'Этап «' + String(u['этап']).slice(0, 48) + '» не определён: ' + (u['почему'] || ''), ok: false });
+            (u['вопросы'] || []).slice(0, 2).forEach(function(q){ steps.push({ text: '? ' + q, ok: false }); });
+          });
+        } else {
+          steps.push({ text: p.note || 'Исполнимой цепочки под эту задачу не собралось', ok: false });
+        }
+        (p.missing || []).slice(0, 3).forEach(function(m){ steps.push({ text: 'не подошло: ' + m, ok: false }); });
+        steps.push({ text: hasContract ? ('Запустится агент на канве (контракт ' + c.audit_id + ')') : ('Агента на канве нет — среда соберёт агента под план'), ok: true });
+        steps.push({ text: 'Действия наружу (письмо, задача) — только после вашего подтверждения', ok: true });
+        steps.push({ text: 'Стоимость и автономия фиксируются по факту прогона, не по оценке', ok: true });
+        self.setState({ planChecking: false, planOk: true, planSteps: steps, planWavesReal: waves, planAuto: p });
       }).catch(function(){ self.setState({ planChecking: false, planOk: false, planSteps: [{ text: 'ABOP недоступен — план не проверен', ok: false }] }); });
   }
 

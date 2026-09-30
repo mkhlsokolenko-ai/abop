@@ -205,6 +205,12 @@ def match_agents(q: str) -> list:
     return (r or {}).get("matches", []) if isinstance(r, dict) else (r or [])
 
 
+def match_full(q: str) -> dict:
+    """Подбор целиком, вместе с ответом «описания не хватает» и вопросами к человеку."""
+    r = _req("POST", "/api/agents/match", {"q": q}, timeout=30)
+    return r if isinstance(r, dict) else {"matches": r or []}
+
+
 def my_schedules() -> list:
     """Расписания текущего пользователя (агент/cron/вкл/доставка/последний прогон)."""
     r = _req("GET", "/api/triggers/mine", timeout=30)
