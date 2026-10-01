@@ -4,7 +4,8 @@
 Презентация собрана вручную, со своей сеткой и палитрой. Поэтому новые слайды строятся теми же
 примитивами и по тем же координатам, что и существующие кейсы: иначе вставка читается как чужая.
 
-Запуск:  python docs/deck/add_cases.py "<путь к .pptx>"
+Запуск:  python docs/deck/add_cases.py "<исходник>" "<результат>"
+         тот же вызов с --catalog добавляет только слайд каталога навыков
 Исходник не затирается: рядом кладётся копия с суффиксом «.bak».
 """
 from __future__ import annotations
@@ -14,7 +15,7 @@ import sys
 
 from pptx import Presentation
 from pptx.dml.color import RGBColor as C
-from pptx.enum.shapes import MSO_SHAPE
+from pptx.enum.shapes import MSO_CONNECTOR, MSO_SHAPE
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.util import Inches, Pt
 
@@ -138,6 +139,90 @@ def put_mascot(prs, png: pathlib.Path) -> bool:
     return True
 
 
+def link(s, x1, y1, x2, y2):
+    """Связь в майндмепе: тонкая линия от центра к семье."""
+    c = s.shapes.add_connector(MSO_CONNECTOR.STRAIGHT, Inches(x1), Inches(y1), Inches(x2), Inches(y2))
+    c.line.color.rgb = C(0xC7, 0xD2, 0xFE)
+    c.line.width = Pt(1.25)
+    return c
+
+
+def family(s, x, y, w, h, name, skills):
+    """Узел семьи: название отдела и сколько в нём навыков."""
+    _rect(s, x, y, w, h, CARD, CARD_LINE)
+    _tb(s, x + 0.14, y + 0.05, w - 0.28, 0.22, name, size=11.5, color=INK, bold=True)
+    _tb(s, x + 0.14, y + 0.25, w - 0.28, 0.18, f"{skills} навыков", font=MONO, size=9, color=ACC)
+
+
+def slide_catalog(prs):
+    """Из чего собираются агенты: каталог навыков и сколько агентов он даёт."""
+    s = new_slide(
+        prs, "КЕЙСЫ · КАТАЛОГ",
+        "Из чего собираются агенты: 59 навыков в десяти семьях",
+        "Навык — методика одного шага: что сделать и что считать результатом. Семья — отдел, "
+        "внутри которого навыки сочетаются; один навык может числиться в нескольких семьях.")
+
+    cx, cy = 4.46, 4.75                      # центр майндмепа
+    _rect(s, cx - 0.78, cy - 0.33, 1.56, 0.66, PANEL, None, radius=0.22)
+    _tb(s, cx - 0.64, cy - 0.23, 1.28, 0.22, "59 навыков", size=12, color=PANEL_TXT, bold=True)
+    _tb(s, cx - 0.64, cy + 0.02, 1.28, 0.20, "10 семей · 32 роли", font=MONO, size=9, color=PANEL_EYE)
+
+    left = [("Аналитика", 17), ("Менеджмент", 15), ("Финансы", 11), ("Аудит", 9), ("Инженерия", 9)]
+    right = [("Архитектура", 8), ("Ресёрч", 6), ("Кредитование", 3), ("Критик", 3), ("Решения", 3)]
+    w, h, gap = 1.74, 0.44, 0.09
+    top = cy - (len(left) * (h + gap) - gap) / 2
+    for i, (name, n) in enumerate(left):
+        y = top + i * (h + gap)
+        family(s, 0.89, y, w, h, name, n)
+        link(s, 0.89 + w, y + h / 2, cx - 0.78, cy)
+    for i, (name, n) in enumerate(right):
+        y = top + i * (h + gap)
+        family(s, 6.27, y, w, h, name, n)
+        link(s, cx + 0.78, cy, 6.27, y + h / 2)
+
+    _tb(s, 0.89, 6.14, 7.12, 0.56,
+        "Сценарии демо и их семьи: аудит 1С и расследование причин — «Аудит» · контроль проектов, "
+        "дайджест и БФТ — «Менеджмент» · закрытие периода и сверка регистров — «Финансы» · "
+        "оценка объекта и обзор рынка — «Аналитика» и «Ресёрч».",
+        size=10.5, color=FOOT)
+
+    panel(s, "СКОЛЬКО АГЕНТОВ ИЗ ЭТОГО СОБИРАЕТСЯ", [
+        ("32 роли — агент в один клик: выбрали семью и роль.", PANEL_TXT),
+        ("420 пар и 1 547 троек навыков — если набирать состав внутри семьи самому.", PANEL_TXT),
+        ("30 стыков навык-навык объявлены контрактом: такие цепочки среда строит сама "
+         "и проверяет до прогона.", AMBER),
+        ("167 246 сочетаний — комбинаторный потолок. Мы его не обещаем: предел не в числе "
+         "наборов, а в ваших данных.", PANEL_MUT),
+    ])
+    return s
+
+
+def _last_case_index(prs) -> int:
+    """Индекс последнего кейсового слайда: новый слайд каталога встаёт сразу за ним."""
+    last = -1
+    for i, sl in enumerate(prs.slides):
+        for sh in sl.shapes:
+            if sh.has_text_frame and sh.text_frame.text.strip().startswith("КЕЙСЫ"):
+                last = i
+                break
+    return last
+
+
+def build_catalog_only(path: pathlib.Path, out: pathlib.Path | None = None) -> None:
+    """Добавить в уже собранную презентацию только слайд каталога навыков."""
+    out = out or path
+    prs = Presentation(str(path))
+    at = _last_case_index(prs) + 1
+    slide_catalog(prs)
+    lst = prs.slides._sldIdLst
+    el = list(lst)[-1]              # только что добавленный слайд лежит в конце
+    lst.remove(el)
+    lst.insert(at, el)
+    renumber(prs)
+    prs.save(str(out))
+    print(f"слайд каталога встал на позицию {at + 1} · слайдов: {len(lst)}")
+
+
 def build(path: pathlib.Path, out: pathlib.Path | None = None) -> None:
     """Читаем исходник, пишем результат.
 
@@ -245,6 +330,9 @@ def build(path: pathlib.Path, out: pathlib.Path | None = None) -> None:
     ])
     made.append(s)
 
+    # ── 5. Каталог навыков и счёт агентов ──────────────────────────────────────────────────
+    made.append(slide_catalog(prs))
+
     # ── расставить новые кейсы сразу за существующими и перенумеровать подвал ──
     xml_slides = prs.slides._sldIdLst
     ids = list(xml_slides)
@@ -274,6 +362,7 @@ def renumber(prs) -> None:
 
 
 if __name__ == "__main__":
-    src = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_SRC
-    dst = pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else src
-    build(src, dst)
+    argv = [a for a in sys.argv[1:] if a != "--catalog"]
+    src = pathlib.Path(argv[0]) if argv else DEFAULT_SRC
+    dst = pathlib.Path(argv[1]) if len(argv) > 1 else src
+    (build_catalog_only if "--catalog" in sys.argv else build)(src, dst)
