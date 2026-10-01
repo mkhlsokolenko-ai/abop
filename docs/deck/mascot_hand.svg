@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 560" width="520" height="560">
+  <title>Эйп — маскот ABOP, рисованная версия</title>
+  <desc>Логотип для титульного слайда: тот же силуэт, что в иконке приложения, но проведённый
+  живой линией — неровной, с нажимом, с чуть несимметричными формами. Ровная векторная иконка на
+  тёмном титуле читается как технический значок; рисованная — как персонаж, и именно это нужно на
+  первом слайде.</desc>
+
+  <defs>
+    <!-- Лёгкая дрожь линии: один фильтр на все контуры, иначе «рисованность» выглядит нарочитой -->
+    <filter id="ink" x="-15%" y="-15%" width="130%" height="130%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.028" numOctaves="2" seed="7" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="3.2" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+    <filter id="ink-soft" x="-15%" y="-15%" width="130%" height="130%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="2" seed="19" result="n"/>
+      <feDisplacementMap in="SourceGraphic" in2="n" scale="2.0" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#ink)">
+    <!-- антенна: стойка чуть кривая, как от руки -->
+    <path d="M262 112 C259 92, 257 76, 258 58" fill="none" stroke="#F2F3F8" stroke-width="9"
+          stroke-linecap="round"/>
+    <!-- шарик антенны: мятный, с бликом -->
+    <circle cx="257" cy="43" r="25" fill="#34D399"/>
+    <circle cx="248" cy="35" r="7" fill="#D1FAE5" opacity=".85"/>
+
+    <!-- корпус: капля-шлем. Намеренно несимметричные плечи — рисованная линия не бывает ровной -->
+    <path d="M258 108
+             C174 108, 118 170, 116 258
+             C114 330, 120 380, 134 416
+             C152 462, 206 480, 260 480
+             C314 480, 368 462, 386 416
+             C400 380, 406 330, 404 258
+             C402 170, 342 108, 258 108 Z"
+          fill="#F2F3F8" stroke="#C7D2FE" stroke-width="5"/>
+
+    <!-- боковой блок-«ранец» справа -->
+    <path d="M404 262 C432 262, 448 282, 448 312 C448 342, 432 362, 404 362 Z"
+          fill="#C7D2FE" stroke="#A5B4FC" stroke-width="4"/>
+
+    <!-- визор: тёмный, со скруглением, слегка наклонён -->
+    <path d="M186 246 C186 218, 212 208, 262 208 C312 208, 336 218, 336 246
+             C336 276, 312 288, 262 288 C212 288, 186 276, 186 246 Z"
+          fill="#1B2140"/>
+    <!-- блик на визоре -->
+    <path d="M206 232 C216 222, 236 218, 254 219" fill="none" stroke="#6366F1" stroke-width="7"
+          stroke-linecap="round" opacity=".9"/>
+
+    <!-- ноги -->
+    <path d="M198 464 C192 496, 198 516, 218 520 C238 524, 248 508, 246 482"
+          fill="#F2F3F8" stroke="#C7D2FE" stroke-width="5"/>
+    <path d="M278 482 C276 508, 286 524, 306 520 C326 516, 332 496, 324 464"
+          fill="#F2F3F8" stroke="#C7D2FE" stroke-width="5"/>
+  </g>
+
+  <!-- Повторный контур со смещением: след пера, из-за которого рисунок читается как ручной -->
+  <g filter="url(#ink-soft)" opacity=".45">
+    <path d="M258 112 C176 112, 122 172, 120 258 C118 330, 124 380, 138 414"
+          fill="none" stroke="#A5B4FC" stroke-width="3" stroke-linecap="round"/>
+    <path d="M386 414 C398 380, 404 330, 402 258 C400 174, 344 114, 266 112"
+          fill="none" stroke="#A5B4FC" stroke-width="3" stroke-linecap="round"/>
+  </g>
+</svg>
