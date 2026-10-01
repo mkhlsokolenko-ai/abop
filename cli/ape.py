@@ -3877,6 +3877,10 @@ YANDEX_SMTP_HOST = os.getenv("YANDEX_SMTP_HOST", "smtp.yandex.ru")
 YANDEX_SMTP_PORT = int(os.getenv("YANDEX_SMTP_PORT", "465"))
 YANDEX_SMTP_USER = os.getenv("YANDEX_SMTP_USER", "")    # ящик-отправитель (полный адрес)
 YANDEX_SMTP_PASSWORD = os.getenv("YANDEX_SMTP_PASSWORD", "")  # ПАРОЛЬ ПРИЛОЖЕНИЯ (не основной)
+MAIL_ALLOW = os.getenv("MAIL_ALLOW", "")               # кому можно писать наружу: адреса и домены через запятую
+# Домены, которых не существует по стандарту (RFC 2606/6761): ими полны демо-данные стенда.
+# Реальная отправка на такой адрес даёт только отказ почтовика и портит репутацию ящика.
+_UNROUTABLE = (".local", ".localhost", ".test", ".invalid", ".example", ".internal")
 REDMINE_BASE = os.getenv("REDMINE_BASE", "http://5.129.192.63:3000")   # аналог Jira (демо-стенд)
 REDMINE_API_KEY = os.getenv("REDMINE_API_KEY", "")     # X-Redmine-API-Key
 REDMINE_PROJECT = os.getenv("REDMINE_PROJECT", "")     # идентификатор проекта по умолчанию
@@ -4038,6 +4042,26 @@ def _t_redmine_create_issue(a):
         return f"Redmine ошибка: {type(ex).__name__} — {ex}"
 
 
+def mail_deliverable(to: str) -> tuple:
+    """Можно ли писать по этому адресу НАРУЖУ. Возвращает (можно, причина отказа).
+
+    Отправка наружу необратима, поэтому два ограничителя. Первый — выдуманные домены: на стенде
+    полно адресов вида glavbuh@demo.local, и письмо туда даёт только отказ почтовика. Второй —
+    MAIL_ALLOW: перед показом заказчику это единственный способ гарантировать, что агент не напишет
+    никому лишнему. Пустой список не запрещает ничего: ограничитель включают осознанно.
+    """
+    addr = str(to or "").strip().lower()
+    if "@" not in addr:
+        return False, f"«{to}» не похож на адрес"
+    dom = addr.rsplit("@", 1)[1]
+    if dom == "localhost" or any(dom.endswith(x) for x in _UNROUTABLE):
+        return False, f"домен «{dom}» не существует по стандарту — это демо-адрес стенда"
+    allow = [x.strip().lower() for x in (MAIL_ALLOW or "").split(",") if x.strip()]
+    if allow and not any(addr == a or dom == a.lstrip("@") or dom.endswith("." + a.lstrip("@")) for a in allow):
+        return False, f"адрес вне списка MAIL_ALLOW ({', '.join(allow)})"
+    return True, ""
+
+
 def _t_yandex_email(a):
     """РЕАЛЬНОЕ письмо через Яндекс.Почту (SMTP SSL :465). ДЕЙСТВИЕ → dry_run по умолчанию.
     args: {to, subject, body, attachment, run:true}. Логин/пароль из env YANDEX_SMTP_USER/PASSWORD
@@ -4052,6 +4076,9 @@ def _t_yandex_email(a):
         return "нет YANDEX_SMTP_USER/YANDEX_SMTP_PASSWORD (пароль приложения) в env — реальная отправка недоступна (каркас готов)"
     if not to:
         return "не указан адрес получателя"
+    ok, why = mail_deliverable(to)
+    if not ok:
+        return f"наружу не отправлено: {why}. Для демо-адресов есть канал «Почта стенда (Mailpit)»"
     import smtplib
     import ssl
     from email.message import EmailMessage
