@@ -3248,17 +3248,69 @@ def _envelope_reason(env: dict) -> str:
     return "A2: все навыки только читают — агент работает сам, наружу ничего не отправляет"
 
 
+def _graph_from_canvas(canvas: dict, skills: list[dict], autonomy_max: str, on: dict) -> dict:
+    """Граф с канвы — как его нарисовал человек, но governance наш.
+
+    Сохраняем ВСЕ узлы, а не только навыки: вывод, подтверждение оператора, триггер и источники —
+    это и есть то, чем агент отличается от списка навыков. Три вещи навязываем независимо от
+    рисунка: автономия узла не выше выведенного конверта, навык-действие наружу всегда под
+    подтверждением (ADR-014), а ребро в несуществующий узел отбрасываем — иначе волны считаются по
+    призракам.
+    """
+    byid = {str(s.get("id")): s for s in (skills or [])}
+    keep: list[dict] = []
+    for n in (canvas.get("nodes") or []):
+        if not isinstance(n, dict) or not n.get("id"):
+            continue
+        m = dict(n)
+        if m.get("kind") == "skill":
+            sk = str(m.get("skill") or m.get("title") or "")
+            if sk not in ape.SKILLS:
+                continue
+            m["skill"] = sk
+            m["autonomy"] = autonomy_max
+            m.update(on or {})
+            if ((byid.get(sk) or {}).get("safety") or {}).get("mode") == "action":
+                m["hitl"] = True
+        keep.append(m)
+    ids = {str(n["id"]) for n in keep}
+    edges = [e for e in (canvas.get("edges") or [])
+             if isinstance(e, dict) and str(e.get("from")) in ids and str(e.get("to")) in ids]
+    return {"nodes": keep, "edges": edges}
+
+
 @app.post("/api/agents/author")
 async def agent_author(body: dict, u: dict = Depends(user)) -> JSONResponse:
     """Сохранить агента, собранного авторингом БЕЗ контракта (ADR-024 draft, ADR-032):
     роль семьи + навыки → AgentVersion. Конверт/автономия — из навыков (консервативно);
-    прод-развёртывание всё равно потребует контракт LUDA (ADR-029). Тело: {family, member, skills?, name?}."""
+    прод-развёртывание всё равно потребует контракт LUDA (ADR-029).
+
+    Тело: {family, member, skills?, name?, graph?}. `graph` — готовый граф с канвы: его узлы и рёбра
+    сохраняются как есть. Без него граф строится из навыков по порядку контрактов. Граф нужен затем,
+    что на канве к навыкам добавляют вывод, подтверждение оператора, триггер и источники — без них
+    агент считает, но никуда не отдаёт и ничьего «да» не спрашивает."""
     require_level(u, "manager")  # сборка агента — не для analyst (read-only)
     family = str((body or {}).get("family", "")).strip()
     member = str((body or {}).get("member", "")).strip()
     if family and not can_see_family(u, family):  # ABAC: только свой отдел (кроме admin/support)
         raise HTTPException(403, f"нельзя собирать агента вне своего отдела ({u.get('department')})")
     skills = (body or {}).get("skills")
+    # Граф с канвы: навыки для конверта берём из него, чтобы потолок автономии считался по тому, что
+    # реально исполняется, а не по отдельно присланному списку.
+    canvas = (body or {}).get("graph") if isinstance((body or {}).get("graph"), dict) else None
+    if canvas:
+        cn = [n for n in (canvas.get("nodes") or []) if isinstance(n, dict)]
+        from_graph = [str(n.get("skill") or n.get("title") or "") for n in cn if n.get("kind") == "skill"]
+        from_graph = [x for x in from_graph if x in ape.SKILLS]
+        if not from_graph:
+            raise HTTPException(422, "в графе нет ни одного известного навыка")
+        skills = from_graph
+        # Семью канве знать неоткуда: она рисует навыки, а к какому отделу они приписаны — знает
+        # реестр. Выводим по первому навыку графа, как это делает сборка из плана.
+        if not family:
+            _f = [f for f, spec0 in ape.AGENT_FAMILIES.items()
+                  if any(from_graph[0] in (m[1] or []) for m in (spec0.get("members") or {}).values())]
+            family = _f[0] if _f else "management"
     if not family:
         raise HTTPException(422, "нужна family")
     try:
@@ -3276,9 +3328,12 @@ async def agent_author(body: dict, u: dict = Depends(user)) -> JSONResponse:
     # Порядок, обещанный конструктором («#1 → #2 → #3»), должен стать рёбрами: без них
     # топологическая раскладка кладёт все навыки в одну волну, и ни один не видит результата
     # соседа — объявленный вход от предыдущего навыка не выполним в принципе.
-    nodes = await _order_by_contract(nodes)
-    graph = {"nodes": nodes,
-             "edges": [{"from": nodes[k]["id"], "to": nodes[k + 1]["id"]} for k in range(len(nodes) - 1)]}
+    if canvas:
+        graph = _graph_from_canvas(canvas, spec["skills"], env["autonomy_max"], _on)
+    else:
+        nodes = await _order_by_contract(nodes)
+        graph = {"nodes": nodes,
+                 "edges": [{"from": nodes[k]["id"], "to": nodes[k + 1]["id"]} for k in range(len(nodes) - 1)]}
     name = str((body or {}).get("name", "")).strip() or f"{spec['family_title']} · {spec['role_title']}"
     # Стабильный per-agent id для «моего» агента: пересборка тем же пользователем того же агента →
     # НОВАЯ ВЕРСИЯ того же агента (next_version), а не новый экземпляр «authored.vN» (#8/#9).
@@ -3286,6 +3341,13 @@ async def agent_author(body: dict, u: dict = Depends(user)) -> JSONResponse:
     _uid = str(u.get("sub") or u.get("name") or "dev")
     _slug = _re2.sub(r"[^a-z0-9а-яё]+", "-", name.lower()).strip("-")[:40] or "agent"
     audit_id = f"authored-{_hl2.md5(_uid.encode('utf-8')).hexdigest()[:6]}-{_slug}"
+    # Переименование не должно плодить агентов. Канва помнит, какого агента она правит, и присылает
+    # его audit_id — тогда сохранение даёт НОВУЮ ВЕРСИЮ того же агента, а не однофамильца рядом.
+    # Чужой id не примем: префикс authored-<хеш автора> проверяем на совпадение со своим.
+    _keep = str((body or {}).get("audit_id") or "").strip()
+    _mine = f"authored-{_hl2.md5(_uid.encode('utf-8')).hexdigest()[:6]}-"
+    if _keep.startswith(_mine):
+        audit_id = _keep
     version = await agent_store.next_version(audit_id)
     verdict = _verify_envelope(graph, env["autonomy_max"])   # авто-верификация против производного конверта
     # Та же проверка покрытия входов, что и на канве: навык без данных, без предмета или без

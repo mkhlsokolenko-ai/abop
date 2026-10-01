@@ -31,6 +31,12 @@
                   </span>
                   <span style="padding: 5px 11px; border-radius: 9999px; background: {{ gl.agentBadgeBg }}; border: 1px solid {{ gl.agentBadgeBorder }}; color: {{ gl.agentBadgeFg }}; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; font-weight: 600;">{{ gl.agentBadge }}</span>
                 </div>
+                <sc-if value="{{ gl.ownScenario }}" hint-placeholder-val="{{ true }}">
+                  <label style="display: flex; align-items: center; gap: 8px; margin-top: 2px;">
+                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 1.1px; text-transform: uppercase; color: var(--w38);">имя агента</span>
+                    <input value="{{ gl.scenarioName }}" onChange="{{ gl.setScenarioName }}" placeholder="коротко, 2–3 слова" title="Имя видно во вкладке, в заголовке и в списке агентов" style="width: 260px; padding: 5px 9px; border-radius: 8px; border: 1px solid var(--w14); background: var(--s60); color: var(--ink); font-size: 12.5px;" style-focus="border-color: #6366f1;">
+                  </label>
+                </sc-if>
                 
               </div>
               

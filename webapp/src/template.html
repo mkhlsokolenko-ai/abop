@@ -2741,6 +2741,12 @@ class Component extends DCLogic {
   // Закрывает разрыв: вкладка сценария на канве не привязывала контракт → «Запустить» молчал.
   buildAndRun(context) {
     var self=this, key=this.state.scenario;
+    // Свой агент демо-пакета не имеет: его собирает авторинг с канвы, а запускает прогон по id.
+    if ((this.state.userScenarios || {})[key]) {
+      this.setState({ modal:'runresult', runBusy:true });
+      this.authorFromCanvas(function(){ self.runAgentBackend(context); self.loadRuns(); });
+      return;
+    }
     self.setState({ modal:'runresult', runBusy:true });
     fetch('/api/demo/prepare',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scenario:key})})
       .then(function(r){ return r.json().then(function(j){ return {ok:r.ok,j:j}; }); })
@@ -2758,7 +2764,10 @@ class Component extends DCLogic {
   runAgentBackend(context) {
     // Через очередь ABOP (гейт масштабирования): POST /api/runs?async=1 → 202 job_id → поллинг
     // /api/runs/jobs/{id}. Окно результата показывает место в очереди и время; кнопка «Отменить».
-    var self=this, c=this.state.contract; if(!c||!c.audit_id){ this.setState({runBusy:false}); return; }
+    var self=this, c=this.state.contract, mine=this.state.authoredAgent;
+    // Запускаем либо агента контракта, либо собранного на канве. Прежде второй случай молча
+    // выходил, и человек видел «исполняется» от чужого агента, оставшегося в состоянии.
+    if((!c||!c.audit_id) && !(mine&&mine.id)){ this.setState({runBusy:false}); this.showToast('Сначала сохраните агента на канве'); return; }
     var done = function(d){
       var v=d.verdict||{};
       self.setState({lastRun:d, runBusy:false, runError:null, runJob:null, runProgress:''});
@@ -2767,7 +2776,8 @@ class Component extends DCLogic {
     };
     var failed = function(msg){ self.setState({runBusy:false, runError: msg, runJob:null, runProgress:''}); self.showToast('Прогон не выполнен: '+msg); };
     var _bd = this._budgetBody();
-    fetch('/api/runs?async=1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({contract_audit_id:c.audit_id, async:true, context: (typeof context === 'string' ? context : '')}, _bd ? {budget:_bd} : {}))})
+    var _who = (c&&c.audit_id) ? {contract_audit_id:c.audit_id} : {agent_id:mine.id};
+    fetch('/api/runs?async=1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign(_who, {async:true, context: (typeof context === 'string' ? context : '')}, _bd ? {budget:_bd} : {}))})
       .then(function(r){ return r.json().then(function(j){ j = j || {}; if(!r.ok && !j.detail) j.detail = 'HTTP ' + r.status; j.__status = r.status; return j; }); }).then(function(d){
         if(d.run_id && d.__status === 201){ done(d); return; }   // старый сервер без очереди — результат сразу
         if(!d.job_id){ failed(d.detail||'нет агента — сначала «Сохранить»'); return; }
@@ -5553,14 +5563,80 @@ class Component extends DCLogic {
     return many;
   }
 
+  shortName(task) {
+    // Имя агента живёт во вкладке, в заголовке и в списке — туда не влезает формулировка
+    // задачи целиком. Берём первые значащие слова: «Сверь дорожную карту проекта с отчётами
+    // подрядчиков…» → «Сверь дорожную карту». Переименовать можно в списке сценариев.
+    var t = String(task || '').trim().replace(/\s+/g, ' ');
+    if (!t) return '';
+    var stop = ['по','для','из','на','в','с','со','и','а','к','от','до','при','над','под','о','об'];
+    var words = t.split(' ').slice(0, 6).filter(function(w){ return stop.indexOf(w.toLowerCase()) < 0; });
+    var name = words.slice(0, 3).join(' ').replace(/[,;:.]+$/, '');
+    return name.charAt(0).toUpperCase() + name.slice(1);
+  }
+
+  graphPayload() {
+    // Граф канвы в том виде, в каком его понимает сервер. Здесь же замыкается смысл блока
+    // «Подтверждение оператора»: сам по себе он ничего не гейтит — заявку HITL создаёт узел
+    // вывода. Поэтому подтверждение, стоящее перед выводом, включает подтверждение на выводе.
+    var nodes = this.state.canvasNodes || [], edges = this.state.edges || [];
+    var _from = function(e){ return Array.isArray(e) ? e[0] : (e.from !== undefined ? e.from : e.a); };
+    var _to = function(e){ return Array.isArray(e) ? e[1] : (e.to !== undefined ? e.to : e.b); };
+    var hitlIds = nodes.filter(function(n){ return n.kind === 'hitl'; }).map(function(n){ return n.id; });
+    var gated = {};   // узел, перед которым стоит подтверждение
+    edges.forEach(function(e){ if (hitlIds.indexOf(_from(e)) > -1) gated[_to(e)] = true; });
+    var out = nodes.map(function(n){
+      var b = { id: n.id, kind: n.kind, title: n.title || n.label || '' };
+      if (n.kind === 'skill') {
+        b.skill = n.skill || n.title;
+        b.hitl = !!n.hitl || edges.some(function(e){ return _from(e) === n.id && hitlIds.indexOf(_to(e)) > -1; });
+      }
+      if (n.kind === 'hitl') b.hitl = true;
+      if (n.entity) b.entity = n.entity;
+      if (n.recipe) b.recipe = n.recipe;
+      if (n.corpus) b.corpus = n.corpus;
+      if (n.trig) b.trig = n.trig;
+      if (n.kind === 'out') b.out = Object.assign({}, n.out || {}, gated[n.id] ? { hitl: true } : {});
+      else if (n.out) b.out = n.out;
+      return b;
+    });
+    return { nodes: out, edges: edges };
+  }
+
+  authorFromCanvas(after) {
+    // Сохранить канву как «моего» агента: без контракта LUDA это единственный законный путь,
+    // и он же даёт id, по которому агента можно запустить.
+    var self = this, g = this.graphPayload();
+    if (!g.nodes.some(function(n){ return n.kind === 'skill'; })) {
+      this.showToast('В агенте нет ни одного навыка — добавьте блок из палитры');
+      return;
+    }
+    var all = this.allScenarios(), sc = all[this.state.scenario] || {};
+    // Правим того же агента, если он уже создан: иначе переименование завело бы однофамильца.
+    var keep = ((this.state.authoredAgent || {}).id || '').replace(/\.v\d+$/, '');
+    fetch('/api/agents/author', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ name: (sc.label || 'Мой агент'), graph: g,
+                                                         audit_id: keep || undefined }) })
+      .then(function(r){ return r.json().then(function(j){ return { ok: r.ok, j: j || {} }; }); })
+      .then(function(res){
+        if (!res.ok || !res.j.id) { self.showToast('Не сохранён: ' + (res.j.detail || (res.j.errors || [])[0] || 'governance')); return; }
+        self.setState({ authoredAgent: { id: res.j.id, name: sc.label || 'Мой агент' },
+                        canvasDirty: false, savedVersion: res.j.id, savedStatus: 'draft',
+                        savedAt: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }), savedLocalAt: null });
+        self.reloadAgents();
+        if (typeof after === 'function') after(res.j);
+        else self.showToast('Агент сохранён: ' + res.j.id + ' · автономия ' + (res.j.autonomy_max || '—'));
+      }).catch(function(){ self.showToast('ABOP недоступен — агент не сохранён'); });
+  }
+
   saveGraph() { if(!this._canMutate()){ if (this.state.me) this.showToast('Только чтение — недостаточно прав'); return; } 
     const at = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
     var c=this.state.contract;
     if(!(c&&c.audit_id)){
       // Сервер принимает агента только вместе с контрактом. Раньше отметка «сохранено»
       // ставилась и здесь — канва сообщала о том, чего не произошло.
-      this.setState({ canvasDirty: false, savedAt: null, savedLocalAt: at });
-      this.showToast('Черновик остался в браузере: агент создаётся из контракта — нажмите «Собрать и запустить»');
+      // Агент без контракта LUDA — «мой агент»: сохраняется авторингом и получает свой id.
+      this.authorFromCanvas();
       this.persist(); return;
     }
     this.setState({ canvasDirty: false, savedAt: at, savedLocalAt: null }); if(c&&c.audit_id){ var self=this; var _edges=(this.state.edges||[]), _nodes=(this.state.canvasNodes||[]); var _hitlIds=_nodes.filter(function(n){return n.kind==='hitl';}).map(function(n){return n.id;}); var _to=function(e){return Array.isArray(e)?e[1]:(e.to!==undefined?e.to:e.b);}; var _from=function(e){return Array.isArray(e)?e[0]:(e.from!==undefined?e.from:e.a);}; var g={nodes:_nodes.map(function(n){ var base={id:n.id,kind:n.kind,title:n.title||n.label||''}; if(n.kind==='skill'){ base.skill=n.title; base.autonomy=n.autonomy||c.autonomy||'A0'; base.hitl=!!n.hitl||_edges.some(function(e){return _from(e)===n.id&&_hitlIds.indexOf(_to(e))>-1;}); } if(n.trig) base.trig=n.trig; if(n.out) base.out=n.out; if(n.entity) base.entity=n.entity; if(n.recipe) base.recipe=n.recipe; if(n.kind==='hitl') base.hitl=true; return base; }),edges:_edges}; fetch('/api/agents',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'Агент · '+(c.family||c.audit_id),contract_audit_id:c.audit_id,graph:g})}).then(function(r){return r.json();}).then(function(j){ if(!j.saved) self.showToast('Не сохранено — governance: '+((j.errors||[])[0]||'ошибка')); else self.setState({ savedVersion: j.id, savedStatus: j.status }); }).catch(function(){ self.showToast('Черновик не сохранён на сервере: ABOP недоступен'); }); }
@@ -5970,7 +6046,7 @@ class Component extends DCLogic {
     var goal = (this.state.goalText || '').trim();
     this.setState({ modal: 'runresult', runBusy: true, screen: 'canvas', lens: 'run', startedOnce: true, pct: 100, playing: false, stopped: false, hitlResolved: false, runReadOnly: false, planOk: false });
     this.route('canvas');
-    if (this.state.contract && this.state.contract.audit_id) { this.runAgentBackend(goal); return; }
+    if ((this.state.contract && this.state.contract.audit_id) || (this.state.authoredAgent || {}).id) { this.runAgentBackend(goal); return; }
     this.buildAndRun(goal);
   }
 
@@ -6456,7 +6532,12 @@ class Component extends DCLogic {
       var linked = edges.some(function(e){ return e.to === 'p' + i && e.from.charAt(0) === 'p'; });
       if (!linked) edges.push({ from: 'p' + (i - 1), to: 'p' + i });
     });
-    var label = (this.state.goalText || '').trim().slice(0, 48) || (own && own.label) || 'Новый агент';
+    // Имя по умолчанию — короткое: задача целиком не влезает ни во вкладку, ни в заголовок.
+    // Править его можно там же, в списке сценариев.
+    var label = this.shortName(this.state.goalText) || (own && own.label) || 'Новый агент';
+    // 1 навык / 2 навыка / 5 навыков — на демо кривой падеж замечают раньше, чем сам граф
+    var n = steps.length, t10 = n % 10, t100 = n % 100;
+    var word = (t10 === 1 && t100 !== 11) ? 'навык' : ((t10 > 1 && t10 < 5 && (t100 < 12 || t100 > 14)) ? 'навыка' : 'навыков');
     var L = this.layoutFlow(nodes, edges);
     var next = Object.assign({}, this.state.userScenarios || {});
     if (own) next[key] = Object.assign({}, own, { label: label, title: 'Сборка: ' + label, nodes: nodes, edges: edges });
@@ -6465,17 +6546,18 @@ class Component extends DCLogic {
       surfaceW: Math.max(1560, L.w), surfaceH: Math.max(1200, L.h),
       selectedNode: nodes[0].id, linkFrom: null, issues: {},
       checkState: 'idle', checkSteps: [], checkOk: false, checkFails: 0,
-      modal: null, planIntent: null, screen: 'canvas', lens: 'build'
+      modal: null, planIntent: null, screen: 'canvas', lens: 'build',
+      // Контракт прежнего сценария снимаем: иначе сохранение и запуск уйдут к ЧУЖОМУ агенту.
+      contract: null, authoredAgent: null, agentPassport: null, lastRun: null, startedOnce: false
     }, function(){
       self.saveUserScenarios();
-      self.touchGraph();
+      self.authorFromCanvas(function(j){
+        self.showToast('Агент построен и сохранён: ' + n + ' ' + word + ' · ' + j.id
+                       + '. Доставка не задана — добавьте блок «Вывод»');
+      });
       setTimeout(function(){ self.fitZoom(); }, 60);
     });
     this.route('canvas');
-    // 1 навык / 2 навыка / 5 навыков — на демо кривой падеж замечают раньше, чем сам граф
-    var n = steps.length, t10 = n % 10, t100 = n % 100;
-    var word = (t10 === 1 && t100 !== 11) ? 'навык' : ((t10 > 1 && t10 < 5 && (t100 < 12 || t100 > 14)) ? 'навыка' : 'навыков');
-    this.showToast('Агент построен: ' + n + ' ' + word + '. Доставка не задана — добавьте блок «Вывод»');
   }
 
   createScenario() {
