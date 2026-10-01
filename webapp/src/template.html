@@ -6472,7 +6472,10 @@ class Component extends DCLogic {
       setTimeout(function(){ self.fitZoom(); }, 60);
     });
     this.route('canvas');
-    this.showToast('Агент построен: ' + steps.length + ' навыков. Доставка не задана — добавьте блок «Вывод»');
+    // 1 навык / 2 навыка / 5 навыков — на демо кривой падеж замечают раньше, чем сам граф
+    var n = steps.length, t10 = n % 10, t100 = n % 100;
+    var word = (t10 === 1 && t100 !== 11) ? 'навык' : ((t10 > 1 && t10 < 5 && (t100 < 12 || t100 > 14)) ? 'навыка' : 'навыков');
+    this.showToast('Агент построен: ' + n + ' ' + word + '. Доставка не задана — добавьте блок «Вывод»');
   }
 
   createScenario() {
