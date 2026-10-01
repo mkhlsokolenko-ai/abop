@@ -112,16 +112,54 @@ async def delete(fid: str) -> bool:
     return True
 
 
-async def seed_from_code(agent_families: dict, biz: set) -> None:
-    """Одноразовый сид реестра из ape.AGENT_FAMILIES (код = дефолт-роспись), если реестр пуст."""
+async def seed_from_code(agent_families: dict, biz: set) -> dict:
+    """Догнать реестр семей до состава в коде. Возвращает отчёт о том, что добавилось.
+
+    Семья, которой в реестре нет, создаётся целиком. У семьи ПОСТАВКИ (editor=seed) добавляются
+    недостающие роли и недостающие навыки в уже существующих ролях — порядок навыков сохраняем,
+    новые дописываем в конец. Ничего не удаляем: навык, убранный из кода, мог остаться в реестре
+    осознанно. Семью, которую правил человек, не трогаем совсем — его роспись важнее нашей.
+
+    Раньше посев был одноразовым («если реестр пуст»), и навык, добавленный в семью позже, не
+    попадал в конструктор агентов никогда: его просто не предлагали выбрать.
+    """
+    report: dict = {"создано": [], "дополнено": {}, "пропущено_ручных": []}
     try:
-        if await all():
-            return
+        stored = {f["id"]: f for f in (await all() or [])}
         for fid, fam in (agent_families or {}).items():
             members = {mk: [mt, list(sk)] for mk, (mt, sk) in (fam.get("members") or {}).items()}
-            await save(fid, {"title": fam.get("title"), "mission": fam.get("mission"),
-                             "profile": fam.get("profile") or "research",
-                             "kind": "business" if fid in (biz or set()) else "engineering",
-                             "members": members}, editor="seed", builtin=True)
+            cur = stored.get(fid)
+            if not cur:
+                await save(fid, {"title": fam.get("title"), "mission": fam.get("mission"),
+                                 "profile": fam.get("profile") or "research",
+                                 "kind": "business" if fid in (biz or set()) else "engineering",
+                                 "members": members}, editor="seed", builtin=True)
+                report["создано"].append(fid)
+                continue
+            if (cur.get("editor") or "seed") != "seed":
+                report["пропущено_ручных"].append(fid)
+                continue
+            have = dict(cur.get("members") or {})
+            added: list[str] = []
+            for mk, (mt, skills) in members.items():
+                row = have.get(mk)
+                if not row:
+                    have[mk] = [mt, list(skills)]
+                    added.append(f"роль {mk}")
+                    continue
+                title = row[0] if isinstance(row, (list, tuple)) and row else mt
+                cur_sk = list(row[1]) if isinstance(row, (list, tuple)) and len(row) > 1 else []
+                miss = [x for x in skills if x not in cur_sk]
+                if miss:
+                    have[mk] = [title, cur_sk + miss]
+                    added += miss
+            if added:
+                await save(fid, {"title": cur.get("title") or fam.get("title"),
+                                 "mission": cur.get("mission") or fam.get("mission"),
+                                 "profile": cur.get("profile") or fam.get("profile") or "research",
+                                 "kind": cur.get("kind") or ("business" if fid in (biz or set()) else "engineering"),
+                                 "members": have}, editor="seed", builtin=True)
+                report["дополнено"][fid] = added
     except Exception:  # noqa: BLE001 — сид опционален, не валим старт
         pass
+    return report

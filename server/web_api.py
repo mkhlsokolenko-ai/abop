@@ -2347,7 +2347,12 @@ async def _startup() -> None:
     await identity_store.init()
     await identity_store.seed_if_empty()  # сквозной ID: связка мастер-UID → аккаунты в системах (демо)
     await families_store.init()
-    await families_store.seed_from_code(ape.AGENT_FAMILIES, BIZ_FAMILIES)  # единый реестр семей (сид из кода)
+    # Посев догоняет состав из кода: навык, добавленный в семью позже, иначе не попадёт в
+    # конструктор агентов никогда — его просто не предложат выбрать.
+    _fam_sync = await families_store.seed_from_code(ape.AGENT_FAMILIES, BIZ_FAMILIES)
+    if _fam_sync.get("создано") or _fam_sync.get("дополнено"):
+        obs.log_event("info", "families.sync", created=_fam_sync.get("создано"),
+                      added={k: len(v) for k, v in (_fam_sync.get("дополнено") or {}).items()})
     await report_store.init()
     await report_store.seed_if_empty()   # шаблоны отчётов в БД (вид меняется без передеплоя)
     await schema_store.init()

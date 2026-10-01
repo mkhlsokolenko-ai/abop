@@ -19,10 +19,14 @@ sys.path.insert(0, str(DESKTOP))
 @pytest.fixture()
 def sidecar():
     sc = pytest.importorskip("sidecar.app", reason="сайдкар десктопа недоступен")
-    from sidecar import abop_client
-    orig = abop_client.health
+    from sidecar import abop_client, auth
+    orig, orig_token = abop_client.health, auth.token
+    # Вход в ABOP тесту не нужен, а настоящий `auth.token()` при просроченном токене уходит в сеть за
+    # обновлением: на машине разработчика, где десктопом пользовались, каждый запрос тогда занимает
+    # секунды — и проверка кэша пинга начинает зависеть от сети, а не от кэша.
+    auth.token = lambda: None
     yield sc, abop_client
-    abop_client.health = orig
+    abop_client.health, auth.token = orig, orig_token
     sc._ABOP_PING.update({"at": 0.0, "ok": False, "error": ""})
 
 
@@ -63,4 +67,9 @@ def test_health_caches_ping(sidecar):
     c = TestClient(sc.app)
     for _ in range(5):
         assert c.get("/api/health").json()["abop"] is True
-    assert calls["n"] == 1
+    assert calls["n"] == 1, "пять опросов состояния — один запрос к серверу"
+
+    # Истёк TTL — спрашиваем заново: кэш обязан протухать, иначе UI не заметит, что связь вернулась.
+    sc._ABOP_PING.update({"at": 0.0})
+    assert c.get("/api/health").json()["abop"] is True
+    assert calls["n"] == 2
