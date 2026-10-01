@@ -1,0 +1,453 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1282" height="2258" viewBox="0 0 1282 2258" font-family="'Segoe UI',Inter,system-ui,sans-serif">
+<rect width="1282" height="2258" fill="#080b12"/>
+<text x="28" y="40" font-size="25" font-weight="800" fill="#e7eef8">ABOP — Архитектура платформы</text>
+<text x="28" y="58" font-size="11" fill="#9db1c6">Инженерная платформа для сборки и управления ИИ-агентами · десктоп-чат как рабочая среда пользователя · self-host LLM на GPU-боксе (данные не выходят наружу) · шина Redpanda и коннектор-воркер на</text>
+<text x="28" y="72" font-size="11" fill="#9db1c6">server-2: результат уходит в систему только после подтверждения человеком · навыки связаны контрактами, предмет работы сужает выборку данных до прогона</text>
+<rect x="28" y="92" width="250" height="111" rx="12" fill="#0d131d" stroke="#1b2637"/>
+<text x="42" y="116" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9.5" letter-spacing="1.1" fill="#5c6f82">ЛЕГЕНДА</text>
+<text x="42" y="140" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#5c6f82">REST / SSE (JWT)</text>
+<text x="42" y="152" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#5c6f82">LLM-инференс</text>
+<text x="42" y="164" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#5c6f82">внутр. сеть</text>
+<text x="42" y="176" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#5c6f82">управление</text>
+<text x="42" y="188" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#5c6f82">шина Redpanda (Kafka, SASL)</text>
+<rect x="296" y="92" width="470" height="188" rx="12" fill="#0d131d" stroke="#1b2637"/>
+<text x="310" y="116" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9.5" letter-spacing="1.1" fill="#5c6f82">ЭНДПОИНТЫ</text>
+<rect x="310" y="125" width="86" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="317" y="137" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">:8091 /api/*</text>
+<rect x="401.0" y="125" width="116" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="408.0" y="137" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">/api/chat · /runs</text>
+<rect x="522.0" y="125" width="158" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="529.0" y="137" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">/runs?async · /runs/jobs</text>
+<rect x="310" y="145" width="116" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="317" y="157" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">/runs/{id}/report</text>
+<rect x="431.0" y="145" width="110" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="438.0" y="157" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">/agents · /match</text>
+<rect x="546.0" y="145" width="122" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="553.0" y="157" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">/hitl · /hitl/{id}</text>
+<rect x="310" y="165" width="128" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="317" y="177" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">/skills · /families</text>
+<rect x="443.0" y="165" width="122" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="450.0" y="177" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">/skills/{id}/slots</text>
+<rect x="570.0" y="165" width="116" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="577.0" y="177" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">/resolve/{entity}</text>
+<rect x="310" y="185" width="194" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="317" y="197" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">/runs/search · /runs/{id}/diff</text>
+<rect x="509.0" y="185" width="140" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="516.0" y="197" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">/data/* · /identity/*</text>
+<rect x="310" y="205" width="116" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="317" y="217" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">/report-templates</text>
+<rect x="431.0" y="205" width="116" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="438.0" y="217" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">/schema-templates</text>
+<rect x="552.0" y="205" width="104" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="559.0" y="217" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">/bus · /bus/dlq</text>
+<rect x="310" y="225" width="134" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="317" y="237" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">/triggers · /admin/*</text>
+<rect x="449.0" y="225" width="122" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="456.0" y="237" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">/desktop-ui-bundle</text>
+<rect x="784" y="92" width="470" height="334" rx="12" fill="#0d131d" stroke="#1b2637"/>
+<text x="798" y="116" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9.5" letter-spacing="1.1" fill="#5c6f82">КОММУНИКАЦИЯ МЕЖДУ ТАРГЕТАМИ</text>
+<rect x="792" y="126" width="454" height="32" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="798" y="142" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">Desktop → ABOP</text>
+<text x="798" y="154" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">REST/SSE под JWT пользователя (RBAC/ABAC). Сайдкар — прокси к /api/*</text>
+<rect x="792" y="166" width="454" height="44" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="798" y="182" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">Sidecar → ABOP (UI)</text>
+<text x="798" y="194" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">/desktop-ui-bundle при старте (server-side, без PNA) → отдаёт UI с</text>
+<text x="798" y="206" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">127.0.0.1/ui</text>
+<rect x="792" y="218" width="454" height="32" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="798" y="234" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">ABOP → Self-host LLM</text>
+<text x="798" y="246" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">chat/embed по OpenAI-совместимому API, admission-control</text>
+<rect x="792" y="258" width="454" height="56" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="798" y="274" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">ABOP → шина → коннектор → системы</text>
+<text x="798" y="286" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">команды навыков (delivery шаблона) — ТОЛЬКО после HITL-превью →</text>
+<text x="798" y="298" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">abop.&lt;система&gt;.commands → коннектор (server-2) →</text>
+<text x="798" y="310" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">Redmine/BookStack/Mailpit/1С</text>
+<rect x="792" y="322" width="454" height="44" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="798" y="338" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">Системы → шина → ABOP</text>
+<text x="798" y="350" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">command.done|failed и события систем → abop.&lt;система&gt;.events → результат в</text>
+<text x="798" y="362" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">заявку / триггеры агентов; сбои → abop.dlq</text>
+<rect x="792" y="374" width="454" height="32" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="798" y="390" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">ABOP → системы (OUT)</text>
+<text x="798" y="402" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">отчёт целиком OUT-узлами (почта/BookStack/PDF по шаблону) — под HITL</text>
+<rect x="28" y="213" width="250" height="98" rx="12" fill="#0d131d" stroke="#1b2637"/>
+<text x="42" y="237" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9.5" letter-spacing="1.1" fill="#5c6f82">ДЕПЛОЙ-ТАРГЕТЫ</text>
+<text x="42" y="261" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#5c6f82">ABOP Web API · сервер</text>
+<text x="42" y="273" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#5c6f82">ABOP Desktop · юзер</text>
+<text x="42" y="285" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#5c6f82">Self-host LLM · GPU-бокс</text>
+<text x="42" y="297" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#5c6f82">server-2 · шина + коннектор</text>
+<rect x="296" y="290" width="470" height="206" rx="12" fill="#0d131d" stroke="#1b2637"/>
+<text x="310" y="314" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9.5" letter-spacing="1.1" fill="#5c6f82">ОБОЛОЧКА ELECTRON</text>
+<rect x="304" y="324" width="454" height="32" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="310" y="340" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">main.js</text>
+<text x="310" y="352" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">спавн сайдкара · окно · апдейтер</text>
+<rect x="304" y="364" width="454" height="32" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="310" y="380" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">⌨ globalShortcut</text>
+<text x="310" y="392" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">Ctrl+Shift+A → в чат</text>
+<rect x="304" y="404" width="454" height="32" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="310" y="420" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">preload · IPC</text>
+<text x="310" y="432" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">printToPDF · analyze</text>
+<rect x="304" y="444" width="454" height="32" rx="8" fill="#111a2b" stroke="#3b82f6" stroke-opacity="0.55"/>
+<text x="310" y="460" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">🔄 UI-прокси</text>
+<text x="310" y="472" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">грузит UI с 127.0.0.1/ui</text>
+<rect x="28" y="321" width="250" height="110" rx="12" fill="#0d131d" stroke="#1b2637"/>
+<text x="42" y="345" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9.5" letter-spacing="1.1" fill="#5c6f82">САЙДКАР (FASTAPI 127.0.0.1)</text>
+<rect x="36" y="355" width="234" height="56" rx="8" fill="#111a2b" stroke="#3b82f6" stroke-opacity="0.55"/>
+<text x="42" y="371" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">UI с ABOP → кэш → /ui</text>
+<text x="42" y="383" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">один origin с /api/* (без PNA) ·</text>
+<text x="42" y="395" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">фолбэк вшит · правки UI git-деплоем</text>
+<text x="42" y="407" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">без пересборки .exe</text>
+<rect x="784" y="436" width="470" height="108" rx="12" fill="#0d131d" stroke="#1b2637"/>
+<text x="798" y="460" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9.5" letter-spacing="1.1" fill="#5c6f82">МОДУЛИ (ПРОКСИ К ABOP /API/*)</text>
+<rect x="798" y="469" width="38" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="805" y="481" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">chat</text>
+<rect x="841.0" y="469" width="92" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="848.0" y="481" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">runs · журнал</text>
+<rect x="938.0" y="469" width="140" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="945.0" y="481" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">findings · находки 1С</text>
+<rect x="1083.0" y="469" width="50" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="1090.0" y="481" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">agents</text>
+<rect x="1138.0" y="469" width="74" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="1145.0" y="481" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">connectors</text>
+<rect x="798" y="489" width="68" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="805" y="501" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">graphlens</text>
+<rect x="871.0" y="489" width="56" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="878.0" y="501" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">opslens</text>
+<rect x="932.0" y="489" width="62" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="939.0" y="501" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">security</text>
+<rect x="999.0" y="489" width="56" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="1006.0" y="501" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">cabinet</text>
+<rect x="1060.0" y="489" width="32" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="1067.0" y="501" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">ocr</text>
+<rect x="28" y="441" width="250" height="680" rx="12" fill="#0d131d" stroke="#1b2637"/>
+<text x="42" y="465" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9.5" letter-spacing="1.1" fill="#5c6f82">ЧАТ — СРЕДА УПРАВЛЕНИЯ</text>
+<rect x="36" y="475" width="234" height="80" rx="8" fill="#111a2b" stroke="#3b82f6" stroke-opacity="0.55"/>
+<text x="42" y="491" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">🧭 Карточки решения (один вид)</text>
+<text x="42" y="503" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">запрос → подбор агента</text>
+<text x="42" y="515" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">(лексика+семантика, мера уверенности)</text>
+<text x="42" y="527" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">→ уточнение предмета работы</text>
+<text x="42" y="539" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">(проект/контрагент: «понял так» или</text>
+<text x="42" y="551" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">выбор) → «куда результат» → запуск</text>
+<rect x="36" y="563" width="234" height="44" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="42" y="579" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">▶ Карточка прогона</text>
+<text x="42" y="591" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">находки · доставка · «✓ выполнено:</text>
+<text x="42" y="603" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">ссылка» · Отчёт PDF</text>
+<rect x="36" y="615" width="234" height="44" rx="8" fill="#111a2b" stroke="#3b82f6" stroke-opacity="0.55"/>
+<text x="42" y="631" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">🛡 HITL-очередь + превью</text>
+<text x="42" y="643" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">Действие / Куда / Навык / Тема → «да»</text>
+<text x="42" y="655" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">→ команда в шину</text>
+<rect x="36" y="667" width="234" height="32" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="42" y="683" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">🔁 Расписания · цепочки</text>
+<text x="42" y="695" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">крон + уведомления · авто-цепочки</text>
+<rect x="36" y="707" width="234" height="32" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="42" y="723" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">🖇 Файлы · OCR</text>
+<text x="42" y="735" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">pdf/docx/xlsx · RapidOCR</text>
+<rect x="36" y="747" width="234" height="56" rx="8" fill="#111a2b" stroke="#3b82f6" stroke-opacity="0.55"/>
+<text x="42" y="763" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">◬ Журнал находок 1С</text>
+<text x="42" y="775" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">расхождения всех прогонов в одном</text>
+<text x="42" y="787" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">списке · фильтры</text>
+<text x="42" y="799" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">класс/существенность/межучастковые</text>
+<rect x="36" y="811" width="234" height="44" rx="8" fill="#111a2b" stroke="#3b82f6" stroke-opacity="0.55"/>
+<text x="42" y="827" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">Доска прогона</text>
+<text x="42" y="839" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">кто что выложил · решения арбитра ·</text>
+<text x="42" y="851" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">нерешённые споры</text>
+<rect x="36" y="863" width="234" height="44" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="42" y="879" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">↺ Версии агента</text>
+<text x="42" y="891" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">откат с разницей узлов перед</text>
+<text x="42" y="903" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">действием · прошлая версия в архив</text>
+<rect x="36" y="915" width="234" height="44" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="42" y="931" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">Затраты прогона</text>
+<text x="42" y="943" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">время по навыкам · токены · вызовы</text>
+<text x="42" y="955" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">модели · действовавшие лимиты</text>
+<rect x="36" y="967" width="234" height="32" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="42" y="983" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">🗄 SQLite</text>
+<text x="42" y="995" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">треды · вложения</text>
+<rect x="42" y="1006" width="98" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="49" y="1018" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">JWT · REST/SSE</text>
+<rect x="145.0" y="1006" width="68" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="152.0" y="1018" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">/api/chat</text>
+<rect x="42" y="1026" width="98" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="49" y="1038" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">/runs · /match</text>
+<rect x="145.0" y="1026" width="74" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="152.0" y="1038" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">/hitl/{id}</text>
+<rect x="42" y="1046" width="116" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="49" y="1058" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">/runs/{id}/report</text>
+<rect x="42" y="1066" width="122" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="49" y="1078" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">/desktop-ui-bundle</text>
+<rect x="296" y="506" width="470" height="882" rx="12" fill="#0d131d" stroke="#1b2637"/>
+<text x="310" y="530" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9.5" letter-spacing="1.1" fill="#5c6f82">РАНТАЙМ АГЕНТОВ</text>
+<rect x="304" y="540" width="454" height="32" rx="8" fill="#111a2b" stroke="#3b82f6" stroke-opacity="0.55"/>
+<text x="310" y="556" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">runner (grounded)</text>
+<text x="310" y="568" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">находки считает КОД, LLM объясняет · волны</text>
+<rect x="304" y="580" width="454" height="32" rx="8" fill="#111a2b" stroke="#3b82f6" stroke-opacity="0.55"/>
+<text x="310" y="596" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">Конверт A0–A4</text>
+<text x="310" y="608" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">автономия ≤ потолок · verdict</text>
+<rect x="304" y="620" width="454" height="32" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="310" y="636" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">HITL-гейты</text>
+<text x="310" y="648" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">внешнее — под человека</text>
+<rect x="304" y="660" width="454" height="32" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="310" y="676" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">admission · кэш</text>
+<text x="310" y="688" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">rate-limit · идемпотентность</text>
+<rect x="304" y="700" width="454" height="32" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="310" y="716" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">Контроль схемы</text>
+<text x="310" y="728" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">недобор полей → повтор → отметка в прогоне</text>
+<rect x="304" y="740" width="454" height="32" rx="8" fill="#111a2b" stroke="#3b82f6" stroke-opacity="0.55"/>
+<text x="310" y="756" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">Предмет работы (scope)</text>
+<text x="310" y="768" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">слот навыка сужает выборку ДО модели</text>
+<rect x="304" y="780" width="454" height="32" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="310" y="796" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">Верификация</text>
+<text x="310" y="808" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">авто-конверт · бейдж</text>
+<rect x="304" y="820" width="454" height="32" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="310" y="836" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">Provenance</text>
+<text x="310" y="848" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">откуда данные · трасса</text>
+<rect x="304" y="860" width="454" height="32" rx="8" fill="#111a2b" stroke="#3b82f6" stroke-opacity="0.55"/>
+<text x="310" y="876" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">Очередь run_jobs</text>
+<text x="310" y="888" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">Postgres SKIP LOCKED · 4 воркера · async API · цепочки/HITL через очередь</text>
+<rect x="304" y="900" width="454" height="32" rx="8" fill="#111a2b" stroke="#3b82f6" stroke-opacity="0.55"/>
+<text x="310" y="916" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">RunBus · tool-calling</text>
+<text x="310" y="928" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">pg | kafka · инструменты навыков · publish_command_governed</text>
+<rect x="304" y="940" width="454" height="32" rx="8" fill="#111a2b" stroke="#3b82f6" stroke-opacity="0.55"/>
+<text x="310" y="956" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">delivery.py</text>
+<text x="310" y="968" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">structured-ответ → команды коннектора → HITL-заявки канала command</text>
+<rect x="304" y="980" width="454" height="32" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="310" y="996" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">safety.py</text>
+<text x="310" y="1008" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">system/user разделение · санитизация недоверенных данных · auth fail-closed</text>
+<rect x="304" y="1020" width="454" height="44" rx="8" fill="#111a2b" stroke="#3b82f6" stroke-opacity="0.55"/>
+<text x="310" y="1036" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">Контракт навыка</text>
+<text x="310" y="1048" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">skill_contract.py · вход (data/skill/slot/context) · produces</text>
+<text x="310" y="1060" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">(path·key·join) · реестр имён</text>
+<rect x="304" y="1072" width="454" height="32" rx="8" fill="#111a2b" stroke="#3b82f6" stroke-opacity="0.55"/>
+<text x="310" y="1088" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">Волны со структурой</text>
+<text x="310" y="1100" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">между шагами едет объект, а не пересказ прозой</text>
+<rect x="304" y="1112" width="454" height="32" rx="8" fill="#111a2b" stroke="#3b82f6" stroke-opacity="0.55"/>
+<text x="310" y="1128" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">Ветвление и слияние</text>
+<text x="310" y="1140" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">pipeline_graph.py · after/when/scope · 4 политики слияния · составной ключ</text>
+<rect x="304" y="1152" width="454" height="44" rx="8" fill="#111a2b" stroke="#3b82f6" stroke-opacity="0.55"/>
+<text x="310" y="1168" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">Бюджет и лимиты</text>
+<text x="310" y="1180" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">код → настройка → навык → прогон · проверка перед каждым шагом · честная</text>
+<text x="310" y="1192" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">остановка</text>
+<rect x="304" y="1204" width="454" height="44" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="310" y="1220" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">Зачистка следов проверок</text>
+<text x="310" y="1232" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">/api/admin/cleanup · сухой прогон по умолчанию · агенты, навыки, данные не</text>
+<text x="310" y="1244" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">трогает</text>
+<rect x="304" y="1256" width="454" height="32" rx="8" fill="#111a2b" stroke="#3b82f6" stroke-opacity="0.55"/>
+<text x="310" y="1272" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">Доска прогона</text>
+<text x="310" y="1284" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">blackboard.py · выводы с авторством · снимок данных на группу · дрейф</text>
+<rect x="304" y="1296" width="454" height="32" rx="8" fill="#111a2b" stroke="#3b82f6" stroke-opacity="0.55"/>
+<text x="310" y="1312" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">Арбитраж расхождений</text>
+<text x="310" y="1324" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">arbiter.py · большинство → тяжесть → край → происхождение → навык → человек</text>
+<rect x="304" y="1336" width="454" height="32" rx="8" fill="#111a2b" stroke="#3b82f6" stroke-opacity="0.55"/>
+<text x="310" y="1352" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">Группы заданий (веер)</text>
+<text x="310" y="1364" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">один агент по многим предметам · сводка · отмена группы · повтор ветви</text>
+<rect x="784" y="554" width="470" height="128" rx="12" fill="#0d131d" stroke="#1b2637"/>
+<text x="798" y="578" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9.5" letter-spacing="1.1" fill="#5c6f82">DATA PLANE</text>
+<rect x="798" y="587" width="242" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="805" y="599" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">canonical store · jsonl (том abop_ape)</text>
+<rect x="1045.0" y="587" width="158" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="1052.0" y="599" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">recipes: источник→entity</text>
+<rect x="798" y="607" width="350" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="805" y="619" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">reset: перечитать начисто (удалённое в источнике уходит)</text>
+<rect x="1153.0" y="607" width="74" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="1160.0" y="619" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">connectors</text>
+<rect x="798" y="627" width="92" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="805" y="639" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">реестр систем</text>
+<rect x="784" y="692" width="470" height="168" rx="12" fill="#0d131d" stroke="#1b2637"/>
+<text x="798" y="716" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9.5" letter-spacing="1.1" fill="#5c6f82">SCHEMA-DRIVEN (ШАБЛОНЫ В БД)</text>
+<rect x="798" y="725" width="284" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="805" y="737" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">schema_templates · skills/&lt;sid&gt;/template.json</text>
+<rect x="798" y="745" width="386" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="805" y="757" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">json_schema · instruction · max_tokens · tool_steps · delivery</text>
+<rect x="798" y="765" width="224" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="805" y="777" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">контракт: inputs · produces · slots</text>
+<rect x="798" y="785" width="230" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="805" y="797" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">report_templates · reports/&lt;id&gt;.html</text>
+<rect x="798" y="805" width="248" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="805" y="817" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">reset: вернуть шаблон к версии поставки</text>
+<rect x="1051.0" y="805" width="182" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="1058.0" y="817" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">{{skills}} · {{skill_&lt;sid&gt;}}</text>
+<rect x="784" y="870" width="470" height="178" rx="12" fill="#0d131d" stroke="#1b2637"/>
+<text x="798" y="894" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9.5" letter-spacing="1.1" fill="#5c6f82">ПЛАНИРОВАНИЕ</text>
+<rect x="792" y="904" width="454" height="32" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="798" y="920" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">scheduler_loop</text>
+<text x="798" y="932" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">leader-election · cron · только последняя версия агента (без дублей)</text>
+<rect x="792" y="944" width="454" height="44" rx="8" fill="#111a2b" stroke="#3b82f6" stroke-opacity="0.55"/>
+<text x="798" y="960" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">planner.py — план по контрактам</text>
+<text x="798" y="972" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">этапы задачи → навыки, которые реально выполнятся на текущих данных ·</text>
+<text x="798" y="984" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">достройка поставщиков · волны · шаблон отчёта</text>
+<rect x="792" y="996" width="454" height="32" rx="8" fill="#111a2b" stroke="#3b82f6" stroke-opacity="0.55"/>
+<text x="798" y="1012" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">Правило достаточности</text>
+<text x="798" y="1024" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">по двум словам не угадываем: причина + три вопроса + пример формулировки</text>
+<rect x="784" y="1058" width="470" height="286" rx="12" fill="#0d131d" stroke="#1b2637"/>
+<text x="798" y="1082" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9.5" letter-spacing="1.1" fill="#5c6f82">GOVERNANCE / ДОСТУП</text>
+<rect x="792" y="1092" width="454" height="32" rx="8" fill="#111a2b" stroke="#3b82f6" stroke-opacity="0.55"/>
+<text x="798" y="1108" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">Keycloak JWT</text>
+<text x="798" y="1120" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">realm abop · multi-issuer</text>
+<rect x="792" y="1132" width="454" height="32" rx="8" fill="#111a2b" stroke="#3b82f6" stroke-opacity="0.55"/>
+<text x="798" y="1148" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">RBAC / ABAC</text>
+<text x="798" y="1160" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">department == family</text>
+<rect x="792" y="1172" width="454" height="32" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="798" y="1188" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">Реестр семей</text>
+<text x="798" y="1200" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">= отделы · кастомные</text>
+<rect x="792" y="1212" width="454" height="32" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="798" y="1228" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">ABAC-навыки</text>
+<text x="798" y="1240" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">видны по отделу</text>
+<rect x="792" y="1252" width="454" height="32" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="798" y="1268" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">edit_scope</text>
+<text x="798" y="1280" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">user · methodologist</text>
+<rect x="792" y="1292" width="454" height="32" rx="8" fill="#111a2b" stroke="#3b82f6" stroke-opacity="0.55"/>
+<text x="798" y="1308" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">Сквозной ID</text>
+<text x="798" y="1320" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">UID → аккаунты в системах</text>
+<rect x="28" y="1131" width="250" height="188" rx="12" fill="#0d131d" stroke="#1b2637"/>
+<text x="42" y="1155" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9.5" letter-spacing="1.1" fill="#5c6f82">STORES (POSTGRES · SVOD-ANALYTICS-PG)</text>
+<rect x="42" y="1164" width="44" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="49" y="1176" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">agent</text>
+<rect x="91.0" y="1164" width="62" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="98.0" y="1176" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">contract</text>
+<rect x="158.0" y="1164" width="44" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="165.0" y="1176" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">skill</text>
+<rect x="42" y="1184" width="62" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="49" y="1196" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">families</text>
+<rect x="109.0" y="1184" width="62" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="116.0" y="1196" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">identity</text>
+<rect x="176.0" y="1184" width="56" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="183.0" y="1196" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">systems</text>
+<rect x="42" y="1204" width="68" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="49" y="1216" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">dataplane</text>
+<rect x="115.0" y="1204" width="50" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="122.0" y="1216" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">report</text>
+<rect x="170.0" y="1204" width="50" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="177.0" y="1216" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">schema</text>
+<rect x="225.0" y="1204" width="32" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="232.0" y="1216" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">run</text>
+<rect x="42" y="1224" width="68" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="49" y="1236" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">run_cache</text>
+<rect x="115.0" y="1224" width="38" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="122.0" y="1236" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">hitl</text>
+<rect x="158.0" y="1224" width="92" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="165.0" y="1236" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">board_entries</text>
+<rect x="42" y="1244" width="56" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="49" y="1256" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">trigger</text>
+<rect x="103.0" y="1244" width="68" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="110.0" y="1256" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">reglament</text>
+<rect x="176.0" y="1244" width="44" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="183.0" y="1256" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">audit</text>
+<rect x="42" y="1264" width="44" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="49" y="1276" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">admin</text>
+<rect x="28" y="1329" width="250" height="128" rx="12" fill="#0d131d" stroke="#1b2637"/>
+<text x="42" y="1353" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9.5" letter-spacing="1.1" fill="#5c6f82">LLM-КЛИЕНТЫ (КАСКАД)</text>
+<rect x="42" y="1362" width="122" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="49" y="1374" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">chat · chat_stream</text>
+<rect x="42" y="1382" width="98" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="49" y="1394" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">embed (BGE-M3)</text>
+<rect x="145.0" y="1382" width="50" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="152.0" y="1394" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">rerank</text>
+<rect x="200.0" y="1382" width="50" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="207.0" y="1394" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">qdrant</text>
+<rect x="42" y="1402" width="116" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="49" y="1414" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">admission-семафор</text>
+<rect x="784" y="1354" width="470" height="128" rx="12" fill="#0d131d" stroke="#1b2637"/>
+<text x="798" y="1378" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9.5" letter-spacing="1.1" fill="#5c6f82">ФРОНТ + НАБЛЮДАЕМОСТЬ</text>
+<rect x="798" y="1387" width="200" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="805" y="1399" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">webapp/src buildless (build.py)</text>
+<rect x="1003.0" y="1387" width="80" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="1010.0" y="1399" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">/desktop-ui</text>
+<rect x="798" y="1407" width="260" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="805" y="1419" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">Prometheus: webapi · redpanda · connector</text>
+<rect x="798" y="1427" width="218" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="805" y="1439" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">Grafana abop-overview (26 панелей)</text>
+<rect x="1021.0" y="1427" width="62" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="1028.0" y="1439" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">langfuse</text>
+<rect x="1088.0" y="1427" width="62" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="1095.0" y="1439" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">CI smoke</text>
+<rect x="296" y="1398" width="470" height="190" rx="12" fill="#0d131d" stroke="#1b2637"/>
+<text x="310" y="1422" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9.5" letter-spacing="1.1" fill="#5c6f82">GPU-БОКС: VLLM QWEN3-30B</text>
+<rect x="304" y="1432" width="454" height="44" rx="8" fill="#111a2b" stroke="#3b82f6" stroke-opacity="0.55"/>
+<text x="310" y="1448" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">Qwen3-30B-A3B-Instruct FP8</text>
+<text x="310" y="1460" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">vLLM · OpenAI-совместимый /v1 · response_format json_schema (xgrammar) ·</text>
+<text x="310" y="1472" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">local/qwen3-30b-a3b</text>
+<rect x="304" y="1484" width="454" height="44" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="310" y="1500" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">Каскад</text>
+<text x="310" y="1512" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">local → RouteAI (qwen/deepseek) как fallback · llm.cascade_fallback ·</text>
+<text x="310" y="1524" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">override /api/admin/llm</text>
+<rect x="304" y="1536" width="454" height="32" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="310" y="1552" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">BGE-M3 · reranker · Qdrant</text>
+<text x="310" y="1564" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">эмбеддинги · семантич. подбор · RAG / нормы (sLAVA)</text>
+<rect x="28" y="1467" width="250" height="372" rx="12" fill="#0d131d" stroke="#1b2637"/>
+<text x="42" y="1491" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9.5" letter-spacing="1.1" fill="#5c6f82">SERVER-2: ШИНА + КОННЕКТОР</text>
+<rect x="36" y="1501" width="234" height="68" rx="8" fill="#111a2b" stroke="#3b82f6" stroke-opacity="0.55"/>
+<text x="42" y="1517" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">Redpanda (Kafka, SASL SCRAM)</text>
+<text x="42" y="1529" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">топики на каждую систему реестра:</text>
+<text x="42" y="1541" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">abop.&lt;система&gt;.commands ·</text>
+<text x="42" y="1553" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">abop.&lt;система&gt;.events ·</text>
+<text x="42" y="1565" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">abop.runs.requests/results · abop.dlq</text>
+<rect x="36" y="1577" width="234" height="104" rx="8" fill="#111a2b" stroke="#3b82f6" stroke-opacity="0.55"/>
+<text x="42" y="1593" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">Коннектор-воркер</text>
+<text x="42" y="1605" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">читает *.commands · адаптеры</text>
+<text x="42" y="1617" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">redmine/issue.create ·</text>
+<text x="42" y="1629" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">bookstack/page.publish ·</text>
+<text x="42" y="1641" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">mailpit/email.send ·</text>
+<text x="42" y="1653" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">1c/export.request · дедуп по id</text>
+<text x="42" y="1665" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">(SQLite) · ретраи → DLQ · секреты</text>
+<text x="42" y="1677" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">систем только здесь</text>
+<rect x="36" y="1689" width="234" height="68" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="42" y="1705" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">Ответ</text>
+<text x="42" y="1717" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">command.done|failed → *.events →</text>
+<text x="42" y="1729" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">результат в HITL-заявку (ссылка) ·</text>
+<text x="42" y="1741" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">события систем → триггеры агентов</text>
+<text x="42" y="1753" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">(ABAC по семье)</text>
+<rect x="42" y="1764" width="140" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="49" y="1776" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">healthz/metrics :9105</text>
+<rect x="42" y="1784" width="164" height="17" rx="6" fill="#0f1725" stroke="#1b2637"/>
+<text x="49" y="1796" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9" fill="#9db1c6">DRY_RUN=1 — ничего наружу</text>
+<rect x="784" y="1492" width="470" height="724" rx="12" fill="#0d131d" stroke="#1b2637"/>
+<text x="798" y="1516" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9.5" letter-spacing="1.1" fill="#5c6f82">РАБОЧИЕ СИСТЕМЫ — ДОСТАВКА РЕЗУЛЬТАТА (ЧЕРЕЗ КОННЕКТОР, ПОД HITL) + ВХОДНЫЕ ДАННЫЕ</text>
+<text x="798" y="1534" font-family="'JetBrains Mono','Cascadia Mono',Consolas,monospace" font-size="9.5" letter-spacing="1.1" fill="#5c6f82">(DATA PLANE)</text>
+<rect x="792" y="1544" width="454" height="32" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="798" y="1560" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">🎫 Redmine</text>
+<text x="798" y="1572" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">issue · задачи</text>
+<rect x="792" y="1584" width="454" height="32" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="798" y="1600" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">✉ Mailpit/SMTP</text>
+<text x="798" y="1612" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">email · почта</text>
+<rect x="792" y="1624" width="454" height="32" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="798" y="1640" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">📄 BookStack</text>
+<text x="798" y="1652" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">document · вики</text>
+<rect x="792" y="1664" width="454" height="32" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="798" y="1680" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">🗄 Twenty CRM</text>
+<text x="798" y="1692" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">customer · сделки</text>
+<rect x="792" y="1704" width="454" height="32" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="798" y="1720" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">🧾 1С / MinIO</text>
+<text x="798" y="1732" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">выгрузки · S3</text>
+<rect x="792" y="1744" width="454" height="32" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="798" y="1760" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">📊 NocoDB</text>
+<text x="798" y="1772" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">таблицы</text>
+<rect x="792" y="1784" width="454" height="32" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="798" y="1800" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">🔐 Keycloak</text>
+<text x="798" y="1812" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">SSO · RBAC</text>
+<rect x="792" y="1824" width="454" height="32" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="798" y="1840" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">🧠 Qdrant</text>
+<text x="798" y="1852" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">вектор · нормы</text>
+<rect x="792" y="1864" width="454" height="32" rx="8" fill="#0a0f18" stroke="#1b2637" stroke-opacity="1"/>
+<text x="798" y="1880" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">🗃 Postgres</text>
+<text x="798" y="1892" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">persist</text>
+<rect x="792" y="1904" width="454" height="32" rx="8" fill="#111a2b" stroke="#3b82f6" stroke-opacity="0.55"/>
+<text x="798" y="1920" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="11.5" font-weight="600" fill="#e7eef8">🧩 Identity Map</text>
+<text x="798" y="1932" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#9db1c6">агент адресен</text>
+<text x="798" y="1958" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#5c6f82">1. Вход: Desktop-чат → сайдкар (127.0.0.1) → ABOP /api/* под JWT (RBAC/ABAC)</text>
+<text x="798" y="1970" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#5c6f82">2. Подбор: текст → /api/agents/match (лексика+семантика) → «куда результат?»</text>
+<text x="798" y="1982" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#5c6f82">3. Прогон: Data Plane → runner (grounded, self-host Qwen) → находки по схеме</text>
+<text x="798" y="1994" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#5c6f82">из БД</text>
+<text x="798" y="2006" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#5c6f82">4. Governance: конверт автономии + HITL → внешнее действие только после</text>
+<text x="798" y="2018" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#5c6f82">подтверждения</text>
+<text x="798" y="2030" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#5c6f82">5. Доставка результата навыка: delivery шаблона → команды коннектора →</text>
+<text x="798" y="2042" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#5c6f82">HITL-заявка с превью (система/действие, тема, описание) → «да» →</text>
+<text x="798" y="2054" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#5c6f82">abop.&lt;система&gt;.commands → коннектор (server-2) → Redmine/BookStack/Mailpit/1С</text>
+<text x="798" y="2066" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#5c6f82">6. Обратно по шине: command.done|failed → abop.&lt;система&gt;.events → результат</text>
+<text x="798" y="2078" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#5c6f82">(issue_id, url) в заявку → «✓ выполнено: ссылка» в карточке; сбои → abop.dlq;</text>
+<text x="798" y="2090" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#5c6f82">события систем → триггеры агентов (ABAC по семье)</text>
+<text x="798" y="2102" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#5c6f82">7. Отчёт: OUT-узлы (почта/BookStack/PDF) и GET</text>
+<text x="798" y="2114" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#5c6f82">/runs/{id}/report?template=&amp;format=pdf по reports/&lt;id&gt;.html с {{skills}} /</text>
+<text x="798" y="2126" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#5c6f82">{{skill_&lt;sid&gt;}}; агент адресен (Identity Map)</text>
+<text x="798" y="2138" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#5c6f82">8. Очередь: POST /runs?async → run_jobs (SKIP LOCKED) → воркеры; цепочки и</text>
+<text x="798" y="2150" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#5c6f82">HITL-возобновление через очередь</text>
+<text x="798" y="2162" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#5c6f82">9. Аудит: provenance-трасса + метрики webapi/Redpanda/коннектора в Prometheus</text>
+<text x="798" y="2174" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#5c6f82">→ Grafana abop-overview (секция «Шина и коннектор»), langfuse; расписания</text>
+<text x="798" y="2186" font-family="'Segoe UI',Inter,system-ui,sans-serif" font-size="10" fill="#5c6f82">через планировщик</text>
+</svg>
