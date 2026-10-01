@@ -3876,6 +3876,56 @@ async def _labels_ctx(run: dict) -> dict:
     return {"разметка": "".join(rows), "разметка_сводка": summary}
 
 
+def _label(key: str) -> str:
+    """Имя поля человеку: «часы_план_факт» → «часы план факт»."""
+    return str(key or "").replace("_", " ").strip()
+
+
+def _structured_html(node, esc, depth: int = 0) -> str:
+    """Структурный результат навыка — в HTML по форме данных.
+
+    Список однородных записей становится таблицей: так видно колонку «отклонение» целиком, а не
+    по одной строке на абзац. Словарь — две колонки. Глубже трёх уровней не идём: дальше это уже
+    не отчёт, а дамп, и его место в журнале прогона.
+    """
+    if node is None or node == "" or node == [] or node == {}:
+        return ""
+    if isinstance(node, (str, int, float, bool)):
+        return f"<p>{esc(node)}</p>"
+    if isinstance(node, list):
+        rows = [x for x in node if isinstance(x, dict)]
+        if rows and len(rows) == len(node) and depth < 3:
+            cols: list = []
+            for r in rows:
+                for k in r:
+                    if k not in cols and not isinstance(r.get(k), (dict, list)):
+                        cols.append(k)
+            if cols:
+                head = "".join(f"<th>{esc(_label(c))}</th>" for c in cols)
+                body = ""
+                for r in rows[:50]:
+                    body += "<tr>" + "".join(f"<td>{esc(r.get(c, ''))}</td>" for c in cols) + "</tr>"
+                    deep = {k: v for k, v in r.items() if isinstance(v, (dict, list)) and v}
+                    for k, v in deep.items():
+                        body += (f"<tr><td colspan='{len(cols)}' class='sub'><b>{esc(_label(k))}:</b> "
+                                 + _structured_html(v, esc, depth + 2) + "</td></tr>")
+                return f"<table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>"
+        return "<ul>" + "".join(f"<li>{_structured_html(x, esc, depth + 1) if not isinstance(x, (str, int, float, bool)) else esc(x)}</li>"
+                                for x in node[:50]) + "</ul>"
+    if isinstance(node, dict):
+        out = []
+        plain = {k: v for k, v in node.items() if not isinstance(v, (dict, list))}
+        if plain:
+            out.append("<table class='kv'>" + "".join(
+                f"<tr><th>{esc(_label(k))}</th><td>{esc(v)}</td></tr>" for k, v in plain.items()) + "</table>")
+        for k, v in node.items():
+            if isinstance(v, (dict, list)) and v:
+                tag = "h4" if depth else "h3"
+                out.append(f"<{tag}>{esc(_label(k))}</{tag}>" + _structured_html(v, esc, depth + 1))
+        return "".join(out)
+    return f"<p>{esc(node)}</p>"
+
+
 def _build_report_html(agent: dict, result: dict) -> str:
     """Детерминированный HTML-отчёт из результата прогона (находки A/B/C/D, цепочки-расследования,
     результаты навыков). Используется OUT-узлом для доставки (PDF/BookStack/почта)."""
@@ -3911,16 +3961,39 @@ def _build_report_html(agent: dict, result: dict) -> str:
                          f"<br>{chain}<br>расхождение Δ {esc(rec.get('разница_₽'))} ₽"
                          + (f"<br><i>§ {esc(norm[:200])}</i>" if norm else "") + "</li>")
         parts.append("</ul>")
+    # Структурный выход навыка — главное в отчёте: из него видно и сводку, и построчное исполнение.
+    # Прозаический текст оставляем как запасной вариант: его печатают навыки без схемы результата.
+    outs = [o for o in (result.get("skill_outputs") or []) if isinstance(o, dict)]
+    rich = [o for o in outs if isinstance(o.get("structured"), dict) and o["structured"]]
     llm = [f for f in fnds if isinstance(f, dict) and f.get("skill") and f.get("text")]
-    if llm and not struct:
+    if rich and not struct:
+        parts.append("<h2>Результаты навыков</h2>")
+        for o in rich[:20]:
+            st = o["structured"]
+            parts.append(f"<h3>{esc(o.get('skill'))}</h3>")
+            # «Итог» навыка — первая строка отчёта: ради неё письмо и открывают.
+            for key in ("итог", "вывод", "резюме"):
+                if isinstance(st.get(key), str) and st[key].strip():
+                    parts.append(f"<p class='lead'>{esc(st[key])}</p>")
+                    break
+            parts.append(_structured_html({k: v for k, v in st.items()
+                                           if k not in ("итог", "вывод", "резюме")}, esc))
+    elif llm and not struct:
         parts.append("<h2>Результаты навыков</h2>")
         for f in llm[:20]:
             parts.append(f"<h3>{esc(f.get('skill'))}</h3>"
-                         f"<pre style='white-space:pre-wrap'>{esc((f.get('text') or '')[:2000])}</pre>")
+                         f"<pre style='white-space:pre-wrap'>{esc((f.get('text') or '')[:4000])}</pre>")
     body = "".join(parts)
     return ("<!doctype html><html><head><meta charset='utf-8'><style>"
-            "body{font-family:Arial,sans-serif;max-width:800px;margin:24px auto;color:#111;line-height:1.5}"
-            "h1{font-size:22px}h2{font-size:17px;margin-top:20px}li{margin:6px 0}i{color:#0a6}</style></head>"
+            "body{font-family:Arial,sans-serif;max-width:860px;margin:24px auto;color:#111;line-height:1.5}"
+            "h1{font-size:22px}h2{font-size:17px;margin-top:22px}h3{font-size:15px;margin:18px 0 6px}"
+            "h4{font-size:13px;margin:12px 0 4px;color:#444}li{margin:6px 0}i{color:#0a6}"
+            "p.lead{font-size:15px;font-weight:bold;margin:6px 0 12px}"
+            "table{border-collapse:collapse;width:100%;margin:6px 0 14px;font-size:13px}"
+            "th,td{border:1px solid #d7dae3;padding:6px 8px;text-align:left;vertical-align:top}"
+            "thead th{background:#f3f4f8;font-weight:bold;white-space:nowrap}"
+            "table.kv th{width:34%;background:#fafbfd;font-weight:normal;color:#555}"
+            "td.sub{background:#fbfcfe;font-size:12px}</style></head>"
             f"<body>{body}<hr><p style='color:#888;font-size:12px'>Сформировано ABOP · {name}</p></body></html>")
 
 
