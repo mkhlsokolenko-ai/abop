@@ -2012,7 +2012,7 @@
 
 </div>
 
-<script type="text/x-dc" data-dc-script="" data-props="{&quot;startScreen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;overview&quot;,&quot;runs&quot;,&quot;skills&quot;,&quot;data&quot;,&quot;canvas&quot;,&quot;passport&quot;,&quot;settings&quot;],&quot;default&quot;:&quot;overview&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;simSpeed&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:1,&quot;min&quot;:0.25,&quot;max&quot;:3,&quot;step&quot;:0.25,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Симуляция&quot;}}">
+<script type="text/x-dc" data-dc-script="" data-props="{&quot;startScreen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;overview&quot;,&quot;runs&quot;,&quot;skills&quot;,&quot;data&quot;,&quot;canvas&quot;,&quot;passport&quot;,&quot;settings&quot;],&quot;default&quot;:&quot;overview&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
 (function(){ if(window.__abopFetchWrapped) return; window.__abopFetchWrapped=true; var _f=window.fetch.bind(window);
 // Сессия Keycloak живёт ~5 минут: обновляем токен заранее и повторяем запрос, получивший 401,
 // иначе интерфейс через пять минут показывает «нужно войти» на каждое действие.
@@ -3026,20 +3026,12 @@ class Component extends DCLogic {
     this.hitlTimer = setInterval(() => { if (!this.isCurrent()) { clearInterval(this.hitlTimer); return; } this.loadHitl(); }, 45000);
     this.onDocClick = (e) => { if (!this.state.userMenu) return; var box = document.getElementById('abopProfile'); if (box && !box.contains(e.target)) this.setState({ userMenu: false }); };
     document.addEventListener('mousedown', this.onDocClick);
-    this.timer = setInterval(() => {
-      if (!this.isCurrent()) { clearInterval(this.timer); return; }
-      const s = this.state;
-      if (!s.startedOnce || !s.playing || s.stopped) return;
-      if (s.pct >= 72 && !s.hitlResolved) return;
-      if (s.pct >= 100) return;
-      this.setState({ pct: Math.min(100, s.pct + 0.9 * (this.props.simSpeed ?? 1)) });
-    }, 220);
     this.onKey = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); this.setState({ modal: 'cmdk' }); }
       if (e.key === 'Escape') {
         if (this.state.mapFull) this.setState({ mapFull: false });
         else if (this.state.canvasFull) this.toggleFull();
-        else if (!this.state.modal && !this.state.mapDrawer && this.state.screen === 'canvas' && this.state.lens === 'run' && this.state.startedOnce && this.state.playing && !this.state.runReadOnly && !this.state.lastRun) this.setState({ modal: 'stop' });
+        else if (!this.state.modal && !this.state.mapDrawer && this.state.screen === 'canvas' && this.state.lens === 'run' && (this.state.runJob || this.state.runBusy)) this.setState({ modal: 'stop' });
         else this.setState({ modal: null, mapDrawer: null, paletteOpen: this.state.paletteOpen });
       }
     };
@@ -3126,12 +3118,14 @@ class Component extends DCLogic {
   }
 
   apeStatus() {
+    // Состояние читается с прогона: идёт — думает, очередь HITL — ждёт, закончился —
+    // готово или замечания. Процента, который шёл бы сам по себе, больше нет.
     const s = this.state;
-    if (s.stopped) return 'stop';
-    if (s.pct >= 100) return 'done';
-    if (s.pct >= 72 && !s.hitlResolved) return 'hitl';
-    if (!s.playing) return 'idle';
-    return 'thinking';
+    if (s.runBusy || s.runJob) return 'thinking';
+    if ((s.hitlQueue || []).length) return 'hitl';
+    if (s.runError) return 'stop';
+    if (!s.lastRun) return 'idle';
+    return ((s.lastRun.verdict || {}).ok === false) ? 'stop' : 'done';
   }
 
   renderVals() {
@@ -3149,10 +3143,10 @@ class Component extends DCLogic {
     const s = this.state;
     const ape = this.apeStatus();
     const apeLabels = { idle: 'на паузе', thinking: 'думает', hitl: 'ждёт вас', stop: 'остановлен', done: 'DoD ✓', scan: 'сканирует' };
-    const wave = s.pct < 33 ? 1 : s.pct < 70 ? 2 : 3;
+    const wave = (s.lastRun && (s.lastRun.waves || []).length) || 1;
     const realHitl = s.hitlQueue || [];
-    const hitlPending = realHitl.length > 0 || (s.startedOnce && s.pct >= 72 && !s.hitlResolved && !s.stopped);
-    const finished = s.startedOnce && s.pct >= 100;
+    const hitlPending = realHitl.length > 0;   // «ждёт вас» — это заявка в очереди, а не отметка на шкале
+    const finished = !!s.lastRun && !s.runBusy && !s.runJob;
     const isRealRun = !!(s.lastRun && (s.lastRun.run_id || s.lastRun.trace_id || (Array.isArray(s.lastRun.waves) && s.lastRun.waves.length)));
 
     const navDefs = [
@@ -3231,8 +3225,10 @@ class Component extends DCLogic {
     const nodeBg = { idle: 'var(--w3)', thinking: 'rgba(99,102,241,.12)', hitl: 'rgba(245,158,11,.12)', done: 'rgba(16,185,129,.08)', stop: 'rgba(239,68,68,.1)' };
     const nodeBorder = { idle: 'var(--w8)', thinking: 'rgba(99,102,241,.35)', hitl: 'rgba(245,158,11,.35)', done: 'rgba(16,185,129,.28)', stop: 'rgba(239,68,68,.32)' };
 
+    // Этапы берём из прогона. Нет прогона — нет этапов: показывать демо-узлы вместо пустоты
+    // значит выдавать макет за работу.
     const _lrun = (s.lastRun && Array.isArray(s.lastRun.waves) && s.lastRun.waves.length) ? s.lastRun : null;
-    const _waveIdx = _lrun ? s.lastRun.waves.map((_l, _i) => _i + 1) : [1, 2, 3];
+    const _waveIdx = _lrun ? s.lastRun.waves.map((_l, _i) => _i + 1) : [];
     const waveRows = _waveIdx.map(n => {
       const _srcNodes = _lrun ? (s.lastRun.waves[n - 1] || []).map(w => ({ id: w.id, skill: w.skill || w.id, role: w.role || w.mode || '', family: w.family || s.lastRun.family || s.lastRun.agent_name || 'агент', wave: n, at: 0 })) : NODES.filter(x => x.wave === n);
       const nodes = _srcNodes.map(x => {
@@ -3759,7 +3755,7 @@ class Component extends DCLogic {
       canvasEyebrow: (s.fromOps ? (s.fromOps.crumb + ' · ') : '') + 'граф агента',
       isBuildLens: s.screen === 'canvas' && s.lens === 'build',
       lifeSteps: (() => {
-        const cur = s.agentStatus === 'prod' ? 3 : (s.startedOnce && s.playing ? 2 : (s.checkOk ? 1 : 0));
+        const cur = s.agentStatus === 'prod' ? 3 : (isRealRun ? 2 : (s.checkOk ? 1 : 0));
         return ['Черновик', 'Проверен', 'В прогоне', 'В проде'].map((label, i) => ({
           label: label, level: 'этап ' + (i + 1), sep: i < 3 ? '▸' : '',
           bg: i === cur ? 'rgba(99,102,241,.22)' : 'var(--w4)',
@@ -3870,7 +3866,7 @@ class Component extends DCLogic {
       runBarText: runOnThisPath ? 'Здесь идёт прогон демо' : 'Прогон демо идёт в: ' + RUN_TRACE.pathLabel,
       runBarCta: runOnThisPath ? 'Открыть пульт ▸' : 'Перейти к участку ▸',
       runBarGo: () => {
-        if (runOnThisPath) { this.setState({ lens: 'run', startedOnce: true }); this.showToast('Пульт прогона демо'); return; }
+        if (runOnThisPath) { this.openRunLens(); return; }
         this.setState({ path: RUN_TRACE.path.slice(), selOp: RUN_TRACE.steps[currentStepIdx].op, mapLayer: 'LIVE' });
         this.showToast('Карта · ' + RUN_TRACE.pathLabel);
       },
@@ -3878,7 +3874,7 @@ class Component extends DCLogic {
       runStepLabel: 'шаг ' + (currentStepIdx + 1) + ' из ' + RUN_TRACE.steps.length + ' · ' + RUN_TRACE.steps[currentStepIdx].label,
       runStepTone: traceTone[traceStatus(currentStepIdx)].fg,
       goRunPath: () => { this.setState({ path: RUN_TRACE.path.slice(), selOp: RUN_TRACE.steps[currentStepIdx].op, mapLayer: 'LIVE', lens: 'ops' }); this.showToast('Карта · ' + RUN_TRACE.pathLabel); },
-      goRunPult: () => { this.setState({ lens: 'run', startedOnce: true }); this.showToast('Пульт прогона демо'); },
+      goRunPult: () => this.openRunLens(),
       opsNodes: (mapCur.children || []).map((c, idx, arr) => {
         const k = OP_KINDS[c.kind] || OP_KINDS.task;
         const asg = mapAssignsOf(c);
@@ -3907,7 +3903,7 @@ class Component extends DCLogic {
             this.setState({ lens: 'build', selectedNode: st3.node, showRunOverlay: true });
             this.showToast('Граф · узел шага «' + st3.label + '»');
           },
-          openStepInPult: () => { this.setState({ lens: 'run', startedOnce: true }); this.showToast('Пульт · шаг «' + c.label + '»'); },
+          openStepInPult: () => this.openRunLens(),
           bg: c.kind === 'hitl' ? k.bg : (asg.length ? 'rgba(99,102,241,.1)' : k.bg),
           border: err ? SEM.err.border : (asg.length ? 'rgba(129,140,248,.34)' : k.border),
           dash: (isLeaf && !asg.length && c.kind === 'task') ? 'dashed' : 'solid',
@@ -3941,7 +3937,7 @@ class Component extends DCLogic {
         return {
           agent: i.agent, step: i.step, init: i.init, status: i.status, ape: ist.ape, fg: ist.fg,
           dur: mm + ':' + (ss2 < 10 ? '0' + ss2 : ss2), cost: i.cost.toFixed(2) + ' ₽',
-          open: () => { this.setState({ lens: 'run', startedOnce: true }); this.showToast('Пульт экземпляра · ' + i.agent); }
+          open: () => this.openRunLens()
         };
       }),
       ctxTag: (OP_KINDS[mapCtx.kind] || { tag: 'организация' }).tag,
@@ -4083,9 +4079,9 @@ class Component extends DCLogic {
       runsHasMore: _runsFiltered.length > 3, runsOpen: !!s.runsOpen, runsMoreCount: Math.max(0, Math.min(_runsFiltered.length, 10) - 3),
       toggleRuns: () => this.setState({ runsOpen: !s.runsOpen }), runsToggleLabel: s.runsOpen ? 'Свернуть ▲' : ('Показать все (' + Math.max(0, Math.min(_runsFiltered.length, 10) - 3) + ') ▼'),
       runsEmpty: !(s.runsList||[]).length, runsNote: s.runsLoading ? 'Загрузка…' : 'Прогонов пока нет — запустите агента на канве', reloadRuns: () => { this.loadRuns(); this.loadBilling(); }, costSpent: (s.billing ? (s.billing.spent_rub >= 100 ? Math.round(s.billing.spent_rub).toLocaleString('ru-RU') : (s.billing.spent_rub||0).toFixed(2)) : '0'), quotaPct: (s.billing ? s.billing.quota_pct : 0), costOf: '₽ из ' + (s.billing ? Math.round(s.billing.quota_limit_rub).toLocaleString('ru-RU') : (parseInt((s.quotaLimit||'4000').replace(/\D/g,''),10)||4000).toLocaleString('ru-RU')),
-      apeState: s.startedOnce ? ape : 'idle', apeLabel: s.startedOnce ? apeLabels[ape] : 'готов к работе', apeHint: !s.startedOnce ? 'прогонов пока нет' : finished ? (isRealRun ? 'прогон завершён' : 'демо-прогон закрыт') : hitlPending ? 'нужно ваше решение' : 'этап ' + wave + ' · run демо',
+      apeState: ape, apeLabel: isRealRun ? (((s.lastRun.verdict || {}).ok === false) ? 'есть замечания' : apeLabels[ape]) : (ape === 'idle' ? 'готов к работе' : apeLabels[ape]), apeHint: (s.runBusy || s.runJob) ? (s.runProgress || 'прогон идёт') : (hitlPending ? 'нужно ваше решение' : (isRealRun ? 'прогон завершён' : 'прогонов пока нет')),
       goOverview: () => this.go('overview'), goAgentsScreen: () => this.go('agents'), lkMyRuns: String((s.runsList||[]).filter(r => s.me && r.started_by === s.me.name).length), lkScenario: s.scenario, lkMemory: (s.memory||[]).slice(0, 8).map(x => ({ text: x.text || x.title || x.key || JSON.stringify(x), cls: ({ crit: 'важно', imp: 'учесть', op: 'правило', reg: 'норма' }[x.cls] || x.cls || 'факт'), ttl: x.ttl || '', bg: x.cls === 'crit' ? 'rgba(239,68,68,.14)' : 'rgba(99,102,241,.16)', fg: x.cls === 'crit' ? 'var(--err-ink)' : 'var(--acc-ink2)' })), lkMemoryCount: (s.memory||[]).length + ' ' + this.plural((s.memory||[]).length, 'запись', 'записи', 'записей'), lkMemoryEmpty: !(s.memory && s.memory.length),
-      goRuns: () => { this.setState({ screen: 'canvas', lens: 'run' }); this.route('canvas'); this.loadRuns(); },
+      goRuns: () => this.openRunLens(),
       goPassport: () => { this.setState({ screen: 'canvas', lens: 'envelope' }); this.route('canvas'); this.loadPassport(); },
       lensTabs: [
         { id: 'build', label: 'Строю', hint: 'правлю граф агента' },
@@ -4164,12 +4160,12 @@ class Component extends DCLogic {
       ].filter(h => { const q = (s.helpQuery || '').trim().toLowerCase(); return !q || (h.q + ' ' + h.a).toLowerCase().includes(q); }),
       helpEmpty: (() => { const q = (s.helpQuery || '').trim().toLowerCase(); if (!q) return false; return !['конверт','cite','hitl','рецепт','сохран','прод','автосейв','контракт'].some(k => k.indexOf(q) >= 0 || q.indexOf(k) >= 0); })(),
       goSettingsBilling: () => { this.setState({ screen: 'settings', settingsTab: 'Биллинг', modal: null }); this.route('settings'); },
-      openCmdk: () => this.setState({ modal: 'cmdk' }), openLaunch: () => this.setState({ modal: 'launch' }),
+      openCmdk: () => this.setState({ modal: 'cmdk' }), openLaunch: () => this.setState({ modal: 'launch', planIntent: null }),
       openHitl: () => { this.setState({ modal: 'hitl' }); if (realHitl.length) this.loadHitlPreview(realHitl[0].id); }, openConnector: () => this.setState({ modal: 'connector' }),
-      closeModal: () => this.setState({ modal: null }), askStop: () => { if (s.runReadOnly) { this.showToast('Архивный прогон — только чтение'); return; } this.setState({ modal: 'stop' }); },
+      closeModal: () => this.setState({ modal: null, planIntent: null }), askStop: () => { if (s.runReadOnly) { this.showToast('Архивный прогон — только чтение'); return; } this.setState({ modal: 'stop' }); },
 
       isSecurity: s.screen === 'security',
-      noRunYet: s.screen === 'canvas' && s.lens === 'run' && !s.startedOnce,
+      noRunYet: s.screen === 'canvas' && s.lens === 'run' && !isRealRun && !s.runBusy,
       llmHead: (function(){ var L = s.llmStatus; if (!L) return 'модель: …'; return 'модель: ' + (L.active || '—') + (L.free ? ' · 0 ₽ за прогон' : ''); })(),
       llmNote: (function(){ var L = s.llmStatus; if (!L) return ''; var h = (L.local || {}).health || {};
         if (!L.self_hosted) return 'облачный каскад: ' + (L.cascade || []).slice(0, 2).join(' → ');
@@ -4186,7 +4182,7 @@ class Component extends DCLogic {
         if (h.configured && !h.ok) return 'rgba(239,68,68,.28)'; if ((L.fallback || {}).total) return 'rgba(245,158,11,.28)'; return 'var(--w10)'; })(),
       llmGpu: (function(){ var g = (s.llmStatus || {}).gpu; if (!g) return ''; return 'GPU: $' + g.credit + (g.dph_running ? ' · $' + g.dph_running + '/ч' : '') + (g.hours_left ? ' · ~' + g.hours_left + ' ч' : ''); })(),
       llmReload: () => { this.loadLlmStatus(); this.showToast('Проверяю модель и бокс…'); },
-      isOverview: s.screen === 'overview', isIngress: s.screen === 'ingress', ingBusy: s.ingestBusy, notBusy: !s.ingestBusy, ingOk: !!(s.ingestResult && s.ingestResult.accepted), ingErrors: (s.ingestResult && !s.ingestResult.accepted) ? s.ingestResult.errors : null, ingCard: (s.ingestResult && s.ingestResult.accepted) ? s.ingestResult.intake : null, ingHasContracts: (s.contracts||[]).length>0, ingContracts: (s.contracts||[]).map((c) => ({ audit_id:c.audit_id, family:c.family||'—', autonomy:c.autonomy||'A?', segment:c.segment||'—', skillsLine:((c.skills||[]).length)+' навыков', open: () => this.openContractInCanvas(c.audit_id) })), ingOpenFirst: () => { var r=s.ingestResult; if(r&&r.accepted&&r.audit_id) this.openContractInCanvas(r.audit_id); }, onIngestFile: (e) => { var f=e.target.files&&e.target.files[0]; if(!f) return; var rd=new FileReader(); rd.onload=()=>this.ingestBundle(String(rd.result)); rd.readAsText(f); }, isRuns: s.screen === 'canvas' && s.lens === 'run' && s.startedOnce, isSkills: s.screen === 'skills',
+      isOverview: s.screen === 'overview', isIngress: s.screen === 'ingress', ingBusy: s.ingestBusy, notBusy: !s.ingestBusy, ingOk: !!(s.ingestResult && s.ingestResult.accepted), ingErrors: (s.ingestResult && !s.ingestResult.accepted) ? s.ingestResult.errors : null, ingCard: (s.ingestResult && s.ingestResult.accepted) ? s.ingestResult.intake : null, ingHasContracts: (s.contracts||[]).length>0, ingContracts: (s.contracts||[]).map((c) => ({ audit_id:c.audit_id, family:c.family||'—', autonomy:c.autonomy||'A?', segment:c.segment||'—', skillsLine:((c.skills||[]).length)+' навыков', open: () => this.openContractInCanvas(c.audit_id) })), ingOpenFirst: () => { var r=s.ingestResult; if(r&&r.accepted&&r.audit_id) this.openContractInCanvas(r.audit_id); }, onIngestFile: (e) => { var f=e.target.files&&e.target.files[0]; if(!f) return; var rd=new FileReader(); rd.onload=()=>this.ingestBundle(String(rd.result)); rd.readAsText(f); }, isRuns: s.screen === 'canvas' && s.lens === 'run' && (isRealRun || !!s.runBusy), isSkills: s.screen === 'skills',
       isData: s.screen === 'data', isCanvas: s.screen === 'canvas' && s.lens === 'build',
       isPassport: s.screen === 'canvas' && s.lens === 'envelope', ppHas: !!s.agentPassport, pp: s.agentPassport || null,
       envSkills: (() => { var pp=s.agentPassport; if(!pp||!pp.nodes) return []; var cat={}; (s.skillList||[]).forEach(x=>{cat[x.id]=x;}); var draft=s.envSkillDraft||{}; var L=['A0','A1','A2','A3','A4']; var ceil=L.indexOf(pp.ceiling||'A1'); if(ceil<0)ceil=1; return pp.nodes.filter(n=>n.kind==='skill'&&n.skill).map(n=>{ var d=draft[n.id]||{}; var sf=cat[n.skill]||{}; var auto=d.autonomy||n.autonomy||'A0'; var hitl=(d.hitl!==undefined)?d.hitl:!!n.hitl; var over=L.indexOf(auto)>ceil; var mode=sf.mode||'read'; var modeLabel=({read:'читает',write:'создаёт',action:'наружу'}[mode]||mode)+(sf.cite?' · cite':''); var dirty=(d.autonomy!==undefined&&d.autonomy!==(n.autonomy||'A0'))||(d.hitl!==undefined&&d.hitl!==!!n.hitl); return { id:n.id, title:sf.title||n.skill, auto:auto, autoBg:over?'rgba(239,68,68,.12)':'rgba(99,102,241,.18)', autoBorder:over?'rgba(239,68,68,.4)':'rgba(129,140,248,.5)', autoFg:over?'var(--err-ink)':'var(--acc-ink2)', cycleAuto:()=>this.cycleSkillAuto(n.id), hitlLabel:hitl?'HITL ✓':'HITL —', hitlBg:hitl?'rgba(245,158,11,.16)':'var(--w5)', hitlBorder:hitl?'rgba(245,158,11,.4)':'var(--w14)', hitlFg:hitl?'var(--warn-ink)':'var(--w50)', toggleHitl:()=>this.toggleSkillHitl(n.id), modeLabel:modeLabel, modeBg:mode==='action'?'rgba(245,158,11,.12)':(mode==='write'?'rgba(139,92,246,.14)':'rgba(99,102,241,.12)'), modeFg:mode==='action'?'var(--warn-ink)':(mode==='write'?'var(--vio-ink)':'var(--acc-ink)'), rowBorder:dirty?'rgba(245,158,11,.35)':'var(--w8)' }; }); })(), envSkillsEmpty: !(s.agentPassport && s.agentPassport.nodes && s.agentPassport.nodes.filter(n=>n.kind==='skill'&&n.skill).length), envSkillCount: (((s.agentPassport&&s.agentPassport.nodes)||[]).filter(n=>n.kind==='skill'&&n.skill).length)+' навыков', envHitlCount: (() => { var pp=s.agentPassport; if(!pp||!pp.nodes) return '0'; var d=s.envSkillDraft||{}; var c=0; pp.nodes.filter(n=>n.kind==='skill'&&n.skill).forEach(n=>{ var h=(d[n.id]&&d[n.id].hitl!==undefined)?d[n.id].hitl:!!n.hitl; if(h)c++; }); return String(c); })(), envDirty: !!(s.envSkillDraft && Object.keys(s.envSkillDraft).length), envDirtyText: (s.envSkillDraft ? Object.keys(s.envSkillDraft).length : 0)+' правок в черновике', envSumAuto: (() => { var pp=s.agentPassport; if(!pp||!pp.nodes) return (pp&&pp.autonomy)||'A0'; var d=s.envSkillDraft||{}; var L=['A0','A1','A2','A3','A4']; var mx=0; var ns=pp.nodes.filter(n=>n.kind==='skill'&&n.skill); if(!ns.length) return pp.autonomy||'A0'; ns.forEach(n=>{ var a=(d[n.id]&&d[n.id].autonomy)||n.autonomy||'A0'; var i=L.indexOf(a); if(i>mx)mx=i; }); return L[mx]; })(), envSumBg: 'rgba(99,102,241,.18)', envSumBorder: 'rgba(129,140,248,.4)', envSumFg: 'var(--acc-ink2)', envCeiling: (s.agentPassport&&s.agentPassport.ceiling)||'—', envFamily: (s.agentPassport&&s.agentPassport.family)||'—',
@@ -4240,16 +4236,29 @@ class Component extends DCLogic {
           fg: lv === cur ? 'var(--ink)' : 'var(--w55)'
         };
       }),
-      gateTitle: s.planChecking ? 'Проверяю план…' : (s.planOk ? '✓ План проверен — исполним' : 'План ещё не проверен'),
+      gateTitle: s.planIntent === 'build'
+        ? (s.planChecking ? 'Разбираю задачу…' : (s.planOk ? '✓ Цепочка собрана — рисую на канве' : 'Агент ещё не построен'))
+        : (s.planChecking ? 'Проверяю план…' : (s.planOk ? '✓ План проверен — исполним' : 'План ещё не проверен')),
       gateNote: s.planChecking
         ? 'Спрашиваю ABOP: какие семьи агентов подходят под цель и что будет запущено.'
         : (s.planOk
           ? 'План собран средой. Запуск создаст реальный прогон: результат, находки и стоимость появятся в окне результата.'
-          : 'Нажмите «Проверить план» — среда разложит цель по семьям агентов и покажет, что именно запустится.'),
+          : (s.planIntent === 'build'
+            ? 'Нажмите «Построить» — среда подберёт навыки, которые выполнятся на ваших данных, и выложит их цепочкой на канву.'
+            : 'Нажмите «Проверить план» — среда разложит цель по семьям агентов и покажет, что именно запустится.')),
       gateBg: s.planOk ? 'rgba(16,185,129,.09)' : s.planChecking ? 'rgba(99,102,241,.1)' : 'var(--w4)',
       gateBorder: s.planOk ? 'rgba(16,185,129,.28)' : s.planChecking ? 'rgba(99,102,241,.26)' : 'var(--w12)',
       gateFg: s.planOk ? 'var(--ok-ink)' : s.planChecking ? 'var(--acc-ink2)' : 'var(--w65)',
-      gateBtnLabel: s.planChecking ? 'Проверяю план…' : (s.planOk ? 'Запустить прогон' : 'Проверить план'),
+      gateBtnLabel: s.planIntent === 'build'
+        ? (s.planChecking ? 'Строю…' : 'Построить')
+        : (s.planChecking ? 'Проверяю план…' : (s.planOk ? 'Запустить прогон' : 'Проверить план')),
+      launchTitle: s.planIntent === 'build' ? 'Новый агент' : 'Запуск прогона',
+      planEmptyNote: s.planIntent === 'build'
+        ? 'Цепочка появится после «Построить»: среда подберёт навыки, которые выполнятся на ваших данных.'
+        : 'План появится после «Проверить план»: среда разложит цель по семьям агентов.',
+      launchLead: s.planIntent === 'build'
+        ? 'Опишите задачу словами. Среда разложит её на навыки по контрактам и выстроит агента на канве — править можно будет руками. Построение ничего не запускает и денег не тратит.'
+        : 'Опишите цель — среда подберёт семьи агентов и запустит реальный прогон. Действия наружу пройдут через ваше подтверждение.',
       gateBtnBg: s.planChecking ? 'var(--w7)' : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
       gateBtnFg: s.planChecking ? 'var(--w40)' : 'var(--ink)',
       planSteps: s.planSteps.map(p => ({
@@ -5090,11 +5099,18 @@ class Component extends DCLogic {
       budgetPresetSmall: () => this.setState({ budTokens: '30000', budRub: '10', budSec: '180' }),
       budgetPresetFull: () => this.setState({ budTokens: '120000', budRub: '40', budSec: '540' }),
       budgetPresetNone: () => this.setState({ budTokens: '', budRub: '', budSec: '' }),
-      planWaves: (s.planWavesReal || []), planEmpty: !(s.planWavesReal && s.planWavesReal.length), planEstimate: (s.contract && s.contract.audit_id) ? ('агент: ' + (s.contract.family || s.contract.audit_id) + ' · автономия по контракту ' + (s.contract.autonomy || '') + ' · стоимость считается по факту прогона') : ('агента на канве нет — будет собран демо-агент сценария «' + s.scenario + '» · стоимость по факту прогона'),
+      planSectionTitle: s.planIntent === 'build' ? 'Цепочка навыков · по контрактам' : 'План этапов · по семьям агентов (из ABOP)',
+      showBudget: s.planIntent !== 'build',   // построение не тратит ни токенов, ни денег — лимиту тут нечего ограничивать
+      planWaves: (s.planWavesReal || []), planEmpty: !(s.planWavesReal && s.planWavesReal.length), planEstimate: s.planIntent === 'build' ? 'Построение не запускает прогон: ни модели, ни расходов. Запуск — отдельной кнопкой на канве.' : ((s.contract && s.contract.audit_id) ? ('агент: ' + (s.contract.family || s.contract.audit_id) + ' · автономия по контракту ' + (s.contract.autonomy || '') + ' · стоимость считается по факту прогона') : ('агента на канве нет — среда соберёт агента под план · стоимость по факту прогона')),
       planCanBuild: !!(s.planAuto && s.planAuto.ok && ((s.planAuto.steps || []).length > 1)),
       planBuildLabel: 'Собрать цепочку по плану (' + (((s.planAuto || {}).steps || []).length) + ' шага)',
       buildFromPlan: () => this.buildFromPlan(),
-      startRun: () => { if (s.runBusy || s.planChecking) return; if (!s.planOk) { this.checkPlan(); return; } this.launchReal(); },
+      startRun: () => {
+        if (s.runBusy || s.planChecking) return;
+        if (s.planIntent === 'build') { this.buildAgentFromTask(); return; }
+        if (!s.planOk) { this.checkPlan(); return; }
+        this.launchReal();
+      },
 
       hitlModal: s.modal === 'hitl', stopModal: s.modal === 'stop', nodePopover: s.modal === 'node',
       popNode: { role: popNode.role, family: popNode.family, wave: popNode.wave, skill: popNode.skill, model: popNode.model, mode: popNode.mode, egress: popNode.egress, cost: popNode.cost, note: popNode.note, ape: nodeState(popNode) },
@@ -5682,7 +5698,9 @@ class Component extends DCLogic {
       .catch(function(){ /* канал выберут вручную — список не критичен для сборки */ });
   }
 
-  checkPlan() {
+  checkPlan(after) {
+    // after(план) вызывается только на собранной цепочке: «построить» не должно срабатывать
+    // на пустом плане — пустой план это ответ «не собралось», а не повод рисовать узлы.
     if (this.state.planChecking) return;
     var self = this, goal = (this.state.goalText || '').trim();
     if (!goal) { this.showToast('Опишите цель прогона'); return; }
@@ -5726,6 +5744,7 @@ class Component extends DCLogic {
         steps.push({ text: 'Действия наружу (письмо, задача) — только после вашего подтверждения', ok: true });
         steps.push({ text: 'Стоимость и автономия фиксируются по факту прогона, не по оценке', ok: true });
         self.setState({ planChecking: false, planOk: true, planSteps: steps, planWavesReal: waves, planAuto: p });
+        if (typeof after === 'function' && p.ok && (p.steps || []).length) after(p);
       }).catch(function(){ self.setState({ planChecking: false, planOk: false, planSteps: [{ text: 'ABOP недоступен — план не проверен', ok: false }] }); });
   }
 
@@ -5966,6 +5985,38 @@ class Component extends DCLogic {
         if (!res.ok) { self.setState({ runDiffBusy: false }); self.showToast('Сравнение: ' + (res.j.detail || 'не удалось')); return; }
         self.setState({ runDiff: res.j, runDiffBusy: false });
       }).catch(function(){ self.setState({ runDiffBusy: false }); self.showToast('ABOP недоступен'); });
+  }
+
+  openRunLens() {
+    // Открыть «Прогон» и показать последний настоящий прогон агента, который сейчас на канве.
+    this.setState({ screen: 'canvas', lens: 'run' });
+    this.route('canvas');
+    this.loadRuns();
+    this.loadLastRunForCanvas();
+  }
+
+  loadLastRunForCanvas(quiet) {
+    // Канва знает контракт, контракт знает агента, агент знает свои прогоны. Эта цепочка уже
+    // работает при открытии контракта — здесь она вызывается по входу в ленту, чтобы «Прогон»
+    // показывал текущее положение дел, а не то, что осталось в памяти вкладки.
+    var self = this, c = this.state.contract;
+    if (!c || !c.audit_id) { if (!quiet && !this.state.lastRun) this.showToast('Агента на канве нет — соберите или откройте агента'); return; }
+    fetch('/api/agents?contract=' + encodeURIComponent(c.audit_id)).then(function(r){ return r.ok ? r.json() : { agents: [] }; })
+      .then(function(d){
+        var ags = (d && d.agents) || [];
+        if (!ags.length) { if (!quiet) self.showToast('Агент по контракту ещё не собран'); return; }
+        return fetch('/api/runs?limit=1&agent_id=' + encodeURIComponent(ags[0].id)).then(function(r){ return r.ok ? r.json() : { runs: [] }; })
+          .then(function(rd){
+            var runs = (rd && rd.runs) || [];
+            if (!runs.length) { self.setState({ lastRun: null, startedOnce: false }); if (!quiet) self.showToast('Этот агент ещё не запускался'); return; }
+            return fetch('/api/runs/' + encodeURIComponent(runs[0].id)).then(function(r){ return r.ok ? r.json() : null; })
+              .then(function(run){
+                if (!run) return;
+                run.run_id = run.run_id || run.id || runs[0].id;
+                self.setState({ lastRun: run, runReadOnly: true, startedOnce: true });
+              });
+          });
+      }).catch(function(){ if (!quiet) self.showToast('ABOP недоступен — прогон не загружен'); });
   }
 
   openRun(id) {
@@ -6371,6 +6422,59 @@ class Component extends DCLogic {
       .catch(function(e){ self.showToast('Не удалось вывести: ' + e.message); });
   }
 
+  buildAgentFromTask() {
+    var self = this;
+    this.checkPlan(function(p){ self.planToCanvas(p); });
+  }
+
+  planToCanvas(p) {
+    // План приходит в порядке исполнения и знает, какой шаг от какого зависит и на каких
+    // сущностях работает. Из этого и строится граф: источники слева, навыки по зависимостям.
+    var self = this, steps = (p && p.steps) || [];
+    if (!steps.length) { this.showToast('Цепочка не собралась — уточните задачу'); return; }
+    var key = this.state.scenario, own = (this.state.userScenarios || {})[key];
+    var nodes = [], edges = [], srcOf = {};
+    steps.forEach(function(st){
+      (st.entities || []).forEach(function(e){
+        if (srcOf[e]) return;
+        srcOf[e] = 'src_' + e;
+        nodes.push({ id: srcOf[e], kind: 'source', title: e, entity: e, meta: 'данные · ' + e });
+      });
+    });
+    steps.forEach(function(st, i){
+      var id = 'p' + i;
+      nodes.push({ id: id, kind: 'skill', title: st.skill, meta: st.title || '' });
+      (st.entities || []).forEach(function(e){ edges.push({ from: srcOf[e], to: id }); });
+      (st.after || []).forEach(function(prev){
+        for (var j = 0; j < i; j++) if (steps[j].skill === prev) edges.push({ from: 'p' + j, to: id });
+      });
+    });
+    // Шаг без объявленной зависимости вешаем на предыдущий: план отдан в порядке исполнения,
+    // и оставить такой шаг висеть в воздухе значит показать граф, который не читается.
+    steps.forEach(function(st, i){
+      if (!i) return;
+      var linked = edges.some(function(e){ return e.to === 'p' + i && e.from.charAt(0) === 'p'; });
+      if (!linked) edges.push({ from: 'p' + (i - 1), to: 'p' + i });
+    });
+    var label = (this.state.goalText || '').trim().slice(0, 48) || (own && own.label) || 'Новый агент';
+    var L = this.layoutFlow(nodes, edges);
+    var next = Object.assign({}, this.state.userScenarios || {});
+    if (own) next[key] = Object.assign({}, own, { label: label, title: 'Сборка: ' + label, nodes: nodes, edges: edges });
+    this.setState({
+      userScenarios: next, canvasNodes: L.nodes, edges: edges,
+      surfaceW: Math.max(1560, L.w), surfaceH: Math.max(1200, L.h),
+      selectedNode: nodes[0].id, linkFrom: null, issues: {},
+      checkState: 'idle', checkSteps: [], checkOk: false, checkFails: 0,
+      modal: null, planIntent: null, screen: 'canvas', lens: 'build'
+    }, function(){
+      self.saveUserScenarios();
+      self.touchGraph();
+      setTimeout(function(){ self.fitZoom(); }, 60);
+    });
+    this.route('canvas');
+    this.showToast('Агент построен: ' + steps.length + ' навыков. Доставка не задана — добавьте блок «Вывод»');
+  }
+
   createScenario() {
     const all = this.allScenarios();
     const n = Object.keys(all).filter(k => k.indexOf('own') === 0).length + 1;
@@ -6382,7 +6486,15 @@ class Component extends DCLogic {
       edges: []
     };
     this.setState({ userScenarios: Object.assign({}, this.state.userScenarios, { [key]: sc }) },
-      () => { this.loadScenario(key); this.saveUserScenarios(); this.showToast('Создан пустой агент «' + label + '» — добавьте блоки из палитры'); });
+      () => {
+        this.loadScenario(key, true);
+        this.saveUserScenarios();
+        // Пустой холст — плохое начало: человек не знает, с какого блока начать. Спрашиваем
+        // задачу словами и строим первую версию агента, которую дальше правят руками.
+        this.setState({ screen: 'canvas', lens: 'build', modal: 'launch', planIntent: 'build',
+                        goalText: '', planOk: false, planSteps: [], planWavesReal: null, planAuto: null });
+        this.route('canvas');
+      });
   }
 
   renameScenario(label) {

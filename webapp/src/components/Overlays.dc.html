@@ -21,15 +21,15 @@
       <div style="position: relative; width: 620px; max-width: 94vw; padding: 28px; border-radius: 16px; background: var(--bg2); border: 1px solid var(--w12); box-shadow: 0 20px 60px var(--sh45); display: flex; flex-direction: column; gap: 20px; animation: ab-drop .3s ease-out;">
         <div style="display: flex; align-items: flex-start; gap: 14px;">
           <div style="flex: 1; display: flex; flex-direction: column; gap: 5px;">
-            <div style="font-size: 19px; font-weight: 700;">Запуск прогона</div>
-            <div style="font-size: 12.5px; color: var(--w50);">Опишите цель — среда подберёт семьи агентов и запустит реальный прогон. Действия наружу пройдут через ваше подтверждение.</div>
+            <div style="font-size: 19px; font-weight: 700;">{{ ov.launchTitle }}</div>
+            <div style="font-size: 12.5px; color: var(--w50);">{{ ov.launchLead }}</div>
           </div>
           <button onClick="{{ ov.closeModal }}" style="width: 30px; height: 30px; border: 1px solid var(--w12); border-radius: 9px; background: var(--w5); color: var(--ink);">✕</button>
         </div>
         <textarea value="{{ ov.goalText }}" onChange="{{ ov.setGoal }}" rows="3" style="padding: 14px; border-radius: 12px; border: 2px solid var(--w12); background: var(--s60); color: var(--ink); font-size: 13.5px; line-height: 1.5; resize: vertical;" style-focus="border-color: #6366f1;"></textarea>
         <div style="display: flex; flex-direction: column; gap: 10px;">
-          <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w62);">План этапов · по семьям агентов (из ABOP)</div>
-          <sc-if value="{{ ov.planEmpty }}" hint-placeholder-val="{{ false }}"><div style="padding: 12px 14px; border-radius: 11px; border: 1px dashed var(--w16); font-size: 12.5px; color: var(--w60);">План появится после «Проверить план»: среда разложит цель по семьям агентов.</div></sc-if>
+          <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w62);">{{ ov.planSectionTitle }}</div>
+          <sc-if value="{{ ov.planEmpty }}" hint-placeholder-val="{{ false }}"><div style="padding: 12px 14px; border-radius: 11px; border: 1px dashed var(--w16); font-size: 12.5px; color: var(--w60);">{{ ov.planEmptyNote }}</div></sc-if>
           <sc-for list="{{ ov.planWaves }}" as="p" hint-placeholder-count="0">
             <div style="display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 11px; background: var(--s55); border: 1px solid var(--w8);">
               <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--acc-ink); width: 58px; flex: none;">этап {{ p.n }}</span>
@@ -49,7 +49,7 @@
           </sc-for>
           <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w50);">{{ ov.planEstimate }}</div>
         </div>
-        <div style="display: flex; flex-direction: column; gap: 9px; padding: 13px 15px; border-radius: 12px; background: var(--s55); border: 1px solid var(--w8);">
+        <sc-if value="{{ ov.showBudget }}" hint-placeholder-val="{{ true }}"><div style="display: flex; flex-direction: column; gap: 9px; padding: 13px 15px; border-radius: 12px; background: var(--s55); border: 1px solid var(--w8);">
           <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
             <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w62);">бюджет прогона</span>
             <span style="font-size: 11.5px; color: var(--w50);">пусто — без лимита</span>
@@ -73,7 +73,7 @@
             </label>
           </div>
           <span style="font-size: 11px; color: var(--w45); line-height: 1.45;">Лимит останавливает запуск новых навыков. Расход одного вызова известен только после ответа модели, поэтому один тяжёлый навык может выйти за рамки — превышение будет показано в результате.</span>
-        </div>
+        </div></sc-if>
         <div style="display: flex; gap: 10px;">
           <button onClick="{{ ov.startRun }}" style="flex: 1; padding: 13px; border: none; border-radius: 12px; background: {{ ov.gateBtnBg }}; color: {{ ov.gateBtnFg }}; font-size: 14px; font-weight: 600;" style-hover="transform: scale(1.02);">{{ ov.gateBtnLabel }}</button>
           <button onClick="{{ ov.closeModal }}" style="padding: 13px 20px; border: 1px solid var(--w14); border-radius: 12px; background: var(--w5); color: var(--ink); font-size: 13.5px; font-weight: 600;">Отмена</button>
