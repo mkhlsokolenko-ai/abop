@@ -115,7 +115,23 @@ def _index(catalog: dict) -> dict:
             df[w] = df.get(w, 0) + 1
     n = max(1, len(docs))
     idf = {w: math.log(1 + n / c) for w, c in df.items()}
-    return {"docs": docs, "idf": idf}
+    # Как навыки себя НАЗЫВАЮТ: названия и объявленные выходы. По этому множеству отличаем действие,
+    # которое заодно является названием работы («аудит», «сверка», «оценка»), от чисто служебного
+    # глагола («подготовь», «сделай»).
+    named: set[str] = set()
+    for sid, m in catalog.items():
+        named |= _words(str((m or {}).get("title") or ""))
+        for it in sc.produces_list((m or {}).get("produces")):
+            named |= _words(str(it.get("path") or "")) | _words(str(it.get("join") or ""))
+    generic = {_stem(a) for a in _ACTIONS} - named
+    return {"docs": docs, "idf": idf, "generic_actions": generic}
+
+
+# Формы результата: что должно получиться.
+_OUTCOMES = ("отчёт", "отчет", "задач", "тикет", "письм", "список", "таблиц", "находк", "план",
+             "сводк", "выгрузк", "справк", "презентац", "требован", "черновик")
+# Понятия форм результата — тем же языком, что и выходы навыков: «тикеты» и «задачи» здесь одно.
+_OUTCOME_CONCEPTS = {_stem(sc.canonical(w)) for w in _OUTCOMES}
 
 
 def _match_score(task_words: set[str], sid: str, meta: dict, index: dict | None = None,
@@ -126,6 +142,10 @@ def _match_score(task_words: set[str], sid: str, meta: dict, index: dict | None 
     if index:
         hay = index["docs"].get(sid) or set()
         idf = index["idf"]
+        # Глагол запроса не выбирает исполнителя: он говорит, ЧТО сделать, а не кто это умеет.
+        task_words = task_words - (index.get("generic_actions") or set())
+        if not task_words:
+            return 0.0
     else:
         hay = _words(_skill_text(sid, meta))
         idf = {}
@@ -139,15 +159,29 @@ def _match_score(task_words: set[str], sid: str, meta: dict, index: dict | None 
     # навыков. Сильный признак — ЧТО навык отдаёт. Сравниваем через реестр понятий: «задачи» и
     # «тикеты» одно и то же, поэтому «сделай задачи» находит навык, который отдаёт тикеты.
     canon_out = set()
+    canon_art = set()          # ЧТО навык отдаёт как вещь: раздел результата и имя навыка
     for it in sc.produces_list((meta or {}).get("produces")):
         canon_out |= _concepts(str(it.get("path") or ""))
+        canon_art |= _concepts(str(it.get("path") or ""))
         # Сквозное понятие объявлено ровно для этого: «как называется то, что навык отдаёт, на общем
         # языке каталога». Без него declared join оставался украшением, и навык с редким именем
         # списка не находился по обычному слову задачи.
         canon_out |= _concepts(str(it.get("join") or ""))
     canon_out |= _concepts(str((meta or {}).get("title") or ""))
+    canon_art |= _concepts(str((meta or {}).get("title") or ""))
     canon_task = task_concepts or set()
-    gives = (len(canon_task & canon_out) / max(1, len(canon_task))) if canon_out and canon_task else 0.0
+    # Меряем по тому, что задача назвала РЕЗУЛЬТАТОМ. Делить на все понятия задачи неверно: чем
+    # подробнее человек описал предмет, тем слабее становился сигнал «этот навык отдаёт то, что
+    # просят». Результат в задаче не назван — считаем как прежде, по всем понятиям.
+    outcome = canon_task & _OUTCOME_CONCEPTS
+    if outcome:
+        # Против формы результата ставим только ВЕЩЬ, которую навык отдаёт: раздел результата и его
+        # имя. Сквозной ключ сюда не годится — он говорит, по чему записи склеиваются, а не что это
+        # за записи: у сверки плана с фактом ключ «пункт_плана», и любая задача со словом «план»
+        # уходила к ней, хотя плана она не делает.
+        gives = (len(outcome & canon_art) / len(outcome)) if canon_art else 0.0
+    else:
+        gives = (len(canon_task & canon_out) / max(1, len(canon_task))) if canon_out and canon_task else 0.0
 
     # идентификатор навыка, названный прямо в задаче, — сильный сигнал
     direct = 0.35 if sid.lower() in " ".join(task_words) else 0.0
@@ -187,11 +221,22 @@ def _named_sources(task: str, entities: set[str]) -> set[str]:
     """
     low = str(task or "").lower().translate(_LOOKALIKE)
     words = {w for w in re.findall(r"[a-z0-9]{2,}", low)}
+    concepts = _concepts(task)
     named: set[str] = set()
     for e in entities:
         el = str(e).lower()
+        # Сущность чаще называют по-русски, а зовётся она по-английски: «письма» → email,
+        # «тикеты» → issue. Связь уже описана в реестре понятий — спрашиваем его, а не подстроку.
+        if _stem(sc.canonical(el)) in concepts:
+            named.add(e)
+            continue
         for w in words:
-            if w == el or (len(w) >= 2 and w in el):
+            # Короткий буквенный обрывок совпадает почти с любым именем: «co» есть в
+            # contractor_report, «ma» — в roadmap_item. После замены кириллических двойников такие
+            # обрывки родятся из любого русского слова, и источник «называется» там, где его не
+            # называли. Берём только равенство, слово от четырёх букв или код с цифрой («1c»).
+            meaningful = w == el or len(w) >= 4 or any(c.isdigit() for c in w)
+            if meaningful and (w == el or w in el):
                 named.add(e)
                 break
     return named
@@ -226,9 +271,6 @@ MIN_WORDS = 5
 LONG_ENOUGH = 100
 # Код предмета в тексте («PRJ-2451», «РТ-0008») — сильный сигнал: человек назвал, с чем работать.
 _CODE = re.compile(r"\b[A-ZА-Я]{2,}[-–]\d{2,}\b")
-# Формы результата: что должно получиться.
-_OUTCOMES = ("отчёт", "отчет", "задач", "тикет", "письм", "список", "таблиц", "находк", "план",
-             "сводк", "выгрузк", "справк", "презентац", "требован", "черновик")
 
 
 def sufficiency(task: str, catalog: dict, *, index: dict | None = None) -> dict:
@@ -434,8 +476,15 @@ def plan(task: str, catalog: dict, *, entities: set[str], slots: set[str],
     for st in chosen:
         for it in sc.produces_list((catalog.get(st["skill"]) or {}).get("produces")):
             have_concepts |= _concepts(str(it.get("path") or ""))
+    # Слово может быть не РЕЗУЛЬТАТОМ, а ПРЕДМЕТОМ работы: «разбери входящие письма и собери план
+    # дня» просит план, а «письма» — то, из чего его делают. Достраивать по предмету нельзя: так в
+    # план попадал навык-черновик письма, которого никто не просил.
+    subject_concepts: set[str] = set()
+    for st in chosen:
+        for e in st.get("entities") or []:
+            subject_concepts |= _concepts(str(e))
     idf = index["idf"]
-    for want in sorted(task_concepts - have_concepts):
+    for want in sorted(task_concepts - have_concepts - subject_concepts):
         if len(chosen) >= max_steps + 1:
             break
         # Достраиваем только по ЗНАЧАЩЕМУ слову. Общие слова («данные», «работа») есть в половине
