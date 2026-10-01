@@ -75,3 +75,24 @@ def test_unknown_skill_is_not_saved():
     g = web_api._graph_from_canvas(
         {"nodes": [{"id": "x", "kind": "skill", "skill": "нет-такого"}], "edges": []}, SKILLS, ENV_MAX, {})
     assert g["nodes"] == []
+
+
+def test_run_id_exists_before_the_run_is_saved():
+    """Заявку на подтверждение создаёт доставка — внутри прогона, до его записи.
+
+    Пока идентификатор выдавался только при сохранении, каждая заявка уходила в очередь с пустой
+    ссылкой на прогон: видно, что чего-то ждут, но непонятно, чего именно. Теперь идентификатор
+    выдаётся заранее, и запись его уважает, а не присваивает свой.
+    """
+    import asyncio
+
+    from server import run_store
+
+    rid = asyncio.run(run_store.new_id("agent-x"))
+    assert rid.startswith("run-agent-x-")
+
+    saved = asyncio.run(run_store.save({"agent_id": "agent-x", "id": rid, "verdict": {"ok": True}}))
+    assert saved["id"] == rid, "запись обязана уважать заранее выданный идентификатор"
+
+    auto = asyncio.run(run_store.save({"agent_id": "agent-x", "verdict": {"ok": True}}))
+    assert auto["id"] != rid and auto["id"].startswith("run-agent-x-"), "без заранее выданного — свой"

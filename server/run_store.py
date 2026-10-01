@@ -43,8 +43,18 @@ async def _next_id(agent_id: str) -> str:
     return f"run-{agent_id}-{_SEQ['n']:03d}"
 
 
+async def new_id(agent_id: str) -> str:
+    """Идентификатор прогона ДО записи.
+
+    Доставка и заявки на подтверждение создаются внутри прогона, то есть раньше, чем он сохранён.
+    Пока идентификатор выдавался только при записи, в заявке оставалось пустое поле, и понять, к
+    какому прогону относится ожидающее «да», было нечем.
+    """
+    return await _next_id(agent_id)
+
+
 async def save(run: dict) -> dict:
-    rid = await _next_id(run["agent_id"])
+    rid = str(run.get("id") or "") or await _next_id(run["agent_id"])
     row = dict(run); row["id"] = rid
     if not _has_pg():
         import datetime as _dt

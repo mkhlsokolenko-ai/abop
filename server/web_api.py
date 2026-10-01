@@ -4840,6 +4840,11 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
                 inv["нормы_rag"] = norms[:2]
                 enriched += 1
         result["norms_enriched"] = enriched
+    # Идентификатор прогона выдаём ДО доставки: заявка на подтверждение рождается здесь, и без
+    # ссылки на прогон её потом не с чем связать — ни в очереди, ни в журнале.
+    if not result.get("run_id"):
+        result["run_id"] = await run_store.new_id(agent.get("id") or "")
+    result["id"] = result["run_id"]
     # Проброс OUT-узла в реальную доставку (почта/BookStack/PDF) — dry_run по умолчанию.
     try:
         await _deliver_out_nodes(agent, result, started_by, deliver_filter=deliver_filter)
