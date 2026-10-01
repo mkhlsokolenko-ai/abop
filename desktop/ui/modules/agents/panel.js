@@ -184,7 +184,26 @@ export async function mount(root, ctx) {
       const label = cr.textContent; cr.textContent = "Создаю…"; cr.disabled = true;
       try {
         const r = await api(A + "/author", { method: "POST", body: JSON.stringify({ family: bFamily, skills: [...bSkills], name: bName, output: bOutput }) });
-        if (r && r.ok) { toast(editingId ? "Новая версия сохранена" : "Агент создан", "ok"); editingId = null; await loadAgents(); mode = "catalog"; render(); }
+        if (r && r.ok) {
+          // Конверт личного агента не объявляется, а выводится из навыков — человеку надо сказать,
+          // какой потолок он получил и почему. И сразу показать, чего навыкам не хватает для работы:
+          // раньше это выяснялось только из пустого результата прогона.
+          const ag = r.agent || {};
+          const env = ag.envelope || {};
+          const gaps = ag.input_gaps || [];
+          toast(editingId ? "Новая версия сохранена" : "Агент создан", "ok");
+          if (env["почему"] || gaps.length) {
+            ctx.modal(editingId ? "Новая версия готова" : "Агент готов",
+              `<div style="font-size:12.5px;color:var(--ink-2);line-height:1.6">
+                 ${env["почему"] ? `<div><b>Границы агента:</b> ${esc(env["почему"])}</div>` : ""}
+                 ${gaps.length ? `<div style="margin-top:12px"><b>Чего не хватает для работы:</b>
+                   ${gaps.map((g) => `<div style="margin-top:5px;color:var(--warn-ink)">• ${esc(g.text || "")}</div>`).join("")}
+                   <div style="margin-top:9px;font-size:11.5px;color:var(--ink-3)">Агент сохранён — но пока это не закрыть, он отработает вхолостую: наполните сущность данными или добавьте навык, который даёт недостающий вход.</div></div>`
+                   : `<div style="margin-top:10px;color:var(--ok-ink)">Входы навыков покрыты — агент готов к запуску.</div>`}
+               </div>`, null, "", { kicker: "личный агент" });
+          }
+          editingId = null; await loadAgents(); mode = "catalog"; render();
+        }
         else { root.querySelector("#berr").innerHTML = `<div class="danger-ink" style="font-size:12px">Ошибка: ${esc(humanError((r && r.error) || "не удалось"))}</div>`; cr.textContent = label; cr.disabled = false; }
       } catch (e) { root.querySelector("#berr").innerHTML = `<div class="danger-ink" style="font-size:12px">${esc(humanError(e))}</div>`; cr.textContent = label; cr.disabled = false; }
     };

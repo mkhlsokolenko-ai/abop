@@ -26,15 +26,25 @@ _ONLY_VAR = re.compile(r"^\s*\{\{\s*#?\s*[^{}]+?\s*\}\}\s*$")   # поле це�
 _ALLOWED = {"system", "type", "each", "where", "limit", "title", "payload", "require"}
 
 
-def validate_delivery(d: Any) -> list[str]:
-    """Ошибки секции delivery (пусто — валидна). None/{} — доставки нет, это нормально."""
+def validate_delivery(d: Any, *, systems: set | None = None) -> list[str]:
+    """Ошибки секции delivery (пусто — валидна). None/{} — доставки нет, это нормально.
+
+    `systems` — идентификаторы систем РЕЕСТРА. Если переданы, система доставки обязана быть среди
+    них: иначе шаблон объявляет отправку туда, куда коннектор не умеет, и ошибка всплывает в очереди
+    ошибок шины уже после прогона. Без реестра (оффлайн-проверка шаблонов) этот слой пропускается —
+    проверить его там нечем.
+    """
     if d in (None, {}):
         return []
     if not isinstance(d, dict):
         return ["delivery: должен быть объектом"]
     errs = [f"delivery: неизвестные ключи {sorted(set(d) - _ALLOWED)}"] if set(d) - _ALLOWED else []
-    if not re.fullmatch(r"[a-z0-9_-]{1,40}", str(d.get("system") or "")):
+    sysid = str(d.get("system") or "")
+    if not re.fullmatch(r"[a-z0-9_-]{1,40}", sysid):
         errs.append("delivery.system: slug системы из реестра")
+    elif systems is not None and sysid not in systems:
+        errs.append(f"delivery.system: системы «{sysid}» нет в реестре "
+                    f"(есть: {', '.join(sorted(systems)[:12])})")
     if not re.fullmatch(r"[a-z0-9_.-]{1,60}", str(d.get("type") or "")):
         errs.append("delivery.type: тип команды коннектора (например issue.create)")
     if d.get("each") is not None and not isinstance(d["each"], str):

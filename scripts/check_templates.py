@@ -21,6 +21,8 @@ for p in sys.argv[1:]:
             if not t.get(k):
                 errs.append(f"нет {k}")
         if t.get("json_schema"):
+            # Реестр систем тут недоступен: оффлайн-проверка не знает, что развёрнуто на стенде.
+            # Существование системы доставки проверит сервер при сохранении шаблона.
             errs += validate_schema(t["json_schema"]) + validate_delivery(t.get("delivery"))
             if not (400 <= len(json.dumps(t["json_schema"], ensure_ascii=False)) <= 12000):
                 errs.append("размер схемы вне 400..12000")

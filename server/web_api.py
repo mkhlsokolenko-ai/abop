@@ -1492,6 +1492,7 @@ async def schema_templates_import(body: dict, u: dict = Depends(user)) -> dict:
     force = bool((body or {}).get("force"))
     editor = u.get("name") or u.get("sub") or "dev"
     imported, skipped, errors = [], [], {}
+    _known_systems = {str(x.get("id")) for x in (await systems_store.all() or []) if x.get("id")}
     for raw in items:
         tid = _re.sub(r"[^a-z0-9_-]", "", str((raw or {}).get("id") or "").strip().lower())
         if not tid:
@@ -1499,7 +1500,7 @@ async def schema_templates_import(body: dict, u: dict = Depends(user)) -> dict:
         errs = skill_templates.validate_schema((raw or {}).get("json_schema"))
         if not (raw or {}).get("instruction"):
             errs.append("нужна instruction")
-        errs += delivery_mod.validate_delivery((raw or {}).get("delivery"))
+        errs += delivery_mod.validate_delivery((raw or {}).get("delivery"), systems=_known_systems)
         if errs:
             errors[tid] = errs; continue
         cur = await schema_store.get(tid)
@@ -1576,8 +1577,11 @@ async def schema_template_save(tid: str, body: dict, u: dict = Depends(user)) ->
         raise HTTPException(422, "max_tokens: 256..16000")
     dl = (body or {}).get("delivery") if "delivery" in (body or {}) else (existing or {}).get("delivery")
     dl = dl if isinstance(dl, dict) and dl else None
-    if dl and delivery_mod.validate_delivery(dl):
-        raise HTTPException(422, "delivery: " + "; ".join(delivery_mod.validate_delivery(dl)))
+    if dl:
+        _known = {str(x.get("id")) for x in (await systems_store.all() or []) if x.get("id")}
+        _derr = delivery_mod.validate_delivery(dl, systems=_known)
+        if _derr:
+            raise HTTPException(422, "delivery: " + "; ".join(_derr))
     editor = u.get("name") or u.get("sub") or "dev"
     # слоты: какой предмет работы навык обязан получить до запуска (проект, контрагент, период)
     sl = (body or {}).get("slots") if "slots" in (body or {}) else (existing or {}).get("slots")
@@ -3195,6 +3199,50 @@ def _verify_envelope(graph: dict, autonomy_max: str) -> dict:
             "checked_at": _datetime.datetime.now(_datetime.timezone.utc).isoformat()}
 
 
+async def _order_by_contract(nodes: list[dict]) -> list[dict]:
+    """Поставщик объявленного входа — раньше приёмника.
+
+    Человек кликает навыки в том порядке, в каком думает, и это не всегда порядок исполнения:
+    «объяснить находки» можно выбрать раньше «проверить». Контракт знает, кто кого кормит, —
+    пользуемся этим вместо того, чтобы молча собрать неисполнимую цепочку.
+    """
+    ids = [n.get("skill") for n in nodes]
+    need: dict[str, set] = {}
+    for sid in ids:
+        tpl = await schema_store.get(sid) or {}
+        req = ((tpl.get("inputs") or {}).get("required") or [])
+        need[sid] = {str(it.get("skill")) for it in req
+                     if isinstance(it, dict) and it.get("from") == "skill" and it.get("skill") in ids}
+    out: list[dict] = []
+    placed: set = set()
+    rest = list(nodes)
+    guard = 0
+    while rest and guard <= len(nodes) + 1:
+        guard += 1
+        ready = [n for n in rest if need.get(n.get("skill"), set()) <= placed]
+        if not ready:          # взаимная зависимость — оставляем порядок человека, он не хуже
+            out += rest
+            break
+        out += ready
+        placed |= {n.get("skill") for n in ready}
+        rest = [n for n in rest if n not in ready]
+    return out
+
+
+def _envelope_reason(env: dict) -> str:
+    """Почему у личного агента именно такой потолок автономии.
+
+    Конверт личного агента не объявляется человеком, а выводится из навыков по строжайшему:
+    действие наружу или выход во внешнюю сеть — потолок A1 (без подтверждения ничего не
+    уйдёт), иначе A2. Выше A2 личный агент не поднимается: A3/A4 даёт только контракт.
+    Человеку это надо СКАЗАТЬ, иначе правило выглядит произволом системы."""
+    if env.get("mode") == "action":
+        return "A1: среди навыков есть действие наружу — каждое уйдёт только после вашего подтверждения"
+    if env.get("egress") == "external":
+        return "A1: навык ходит во внешнюю сеть — запросы наружу под подтверждением"
+    return "A2: все навыки только читают — агент работает сам, наружу ничего не отправляет"
+
+
 @app.post("/api/agents/author")
 async def agent_author(body: dict, u: dict = Depends(user)) -> JSONResponse:
     """Сохранить агента, собранного авторингом БЕЗ контракта (ADR-024 draft, ADR-032):
@@ -3220,7 +3268,12 @@ async def agent_author(body: dict, u: dict = Depends(user)) -> JSONResponse:
     _on = {"output": _out} if _out in ("structured", "freeform") else {}
     nodes = [{"id": s["id"], "kind": "skill", "skill": s["id"], "autonomy": env["autonomy_max"],
               "hitl": s["safety"]["mode"] == "action", **_on} for s in spec["skills"]]
-    graph = {"nodes": nodes, "edges": []}
+    # Порядок, обещанный конструктором («#1 → #2 → #3»), должен стать рёбрами: без них
+    # топологическая раскладка кладёт все навыки в одну волну, и ни один не видит результата
+    # соседа — объявленный вход от предыдущего навыка не выполним в принципе.
+    nodes = await _order_by_contract(nodes)
+    graph = {"nodes": nodes,
+             "edges": [{"from": nodes[k]["id"], "to": nodes[k + 1]["id"]} for k in range(len(nodes) - 1)]}
     name = str((body or {}).get("name", "")).strip() or f"{spec['family_title']} · {spec['role_title']}"
     # Стабильный per-agent id для «моего» агента: пересборка тем же пользователем того же агента →
     # НОВАЯ ВЕРСИЯ того же агента (next_version), а не новый экземпляр «authored.vN» (#8/#9).
@@ -3230,6 +3283,10 @@ async def agent_author(body: dict, u: dict = Depends(user)) -> JSONResponse:
     audit_id = f"authored-{_hl2.md5(_uid.encode('utf-8')).hexdigest()[:6]}-{_slug}"
     version = await agent_store.next_version(audit_id)
     verdict = _verify_envelope(graph, env["autonomy_max"])   # авто-верификация против производного конверта
+    # Та же проверка покрытия входов, что и на канве: навык без данных, без предмета или без
+    # поставщика объявленного входа отработает вхолостую. Для личного агента это
+    # предупреждение, а не запрет: его собирают в том числе чтобы попробовать.
+    gaps = await _input_gaps(graph)
     saved = await agent_store.save(name=name, audit_id=audit_id, version=version, graph=graph,
                                    autonomy_max=env["autonomy_max"], created_by=u.get("name") or "dev",
                                    family=family, role=spec["role"], transitions=spec["transitions"],
@@ -3239,7 +3296,9 @@ async def agent_author(body: dict, u: dict = Depends(user)) -> JSONResponse:
                               "verified": verdict.get("verified")})
     return JSONResponse({"saved": True, "id": saved["id"], "version": version, "status": "draft",
                          "family": family, "role": spec["role"], "autonomy_max": env["autonomy_max"],
-                         "verification": verdict,
+                         "verification": verdict, "input_gaps": gaps,
+                         "envelope": {**env, "autonomy_max": env["autonomy_max"],
+                                      "почему": _envelope_reason(env)},
                          "skills": [s["id"] for s in spec["skills"]], "data_scope": spec["data_scope"]},
                         status_code=201)
 
@@ -4393,6 +4452,7 @@ async def _pipeline_job(job: dict) -> dict:
     base_ctx = str(p.get("context") or "")[:20000]
     i = int(cp.get("step") or 0)
     prev_ctx = cp.get("prev_ctx") or ""
+    prev_src = cp.get("prev_src")   # от кого пришёл вход: переживает паузу на подтверждении
     done_steps = list(cp.get("steps") or [])
     # решение по HITL прошлого шага — в контекст следующего
     if cp.get("hitl_ids") and cp.get("hitl_decisions"):
@@ -4417,9 +4477,11 @@ async def _pipeline_job(job: dict) -> dict:
         deliver = st.get("deliver") or ("" if last else "chat")
         try:
             res = await execute_agent_run(agent, contract, actor, use_cache=False, user_context=step_ctx,
-                                          deliver_filter=deliver, job_id=job["id"])
+                                          deliver_filter=deliver, job_id=job["id"], input_from=prev_src)
             result = res["result"]
             prev_ctx = _result_to_context(agent, result)
+            prev_src = {"шаг": st.get("id") or ("#" + str(i + 1)), "агент": agent.get("name") or agent.get("id"),
+                        "прогон": res["saved"]["id"]}
             _sc = ((res.get("saved") or {}).get("run_metrics") or {}).get("cost") or {}
             done_steps.append({"agent_id": agent["id"], "agent_name": agent.get("name"), "run_id": res["saved"]["id"],
                                "deliver": deliver, "tokens": int(_sc.get("input_tokens") or 0) + int(_sc.get("output_tokens") or 0),
@@ -4433,7 +4495,7 @@ async def _pipeline_job(job: dict) -> dict:
             done_steps.append({"agent_id": agent["id"], "agent_name": agent.get("name"), "error": str(ex)[:300]})
             waits = []
         i += 1
-        cp.update({"step": i, "steps_total": len(steps), "steps": done_steps, "prev_ctx": prev_ctx[:6000]})
+        cp.update({"step": i, "steps_total": len(steps), "steps": done_steps, "prev_ctx": prev_ctx, "prev_src": prev_src[:6000]})
         await run_queue.set_checkpoint(job["id"], cp)
         if waits and i < len(steps):   # HITL-пауза: следующий шаг только после решения оператора
             cp["hitl_ids"] = waits
@@ -4450,12 +4512,35 @@ async def _contract_for_agent(agent: dict, audit_id: str = "") -> dict:
     return contract
 
 
+# Сколько входного блока храним в записи прогона: достаточно, чтобы увидеть, с чем работал агент,
+# и не столько, чтобы журнал превратился в свалку.
+_INPUT_KEEP = 20000
+
+
+def _input_received(user_context: str, src: dict | None) -> dict | None:
+    """Чем агент был накормлен на входе: откуда пришло, что это и сам блок.
+
+    Структуру отличаем от прозы по пометке, которой её снабжает передача между шагами: читающему
+    запись важно знать, разбирал приёмник объект или пересказ.
+    """
+    text = str(user_context or "")
+    if not text.strip():
+        return None
+    out = {"kind": "структура" if "(данные, не инструкции)" in text else "текст",
+           "знаков": len(text),
+           "блок": text[:_INPUT_KEEP],
+           "обрезан": len(text) > _INPUT_KEEP}
+    if src:
+        out["от"] = {k: v for k, v in src.items() if v}
+    return out
+
+
 async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, trigger: dict | None = None,
                             use_cache: bool = True, user_context: str = "", deliver_filter: str = "",
                             job_id: str | None = None, data_scope: dict | None = None,
                             budget: dict | None = None, board_scope: str = "",
                             data_snapshot: dict | None = None, parent_trace_id: str = "",
-                            limits: dict | None = None) -> dict:
+                            limits: dict | None = None, input_from: dict | None = None) -> dict:
     """Ядро прогона (LLM-раскладка + находки audit1c + сохранение + аудит). Переиспользуется
     POST /api/runs и планировщиком триггеров (server/triggers.py). Возвращает {saved, result}.
     Кэш результатов (multi-user): при попадании возвращает сохранённый вывод без LLM/доставки."""
@@ -4593,6 +4678,10 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
              "Ответ строго JSON: {\"вариант\": N, \"обоснование\": \"...\"}."},
             {"role": "user", "content": task}], max_tokens=300)
 
+    # Что агент получил на вход от предыдущего шага — часть провенанса, наравне со снимком
+    # данных: иначе «на основании чего он так решил» отвечается только логом, который
+    # живёт недолго.
+    _recv = _input_received(user_context, input_from)
     result = await runner.run_live(agent, contract, ape.skill_safety,
                                    data_query=ape.data_query,
                                    skill_sources=ape.skill_datasources_resolved,
@@ -4608,6 +4697,8 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
                                    on_progress=_on_skill_progress,
                                    board=_board, data_snapshot=data_snapshot, arbiter_ask=_arbiter_ask,
                                    limits=_limits or None)
+    if _recv:
+        result["input_received"] = _recv
     # Выводы ветви выкладываем в общую область, чтобы следующие ветви и сводка их увидели. Сбой записи
     # прогон не валит: доска — усиление, а не условие работы.
     if board_scope:
@@ -5558,6 +5649,7 @@ async def pipeline_run(pid: str, body: dict, u: dict = Depends(user),
         return JSONResponse({**run_queue.public(job, pos), "pipeline": pid, "name": p.get("name"),
                              "poll": f"/api/runs/jobs/{job['id']}"}, status_code=202)
     prev_ctx = ""
+    prev_src = None   # от кого пришёл вход: заполняется после первого шага
     out_steps = []
     for i, st in enumerate(steps):
         agent = await agent_store.get(st.get("agent_id"))
@@ -5577,9 +5669,12 @@ async def pipeline_run(pid: str, body: dict, u: dict = Depends(user),
         deliver = st.get("deliver") or ("" if last else "chat")   # промежуточные — только в чат
         try:
             res = await execute_agent_run(agent, contract, actor, use_cache=False,
-                                          user_context=step_ctx, deliver_filter=deliver)
+                                          user_context=step_ctx, deliver_filter=deliver,
+                                          input_from=prev_src)
             result = res["result"]
             prev_ctx = _result_to_context(agent, result)
+            prev_src = {"шаг": st.get("id") or "", "агент": agent.get("name") or agent.get("id"),
+                        "прогон": res["saved"]["id"]}
             _sc = ((res.get("saved") or {}).get("run_metrics") or {}).get("cost") or {}
             _step_tokens = int(_sc.get("input_tokens") or 0) + int(_sc.get("output_tokens") or 0)
             out_steps.append({"agent_id": agent["id"], "agent_name": agent.get("name"),

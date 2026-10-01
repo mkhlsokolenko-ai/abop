@@ -137,6 +137,7 @@
 | GET | `/api/runs/{run_id}` | Полный прогон: findings/investigations/delivery/soft_errors/trace/`skill_outputs`/trace_id | user |
 | GET | `/api/runs/{run_id}/metrics` | RunMetrics (`abop.run_metrics/1.0`) | user |
 | GET | `/api/runs/{run_id}/board` | Доска прогона: выводы навыков с авторством и решения арбитра по расхождениям | user |
+| GET | `/api/runs/{run_id}` → `input_received` | **Что прогон получил на вход** от предыдущего шага: структура или текст, от какого шага/агента/прогона, сам блок (до 20 000 знаков) | user |
 | GET | `/api/runs/{run_id}/diff?vs=` | Сравнение прогонов: находки и расследования (появились/ушли/изменились), навыки, метрики; без `vs` — предыдущий прогон агента | user |
 | GET | `/api/runs/{run_id}/report` | Отчёт прогона по шаблону: `?template=<id>&format=html|pdf` (default/audit1c/invest/digest; PDF через рендерер ABOP) | user |
 | GET | `/api/runs/{run_id}/stream` | SSE-стрим прогона (501 — контракт зафиксирован, не реализован) | user |

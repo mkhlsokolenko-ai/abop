@@ -150,13 +150,28 @@ export async function mount(root, ctx) {
       <span style="color:var(--ink-3)">${esc(k)}</span><span style="color:var(--ink-2)">${esc(Array.isArray(x) ? x.slice(0, 3).map(recordLine).join(" · ") + (x.length > 3 ? " …" : "") : recordLine(x))}</span></div>`).join("");
     return rows || `<span style="font-size:12px;color:var(--ink-3)">пусто</span>`;
   }
+  // Вход от предыдущего шага — часть ответа на вопрос «откуда это взялось», поэтому живёт рядом
+  // с доской, а не в отдельной вкладке.
+  function inputHTML() {
+    const r = (openData || {}).input_received;
+    if (!r) return "";
+    const from = r["от"] || {};
+    const who = [from["агент"], from["шаг"] ? "шаг " + from["шаг"] : "", from["прогон"]].filter(Boolean).join(" · ");
+    return `<div style="padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--field);margin:0 0 10px">
+      <div style="font-size:12.5px;font-weight:600">Получено на вход: ${esc(r.kind)} · ${esc(String(r["знаков"]))} знаков${r["обрезан"] ? " (показано начало)" : ""}</div>
+      ${who ? `<div style="font-size:11.5px;color:var(--ink-3);margin-top:3px">от: ${esc(who)}</div>` : ""}
+      <div style="margin-top:6px;font-family:var(--mono);font-size:11px;color:var(--ink-2);white-space:pre-wrap;max-height:180px;overflow:auto">${esc(String(r["блок"] || "").slice(0, 2000))}</div>
+    </div>`;
+  }
+
   function boardHTML() {
     if (boardErr) return `<div style="font-size:12.5px;color:var(--warn-ink)">Доска не открылась: ${esc(boardErr)}</div>`;
     if (!boardData) return `<div class="skeleton" style="height:90px"></div>`;
     const b = boardData;
     const entries = b.entries || [], contr = b.contradictions || [], arb = b.arbitration || {};
+    const got = inputHTML();
     if (!entries.length) {
-      return `<div style="font-size:12.5px;color:var(--ink-3)">Навыки этого прогона ничего не выкладывали на общую доску — она нужна, когда над задачей работают несколько ветвей.</div>`;
+      return got + `<div style="font-size:12.5px;color:var(--ink-3)">Навыки этого прогона ничего не выкладывали на общую доску — она нужна, когда над задачей работают несколько ветвей.</div>`;
     }
     const snap = b.data_snapshot && b.data_snapshot.taken_at
       ? `<div style="font-size:11.5px;color:var(--ink-3);margin-bottom:8px">Снимок данных на старте: ${esc(b.data_snapshot.taken_at)}${(b.data_snapshot.drift || []).length ? ` · данные с тех пор менялись: ${esc((b.data_snapshot.drift || []).join(", "))}` : " · данные не менялись"}</div>` : "";
@@ -176,7 +191,7 @@ export async function mount(root, ctx) {
         <span style="font-size:12.5px;font-weight:600">${esc(e.key || "")}</span>
         <span style="font-size:11.5px;color:var(--ink-3)">выложил: ${esc(e.author || "—")}${e.at ? " · " + esc(e.at) : ""}</span></div>
       <div style="margin-top:5px">${valueHTML(e.value)}</div></div>`).join("");
-    return `${snap}${decisions}${disputes}
+    return `${got}${snap}${decisions}${disputes}
       <div style="${LBL};margin:12px 0 4px">что выложено на доску</div>${rows}`;
   }
 
