@@ -290,7 +290,7 @@
         "fields": [
           "id",
           "title",
-          "статус"
+          "status"
         ]
       }
     ]

@@ -222,7 +222,8 @@
         "skill": "audit1c-root-cause",
         "path": "причины",
         "fields": [
-          "id"
+          "причина",
+          "находки"
         ]
       },
       {
