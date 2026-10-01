@@ -2545,7 +2545,7 @@ class Component extends DCLogic {
     modelCfg: { research: { model: 'deepseek-v3', temp: '0.2' }, code: { model: 'gpt-oss-120b', temp: '0.0' }, perimeter: { model: 'local-qwen-32b', temp: '0.2' } },
     defaultProfile: 'research', connState: {}, tenantMode: { a: 'shared', b: 'byo' },
     quotaLimit: '4 000 ₽', quotaPolicy: 'ask', rightsAudit: '', billing: null, systemsList: [], modelsInfo: null, skillMeta: {}, skillList: SKILLS.map(k => Object.assign({}, k)), deletedSkills: [], newSourceName: '', newSourceAdapter: 'csv',
-    agentStatus: 'draft', savedAt: null, canvasDirty: false, confirmText: '', confirmKind: null, srcBind: null, rebindWarn: null,
+    agentStatus: 'draft', savedAt: null, savedLocalAt: null, canvasDirty: false, confirmText: '', confirmKind: null, srcBind: null, rebindWarn: null,
     runReadOnly: false, memory: (SEED_MEMORY['audit1c'] || []).map(x => Object.assign({}, x)),
     startedOnce: false, planOk: false, planChecking: false, planSteps: [],
     reglamentDraft: '', reglamentResult: null, reglamentBusy: false, reglamentMsg: '', conformance: null, reglGraph: null, reglShow: false, activeRecipe: null, activeConnector: null, connDraft: { title: '', adapter: 'csv', target: '', token: '', root: '' }, connTest: null,
@@ -4109,7 +4109,9 @@ class Component extends DCLogic {
       recentRuns: (s.runsList||[]).slice(0,3).map(r => ({ title: (r.agent_name || r.agent_id || 'прогон'), meta: ((r.created_at||'').replace('T',' ').slice(0,16)) + (r.version ? ' · v'+r.version : '') + (r.started_by ? ' · ' + r.started_by : ''), verdict: r.verdict_ok ? 'вердикт пройден' : 'есть замечания', dot: r.verdict_ok ? '#34d399' : 'var(--warn-ink)', open: () => this.openRun(r.id) })),
       runReadOnly: s.runReadOnly,
       canvasDirty: s.canvasDirty,
-      saveChipLabel: s.canvasDirty ? 'есть несохранённые правки' : (s.savedAt ? ('✓ сохранено · ' + s.savedAt + (s.savedVersion ? ' · ' + s.savedVersion : '')) : '✓ без изменений'),
+      saveChipLabel: s.canvasDirty ? 'есть несохранённые правки'
+        : (s.savedAt ? ('✓ сохранено · ' + s.savedAt + (s.savedVersion ? ' · ' + s.savedVersion : ''))
+        : (s.savedLocalAt ? ('черновик в браузере · ' + s.savedLocalAt) : 'черновик')),
       saveChipBg: s.canvasDirty ? 'rgba(245,158,11,.13)' : 'rgba(16,185,129,.1)',
       saveChipBorder: s.canvasDirty ? 'rgba(245,158,11,.32)' : 'rgba(16,185,129,.28)',
       saveChipFg: s.canvasDirty ? 'var(--warn-ink)' : 'var(--ok-ink)',
@@ -5537,7 +5539,15 @@ class Component extends DCLogic {
 
   saveGraph() { if(!this._canMutate()){ if (this.state.me) this.showToast('Только чтение — недостаточно прав'); return; } 
     const at = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-    this.setState({ canvasDirty: false, savedAt: at }); var c=this.state.contract; if(c&&c.audit_id){ var self=this; var _edges=(this.state.edges||[]), _nodes=(this.state.canvasNodes||[]); var _hitlIds=_nodes.filter(function(n){return n.kind==='hitl';}).map(function(n){return n.id;}); var _to=function(e){return Array.isArray(e)?e[1]:(e.to!==undefined?e.to:e.b);}; var _from=function(e){return Array.isArray(e)?e[0]:(e.from!==undefined?e.from:e.a);}; var g={nodes:_nodes.map(function(n){ var base={id:n.id,kind:n.kind,title:n.title||n.label||''}; if(n.kind==='skill'){ base.skill=n.title; base.autonomy=n.autonomy||c.autonomy||'A0'; base.hitl=!!n.hitl||_edges.some(function(e){return _from(e)===n.id&&_hitlIds.indexOf(_to(e))>-1;}); } if(n.trig) base.trig=n.trig; if(n.out) base.out=n.out; if(n.entity) base.entity=n.entity; if(n.recipe) base.recipe=n.recipe; if(n.kind==='hitl') base.hitl=true; return base; }),edges:_edges}; fetch('/api/agents',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'Агент · '+(c.family||c.audit_id),contract_audit_id:c.audit_id,graph:g})}).then(function(r){return r.json();}).then(function(j){ if(!j.saved) self.showToast('Не сохранено — governance: '+((j.errors||[])[0]||'ошибка')); else self.setState({ savedVersion: j.id, savedStatus: j.status }); }).catch(function(){ self.showToast('Черновик не сохранён на сервере: ABOP недоступен'); }); }
+    var c=this.state.contract;
+    if(!(c&&c.audit_id)){
+      // Сервер принимает агента только вместе с контрактом. Раньше отметка «сохранено»
+      // ставилась и здесь — канва сообщала о том, чего не произошло.
+      this.setState({ canvasDirty: false, savedAt: null, savedLocalAt: at });
+      this.showToast('Черновик остался в браузере: агент создаётся из контракта — нажмите «Собрать и запустить»');
+      this.persist(); return;
+    }
+    this.setState({ canvasDirty: false, savedAt: at, savedLocalAt: null }); if(c&&c.audit_id){ var self=this; var _edges=(this.state.edges||[]), _nodes=(this.state.canvasNodes||[]); var _hitlIds=_nodes.filter(function(n){return n.kind==='hitl';}).map(function(n){return n.id;}); var _to=function(e){return Array.isArray(e)?e[1]:(e.to!==undefined?e.to:e.b);}; var _from=function(e){return Array.isArray(e)?e[0]:(e.from!==undefined?e.from:e.a);}; var g={nodes:_nodes.map(function(n){ var base={id:n.id,kind:n.kind,title:n.title||n.label||''}; if(n.kind==='skill'){ base.skill=n.title; base.autonomy=n.autonomy||c.autonomy||'A0'; base.hitl=!!n.hitl||_edges.some(function(e){return _from(e)===n.id&&_hitlIds.indexOf(_to(e))>-1;}); } if(n.trig) base.trig=n.trig; if(n.out) base.out=n.out; if(n.entity) base.entity=n.entity; if(n.recipe) base.recipe=n.recipe; if(n.kind==='hitl') base.hitl=true; return base; }),edges:_edges}; fetch('/api/agents',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'Агент · '+(c.family||c.audit_id),contract_audit_id:c.audit_id,graph:g})}).then(function(r){return r.json();}).then(function(j){ if(!j.saved) self.showToast('Не сохранено — governance: '+((j.errors||[])[0]||'ошибка')); else self.setState({ savedVersion: j.id, savedStatus: j.status }); }).catch(function(){ self.showToast('Черновик не сохранён на сервере: ABOP недоступен'); }); }
     this.persist();
   }
 
