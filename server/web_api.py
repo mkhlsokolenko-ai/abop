@@ -3348,16 +3348,18 @@ async def agent_author(body: dict, u: dict = Depends(user)) -> JSONResponse:
     _mine = f"authored-{_hl2.md5(_uid.encode('utf-8')).hexdigest()[:6]}-"
     if _keep.startswith(_mine):
         audit_id = _keep
-    version = await agent_store.next_version(audit_id)
     verdict = _verify_envelope(graph, env["autonomy_max"])   # авто-верификация против производного конверта
     # Та же проверка покрытия входов, что и на канве: навык без данных, без предмета или без
     # поставщика объявленного входа отработает вхолостую. Для личного агента это
     # предупреждение, а не запрет: его собирают в том числе чтобы попробовать.
     gaps = await _input_gaps(graph)
-    saved = await agent_store.save(name=name, audit_id=audit_id, version=version, graph=graph,
-                                   autonomy_max=env["autonomy_max"], created_by=u.get("name") or "dev",
-                                   family=family, role=spec["role"], transitions=spec["transitions"],
-                                   source="authored", verification=verdict)
+    # ADR-024: сохранение с канвы ПЕРЕЗАПИСЫВАЕТ черновик. Автосейв срабатывает через секунду
+    # после каждого движения мышью — на next_version это давало по версии на движение.
+    saved = await agent_store.save_draft(name=name, audit_id=audit_id, graph=graph,
+                                         autonomy_max=env["autonomy_max"], created_by=u.get("name") or "dev",
+                                         family=family, role=spec["role"], transitions=spec["transitions"],
+                                         source="authored", verification=verdict)
+    version = saved.get("version")
     await audit_store.record(u.get("name") or "dev", "agent.author", saved["id"],
                              {"family": family, "role": spec["role"], "autonomy_max": env["autonomy_max"],
                               "verified": verdict.get("verified")})

@@ -96,3 +96,40 @@ def test_run_id_exists_before_the_run_is_saved():
 
     auto = asyncio.run(run_store.save({"agent_id": "agent-x", "verdict": {"ok": True}}))
     assert auto["id"] != rid and auto["id"].startswith("run-agent-x-"), "без заранее выданного — свой"
+
+
+def test_autosave_overwrites_the_draft_instead_of_minting_versions():
+    """ADR-024: автосейв канвы перезаписывает черновик.
+
+    Канва сохраняет агента через секунду после каждого движения мышью. Пока сохранение брало
+    next_version, на стенде выросло двадцать версий одного «Финаналитика» — список агентов
+    превращался в историю правок, а найти в нём рабочего агента было нельзя.
+    """
+    import asyncio
+
+    from server import agent_store
+
+    aid = "authored-test-черновик"
+    first = asyncio.run(agent_store.save_draft(name="Черновик", audit_id=aid, graph={"nodes": []},
+                                               autonomy_max="A1", source="authored"))
+    again = asyncio.run(agent_store.save_draft(name="Черновик", audit_id=aid,
+                                               graph={"nodes": [{"id": "n1"}]},
+                                               autonomy_max="A1", source="authored"))
+    assert again["id"] == first["id"], "второе сохранение обязано лечь в тот же черновик"
+    assert again["version"] == first["version"]
+    assert (again.get("graph") or {}).get("nodes"), "но содержимое — новое"
+
+
+def test_tested_version_is_not_overwritten():
+    """Проверенную версию автосейв не трогает: иначе правка затёрла бы то, что уже приняли."""
+    import asyncio
+
+    from server import agent_store
+
+    aid = "authored-test-проверенный"
+    v1 = asyncio.run(agent_store.save_draft(name="Агент", audit_id=aid, graph={"nodes": []},
+                                            autonomy_max="A1", source="authored"))
+    asyncio.run(agent_store.set_status(v1["id"], "tested"))
+    v2 = asyncio.run(agent_store.save_draft(name="Агент", audit_id=aid, graph={"nodes": [{"id": "x"}]},
+                                            autonomy_max="A1", source="authored"))
+    assert v2["id"] != v1["id"] and v2["version"] == v1["version"] + 1

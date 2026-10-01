@@ -126,7 +126,9 @@ async def latest(audit_id: str) -> dict | None:
 
 
 async def save_draft(*, name: str, audit_id: str, graph: dict, autonomy_max: str,
-                     created_by: str = "dev", family: str = "", role: str = "") -> dict:
+                     created_by: str = "dev", family: str = "", role: str = "",
+                     transitions=None, source: str = "contract",
+                     verification: dict | None = None) -> dict:
     """UPSERT draft-версии (ADR-024): автосейв/сборка НЕ плодит версии — перезаписывает
     последний draft. Новая версия — только осознанным Пересмотром (revise → save()).
     Если последняя версия НЕ draft (tested/deployed) → создаёт новую (next_version)."""
@@ -136,20 +138,25 @@ async def save_draft(*, name: str, audit_id: str, graph: dict, autonomy_max: str
         if not _has_pg():
             a = _MEM.get(aid) or {}
             a.update({"graph": graph, "autonomy_max": autonomy_max, "name": name,
-                      "family": family, "role": role})
+                      "family": family, "role": role, "verification": verification})
             _MEM[aid] = a
             return a
         from .db import _conn
         async with _conn() as conn:
+            # Верификация конверта пересчитывается на каждое сохранение: граф изменился — значит
+            # прежний вердикт относится уже не к нему.
             await conn.execute(
-                "UPDATE agent_versions SET graph=%s, autonomy_max=%s, name=%s, family=%s, role=%s WHERE id=%s",
-                (json.dumps(graph), autonomy_max, name, family, role, aid))
+                "UPDATE agent_versions SET graph=%s, autonomy_max=%s, name=%s, family=%s, role=%s, "
+                "verification=%s WHERE id=%s",
+                (json.dumps(graph), autonomy_max, name, family, role,
+                 json.dumps(verification) if verification is not None else None, aid))
         out = await get(aid) or {"id": aid, "version": version}
         await _fire_saved(out)
         return out
     version = await next_version(audit_id)
     return await save(name=name, audit_id=audit_id, version=version, graph=graph,
-                      autonomy_max=autonomy_max, created_by=created_by, family=family, role=role)
+                      autonomy_max=autonomy_max, created_by=created_by, family=family, role=role,
+                      transitions=transitions, source=source, verification=verification)
 
 
 async def get(agent_id: str) -> dict | None:
