@@ -3878,17 +3878,40 @@ async def _labels_ctx(run: dict) -> dict:
     return {"разметка": "".join(rows), "разметка_сводка": summary}
 
 
+def _is_number(x) -> bool:
+    """Значение — число? Нужно только для выключки вправо: так колонки цифр читаются столбиком."""
+    if isinstance(x, bool):
+        return False
+    if isinstance(x, (int, float)):
+        return True
+    t = str(x or "").strip().replace(" ", "").replace("\u00a0", "").replace(",", ".")
+    if not t:
+        return False
+    try:
+        float(t)
+        return True
+    except ValueError:
+        return False
+
+
 def _label(key: str) -> str:
     """Имя поля человеку: «часы_план_факт» → «часы план факт»."""
     return str(key or "").replace("_", " ").strip()
+
+
+def _kpi_html(d: dict, esc) -> str:
+    """Ключевые показатели строкой плашек: их переносят в сводку выше по иерархии."""
+    cells = "".join(f"<div class='kpi'><span class='k'>{esc(_label(k))}</span>"
+                    f"<span class='v'>{esc(v)}</span></div>" for k, v in d.items())
+    return f"<div class='kpis'>{cells}</div>"
 
 
 def _structured_html(node, esc, depth: int = 0) -> str:
     """Структурный результат навыка — в HTML по форме данных.
 
     Список однородных записей становится таблицей: так видно колонку «отклонение» целиком, а не
-    по одной строке на абзац. Словарь — две колонки. Глубже трёх уровней не идём: дальше это уже
-    не отчёт, а дамп, и его место в журнале прогона.
+    по одной строке на абзац. Словарь из одних чисел — строка показателей, прочий словарь — две
+    колонки. Глубже трёх уровней не идём: дальше это уже не отчёт, а дамп, и его место в журнале.
     """
     if node is None or node == "" or node == [] or node == {}:
         return ""
@@ -3903,23 +3926,38 @@ def _structured_html(node, esc, depth: int = 0) -> str:
                     if k not in cols and not isinstance(r.get(k), (dict, list)):
                         cols.append(k)
             if cols:
-                head = "".join(f"<th>{esc(_label(c))}</th>" for c in cols)
+                num = {c for c in cols
+                       if all(_is_number(r.get(c)) for r in rows if str(r.get(c, "")).strip() != "")
+                       and any(str(r.get(c, "")).strip() != "" for r in rows)}
+                head = "".join(f"<th{' class=num' if c in num else ''}>{esc(_label(c))}</th>" for c in cols)
                 body = ""
                 for r in rows[:50]:
-                    body += "<tr>" + "".join(f"<td>{esc(r.get(c, ''))}</td>" for c in cols) + "</tr>"
+                    body += "<tr>" + "".join(
+                        f"<td{' class=num' if c in num else ''}>{esc(r.get(c, ''))}</td>" for c in cols) + "</tr>"
                     deep = {k: v for k, v in r.items() if isinstance(v, (dict, list)) and v}
                     for k, v in deep.items():
                         body += (f"<tr><td colspan='{len(cols)}' class='sub'><b>{esc(_label(k))}:</b> "
                                  + _structured_html(v, esc, depth + 2) + "</td></tr>")
-                return f"<table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>"
-        return "<ul>" + "".join(f"<li>{_structured_html(x, esc, depth + 1) if not isinstance(x, (str, int, float, bool)) else esc(x)}</li>"
-                                for x in node[:50]) + "</ul>"
+                more = f" · показаны первые 50 из {len(rows)}" if len(rows) > 50 else ""
+                return (f"<table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>"
+                        f"<p class='cnt'>строк: {len(rows)}{more}</p>")
+        return "<ul>" + "".join(
+            f"<li>{_structured_html(x, esc, depth + 1) if not isinstance(x, (str, int, float, bool)) else esc(x)}</li>"
+            for x in node[:50]) + "</ul>"
     if isinstance(node, dict):
         out = []
         plain = {k: v for k, v in node.items() if not isinstance(v, (dict, list))}
         if plain:
-            out.append("<table class='kv'>" + "".join(
-                f"<tr><th>{esc(_label(k))}</th><td>{esc(v)}</td></tr>" for k, v in plain.items()) + "</table>")
+            nums = [k for k, v in plain.items() if _is_number(v)]
+            # Сводка почти всегда лежит разделом внутри результата, а не на верхнем уровне,
+            # поэтому плашки разрешены и на первом вложении. Глубже — уже подробности, им место
+            # в обычной таблице.
+            if depth <= 1 and len(plain) >= 3 and len(nums) >= len(plain) - 1:
+                out.append(_kpi_html(plain, esc))     # сводка числами — крупно, строкой
+            else:
+                out.append("<table class='kv'>" + "".join(
+                    f"<tr><th>{esc(_label(k))}</th><td{' class=num' if _is_number(v) else ''}>"
+                    f"{esc(v)}</td></tr>" for k, v in plain.items()) + "</table>")
         for k, v in node.items():
             if isinstance(v, (dict, list)) and v:
                 tag = "h4" if depth else "h3"
@@ -3928,33 +3966,110 @@ def _structured_html(node, esc, depth: int = 0) -> str:
     return f"<p>{esc(node)}</p>"
 
 
+_REPORT_CSS = (
+    "@page{size:A4;margin:18mm 16mm}"
+    "*{box-sizing:border-box}"
+    "body{font-family:'Segoe UI',Arial,sans-serif;max-width:900px;margin:0 auto;padding:28px 24px;"
+    "color:#15181f;line-height:1.5;font-size:14px;background:#fff}"
+    ".req{border:1px solid #c9ced9;border-bottom-width:2px;margin-bottom:22px}"
+    ".req h1{margin:0;padding:14px 16px 10px;font-size:19px;font-weight:700;letter-spacing:-.2px}"
+    ".req table{margin:0;border:0;border-top:1px solid #e3e6ee;font-size:12.5px}"
+    ".req td,.req th{border:0;border-right:1px solid #e3e6ee;padding:7px 16px;vertical-align:top}"
+    ".req th{background:#f6f7fa;font-weight:600;color:#5a6274;width:1%;white-space:nowrap;"
+    "text-transform:uppercase;font-size:10.5px;letter-spacing:.6px}"
+    ".req tr td:last-child,.req tr th:last-child{border-right:0}"
+    ".summary{border-left:3px solid #2f4f8f;background:#f6f8fc;padding:12px 16px;margin:0 0 22px;"
+    "font-size:15px;line-height:1.55}"
+    ".summary b{display:block;font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;"
+    "color:#5a6274;margin-bottom:4px;font-weight:600}"
+    "h2{font-size:15px;margin:26px 0 8px;padding-bottom:5px;border-bottom:1px solid #c9ced9;font-weight:700}"
+    "h3{font-size:13.5px;margin:16px 0 6px;font-weight:600}"
+    "h4{font-size:12.5px;margin:12px 0 4px;color:#4a5160;font-weight:600}"
+    "p{margin:6px 0}li{margin:5px 0}i{color:#2f6f4f}"
+    ".kpis{display:flex;flex-wrap:wrap;gap:1px;background:#c9ced9;border:1px solid #c9ced9;margin:10px 0 16px}"
+    ".kpi{flex:1 1 110px;background:#fff;padding:9px 12px}"
+    ".kpi .k{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;color:#5a6274}"
+    ".kpi .v{display:block;font-size:19px;font-weight:700;margin-top:2px}"
+    "table{border-collapse:collapse;width:100%;margin:8px 0 4px;font-size:12.5px}"
+    "th,td{border:1px solid #d6dae3;padding:6px 9px;text-align:left;vertical-align:top}"
+    "thead th{background:#f6f7fa;font-weight:600;white-space:nowrap}"
+    "tbody tr:nth-child(even) td{background:#fbfcfe}"
+    ".num{text-align:right;font-variant-numeric:tabular-nums}"
+    "table.kv th{width:32%;background:#fbfcfe;font-weight:500;color:#4a5160}"
+    "td.sub{background:#fbfcfe;font-size:12px}"
+    ".cnt{font-size:11px;color:#79808f;margin:0 0 14px}"
+    ".foot{margin-top:28px;border-top:1px solid #c9ced9;padding-top:10px;font-size:11.5px;color:#79808f}"
+    ".foot span{margin-right:16px}"
+    "@media print{body{padding:0}tr{page-break-inside:avoid}h2{page-break-after:avoid}}"
+)
+
+
 def _build_report_html(agent: dict, result: dict) -> str:
-    """Детерминированный HTML-отчёт из результата прогона (находки A/B/C/D, цепочки-расследования,
-    результаты навыков). Используется OUT-узлом для доставки (PDF/BookStack/почта)."""
+    """Отчёт прогона по форме служебного документа: реквизиты, резюме, показатели, разделы, подвал.
+
+    Документ читают как корпоративный отчёт — сверху вниз и выборочно, поэтому порядок задан жёстко:
+    шапка отвечает «кто и о чём», резюме — «что решать», показатели — «насколько», разделы —
+    доказательная часть, подвал — чем это проверить. Разделы пронумерованы: на них ссылаются.
+    """
+    import datetime as _dt
     import html as _html
     esc = lambda x: _html.escape(str(x if x is not None else ""))  # noqa: E731
     name = esc(agent.get("name") or "Агент ABOP")
     v = result.get("verdict") or {}
-    parts = [f"<h1>Отчёт агента: {name}</h1>",
-             f"<p>Вердикт: <b>{'пройден' if v.get('ok') else 'есть замечания'}</b> · "
-             f"автономия {esc(v.get('autonomy_used'))} · волн {len(result.get('waves') or [])}</p>"]
-    fs = result.get("findings_summary")
-    if fs:
-        bc = fs.get("by_class") or {}
-        parts.append(f"<h2>Находки аудита: {esc(fs.get('total'))}</h2>")
-        parts.append("<p>" + " · ".join(f"{k}: {esc(bc.get(k, 0))}" for k in ("A", "B", "C", "D")) + "</p>")
     fnds = result.get("findings") or []
     struct = [f for f in fnds if isinstance(f, dict) and f.get("проверка")]
+    invs = result.get("investigations") or []
+    outs = [o for o in (result.get("skill_outputs") or []) if isinstance(o, dict)]
+    rich = [o for o in outs if isinstance(o.get("structured"), dict) and o["structured"]]
+    llm = [f for f in fnds if isinstance(f, dict) and f.get("skill") and f.get("text")]
+
+    # ── шапка-реквизиты ──
+    rid = str(result.get("run_id") or result.get("id") or "")
+    when = str(result.get("created_at") or "")[:16].replace("T", " ") or         _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+    skills_line = ", ".join(str(o.get("skill") or "") for o in outs) or "—"
+    head = [f"<section class='req'><h1>Отчёт агента «{name}»</h1><table><tr>",
+            f"<th>сформирован</th><td>{esc(when)}</td>",
+            f"<th>запустил</th><td>{esc(result.get('started_by') or '—')}</td>",
+            f"<th>навыки</th><td>{esc(skills_line)}</td></tr></table></section>"]
+
+    # ── резюме: ради него документ и открывают ──
+    lead = ""
+    for o in rich:
+        for key in ("итог", "вывод", "резюме"):
+            val = (o.get("structured") or {}).get(key)
+            if isinstance(val, str) and val.strip():
+                lead = val.strip()
+                break
+        if lead:
+            break
+    if lead:
+        head.append(f"<section class='summary'><b>Резюме</b>{esc(lead)}</section>")
+
+    parts: list = []
+    n = 0
+
+    def section(title: str) -> None:
+        nonlocal n
+        n += 1
+        parts.append(f"<h2>{n}. {esc(title)}</h2>")
+
+    fs = result.get("findings_summary")
+    if fs:
+        section(f"Находки аудита: {fs.get('total')}")
+        bc = fs.get("by_class") or {}
+        parts.append(_kpi_html({f"класс {k}": bc.get(k, 0) for k in ("A", "B", "C", "D")}, esc))
     if struct:
+        if not fs:
+            section("Находки")
         parts.append("<ul>")
         for f in struct[:30]:
             norm = (f.get("нормы_rag") or [""])[0]
             parts.append(f"<li><b>[{esc(f.get('класс'))}] {esc(f.get('проверка'))}</b> — {esc(f.get('описание'))}"
                          + (f"<br><i>§ {esc(norm[:200])}</i>" if norm else "") + "</li>")
         parts.append("</ul>")
-    invs = result.get("investigations") or []
     if invs:
-        parts.append(f"<h2>Расследования от симптома: {len(invs)}</h2><ul>")
+        section(f"Расследования от симптома: {len(invs)}")
+        parts.append("<ul>")
         for iv in invs[:30]:
             chain = " → ".join(f"{esc(l.get('звено'))}: {esc(l.get('статус'))}" for l in (iv.get("цепочка") or []))
             rec = iv.get("сверка") or {}
@@ -3963,40 +4078,30 @@ def _build_report_html(agent: dict, result: dict) -> str:
                          f"<br>{chain}<br>расхождение Δ {esc(rec.get('разница_₽'))} ₽"
                          + (f"<br><i>§ {esc(norm[:200])}</i>" if norm else "") + "</li>")
         parts.append("</ul>")
-    # Структурный выход навыка — главное в отчёте: из него видно и сводку, и построчное исполнение.
-    # Прозаический текст оставляем как запасной вариант: его печатают навыки без схемы результата.
-    outs = [o for o in (result.get("skill_outputs") or []) if isinstance(o, dict)]
-    rich = [o for o in outs if isinstance(o.get("structured"), dict) and o["structured"]]
-    llm = [f for f in fnds if isinstance(f, dict) and f.get("skill") and f.get("text")]
     if rich and not struct:
-        parts.append("<h2>Результаты навыков</h2>")
         for o in rich[:20]:
-            st = o["structured"]
-            parts.append(f"<h3>{esc(o.get('skill'))}</h3>")
-            # «Итог» навыка — первая строка отчёта: ради неё письмо и открывают.
-            for key in ("итог", "вывод", "резюме"):
-                if isinstance(st.get(key), str) and st[key].strip():
-                    parts.append(f"<p class='lead'>{esc(st[key])}</p>")
-                    break
-            parts.append(_structured_html({k: v for k, v in st.items()
-                                           if k not in ("итог", "вывод", "резюме")}, esc))
+            st = {k: val for k, val in (o.get("structured") or {}).items()
+                  if k not in ("итог", "вывод", "резюме")}
+            # Заголовок раздела — как навык называется людям: «roadmap-fact» в служебном
+            # документе выглядит кодом, а не разделом.
+            sid = str(o.get("skill") or "")
+            meta = ape.SKILLS.get(sid) or ()
+            section(str(meta[0]) if meta else (sid or "Результат навыка"))
+            parts.append(_structured_html(st, esc) or "<p>нет данных</p>")
     elif llm and not struct:
-        parts.append("<h2>Результаты навыков</h2>")
         for f in llm[:20]:
-            parts.append(f"<h3>{esc(f.get('skill'))}</h3>"
-                         f"<pre style='white-space:pre-wrap'>{esc((f.get('text') or '')[:4000])}</pre>")
-    body = "".join(parts)
-    return ("<!doctype html><html><head><meta charset='utf-8'><style>"
-            "body{font-family:Arial,sans-serif;max-width:860px;margin:24px auto;color:#111;line-height:1.5}"
-            "h1{font-size:22px}h2{font-size:17px;margin-top:22px}h3{font-size:15px;margin:18px 0 6px}"
-            "h4{font-size:13px;margin:12px 0 4px;color:#444}li{margin:6px 0}i{color:#0a6}"
-            "p.lead{font-size:15px;font-weight:bold;margin:6px 0 12px}"
-            "table{border-collapse:collapse;width:100%;margin:6px 0 14px;font-size:13px}"
-            "th,td{border:1px solid #d7dae3;padding:6px 8px;text-align:left;vertical-align:top}"
-            "thead th{background:#f3f4f8;font-weight:bold;white-space:nowrap}"
-            "table.kv th{width:34%;background:#fafbfd;font-weight:normal;color:#555}"
-            "td.sub{background:#fbfcfe;font-size:12px}</style></head>"
-            f"<body>{body}<hr><p style='color:#888;font-size:12px'>Сформировано ABOP · {name}</p></body></html>")
+            section(str(f.get("skill") or "Результат навыка"))
+            parts.append(f"<pre style='white-space:pre-wrap'>{esc((f.get('text') or '')[:4000])}</pre>")
+
+    foot = ("<div class='foot'>"
+            f"<span>Сформировано ABOP</span>"
+            f"<span>вердикт: {'пройден' if v.get('ok') else 'есть замечания'}</span>"
+            f"<span>автономия: {esc(v.get('autonomy_used') or '—')}</span>"
+            f"<span>этапов: {len(result.get('waves') or [])}</span>"
+            + (f"<span>прогон: {esc(rid)}</span>" if rid else "") + "</div>")
+    return ("<!doctype html><html lang='ru'><head><meta charset='utf-8'>"
+            f"<title>Отчёт агента «{name}»</title><style>{_REPORT_CSS}</style></head>"
+            f"<body>{''.join(head)}{''.join(parts)}{foot}</body></html>")
 
 
 def _html_to_text(h: str) -> str:
