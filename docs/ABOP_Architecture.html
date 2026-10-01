@@ -68,7 +68,7 @@
 <body>
 <div class="wrap">
   <h1>ABOP — Архитектура платформы</h1>
-  <p class="sub">Инженерная платформа для сборки и управления ИИ-агентами · десктоп-чат как рабочая среда пользователя · self-host LLM на GPU-боксе (данные не выходят наружу) · шина Redpanda + коннектор-воркер на server-2: результат навыка уходит в систему только после HITL-превью · предмет работы (проект, контрагент) сужает выборку данных до прогона · навыки связаны контрактами: цепочка собирается из тех, кто реально выполнится на текущих данных, выводы ветвей ложатся на общую доску, расхождения разрешаются правилом или человеком</p>
+  <p class="sub">Инженерная платформа для сборки и управления ИИ-агентами · десктоп-чат как рабочая среда пользователя · self-host LLM на GPU-боксе (данные не выходят наружу) · шина Redpanda и коннектор-воркер на server-2: результат уходит в систему только после подтверждения человеком · навыки связаны контрактами, предмет работы сужает выборку данных до прогона</p>
 
   <div class="cols">
     <!-- ЛЕВАЯ КОЛОНКА: легенда / домены / коммуникация -->
@@ -190,7 +190,7 @@
               <div class="card">
                 <div class="sec">Schema-driven (шаблоны в БД)</div>
                 <div class="chips"><span class="chip b">schema_templates · skills/&lt;sid&gt;/template.json</span><span class="chip b">json_schema · instruction · max_tokens · tool_steps · delivery</span><span class="chip b">контракт: inputs · produces · slots</span><span class="chip b">report_templates · reports/&lt;id&gt;.html</span><span class="chip b">reset: вернуть шаблон к версии поставки</span><span class="chip b">{{skills}} · {{skill_&lt;sid&gt;}}</span></div>
-                <div class="bd" style="color:var(--ink3);font-size:9.5px;margin-top:5px">59 навыков в каталоге, 54 с контрактом и строгой схемой (vLLM xgrammar) · 6 с доставкой · ответ сверяется со схемой: недобор → повтор с бОльшим лимитом, остаток помечается в прогоне и в отчёте · правка в UI / POST /schema-templates/import без пересборки · отчёт: default · audit1c · invest · digest</div>
+                <div class="bd" style="color:var(--ink3);font-size:9.5px;margin-top:5px">Схема результата строгая (vLLM xgrammar): ответ сверяется со схемой, недобор — повтор с бо́льшим лимитом, остаток помечается в прогоне и в отчёте · правка в UI или POST /schema-templates/import без пересборки · отчёт: default · audit1c · invest · digest</div>
               </div>
               <div class="card">
                 <div class="sec">Планирование</div>
@@ -226,32 +226,6 @@
                 <div class="chips"><span class="chip">chat · chat_stream</span><span class="chip">embed (BGE-M3)</span><span class="chip">rerank</span><span class="chip">qdrant</span><span class="chip">admission-семафор</span></div>
               </div>
               <div class="card">
-        <div class="st">Переход к мультиагентности: состояние на 30.09.2026</div>
-        <div class="grid g3" style="margin-bottom:8px">
-          <div class="box"><div class="bt" style="color:#63d78a">Работает на стенде</div><div class="bd">
-            контракт навыка (вход/выход/слоты) у 54 из 59 · исполнение по волнам, между шагами едет
-            структура · ветвление с условиями и четыре политики слияния · бюджет и лимиты лестницей
-            (код → настройка → навык → прогон) · веер по предмету одной группой · общая доска с
-            авторством и снимком данных · арбитраж расхождений правилом, навыком или человеком ·
-            план по контрактам и правило достаточности запроса</div></div>
-          <div class="box"><div class="bt" style="color:#f59e0b">Сделано, но с оговоркой</div><div class="bd">
-            сквозной ключ джойна надёжен в вертикали аудита и расследования, в остальных цепочках
-            связь по строковому полю · слоты объявлены у немногих навыков — веер запускается только
-            по тем, у кого предмет описан · родительские трассы для параллельных ветвей неполные ·
-            живой стрим прогона зафиксирован контрактом, но отдаёт 501</div></div>
-          <div class="box"><div class="bt" style="color:#f87171">Не начато</div><div class="bd">
-            вторая реплика воркера и распределённые локи (Хартия v3.5) · песочница Python для
-            навыков-расчётчиков · мультитенантность источников (общие креды против BYO)</div></div>
-        </div>
-        <div class="grid g4">
-          <div class="box"><div class="bt">Каталог навыков</div><div class="bd">59 всего · 54 с контрактом и схемой · 38 с областью данных · 6 с доставкой · 5 справочных (стилевые гайды, в цепочку не встраиваются)</div></div>
-          <div class="box"><div class="bt">Проверено живьём</div><div class="bd">веер по трём проектам — 24 записи сведены по ключу «проект + пункт»; расхождение по пункту RM-05 разрешено правилом тяжести</div></div>
-          <div class="box"><div class="bt">Пропускная способность</div><div class="bd">4 воркера · параллельность навыков 8 · аудит 1С — 7 вызовов модели, ~210 с, 0 ₽ на своём боксе</div></div>
-          <div class="box hl"><div class="bt">Регрессия</div><div class="bd">11 эталонных запросов: подбор, предмет и исполнимость — 100%; 242 теста в репозитории</div></div>
-        </div>
-      </div>
-
-      <div class="card">
                 <div class="sec">Фронт + наблюдаемость</div>
                 <div class="chips"><span class="chip b">webapp/src buildless (build.py)</span><span class="chip b">/desktop-ui</span><span class="chip">Prometheus: webapi · redpanda · connector</span><span class="chip">Grafana abop-overview (26 панелей)</span><span class="chip">langfuse</span><span class="chip">CI smoke</span></div>
               </div>
@@ -309,7 +283,7 @@
           <div class="flow"><span class="num">5</span><span class="ft"><b>Доставка результата навыка:</b> delivery шаблона → команды коннектора → HITL-заявка с превью (система/действие, тема, описание) → «да» → abop.&lt;система&gt;.commands → коннектор (server-2) → Redmine/BookStack/Mailpit/1С</span></div>
           <div class="flow"><span class="num">6</span><span class="ft"><b>Обратно по шине:</b> command.done|failed → abop.&lt;система&gt;.events → результат (issue_id, url) в заявку → «✓ выполнено: ссылка» в карточке; сбои → abop.dlq; события систем → триггеры агентов (ABAC по семье)</span></div>
           <div class="flow"><span class="num">7</span><span class="ft"><b>Отчёт:</b> OUT-узлы (почта/BookStack/PDF) и GET /runs/{id}/report?template=&amp;format=pdf по reports/&lt;id&gt;.html с {{skills}} / {{skill_&lt;sid&gt;}}; агент адресен (Identity Map)</span></div>
-          <div class="flow"><span class="num">8</span><span class="ft"><b>Очередь:</b> POST /runs?async → run_jobs (SKIP LOCKED) → воркеры; цепочки и HITL-возобновление через очередь; нагрузка 20×3: 4 воркера ≈ 16,9 прогона/мин</span></div>
+          <div class="flow"><span class="num">8</span><span class="ft"><b>Очередь:</b> POST /runs?async → run_jobs (SKIP LOCKED) → воркеры; цепочки и HITL-возобновление через очередь</span></div>
           <div class="flow"><span class="num">9</span><span class="ft"><b>Аудит:</b> provenance-трасса + метрики webapi/Redpanda/коннектора в Prometheus → Grafana abop-overview (секция «Шина и коннектор»), langfuse; расписания через планировщик</span></div>
         </div>
       </div>
