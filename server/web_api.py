@@ -3577,6 +3577,21 @@ def _agent_knowledge_fn(agent: dict, actor: str):
     return _kfn
 
 
+async def _pick_template_id(result: dict) -> str:
+    """Какая форма оформит этот результат.
+
+    Сначала спрашиваем сами формы: та, что объявила себя для навыков прогона, знает предмет лучше
+    общей. Если такой нет — выбираем по форме результата, как и раньше. Привязка живёт рядом с
+    формой в базе, поэтому добавить бланк под вертикаль можно, не трогая код.
+    """
+    skills = [str(o.get("skill") or "") for o in (result.get("skill_outputs") or []) if o.get("skill")]
+    try:
+        by_skill = await report_store.template_for_skills(skills)
+    except Exception:  # noqa: BLE001 — подбор по навыку усиление, а не условие работы отчёта
+        by_skill = ""
+    return by_skill or _auto_template_id(result)
+
+
 def _auto_template_id(result: dict) -> str:
     """Кейс-шаблон отчёта по форме результата (когда OUT-узел не задал report_template_id явно):
     расследования → invest; аудит-находки A/B/C/D → audit1c; structured-вывод навыка → digest; иначе default."""
@@ -4292,7 +4307,7 @@ async def _deliver_out_nodes(agent: dict, result: dict, actor: str, deliver_filt
     async def _report_for(cfg: dict) -> str:
         # Явно заданный шаблон приоритетен; иначе авто-выбор по форме результата (кейс-шаблон), чтобы
         # демо-агенты давали красивый отчёт без правки графа. Фолбэк — прежний детерминированный HTML.
-        tid = (cfg or {}).get("report_template_id") or _auto_template_id(result)
+        tid = (cfg or {}).get("report_template_id") or await _pick_template_id(result)
         tpl = await report_store.get(tid) or await report_store.get("default")
         if not tpl:
             return html_report
@@ -6570,7 +6585,7 @@ async def run_report(run_id: str, template: str = "", format: str = "html", u: d
     run = await _run_visible(run_id, u)
     ag = await agent_store.get(run.get("agent_id") or "") or {"id": run.get("agent_id"), "name": run.get("agent_name") or run.get("agent_id")}
     import re as _re
-    tid = _re.sub(r"[^a-z0-9_-]", "", str(template or "").lower()) or _auto_template_id(run)
+    tid = _re.sub(r"[^a-z0-9_-]", "", str(template or "").lower()) or await _pick_template_id(run)
     tpl = await report_store.get(tid) or await report_store.get("default")
     if not tpl:
         raise HTTPException(404, "нет шаблона отчёта")

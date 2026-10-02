@@ -10,5 +10,42 @@
   },
   "digest": {
     "name": "Дайджест задач (разбор почты, план дня, письмо)"
+  },
+  "letter": {
+    "name": "Деловое письмо (черновик на подпись)",
+    "for_skills": [
+      "client-letter",
+      "email-draft"
+    ]
+  },
+  "tickets": {
+    "name": "Перечень задач в трекер",
+    "for_skills": [
+      "to-tickets",
+      "meeting-action-items",
+      "daily-plan"
+    ]
+  },
+  "finance": {
+    "name": "Финансовый отчёт (модель, прогноз, отклонения)",
+    "for_skills": [
+      "three-statement-model",
+      "dcf-valuation",
+      "budget-forecast",
+      "variance_explanation",
+      "finance-report",
+      "unit-economics-checker",
+      "ledger_reconciliation",
+      "period_close_orchestration"
+    ]
+  },
+  "project": {
+    "name": "Отчёт по проекту (план и факт, риски, решения)",
+    "for_skills": [
+      "roadmap-fact",
+      "acceptance-check",
+      "status-report",
+      "weekly-update"
+    ]
   }
 }

@@ -32,10 +32,13 @@ CREATE TABLE IF NOT EXISTS report_templates (
     editor      TEXT,
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- Область применения формы: чьи результаты она оформляет. Добавляется отдельно, чтобы базы,
+-- созданные раньше, получили колонку без пересоздания таблицы.
+ALTER TABLE report_templates ADD COLUMN IF NOT EXISTS for_skills JSONB NOT NULL DEFAULT '[]'::jsonb;
 """
 
 _MEM: dict[str, dict] = {}
-_COLS = "id,name,html,css,pdf_options,builtin,editor,updated_at"
+_COLS = "id,name,html,css,pdf_options,builtin,editor,updated_at,for_skills"
 
 
 def _has_pg() -> bool:
@@ -44,7 +47,8 @@ def _has_pg() -> bool:
 
 def _row(r) -> dict:
     return {"id": r[0], "name": r[1], "html": r[2], "css": r[3] or "", "pdf_options": r[4] or {},
-            "builtin": bool(r[5]), "editor": r[6], "updated_at": r[7].isoformat() if r[7] else None}
+            "builtin": bool(r[5]), "editor": r[6], "updated_at": r[7].isoformat() if r[7] else None,
+            "for_skills": list(r[8] or []) if len(r) > 8 else []}
 
 
 async def init() -> None:
@@ -52,7 +56,12 @@ async def init() -> None:
         return
     from .db import _conn
     async with _conn() as conn:
-        await conn.execute(SCHEMA)
+        # SCHEMA — две инструкции (создание таблицы и добавление колонки): драйвер выполняет по одной.
+        # Строки-комментарии снимаем с начала инструкции, а не отбрасываем вместе с ней.
+        for chunk in SCHEMA.split(";"):
+            stmt = chr(10).join(ln for ln in chunk.splitlines() if not ln.strip().startswith("--")).strip()
+            if stmt:
+                await conn.execute(stmt)
 
 
 async def all() -> list[dict]:
@@ -79,7 +88,8 @@ async def get(tid: str) -> dict | None:
 async def save(tid: str, spec: dict, editor: str = "dev", builtin: bool = False) -> dict:
     spec = spec or {}
     card = {"id": tid, "name": spec.get("name") or tid, "html": spec.get("html") or "",
-            "css": spec.get("css") or "", "pdf_options": spec.get("pdf_options") or {}, "builtin": builtin}
+            "css": spec.get("css") or "", "pdf_options": spec.get("pdf_options") or {}, "builtin": builtin,
+            "for_skills": [str(x) for x in (spec.get("for_skills") or []) if str(x).strip()]}
     if not _has_pg():
         card["editor"] = editor
         _MEM[tid] = card
@@ -87,11 +97,13 @@ async def save(tid: str, spec: dict, editor: str = "dev", builtin: bool = False)
     from .db import _conn
     async with _conn() as conn:
         await conn.execute(
-            "INSERT INTO report_templates (id,name,html,css,pdf_options,builtin,editor,updated_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,now()) "
+            "INSERT INTO report_templates (id,name,html,css,pdf_options,builtin,editor,updated_at,for_skills) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,now(),%s) "
             "ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, html=EXCLUDED.html, css=EXCLUDED.css, "
-            "pdf_options=EXCLUDED.pdf_options, editor=EXCLUDED.editor, updated_at=now()",
-            (tid, card["name"], card["html"], card["css"], json.dumps(card["pdf_options"]), builtin, editor))
+            "pdf_options=EXCLUDED.pdf_options, editor=EXCLUDED.editor, updated_at=now(), "
+            "for_skills=EXCLUDED.for_skills",
+            (tid, card["name"], card["html"], card["css"], json.dumps(card["pdf_options"]), builtin, editor,
+             json.dumps(card["for_skills"])))
     return await get(tid)
 
 
@@ -224,6 +236,23 @@ _SEED = [
 ]
 
 
+async def template_for_skills(skills) -> str:
+    """Форма, объявившая себя для этих навыков. Пусто — подходящей нет, решает форма результата.
+
+    Если подходят несколько, берём ту, что объявлена для меньшего числа навыков: специальная форма
+    точнее общей. При равенстве — по идентификатору, чтобы выбор не зависел от порядка строк в базе.
+    """
+    want = {str(s) for s in (skills or []) if s}
+    if not want:
+        return ""
+    best = []
+    for t in await all():
+        fs = {str(x) for x in (t.get("for_skills") or [])}
+        if fs & want:
+            best.append((len(fs), str(t.get("id") or "")))
+    return sorted(best)[0][1] if best else ""
+
+
 def load_files() -> dict[str, dict]:
     """Шаблоны из репо `reports/<id>.html` + `_base.css` + `index.json` (имена/pdf_options). Пусто — нет папки."""
     out: dict[str, dict] = {}
@@ -242,7 +271,8 @@ def load_files() -> dict[str, dict]:
             continue
         m = meta.get(tid) or {}
         out[tid] = {"name": m.get("name") or tid, "html": p.read_text(encoding="utf-8"), "css": css,
-                    "pdf_options": m.get("pdf_options") or {"format": "A4", "orientation": "portrait"}}
+                    "pdf_options": m.get("pdf_options") or {"format": "A4", "orientation": "portrait"},
+                    "for_skills": m.get("for_skills") or []}
     return out
 
 
@@ -260,7 +290,9 @@ async def seed_if_empty() -> None:
             ex = cur.get(tid)
             if ex and not (ex.get("builtin") and (ex.get("editor") in (None, "seed"))):
                 continue             # шаблон отредактирован пользователем — не перезатираем
-            if ex and ex.get("html") == spec["html"] and ex.get("css") == spec["css"] and ex.get("name") == spec["name"]:
+            if (ex and ex.get("html") == spec["html"] and ex.get("css") == spec["css"]
+                    and ex.get("name") == spec["name"]
+                    and list(ex.get("for_skills") or []) == list(spec.get("for_skills") or [])):
                 continue
             await save(tid, spec, editor="seed", builtin=True)
     except Exception:  # noqa: BLE001
