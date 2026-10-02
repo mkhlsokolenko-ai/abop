@@ -275,6 +275,34 @@ _BADGE_KEYS = ("id", "класс", "ранг", "статус", "критично
 _NORM_KEYS = ("норма", "основание", "статья")
 
 
+def label(key) -> str:
+    """Имя поля человеку: «часы_план_факт» → «часы план факт». В отчёте имя колонки базы неуместно."""
+    return str(key if key is not None else "").replace("_", " ").strip()
+
+
+def is_number(x) -> bool:
+    """Значение — число? Нужно для выключки вправо: столбец цифр читается только так."""
+    if isinstance(x, bool):
+        return False
+    if isinstance(x, (int, float)):
+        return True
+    t = str(x or "").strip().replace(" ", "").replace("\u00a0", "").replace(",", ".")
+    if not t:
+        return False
+    try:
+        float(t)
+        return True
+    except ValueError:
+        return False
+
+
+def kpi_html(d: dict, esc) -> str:
+    """Сводка числами — плашками. Эти цифры переносят в отчёт выше по иерархии, им нужен размер."""
+    cells = "".join(f"<div class='kpi'><span class='k'>{esc(label(k))}</span>"
+                    f"<span class='v'>{esc(v)}</span></div>" for k, v in d.items())
+    return f"<div class='kpis'>{cells}</div>"
+
+
 def _wordy(items: list, cols: list) -> bool:
     """Список объектов «многословный»? Тогда таблица нечитаема: длинные пояснения схлопываются
     в ячейки и отчёт выглядит поверхностным, хотя данные на месте."""
@@ -316,7 +344,7 @@ def _card_html(it: dict, esc) -> str:
         if k in used or isinstance(v, (dict, list)) or v in (None, "", [], {}):
             continue
         if any(p in kl for p in _BADGE_KEYS) and len(str(v)) <= 40:
-            badges.append(f"<span class='cb'>{esc(k)}: {esc(v)}</span>")
+            badges.append(f"<span class='cb'>{esc(label(k))}: {esc(v)}</span>")
             used.add(k)
     nk = pick(_NORM_KEYS)
     norm = ""
@@ -338,9 +366,9 @@ def _card_html(it: dict, esc) -> str:
         if k in used or v in (None, "", [], {}):
             continue
         if isinstance(v, (dict, list)):
-            body.append(f"<div class='cf'><b>{esc(k)}</b>{struct_html(v, 2)}</div>")
+            body.append(f"<div class='cf'><b>{esc(label(k))}</b>{struct_html(v, 2)}</div>")
         else:
-            body.append(f"<div class='cf'><b>{esc(k)}:</b> {esc(v)}</div>")
+            body.append(f"<div class='cf'><b>{esc(label(k))}:</b> {esc(v)}</div>")
     return ("<div class='fcard'>"
             + (f"<div class='ch'>{head}</div>" if head else "")
             + (f"<div class='cbs'>{''.join(badges)}</div>" if badges else "")
@@ -356,15 +384,24 @@ def struct_html(obj, depth: int = 0) -> str:
     if isinstance(obj, dict):
         if depth == 0 and obj.get("_truncated"):
             obj = {k: v for k, v in obj.items() if k != "_truncated"}
+        plain = {k: v for k, v in obj.items() if not isinstance(v, (dict, list)) and v not in (None, "")}
+        nums = [k for k, v in plain.items() if is_number(v)]
         rows = []
+        # Сводка из цифр — плашками: эти значения переносят в отчёт выше по иерархии, и строкой
+        # «ключ: значение» они теряются среди пояснений.
+        if depth <= 1 and len(plain) >= 3 and len(nums) >= len(plain) - 1:
+            rows.append(kpi_html(plain, esc))
+            plain = {}
         for k, v in obj.items():
             if v in (None, "", [], {}):
                 continue
             if isinstance(v, (dict, list)):
-                rows.append(f"<div class='kv'><b>{esc(k)}</b>{struct_html(v, depth + 1)}</div>")
-            else:
+                rows.append(f"<div class='kv'><b>{esc(label(k))}</b>{struct_html(v, depth + 1)}</div>")
+            elif k in plain:
                 cls = "lead" if depth == 0 and isinstance(v, str) and len(v) > 120 else "kv"
-                rows.append(f"<div class='{cls}'>" + (f"<b>{esc(k)}:</b> " if cls == "kv" else f"<b>{esc(k)}.</b> ") + esc(v) + "</div>")
+                rows.append(f"<div class='{cls}'>"
+                            + (f"<b>{esc(label(k))}:</b> " if cls == "kv" else f"<b>{esc(label(k))}.</b> ")
+                            + esc(v) + "</div>")
         return "".join(rows)
     if isinstance(obj, list):
         import builtins
@@ -377,13 +414,21 @@ def struct_html(obj, depth: int = 0) -> str:
             if _wordy(obj, cols):
                 return "".join(_card_html(it, esc) for it in obj[:60])
             cols = cols[:8]
-            head = "".join(f"<th>{esc(c)}</th>" for c in cols)
+            # Числовая колонка выключается вправо: иначе столбец цифр не читается, а именно по нему
+            # отчёт и просматривают — «где просрочка», «где перерасход».
+            # builtins.all — в модуле есть своя all() (список шаблонов), она затеняет встроенную
+            num = {c for c in cols
+                   if builtins.all(is_number(it.get(c)) for it in obj if str(it.get(c, "")).strip() != "")
+                   and builtins.any(str(it.get(c, "")).strip() != "" for it in obj)}
+            head = "".join(f"<th{' class=n' if c in num else ''}>{esc(label(c))}</th>" for c in cols)
             body = []
             for it in obj[:60]:
-                tds = "".join(f"<td>{esc(it.get(c))}</td>" for c in cols)
-                nested = "".join(f"<div class='kv'><b>{esc(k)}</b>{struct_html(v, depth + 1)}</div>"
+                tds = "".join(f"<td{' class=n' if c in num else ''}>{esc(it.get(c))}</td>" for c in cols)
+                nested = "".join(f"<div class='kv'><b>{esc(label(k))}</b>{struct_html(v, depth + 1)}</div>"
                                  for k, v in it.items() if isinstance(v, (dict, list)) and v)
                 body.append(f"<tr>{tds}</tr>" + (f"<tr><td colspan='{len(cols)}'>{nested}</td></tr>" if nested else ""))
-            return f"<table class='tbl'><tr>{head}</tr>{''.join(body)}</table>"
+            more = f" · показаны первые 60 из {len(obj)}" if len(obj) > 60 else ""
+            return (f"<table class='tbl'><tr>{head}</tr>{''.join(body)}</table>"
+                    f"<div class='cnt'>строк: {len(obj)}{more}</div>")
         return "<ul>" + "".join(f"<li>{struct_html(x, depth + 1) if isinstance(x, (dict, list)) else esc(x)}</li>" for x in obj[:80]) + "</ul>"
     return esc(obj)

@@ -3652,6 +3652,40 @@ def _audit_cards_html(result: dict) -> str:
     return "".join(rows)
 
 
+def _requisites_html(agent: dict, result: dict, esc) -> str:
+    """Шапка-реквизиты служебного документа: кто, когда, кем запущен, какими навыками, какой прогон.
+
+    Без этого отчёт нельзя ни подшить, ни оспорить: получатель не знает, откуда взялись цифры.
+    """
+    import datetime as _dtm
+    when = str(result.get("created_at") or "")[:16].replace("T", " ") or \
+        _dtm.datetime.now().strftime("%Y-%m-%d %H:%M")
+    skills = ", ".join(str(o.get("skill") or "") for o in (result.get("skill_outputs") or []) if o.get("skill"))
+    cells = [("агент", agent.get("name") or agent.get("id") or "—"),
+             ("сформирован", when),
+             ("запустил", result.get("started_by") or "—")]
+    if skills:
+        cells.append(("навыки", skills))
+    rid = str(result.get("run_id") or result.get("id") or "")
+    if rid:
+        cells.append(("прогон", rid))
+    row = "".join(f"<th>{esc(k)}</th><td>{esc(v)}</td>" for k, v in cells)
+    return f"<section class='req'><h1>{esc(agent.get('name') or 'Отчёт ABOP')}</h1><table><tr>{row}</tr></table></section>"
+
+
+def _report_footer_html(result: dict, esc) -> str:
+    """Подвал: чем этот отчёт проверить — вердикт, автономия, число этапов, идентификатор прогона."""
+    v = result.get("verdict") or {}
+    bits = ["Сформировано ABOP",
+            "вердикт: " + ("пройден" if v.get("ok") else "есть замечания"),
+            "автономия: " + str(v.get("autonomy_used") or "—"),
+            "этапов: " + str(len(result.get("waves") or []))]
+    rid = str(result.get("run_id") or result.get("id") or "")
+    if rid:
+        bits.append("прогон: " + rid)
+    return "<div class='foot'>" + "".join(f"<span>{esc(b)}</span>" for b in bits) + "</div>"
+
+
 def _report_context(agent: dict, result: dict) -> dict:
     """Контекст для шаблона отчёта (report_store.render): готовые HTML-блоки под ВСЕ формы результата
     (аудит-находки A/B/C/D, расследования-цепочки, structured-вывод навыков вроде «Дайджест задач»).
@@ -3714,7 +3748,7 @@ def _report_context(agent: dict, result: dict) -> dict:
             )[:400] + "</div>" for it in items[:40])
         else:
             body = f"<pre>{esc((f.get('text') or '')[:2500])}</pre>"
-        sk_rows.append(f"<div class='sk'><h3>{esc(f.get('skill'))}</h3>{body}</div>")
+        sk_rows.append(f"<h2>{esc(f.get('skill'))}</h2><div class='sk'>{body}</div>")
     skills_html = "".join(sk_rows)
     # 3b) Структурированные ответы навыков по шаблонам извлечения (result.skill_outputs) — таблицы/списки;
     #     общий блок {{skills}} и адресные {{skill_<sid>}} (дефисы → подчёркивания) для кейс-шаблонов.
@@ -3734,7 +3768,7 @@ def _report_context(agent: dict, result: dict) -> dict:
         if not block:
             continue
         per_skill["skill_" + sid.replace("-", "_")] = block
-        so_rows.append(f"<div class='sk'><h3>{esc(_names.get(sid) or sid)}</h3>{block}</div>")
+        so_rows.append(f"<h2>{esc(_names.get(sid) or sid)}</h2><div class='sk'>{block}</div>")
     if so_rows:
         skills_html = "".join(so_rows)
 
@@ -3827,6 +3861,8 @@ def _report_context(agent: dict, result: dict) -> dict:
             "charts": charts.charts_html(result),
             "findings": findings_html,
             "investigations": investigations_html,
+            "requisites": _requisites_html(agent, result, esc),
+            "footer": _report_footer_html(result, esc),
             "skills": skills_html,
             "deliveries": dls or "<div class='dl'>—</div>",
             **per_skill}
@@ -4005,11 +4041,12 @@ _REPORT_CSS = (
 
 
 def _build_report_html(agent: dict, result: dict) -> str:
-    """Отчёт прогона по форме служебного документа: реквизиты, резюме, показатели, разделы, подвал.
+    """Аварийный отчёт БЕЗ шаблона: собирается кодом, когда в базе форм нет вовсе.
 
-    Документ читают как корпоративный отчёт — сверху вниз и выборочно, поэтому порядок задан жёстко:
-    шапка отвечает «кто и о чём», резюме — «что решать», показатели — «насколько», разделы —
-    доказательная часть, подвал — чем это проверить. Разделы пронумерованы: на них ссылаются.
+    Нормальный путь один — форма из базы (report_store): её правят в одном месте, и письмо из узла
+    вывода, «Показать отчёт» в приложении и PDF рисуются ею же. Эта функция остаётся только на
+    случай пустой базы при первом старте, поэтому её вид намеренно скромен: реквизиты, резюме,
+    разделы, подвал — ровно то, без чего документ не документ.
     """
     import datetime as _dt
     import html as _html

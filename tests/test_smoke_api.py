@@ -334,7 +334,12 @@ def test_report_templates_from_repo_and_run_report_html(client):
     assert "Что не сходится" in body and "Что проверить" in body and "нет СФ" in body
     assert "{{" not in body   # все плейсхолдеры подставлены (пустые → пусто)
     r2 = client.get(f"/api/runs/{rid}/report?template=digest")
-    assert r2.status_code == 200 and "Задачи и сводка" in r2.text and "<th>ранг</th>" in r2.text
+    # Дайджест больше не печатает заголовки под конкретные навыки («Разбор почты», «План дня»,
+    # «Письмо клиенту»): у агента без них оставались пустые строки с названиями. Раздел
+    # приходит вместе с содержимым и назван так, как навык зовут люди.
+    assert r2.status_code == 200 and "<th>ранг</th>" in r2.text
+    assert "Разбор почты" not in r2.text and "План дня" not in r2.text, "висячих заголовков быть не должно"
+    assert "<h2>" in r2.text and "{{" not in r2.text
     assert client.get("/api/runs/no-such-run/report").status_code == 404
 
 
