@@ -5586,18 +5586,16 @@ class Component extends DCLogic {
     var gated = {};   // узел, перед которым стоит подтверждение
     edges.forEach(function(e){ if (hitlIds.indexOf(_from(e)) > -1) gated[_to(e)] = true; });
     var out = nodes.map(function(n){
-      var b = { id: n.id, kind: n.kind, title: n.title || n.label || '' };
+      // Узел уезжает целиком. Список полей в этом месте уже стоил нам настроек инспектора:
+      // семья, участник, модель, таймаут и прочее в него не входили и молча пропадали.
+      var b = Object.assign({}, n);
+      b.title = n.title || n.label || '';
       if (n.kind === 'skill') {
         b.skill = n.skill || n.title;
         b.hitl = !!n.hitl || edges.some(function(e){ return _from(e) === n.id && hitlIds.indexOf(_to(e)) > -1; });
       }
       if (n.kind === 'hitl') b.hitl = true;
-      if (n.entity) b.entity = n.entity;
-      if (n.recipe) b.recipe = n.recipe;
-      if (n.corpus) b.corpus = n.corpus;
-      if (n.trig) b.trig = n.trig;
       if (n.kind === 'out') b.out = Object.assign({}, n.out || {}, gated[n.id] ? { hitl: true } : {});
-      else if (n.out) b.out = n.out;
       return b;
     });
     return { nodes: out, edges: edges };
@@ -5632,10 +5630,16 @@ class Component extends DCLogic {
   syncScenarioFromCanvas() {
     // Канва — источник правды для своего агента. Без этого переноса определение сценария
     // оставалось тем, каким его построили по плану, и переключение вкладки стирало работу.
-    var key = this.state.scenario, own = (this.state.userScenarios || {})[key];
-    if (!own) return;                 // демо-сценарий — шаблон, его правки не переписывают
+    var key = this.state.scenario, all = this.allScenarios();
+    var base = (this.state.userScenarios || {})[key] || all[key];
+    if (!base) return;
+    // Демо-сценарий зашит в код, и канва перечитывала его при каждом открытии — правки человека
+    // возвращались к исходному виду. Правка делает сценарий ЕГО черновиком: пользовательский
+    // перекрывает встроенный, а «Удалить черновик» возвращает поставочный.
+    if (!(this.state.userScenarios || {})[key]) this.showToast('«' + (base.label || key)
+        + '» теперь ваш черновик — вернуть поставочный можно кнопкой «Удалить черновик»');
     var next = Object.assign({}, this.state.userScenarios);
-    next[key] = Object.assign({}, own, {
+    next[key] = Object.assign({}, base, { own: true }, {
       nodes: (this.state.canvasNodes || []).map(function(n){ return Object.assign({}, n); }),
       edges: (this.state.edges || []).map(function(e){ return Object.assign({}, e); })
     });
