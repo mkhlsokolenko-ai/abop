@@ -20,8 +20,22 @@ def _aidx(a: str | None) -> int:
         return 0
 
 
-def check_graph(graph: dict, intake: dict, safety_of: Callable[[str], dict]) -> dict:
-    """Вернёт {errors[], warnings[], hitl_count, autonomy_max}. errors → сохранение запрещено."""
+# Каналы, уходящие за периметр: отправка по ним необратима, их и гейтим. Локальные (файл, PDF)
+# остаются свободными — результат никуда не уезжает.
+_LOCAL_CHANNELS = ("pdf", "file", "chat", "")
+# Автономия, с которой контракт разрешает действовать наружу без человека. Ниже — только с
+# подтверждением: право на безнадзорное действие даёт контракт, а не галочка в инспекторе.
+_UNATTENDED_FROM = 3   # индекс A3
+
+
+def check_graph(graph: dict, intake: dict, safety_of: Callable[[str], dict],
+                *, reads_data: set | None = None) -> dict:
+    """Вернёт {errors[], warnings[], hitl_count, autonomy_max}. errors → сохранение запрещено.
+
+    `reads_data` — навыки, читающие данные НАПРЯМУЮ (вход `from: data` в контракте). Нужны для
+    карантина действующего пути: без них доказать карантин нечем, и безнадзорная отправка наружу
+    не разрешается. Не передали — считаем, что карантин не доказан.
+    """
     errors: list[str] = []
     warnings: list[str] = []
     nodes = (graph or {}).get("nodes") or []
@@ -61,5 +75,30 @@ def check_graph(graph: dict, intake: dict, safety_of: Callable[[str], dict]) -> 
     if req_hitl and hitl_count < req_hitl:
         warnings.append(f"контракт требует {req_hitl} точек HITL, на канве отмечено {hitl_count}")
 
+    # ── Узел вывода: отправка наружу без человека требует права по контракту И карантина ──
+    # Прежде проверялся только навык-действие (ADR-014), а отправляет результат узел доставки.
+    acting = {n["skill"] for n in skill_nodes
+              if (safety_of(n["skill"]) or {}).get("mode") == "action"}
+    raw_readers = sorted((reads_data or set()) & ({n["skill"] for n in skill_nodes} if reads_data is not None else set()))
+    quarantined = reads_data is not None and not (acting & set(reads_data))
+    for n in nodes:
+        if n.get("kind") != "out":
+            continue
+        cfg = n.get("out") or {}
+        channel = str(cfg.get("channel") or "")
+        if channel in _LOCAL_CHANNELS:
+            continue
+        if cfg.get("hitl"):
+            hitl_count += 1
+            continue
+        where = f"узел вывода «{n.get('title') or n.get('id')}» (канал {channel})"
+        if autonomy_max < _UNATTENDED_FROM:
+            errors.append(f"{where}: отправка наружу без подтверждения требует автономии A3 по контракту, "
+                          f"сейчас {A_LEVELS[autonomy_max]} (ADR-014)")
+        elif not quarantined:
+            who = ", ".join(sorted(acting & set(reads_data or ()))) or "действующий навык"
+            errors.append(f"{where}: без подтверждения действующий шаг не должен читать данные напрямую — "
+                          f"«{who}» читает их сам; поставьте перед ним читающий навык или верните подтверждение")
+
     return {"errors": errors, "warnings": warnings, "hitl_count": hitl_count,
-            "autonomy_max": A_LEVELS[autonomy_max]}
+            "autonomy_max": A_LEVELS[autonomy_max], "raw_readers": raw_readers}

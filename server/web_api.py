@@ -2542,7 +2542,7 @@ async def demo_prepare(body: dict, u: dict = Depends(user)) -> dict:
     with open(bfile, encoding="utf-8") as f:
         body_data = _json.load(f)
     graph = body_data.get("graph") or {}
-    check = assembly.check_graph(graph, intake, ape.skill_safety)
+    check = assembly.check_graph(graph, intake, ape.skill_safety, reads_data=await _skills_reading_data())
     if check["errors"]:
         raise HTTPException(422, {"errors": check["errors"]})
     fam = intake.get("family") or ""
@@ -2576,7 +2576,7 @@ async def agent_save(body: dict, u: dict = Depends(user)) -> JSONResponse:
     if not cs:
         raise HTTPException(404, "нет ContractSet для привязки")
 
-    check = assembly.check_graph(graph, cs.get("intake") or {}, ape.skill_safety)
+    check = assembly.check_graph(graph, cs.get("intake") or {}, ape.skill_safety, reads_data=await _skills_reading_data())
     if check["errors"]:
         return JSONResponse({"saved": False, "errors": check["errors"],
                              "warnings": check["warnings"]}, status_code=422)
@@ -2973,12 +2973,33 @@ async def agent_check(body: dict, u: dict = Depends(user)) -> dict:
     cs = await contract_store.get(audit_id)
     if not cs:
         raise HTTPException(404, "нет ContractSet для проверки")
-    check = assembly.check_graph(graph, cs.get("intake") or {}, ape.skill_safety)
+    check = assembly.check_graph(graph, cs.get("intake") or {}, ape.skill_safety, reads_data=await _skills_reading_data())
     gaps = await _input_gaps(graph)
     return {"ok": not check["errors"], "errors": check["errors"],
             "warnings": check["warnings"] + [g["text"] for g in gaps],
             "input_gaps": gaps,
             "autonomy_max": check["autonomy_max"], "hitl_count": check["hitl_count"]}
+
+
+async def _skills_reading_data() -> set:
+    """Навыки, читающие данные НАПРЯМУЮ (вход `from: data` в контракте).
+
+    Нужны governance-проверке узла вывода: действующий шаг, который сам ходит в данные, нельзя
+    оставлять без человека — он один стоит между внешним текстом и необратимой отправкой.
+    """
+    out: set = set()
+    try:
+        rows = {t["id"]: t for t in (await schema_store.all() or [])}
+    except Exception:  # noqa: BLE001 — без хранилища карантин просто не доказан
+        return out
+    for sid, t in rows.items():
+        ins = (t or {}).get("inputs") or {}
+        for bucket in ("required", "optional"):
+            for it in (ins.get(bucket) or []):
+                if isinstance(it, dict) and it.get("from") == "data":
+                    out.add(str(sid))
+                    break
+    return out
 
 
 async def _input_gaps(graph: dict) -> list[dict]:
