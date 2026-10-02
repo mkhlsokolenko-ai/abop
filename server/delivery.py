@@ -93,21 +93,86 @@ def _scalar(v: Any) -> str:
     return str(v)
 
 
-def _bullets(v: Any) -> str:
+# Разметка — свойство приёмника, а не шаблона: Redmine принимает textile, вики — markdown,
+# письмо остаётся текстом. Поэтому формат выводится из доставки, а не пишется в каждом payload.
+_FMT = {"redmine": "textile", "bookstack": "markdown", "nocodb": "text", "twenty": "text",
+        "mailpit": "text", "yandex": "text"}
+_MAX_COLS = 6      # шире — таблица не читается ни в трекере, ни в вики
+_MAX_ROWS = 40     # длиннее — это выгрузка, а не задача; остаток называем числом
+
+
+def delivery_format(spec: dict) -> str:
+    """Язык разметки получателя. Неизвестная система — простой текст: он читается везде."""
+    t = str((spec or {}).get("type") or "")
+    if t.startswith("email."):
+        return "text"
+    return _FMT.get(str((spec or {}).get("system") or ""), "text")
+
+
+def _columns(rows: list) -> list:
+    """Колонки таблицы: скалярные поля в порядке появления. Вложенные структуры в таблицу не лезут."""
+    cols: list = []
+    for r in rows:
+        for k, v in r.items():
+            if k not in cols and not isinstance(v, (dict, list)) and v not in (None, ""):
+                cols.append(str(k))
+    return cols[:_MAX_COLS]
+
+
+def _table(rows: list, fmt: str) -> str:
+    """Список однородных записей — таблицей на языке получателя."""
+    cols = _columns(rows)
+    if not cols:
+        return ""
+    head = [str(c).replace("_", " ") for c in cols]
+    body = [[_scalar(r.get(c)).replace("|", "/").replace("\n", " ") for c in cols] for r in rows[:_MAX_ROWS]]
+    if fmt == "textile":
+        out = "|" + "|".join("_. " + h for h in head) + "|"
+        for line in body:
+            out += "\n|" + "|".join(" " + c + " " for c in line) + "|"
+    else:
+        out = "| " + " | ".join(head) + " |"
+        out += "\n| " + " | ".join("---" for _ in head) + " |"
+        for line in body:
+            out += "\n| " + " | ".join(line) + " |"
+    if len(rows) > _MAX_ROWS:
+        out += f"\n\nПоказаны первые {_MAX_ROWS} из {len(rows)} — остальное в отчёте прогона."
+    return out
+
+
+def _plain_rows(rows: list) -> str:
+    """То же в письме: каждая запись абзацем с подписанными полями — таблицы в почте не живут."""
+    out = []
+    for r in rows[:_MAX_ROWS]:
+        cols = [k for k, v in r.items() if not isinstance(v, (dict, list)) and v not in (None, "")]
+        first = _scalar(r.get(cols[0])) if cols else ""
+        rest = [f"  {str(k).replace('_', ' ')}: {_scalar(r.get(k))}" for k in cols[1:]]
+        out.append(("- " + first + ("\n" + "\n".join(rest) if rest else "")))
+    if len(rows) > _MAX_ROWS:
+        out.append(f"…и ещё {len(rows) - _MAX_ROWS}")
+    return "\n".join(out)
+
+
+def _bullets(v: Any, fmt: str = "text") -> str:
     if isinstance(v, list):
-        return "\n".join("- " + _scalar(x) for x in v if x not in (None, "", [], {}))
+        clean = [x for x in v if x not in (None, "", [], {})]
+        rows = [x for x in clean if isinstance(x, dict)]
+        if rows and len(rows) == len(clean):
+            return _plain_rows(rows) if fmt == "text" else _table(rows, fmt)
+        return "\n".join("- " + _scalar(x) for x in clean)
     if isinstance(v, dict):
-        return "\n".join(f"- {k}: {_scalar(x)}" for k, x in v.items() if x not in (None, "", [], {}))
+        return "\n".join(f"- {str(k).replace('_', ' ')}: {_scalar(x)}"
+                          for k, x in v.items() if x not in (None, "", [], {}))
     return _scalar(v)
 
 
-def render(text: str, item: Any, root: Any) -> str:
+def render(text: str, item: Any, root: Any, fmt: str = "text") -> str:
     """Подстановка {{…}} в строке шаблона. Неизвестные пути → пусто (ничего не выдумываем)."""
     def sub(m: re.Match) -> str:
         bullets, path = m.group(1) == "#", m.group(2).strip()
         src, p = (root, path[2:]) if path.startswith("$.") else (item, path)
         v = _get(src, p)
-        return _bullets(v) if bullets else _scalar(v)
+        return _bullets(v, fmt) if bullets else _scalar(v)
     return _VAR.sub(sub, text or "")
 
 
@@ -134,20 +199,21 @@ def build_commands(spec: dict, struct: dict, *, skill: str = "") -> list[dict]:
     # Обязательные поля: явный require + поля, чьё значение в шаблоне ЦЕЛИКОМ одна подстановка
     # (например "to": "{{кому}}"): пусто в ответе навыка — отправлять нечего, команду не создаём,
     # иначе коннектор получит битую команду и уронит её в DLQ («payload.to пустой»).
+    fmt = delivery_format(spec)
     tpl_payload = spec.get("payload") or {}
     required = {k for k in (spec.get("require") or []) if k in tpl_payload}
     required |= {k for k, v in tpl_payload.items() if isinstance(v, str) and _ONLY_VAR.match(v)}
     out: list[dict] = []
     skipped: list[dict] = []
     for it in items:
-        payload = {k: (render(v, it, struct) if isinstance(v, str) else v) for k, v in tpl_payload.items()}
+        payload = {k: (render(v, it, struct, fmt) if isinstance(v, str) else v) for k, v in tpl_payload.items()}
         payload = {k: v for k, v in payload.items() if v not in ("", None)}
         miss = sorted(k for k in required if k not in payload)
         if miss or not payload:
             skipped.append({"reason": ("пустые обязательные поля: " + ", ".join(miss)) if miss else "нечего отправлять",
                             "item": _scalar(it.get("id") or "")[:80] if isinstance(it, dict) and it is not struct else ""})
             continue
-        title = render(spec.get("title") or "", it, struct).strip() or f"{spec['system']}/{spec['type']}"
+        title = render(spec.get("title") or "", it, struct, "text").strip() or f"{spec['system']}/{spec['type']}"
         ref = _scalar(it.get("id") or it.get("заголовок") or it.get("название") or "") if it is not struct else ""
         out.append({"system": spec["system"], "type": spec["type"], "payload": payload, "title": title[:200],
                     "source": {"skill": skill, "item": ref[:80]}})

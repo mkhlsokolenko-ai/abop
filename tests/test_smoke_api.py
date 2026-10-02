@@ -237,11 +237,18 @@ def test_delivery_for_all_demo_cases():
                               "сроки": [{"что": "оплата", "когда": "30.09"}], "нужно_от_вас": ["подтвердить"],
                               "подпись": "ABOP", "текст_письма": "Проверяем.", "требуется_подтверждение": True}, skill="client-letter")
     assert len(cmds) == 1 and cmds[0]["payload"]["to"] == "client@demo.local" and cmds[0]["payload"]["subject"] == "Статус"
-    assert "- проверить" in cmds[0]["payload"]["body"] and "задача: счёт" in cmds[0]["payload"]["body"]
+    # Записи в письме — подписанными строками, а не склейкой «ключ: значение; ключ: значение»:
+    # именно она и выглядела «стеной текста» у получателя.
+    body = cmds[0]["payload"]["body"]
+    assert "- проверить" in body, "список строк остаётся маркированным"
+    assert "- счёт" in body and "  статус: в процессе" in body, body
     # страница вики: book_id остаётся числом (не подстановка), заголовок и markdown — из полей
     c2 = dl.build_commands(st.load_one("invest1c-verdict")["delivery"],
                            {"заключения": [{"id": "INV-1", "существенность": "критично"}], "требуется_подтверждение": True, "итог": "разрыв"}, skill="invest1c-verdict")
-    assert c2[0]["payload"]["book_id"] == 1 and "разрыв" in c2[0]["payload"]["title"] and "- id: INV-1" in c2[0]["payload"]["markdown"]
+    # В вики таблица на markdown: страница должна читаться как документ, а не как дамп.
+    md = c2[0]["payload"]["markdown"]
+    assert c2[0]["payload"]["book_id"] == 1 and "разрыв" in c2[0]["payload"]["title"]
+    assert "| id | существенность |" in md and "| --- | --- |" in md and "| INV-1 | критично |" in md, md
 
 
 def test_delivery_templates_make_hitl_preview_and_take_connector_result(client):
