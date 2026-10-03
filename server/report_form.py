@@ -190,7 +190,10 @@ def _b_verdict(b: dict, result: dict, ctx: dict) -> str:
         "warn" if any(p in _bc for p in ("замеч", "amber", "услов", "доработ", "hitl")) else "ok")
     return (_h2(b)
             + f"<div class='vb {cls}'>"
-            + (f"<div class='vb-b'>{esc(_flat(badge))}</div>" if badge not in _EMPTY else "")
+            # «нет» бейджем без подписи читается как отказ, хотя это ответ на вопрос «успеваем?».
+            + (("<div class='vb-b'>"
+                + (f"<i>{esc(b['badge_label'])}</i>" if b.get("badge_label") else "")
+                + esc(_flat(badge)) + "</div>") if badge not in _EMPTY else "")
             + (f"<div class='vb-v'>{esc(_flat(val))}</div>" if val not in _EMPTY else "")
             + (f"<div class='vb-w'>{esc(_flat(why))}</div>" if why not in _EMPTY else "")
             + (f"<div class='vb-m'>{''.join(meta)}</div>" if meta else "")

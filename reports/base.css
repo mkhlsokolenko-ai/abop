@@ -54,3 +54,4 @@ pre.code{white-space:pre-wrap;word-break:break-word;background:#f6f7fa;border:1p
 .meth{font-size:11.5px;color:#5a6274;line-height:1.45;margin:14px 0 0;border-top:1px solid #e3e6ee;padding-top:9px}
 .ahd .meth{border-top:0;padding-top:0;margin-top:8px}
 .ac-h .sev i{font-style:normal;font-weight:600;opacity:.75;margin-right:5px;letter-spacing:.02em}
+.vb-b i{font-style:normal;opacity:.8;margin-right:5px}
