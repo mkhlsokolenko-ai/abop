@@ -308,23 +308,51 @@ export async function mount(root, ctx) {
     const radius = mine ? "16px 16px 4px 16px" : "16px 16px 16px 4px";
     const meta = m.meta || {};
     const inner = mine ? `<span style="font-size:13.5px;line-height:1.6;white-space:pre-wrap">${esc(m.content)}</span>`
-      : (meta.run_agent ? runCard(meta.run_agent)
+      : (meta.cancelled ? cancelledHTML(meta.cancelled)
+        : (meta.run_agent ? runCard(meta.run_agent)
         : (meta.pipeline_result ? pipelineHTML(meta.pipeline_result)
-          : (meta.chain_suggest ? chainSuggestHTML(meta.chain_suggest)
+          : (meta.assemble ? assembleHTML(meta.assemble)
+            : (meta.chain_suggest ? chainSuggestHTML(meta.chain_suggest)
             : (meta.clarify ? clarifyHTML(meta.clarify)
             : (meta.decision ? decisionHTML(meta.decision)
             : (meta.slot_ask ? slotCardHTML(meta.slot_ask)
             : (meta.slot_picked ? slotPickedHTML(meta.slot_picked)
-            : (meta.notice ? noticeHTML(meta.notice, m.content) : md(m.content)))))))));
+            : (meta.notice ? noticeHTML(meta.notice, m.content) : md(m.content)))))))))));
     const cost = meta.model ? `<span style="margin-left:4px;font-family:var(--mono);font-size:11px;color:var(--ink-3)">${esc(meta.model)} · ${meta.cost_rub ?? 0} ₽</span>` : "";
-    const isCard = !!(meta.run_agent || meta.pipeline_result || meta.chain_suggest || meta.decision || meta.clarify || meta.notice);
+    const isCard = !!(meta.run_agent || meta.pipeline_result || meta.chain_suggest || meta.assemble || meta.decision || meta.clarify || meta.notice || meta.cancelled);
     const acts = mine
       ? `<button type="button" data-edit="${idx}" class="msgact">✎ изменить</button>`
-      : `<button type="button" data-copy="${idx}" class="msgact">⧉ копировать</button>${meta.decision || meta.chain_suggest || meta.notice ? "" : `<button type="button" data-regen="${idx}" class="msgact">↻ ещё раз</button>`}${cost}`;
+      : `<button type="button" data-copy="${idx}" class="msgact">⧉ копировать</button>${meta.decision || meta.chain_suggest || meta.assemble || meta.notice || meta.cancelled ? "" : `<button type="button" data-regen="${idx}" class="msgact">↻ ещё раз</button>`}${cost}`;
     return `<div style="display:flex;flex-direction:column;align-items:${mine ? "flex-end" : "flex-start"};gap:7px;animation:ape-in .3s ease-out">
       <div class="bub" style="max-width:${isCard ? "96%" : "88%"};padding:13px 16px;border-radius:${radius};background:${mine ? "var(--user-bubble)" : "var(--panel)"};border:1px solid ${mine ? "var(--user-bubble-line)" : "var(--line)"};backdrop-filter:blur(16px);box-shadow:${mine ? "0 2px 10px rgba(99,102,241,.14)" : "var(--shadow-1)"};white-space:${isCard ? "normal" : "pre-wrap"};font-size:13.5px;line-height:1.6;min-width:0">${inner}</div>
       <div style="display:flex;align-items:center;gap:6px">${acts}</div></div>`;
   }
+  // Отказ от запуска: предложение остаётся в истории отметкой, а не исчезает и не предлагается
+  // заново при перечитывании чата. Текст задачи возвращается в поле ввода — он не должен теряться
+  // из-за того, что человек передумал запускать.
+  function cancelledHTML(c) {
+    return `<div class="dcard" style="opacity:.75">
+      <div class="dcard-top"><span class="dcard-kicker">запуск отменён</span></div>
+      <div class="dcard-title" style="font-size:13.5px">${esc(c.what || "Предложение отклонено")}</div>
+      ${c.task ? `<div class="dcard-quote">${esc(String(c.task).slice(0, 200))}</div>` : ""}
+      <div class="dcard-note">Ничего не запущено и не отправлено. Текст задачи вернулся в поле ввода.</div></div>`;
+  }
+  // Крестик на карточке предложения: отказаться было нечем — оставался только уход со страницы.
+  function cardCloseHTML(i, label) {
+    return `<button type="button" class="ico ghost cardNo" data-i="${i}" title="Отменить: ${esc(label)}" aria-label="Отменить: ${esc(label)}" style="margin-left:auto;width:24px;height:24px;font-size:12px">✕</button>`;
+  }
+  async function cancelCard(i, what) {
+    const m = messages[i]; if (!m) return;
+    const task = (m.meta && ((m.meta.chain_suggest || {}).task || (m.meta.decision || {}).text || (m.meta.assemble || {}).task)) || "";
+    m.meta = { cancelled: { what: what || "Предложение отклонено", task } };
+    if (task && $("inp") && !$("inp").value) { $("inp").value = task; remember(LS_DRAFT, task); }
+    if (cur && m.id) {
+      try { await api(M + "/threads/" + cur.id + "/messages/" + m.id + "/meta", { method: "PATCH", body: JSON.stringify({ meta: m.meta }) }); }
+      catch { /* история — best effort, на экране уже отменено */ }
+    }
+    render(); toast("Запуск отменён", "");
+  }
+
   function noticeHTML(n, content) { return `<div style="display:flex;gap:10px;align-items:flex-start"><span style="font-size:15px">${n.icon || "🔔"}</span><span style="font-size:13px;line-height:1.55">${md(content)}</span></div>`; }
   function emptyState() {
     const steps = [ctx.authed ? null : ["1", "войдите в ABOP (кнопка вверху справа)"], [ctx.authed ? "1" : "2", "выберите шаблон или опишите задачу"], [ctx.authed ? "2" : "3", "перетащите файл — он попадёт в контекст"]].filter(Boolean);
@@ -408,6 +436,12 @@ export async function mount(root, ctx) {
       render(); scrollDown(true);
     });
     $("col").querySelectorAll(".chainRun").forEach((b) => b.onclick = () => { const i = +b.dataset.i; const m = messages[i]; if (m && m.meta && m.meta.chain_suggest) saveAndRunChain(m.meta.chain_suggest); });
+    $("col").querySelectorAll(".asmRun").forEach((b) => b.onclick = () => { const m = messages[+b.dataset.i]; if (m && m.meta && m.meta.assemble) buildAndRunPlan(m.meta.assemble); });
+    $("col").querySelectorAll(".asmChat").forEach((b) => b.onclick = () => { const m = messages[+b.dataset.i]; if (m && m.meta && m.meta.assemble) sendPrompt(m.meta.assemble.task); });
+    $("col").querySelectorAll(".cardNo").forEach((b) => b.onclick = () => {
+      const i = +b.dataset.i, m = messages[i], mt = (m && m.meta) || {};
+      cancelCard(i, mt.chain_suggest ? "Сборка цепочки отменена" : mt.assemble ? "Сборка агента отменена" : "Запуск агента отменён");
+    });
     // правка предложенной цепочки: замена агента на шаге и удаление шага
     $("col").querySelectorAll(".chStep").forEach((sel) => sel.onchange = () => {
       const m = messages[+sel.dataset.i]; const cs = m && m.meta && m.meta.chain_suggest; if (!cs) return;
@@ -601,7 +635,7 @@ export async function mount(root, ctx) {
         ${stage.score != null ? meterHTML(stage.score, { short: true }) : ""}</div>`;
     }).join("");
     return `<div class="dcard">
-      <div class="dcard-top"><span class="dcard-kicker">цепочка из ${cs.steps.length} шагов</span></div>
+      <div class="dcard-top"><span class="dcard-kicker">цепочка из ${cs.steps.length} шагов</span>${cardCloseHTML(i, "сборка цепочки")}</div>
       ${cs.task ? `<div class="dcard-quote">${esc(String(cs.task).slice(0, 200))}</div>` : ""}
       <div class="dcard-title">${esc(cs.steps.map((st) => st.agent_name || agentName(st.agent_id)).join(" → "))}</div>
       <div class="dcard-body">${rows}</div>
@@ -609,7 +643,8 @@ export async function mount(root, ctx) {
       ${cs.warning ? `<div class="dcard-warn">${esc(cs.warning)}</div>` : ""}
       ${cs.reason ? `<div class="dcard-note">${esc(cs.reason)}</div>` : ""}
       ${chainEditHTML(cs, i)}
-      <div class="dcard-acts"><button type="button" class="btn primary chainRun" data-i="${i}">Собрать и запустить</button></div></div>`;
+      <div class="dcard-acts"><button type="button" class="btn primary chainRun" data-i="${i}">Собрать и запустить</button>
+        <button type="button" class="btn sm cardNo" data-i="${i}">Не запускать</button></div></div>`;
   }
 
   function chainEditHTML(cs, i) {
@@ -925,6 +960,12 @@ export async function mount(root, ctx) {
       // уверенный подбор — карточка решения; средняя уверенность — тоже карточка, но с оговоркой,
       // потому что раньше в этом диапазоне агент не предлагался вовсе, а подсказки уже стирались
       if (top && top.score >= 0.32) { await decisionCard(v, matches); return; }
+      // Готового агента под задачу нет. Это не повод отвечать текстом: каталог навыков и
+      // планировщик умеют собрать исполнителя с нуля — цепочку, выполнимую по контрактам. Спрашиваем
+      // план и предлагаем сборку; пустой план тоже ответ — тогда работаем в чате.
+      let pl = null;
+      try { pl = await api(M + "/plan", { method: "POST", body: JSON.stringify({ q: v }) }); } catch { /* план не обязателен */ }
+      if (pl && (pl.steps || []).length) { await assembleCard(v, pl); return; }
     }
     sendPrompt(v);
   }
@@ -942,6 +983,57 @@ export async function mount(root, ctx) {
     await note("предложен агент", { decision: { text, top, alt } });
     render(); scrollDown(true);
   }
+  // Сборка из навыков: готового агента нет, но план по контрактам есть.
+  async function assembleCard(text, pl) {
+    await ensureThread(text.slice(0, 50));
+    await note("предложена сборка из навыков", { assemble: {
+      task: text, steps: pl.steps || [], missing: pl.missing || [], note: pl.note || "",
+      report_template: pl.report_template || "", family: pl.family || "",
+      name: "Под задачу: " + text.slice(0, 40) } });
+    render(); scrollDown(true);
+  }
+  function assembleHTML(a) {
+    const i = messages.findIndex((m) => m.meta && m.meta.assemble === a);
+    const rows = (a.steps || []).map((st, n) => `<div class="drow">
+        <span class="drow-num">${n + 1}</span>
+        <span class="drow-main">
+          <span class="drow-name">${esc(skillName(st.skill) || st.title || st.skill)}</span>
+          <span class="drow-sub">${esc(st.why || st.short || "шаг плана")}</span>
+        </span>
+        ${st.score != null ? meterHTML(st.score, { short: true }) : ""}</div>`).join("");
+    const chain = (a.steps || []).map((st) => skillName(st.skill) || st.skill).join(" → ");
+    return `<div class="dcard">
+      <div class="dcard-top"><span class="dcard-kicker">готового агента нет — соберём из навыков</span>${cardCloseHTML(i, "сборка агента")}</div>
+      <div class="dcard-quote">${esc(String(a.task).slice(0, 200))}</div>
+      <div class="dcard-title">${esc(chain)}</div>
+      <div class="dcard-body">${rows}</div>
+      ${a.report_template ? `<div class="dcard-why"><span>результат оформит бланк «${esc(a.report_template)}»</span></div>` : ""}
+      ${(a.missing || []).length ? `<div class="dcard-warn">Не хватает: ${esc(a.missing.join("; "))}</div>` : ""}
+      ${a.note ? `<div class="dcard-note">${esc(a.note)}</div>` : ""}
+      <div class="dcard-acts">
+        <button type="button" class="btn primary asmRun" data-i="${i}">Собрать агента и запустить</button>
+        <button type="button" class="btn sm asmChat" data-i="${i}">Агент не нужен, ответь в чате</button>
+        <button type="button" class="btn sm cardNo" data-i="${i}">Не запускать</button>
+      </div></div>`;
+  }
+  // Сборка: шаги плана становятся агентами по одному навыку, а сами шаги — цепочкой. Запускаем тем
+  // же путём, что и обычную цепочку, — отдельного пути исполнения для собранного агента нет.
+  async function buildAndRunPlan(a) {
+    setBusy(true);
+    let r = null;
+    try { r = await api(M + "/plan/build", { method: "POST", body: JSON.stringify({ steps: a.steps, name: a.name }) }); }
+    catch (e) { setBusy(false); toast(humanError(e), "danger"); return; }
+    setBusy(false);
+    try { const cat = await api(M + "/abop-agents"); if (Array.isArray(cat) && cat.length) abopAgents = cat; } catch { /* имена подтянутся позже */ }
+    await loadPipelines();
+    const made = (r && r.agents) || [];
+    await note(`Собрано: агентов ${made.length}${r && r.pipeline ? ", цепочка готова" : ""}. Запускаю.`, { notice: { icon: "🧩" } });
+    render();
+    if (r && r.pipeline) runPipeline(r.pipeline, a.task);
+    else if (made.length === 1) runAbopAgentDeliver(made[0].agent_id, skillName(made[0].skill) || made[0].skill, a.task, "");
+    else { await note("Собрать не удалось: ABOP не вернул ни цепочки, ни агента.", { notice: { icon: "⚠" } }); render(); }
+  }
+
   // Почему выбран этот агент: оценка совпадения и слова, по которым он подобран. Для цепочки это
   // показывалось, для одиночного агента — нет, и выбор выглядел решением наугад.
   // Мера уверенности: слово, полоска и вклад слов/смысла. Одинаково выглядит у агента, шага
@@ -1059,7 +1151,7 @@ export async function mount(root, ctx) {
         <span class="drow-main"><span class="drow-name">${esc(a.name)}</span><span class="drow-sub">${esc(a.family || "")}</span></span>
         ${meterHTML(a.score, { short: true })}</button>`).join("");
     return `<div data-di="${i}" class="dcard">
-      <div class="dcard-top"><span class="dcard-kicker">задача для агента</span></div>
+      <div class="dcard-top"><span class="dcard-kicker">задача для агента</span>${cardCloseHTML(i, "запуск агента")}</div>
       <div class="dcard-quote">${esc(dc.text.slice(0, 200))}</div>
       <div class="dcard-title">${esc(t.name)}${t.family ? ` <span class="faint" style="font-weight:400;font-size:12px">${esc(t.family)}</span>` : ""}</div>
       ${matchWhy(t)}

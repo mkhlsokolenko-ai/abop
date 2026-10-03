@@ -137,6 +137,39 @@ def match(body: MatchIn) -> dict:
         return {"matches": []}
 
 
+class PlanIn(BaseModel):
+    q: str
+    slots: dict | None = None
+
+
+class PlanBuildIn(BaseModel):
+    steps: list
+    name: str = ""
+
+
+@router.post("/plan")
+def plan(body: PlanIn) -> dict:
+    """План из НАВЫКОВ под задачу — когда готового агента нет.
+
+    Отдаём как есть, вместе с «чего не хватает»: пустой план это ответ, а не ошибка. Он говорит, что
+    в каталоге нет исполнителя или в среде нет данных, — и это честнее, чем собрать красивую цепочку
+    и упасть на середине.
+    """
+    try:
+        return abop.plan_auto(body.q, body.slots or {})
+    except abop.AbopError as e:
+        return {"ok": False, "steps": [], "missing": [], "error": str(e)}
+
+
+@router.post("/plan/build")
+def plan_build(body: PlanBuildIn) -> dict:
+    """Собрать агентов и цепочку по плану. Права проверяет ABOP: сборка — уровень manager."""
+    try:
+        return abop.plan_build(body.steps, body.name)
+    except abop.AbopError as e:
+        raise HTTPException(502, str(e)) from e
+
+
 _CH_RU = {"redmine": "Redmine", "email": "почта", "yandex": "почта", "bookstack": "BookStack (вики)",
           "yougile": "YouGile", "pdf": "PDF", "file": "файл"}
 

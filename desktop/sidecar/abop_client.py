@@ -211,6 +211,23 @@ def match_full(q: str) -> dict:
     return r if isinstance(r, dict) else {"matches": r or []}
 
 
+def plan_auto(task: str, slots: dict | None = None, max_steps: int = 4) -> dict:
+    """План под задачу ИЗ НАВЫКОВ: что выполнимо по контрактам, чего не хватает и в каком порядке.
+
+    Нужен, когда готового агента под задачу нет. Прежде чат в этом случае просто отвечал текстом, а
+    собрать исполнителя предлагал только из существующих агентов — хотя каталог навыков и
+    планировщик уже умеют построить цепочку с нуля.
+    """
+    r = _req("POST", "/api/plan/auto", {"task": task, "slots": slots or {}, "max_steps": max_steps}, timeout=60)
+    return r if isinstance(r, dict) else {}
+
+
+def plan_build(steps: list, name: str = "") -> dict:
+    """Собрать из плана настоящих агентов (по одному навыку) и цепочку между ними."""
+    r = _req("POST", "/api/plan/auto/build", {"steps": steps, "name": name or "Цепочка по задаче"}, timeout=180)
+    return r if isinstance(r, dict) else {}
+
+
 def my_schedules() -> list:
     """Расписания текущего пользователя (агент/cron/вкл/доставка/последний прогон)."""
     r = _req("GET", "/api/triggers/mine", timeout=30)
