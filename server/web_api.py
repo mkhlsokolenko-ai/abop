@@ -1389,8 +1389,12 @@ async def report_template_get(tid: str, u: dict = Depends(user)) -> dict:
 
 @app.post("/api/report-templates/{tid}")
 async def report_template_save(tid: str, body: dict, u: dict = Depends(user)) -> dict:
-    """Создать/править шаблон отчёта (HTML+CSS+pdf_options). Плейсхолдеры {{title}}/{{findings}}/…
-    заполняет ABOP; шаблон задаёт вёрстку. Admin-уровень."""
+    """Создать/править шаблон отчёта: HTML+CSS+pdf_options и РАСКЛАДКУ бланка. Admin-уровень.
+
+    Раскладка (порядок разделов и графы документа вертикали) и область применения переносятся из
+    существующей записи, если их не передали: иначе сохранение из редактора, где видно только HTML,
+    стирало бы устройство документа — у бланка в HTML всего одна строка `{{blank}}`.
+    """
     require_level(u, "admin")
     import re as _re
     tid = _re.sub(r"[^a-z0-9_-]", "", str(tid).strip().lower())
@@ -1398,10 +1402,25 @@ async def report_template_save(tid: str, body: dict, u: dict = Depends(user)) ->
         raise HTTPException(422, "нужен id шаблона (slug a-z0-9_-)")
     existing = await report_store.get(tid)
     editor = u.get("name") or u.get("sub") or "dev"
+    layout = (body or {}).get("layout")
+    if layout is None:
+        layout = (existing or {}).get("layout") or []
+    else:
+        from . import report_form
+        if not isinstance(layout, list) or not all(isinstance(x, dict) for x in layout):
+            raise HTTPException(422, "раскладка — список блоков (объектов)")
+        unknown = sorted({str(x.get("t") or "") for x in layout} - set(report_form.BLOCK_NAMES))
+        if unknown:
+            raise HTTPException(422, "неизвестные блоки раскладки: " + ", ".join(unknown)
+                                + " · доступны: " + ", ".join(sorted(report_form.BLOCK_NAMES)))
     card = await report_store.save(tid, {"name": (body or {}).get("name") or tid,
                                          "html": (body or {}).get("html") or (existing or {}).get("html") or "",
                                          "css": (body or {}).get("css") if (body or {}).get("css") is not None else (existing or {}).get("css") or "",
-                                         "pdf_options": (body or {}).get("pdf_options") or (existing or {}).get("pdf_options") or {}},
+                                         "pdf_options": (body or {}).get("pdf_options") or (existing or {}).get("pdf_options") or {},
+                                         "layout": layout,
+                                         "for_skills": (body or {}).get("for_skills")
+                                         if (body or {}).get("for_skills") is not None
+                                         else (existing or {}).get("for_skills") or []},
                                    editor=editor, builtin=bool(existing and existing.get("builtin")))
     await audit_store.record(editor, "report_template.save", tid, {"name": card.get("name")})
     return card
@@ -1433,13 +1452,65 @@ async def report_template_preview(tid: str, body: dict, u: dict = Depends(user))
     # Бланк вертикали нечем показать на демо-строках: его графы берутся из структурированных ответов
     # навыков. Если дали прогон — рендерим на нём, это и есть честное превью формы.
     rid = str((body or {}).get("run_id") or "")
+    # Порядок такой: заданный прогон → последний подходящий прогон этой формы → образец по
+    # json_schema её навыков. Иначе превью бланка показывает общий вид, и в интерфейсе форма
+    # выглядит неизменившейся — именно так это и выглядело.
+    run, note = None, ""
     if rid:
         run = await run_store.get(rid)
         if not run:
             raise HTTPException(404, "нет такого прогона")
-        ag = await agent_store.get(run.get("agent_id") or "") or {"name": run.get("agent_name") or ""}
-        ctx = {**_report_context(ag, run), **(await _labels_ctx(run)), **((body or {}).get("context") or {})}
-    return {"html": report_store.render(tpl, ctx)}
+    elif tpl.get("layout"):
+        run = await _last_run_for_skills(tpl.get("for_skills") or [])
+        if run:
+            note = "Превью на прогоне " + str(run.get("run_id") or run.get("id") or "")
+        else:
+            run = _example_run(tpl.get("for_skills") or [])
+            note = ("Превью на ОБРАЗЦЕ значений по схемам навыков формы: это устройство документа, "
+                    "а не данные прогона")
+    if run is not None:
+        ag = await agent_store.get(run.get("agent_id") or "") or {"name": run.get("agent_name") or tpl.get("name") or ""}
+        ctx = {**(await _asyncio.to_thread(_report_context, ag, run)),
+               **(await _labels_ctx(run)), **((body or {}).get("context") or {})}
+    html = report_store.render(tpl, ctx)
+    if note:
+        import html as _h
+        html = html.replace("<body>", "<body><div class='meth' style='margin:0 0 14px'>"
+                            + _h.escape(note) + "</div>", 1)
+    return {"html": html, "note": note}
+
+
+async def _last_run_for_skills(skills) -> dict | None:
+    """Последний прогон, в котором работал хоть один навык формы: честное превью на реальных данных."""
+    want = {str(s) for s in (skills or []) if s}
+    if not want:
+        return None
+    try:
+        rows = await run_store.list_runs(limit=60)
+    except Exception:  # noqa: BLE001 — журнал недоступен: обойдёмся образцом по схеме
+        return None
+    for r in rows:
+        full = await run_store.get(str(r.get("run_id") or r.get("id") or ""))
+        outs = (full or {}).get("skill_outputs") or []
+        if any(str(o.get("skill")) in want and o.get("structured") for o in outs):
+            return full
+    return None
+
+
+def _example_run(skills) -> dict:
+    """Прогон-образец по json_schema навыков формы: показывает устройство бланка без данных стенда."""
+    from . import report_form
+    outs = []
+    try:
+        tpls = skill_templates.load_all()
+    except Exception:  # noqa: BLE001
+        tpls = {}
+    for sid in (skills or []):
+        sch = (tpls.get(str(sid)) or {}).get("json_schema") or {}
+        ex = report_form.example_from_schema(sch)
+        if isinstance(ex, dict) and ex:
+            outs.append({"skill": str(sid), "structured": ex})
+    return {"run_id": "образец", "started_by": "превью", "skill_outputs": outs}
 
 
 @app.post("/api/report-templates/{tid}/reset")
@@ -3782,7 +3853,10 @@ def _report_footer_html(result: dict, esc) -> str:
 
 
 def _report_context(agent: dict, result: dict) -> dict:
-    """Контекст для шаблона отчёта (report_store.render): готовые HTML-блоки под ВСЕ формы результата
+    """СИНХРОННАЯ сборка: читает canonical store (строка источника данных) — вызывать через
+    `asyncio.to_thread`, иначе блокирует событийный цикл на разборе JSONL.
+
+    Контекст для шаблона отчёта (report_store.render): готовые HTML-блоки под ВСЕ формы результата
     (аудит-находки A/B/C/D, расследования-цепочки, structured-вывод навыков вроде «Дайджест задач»).
     Плейсхолдеры: title, agent, date, verdict, findings_total, investigations_total,
     by_class (HTML), findings (HTML), investigations (HTML), skills (HTML), deliveries (HTML).
@@ -4402,7 +4476,8 @@ async def _deliver_out_nodes(agent: dict, result: dict, actor: str, deliver_filt
         tpl = await report_store.get(tid) or await report_store.get("default")
         if not tpl:
             return html_report
-        return report_store.render(tpl, {**_report_context(agent, result), **(await _labels_ctx(result))})
+        _ctx = await _asyncio.to_thread(_report_context, agent, result)
+        return report_store.render(tpl, {**_ctx, **(await _labels_ctx(result))})
     # Сквозной ID: агент действует «от имени» пользователя — подмешиваем его аккаунты в системах
     # (Redmine assignee, почта). Так задача назначается на него, письмо адресно. Best-effort.
     idsys = {}
@@ -6680,7 +6755,8 @@ async def run_report(run_id: str, template: str = "", format: str = "html", u: d
     tpl = await report_store.get(tid) or await report_store.get("default")
     if not tpl:
         raise HTTPException(404, "нет шаблона отчёта")
-    html_doc = report_store.render(tpl, {**_report_context(ag, run), **(await _labels_ctx(run))})
+    _ctx = await _asyncio.to_thread(_report_context, ag, run)
+    html_doc = report_store.render(tpl, {**_ctx, **(await _labels_ctx(run))})
     if str(format).lower() != "pdf":
         from fastapi.responses import HTMLResponse
         return HTMLResponse(html_doc)

@@ -344,6 +344,11 @@ _BLOCKS = {"head": _b_head, "stamp": _b_stamp, "attrs": _b_attrs, "verdict": _b_
            "register": _b_register, "pre": _b_pre, "sign": _b_sign, "note": _b_note}
 
 
+# Имена блоков для проверки раскладки, пришедшей из редактора: что не в списке — опечатка, и
+# молча пропустить её значит отдать документ без раздела.
+BLOCK_NAMES = tuple(_BLOCKS) + ("ctx",)
+
+
 def render(layout, result: dict, ctx: dict | None = None) -> str:
     """Бланк документа по раскладке. Неизвестный блок пропускаем, кривой — не роняет документ."""
     if not isinstance(layout, list):
@@ -389,3 +394,31 @@ def used_refs(layout) -> list[str]:
             if isinstance(pair, (list, tuple)) and len(pair) == 2:
                 refs.append(str(pair[1]))
     return refs
+
+
+def example_from_schema(schema: dict, depth: int = 0):
+    """Образец значений по json_schema навыка — чтобы превью бланка показывало УСТРОЙСТВО документа.
+
+    Превью шаблона раньше рисовалось на демо-строках, которых у бланка нет в принципе: его графы
+    берутся из структурированного ответа навыка. Без данных бланк честно отдавал пусто, и в UI он
+    выглядел неизменившимся. Образец собирается из самой схемы: enum — первое значение, иначе
+    описание поля, иначе слово «образец». Это пример вёрстки, а не данные прогона, и так и подписан.
+    """
+    if not isinstance(schema, dict) or depth > 4:
+        return "образец"
+    t = schema.get("type")
+    if t == "object":
+        return {k: example_from_schema(v, depth + 1) for k, v in (schema.get("properties") or {}).items()}
+    if t == "array":
+        item = schema.get("items") or {}
+        n = 2 if (item.get("type") == "object") else 3
+        return [example_from_schema(item, depth + 1) for _ in range(n)]
+    if t == "boolean":
+        return True
+    if t in ("integer", "number"):
+        return 12
+    enum = schema.get("enum") or []
+    if enum:
+        return str(enum[0])
+    desc = str(schema.get("description") or "").strip()
+    return (desc[:60] + "…") if len(desc) > 60 else (desc or "образец")
