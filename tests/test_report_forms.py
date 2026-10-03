@@ -118,6 +118,8 @@ def test_no_heading_can_hang_over_an_optional_block():
     Заголовок над ними печатался всегда и читался как «данных нет», хотя их и не ждали.
     """
     import re
+    # audit_cards не в списке: в форме аудита это обязательная часть — отчёт аудита без находок
+    # не формируется, и заголовок над ними всегда со смыслом.
     optional = {"deliveries", "findings", "investigations", "charts", "tool_usage", "schema_notes"}
     for tid, spec in report_store.load_files().items():
         for head, key in re.findall(r"<h2>([^<]+)</h2>\s*\{\{(\w+)\}\}", spec["html"]):

@@ -3761,7 +3761,9 @@ def _report_context(agent: dict, result: dict) -> dict:
                         + (f"<div class='chain'>{chain}</div>" if chain else "")
                         + (f"<span class='delta'>расхождение Δ {esc(delta)} ₽</span>" if delta is not None else "")
                         + (f"<span class='norm'>§ {esc(str(norm)[:220])}</span>" if norm else "") + "</div>")
-    investigations_html = "".join(inv_rows)
+    # Заголовок приходит вместе с содержимым: расследований может не быть, и «Расследования от
+    # симптома» над пустотой читается как «ничего не нашли», хотя их и не искали.
+    investigations_html = ("<h2>Расследования от симптома</h2>" + "".join(inv_rows)) if inv_rows else ""
 
     # 3) Вывод навыков (LLM): структурный список (задачи/пункты) рендерим по-человечески, иначе — текст.
     sk_rows = []
