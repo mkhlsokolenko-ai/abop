@@ -29,14 +29,15 @@
   "finance": {
     "name": "Финансовый отчёт (модель, прогноз, отклонения)",
     "for_skills": [
-      "three-statement-model",
-      "dcf-valuation",
       "budget-forecast",
-      "variance_explanation",
+      "dashboard-builder",
+      "dcf-valuation",
       "finance-report",
-      "unit-economics-checker",
       "ledger_reconciliation",
-      "period_close_orchestration"
+      "period_close_orchestration",
+      "three-statement-model",
+      "unit-economics-checker",
+      "variance_explanation"
     ]
   },
   "project": {
@@ -46,6 +47,67 @@
       "acceptance-check",
       "status-report",
       "weekly-update"
+    ]
+  },
+  "architecture": {
+    "name": "Архитектурное решение (ADR, выбор, проектирование)",
+    "for_skills": [
+      "adr-writer",
+      "architecture-chooser",
+      "rag-architect",
+      "memory-architect",
+      "mlsdd-writer",
+      "agent-design-writer",
+      "api-design",
+      "process-map"
+    ]
+  },
+  "diagram": {
+    "name": "Схема как код (C4)",
+    "for_skills": [
+      "c4-diagram"
+    ],
+    "pdf_options": {
+      "format": "A4",
+      "orientation": "landscape"
+    }
+  },
+  "spec": {
+    "name": "Требования и приёмка (БФТ, истории, критерии)",
+    "for_skills": [
+      "bft-draft",
+      "user-stories",
+      "spec-reviewer",
+      "eval-generator"
+    ]
+  },
+  "credit": {
+    "name": "Кредитное заключение (приём заявки, лимиты, выдача)",
+    "for_skills": [
+      "application_intake_validation",
+      "limit_policy_enforcement",
+      "disbursement_orchestration"
+    ]
+  },
+  "research": {
+    "name": "Аналитическая записка (рынок, идеи, варианты)",
+    "for_skills": [
+      "market-research",
+      "jtbd-formulator",
+      "icp-interviewer",
+      "idea-scorer",
+      "idea-selector",
+      "researcher",
+      "one-three-one",
+      "devils-advocate",
+      "cost-estimator"
+    ]
+  },
+  "mail": {
+    "name": "Разбор переписки (хронология, решения, задачи)",
+    "for_skills": [
+      "mail-triage",
+      "email-thread-reconstruct"
     ]
   }
 }

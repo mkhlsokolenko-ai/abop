@@ -3697,8 +3697,7 @@ def _requisites_html(agent: dict, result: dict, esc) -> str:
     when = str(result.get("created_at") or "")[:16].replace("T", " ") or \
         _dtm.datetime.now().strftime("%Y-%m-%d %H:%M")
     skills = ", ".join(str(o.get("skill") or "") for o in (result.get("skill_outputs") or []) if o.get("skill"))
-    cells = [("агент", agent.get("name") or agent.get("id") or "—"),
-             ("сформирован", when),
+    cells = [("сформирован", when),
              ("запустил", result.get("started_by") or "—")]
     if skills:
         cells.append(("навыки", skills))
@@ -3902,7 +3901,9 @@ def _report_context(agent: dict, result: dict) -> dict:
             "requisites": _requisites_html(agent, result, esc),
             "footer": _report_footer_html(result, esc),
             "skills": skills_html,
-            "deliveries": dls or "<div class='dl'>—</div>",
+            # Заголовок приходит вместе с содержимым: раздел «Доставка» над прочерком — тот же
+            # висячий заголовок, что мы убрали из дайджеста.
+            "deliveries": ("<h2>Доставка</h2>" + dls) if dls else "",
             **per_skill}
 
 

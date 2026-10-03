@@ -72,3 +72,54 @@ def test_form_scope_survives_saving():
         await report_store.save("t-scope", {"name": "n", "html": "h", "for_skills": ["x", "y"]}, editor="seed")
         return await report_store.get("t-scope")
     assert (asyncio.run(flow()) or {}).get("for_skills") == ["x", "y"]
+
+
+def test_every_skill_has_a_form():
+    """Ни один навык не остаётся на общем бланке по недосмотру.
+
+    Исключение одно и объявленное: вертикали аудита 1С и расследования выбираются по ВИДУ результата
+    (находки A/B/C/D, цепочки-расследования), а не по навыку — там форму определяет не исполнитель,
+    а то, что получилось.
+    """
+    from pathlib import Path as _P
+    skills = sorted(p.parent.name for p in (_P(__file__).resolve().parents[1] / "skills").glob("*/template.json"))
+    by_shape = {s for s in skills if s.startswith("audit1c-") or s.startswith("invest1c-")}
+    taken = {s for spec in report_store.load_files().values() for s in (spec.get("for_skills") or [])}
+    orphan = [s for s in skills if s not in taken and s not in by_shape]
+    assert not orphan, f"без формы: {orphan}"
+
+
+def test_forms_do_not_claim_the_same_skill_twice():
+    """Навык принадлежит одной форме: две претендующие — это спор, который решит порядок строк."""
+    seen: dict = {}
+    for tid, spec in report_store.load_files().items():
+        for sid in (spec.get("for_skills") or []):
+            assert sid not in seen, f"«{sid}» объявлен и в «{seen.get(sid)}», и в «{tid}»"
+            seen[sid] = tid
+
+
+def test_responsibility_notes_are_present_where_the_document_decides():
+    """Документ обязан сказать, чего он НЕ заменяет: там, где по нему принимают решение."""
+    files = report_store.load_files()
+    for tid, must in (("credit", "не заменяет решение кредитного комитета"),
+                      ("audit1c", "не заменяет заключение аудитора")):
+        assert must in files[tid]["html"], tid
+
+
+def test_diagram_is_printed_landscape():
+    """Схему читают по ширине: в портрет она не ложится."""
+    assert report_store.load_files()["diagram"]["pdf_options"].get("orientation") == "landscape"
+
+
+def test_no_heading_can_hang_over_an_optional_block():
+    """Заголовок допустим только над блоком, который всегда что-то даёт.
+
+    Доставка бывает пустой (локальный файл, отменённая отправка), раздел навыка — отсутствующим.
+    Заголовок над ними печатался всегда и читался как «данных нет», хотя их и не ждали.
+    """
+    import re
+    optional = {"deliveries", "findings", "investigations", "charts", "tool_usage", "schema_notes"}
+    for tid, spec in report_store.load_files().items():
+        for head, key in re.findall(r"<h2>([^<]+)</h2>\s*\{\{(\w+)\}\}", spec["html"]):
+            assert key not in optional and not key.startswith("skill_"), \
+                f"{tid}: «{head}» висит над необязательным блоком {{{{{key}}}}}"
