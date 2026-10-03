@@ -35,10 +35,13 @@ CREATE TABLE IF NOT EXISTS report_templates (
 -- Область применения формы: чьи результаты она оформляет. Добавляется отдельно, чтобы базы,
 -- созданные раньше, получили колонку без пересоздания таблицы.
 ALTER TABLE report_templates ADD COLUMN IF NOT EXISTS for_skills JSONB NOT NULL DEFAULT '[]'::jsonb;
+-- Раскладка бланка: порядок разделов и графы документа этой вертикали. Живёт рядом с формой в базе —
+-- значит вид документа меняют правкой записи, а не передеплоем web_api.
+ALTER TABLE report_templates ADD COLUMN IF NOT EXISTS layout JSONB NOT NULL DEFAULT '[]'::jsonb;
 """
 
 _MEM: dict[str, dict] = {}
-_COLS = "id,name,html,css,pdf_options,builtin,editor,updated_at,for_skills"
+_COLS = "id,name,html,css,pdf_options,builtin,editor,updated_at,for_skills,layout"
 
 
 def _has_pg() -> bool:
@@ -48,7 +51,8 @@ def _has_pg() -> bool:
 def _row(r) -> dict:
     return {"id": r[0], "name": r[1], "html": r[2], "css": r[3] or "", "pdf_options": r[4] or {},
             "builtin": bool(r[5]), "editor": r[6], "updated_at": r[7].isoformat() if r[7] else None,
-            "for_skills": list(r[8] or []) if len(r) > 8 else []}
+            "for_skills": list(r[8] or []) if len(r) > 8 else [],
+            "layout": list(r[9] or []) if len(r) > 9 else []}
 
 
 async def init() -> None:
@@ -89,7 +93,8 @@ async def save(tid: str, spec: dict, editor: str = "dev", builtin: bool = False)
     spec = spec or {}
     card = {"id": tid, "name": spec.get("name") or tid, "html": spec.get("html") or "",
             "css": spec.get("css") or "", "pdf_options": spec.get("pdf_options") or {}, "builtin": builtin,
-            "for_skills": [str(x) for x in (spec.get("for_skills") or []) if str(x).strip()]}
+            "for_skills": [str(x) for x in (spec.get("for_skills") or []) if str(x).strip()],
+            "layout": spec.get("layout") or []}
     if not _has_pg():
         card["editor"] = editor
         _MEM[tid] = card
@@ -97,13 +102,13 @@ async def save(tid: str, spec: dict, editor: str = "dev", builtin: bool = False)
     from .db import _conn
     async with _conn() as conn:
         await conn.execute(
-            "INSERT INTO report_templates (id,name,html,css,pdf_options,builtin,editor,updated_at,for_skills) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,now(),%s) "
+            "INSERT INTO report_templates (id,name,html,css,pdf_options,builtin,editor,updated_at,for_skills,layout) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,now(),%s,%s) "
             "ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, html=EXCLUDED.html, css=EXCLUDED.css, "
             "pdf_options=EXCLUDED.pdf_options, editor=EXCLUDED.editor, updated_at=now(), "
-            "for_skills=EXCLUDED.for_skills",
+            "for_skills=EXCLUDED.for_skills, layout=EXCLUDED.layout",
             (tid, card["name"], card["html"], card["css"], json.dumps(card["pdf_options"]), builtin, editor,
-             json.dumps(card["for_skills"])))
+             json.dumps(card["for_skills"]), json.dumps(card["layout"])))
     return await get(tid)
 
 
@@ -126,6 +131,17 @@ def render(template: dict, ctx: dict) -> str:
     html = template.get("html") or ""
     data = dict(ctx or {})
     data.setdefault("css", template.get("css") or "")
+    # Бланк вертикали: раскладка документа объявлена в этой же записи БД. Результат прогона приходит
+    # в контексте служебным ключом — он не плейсхолдер и в документ попасть не должен.
+    _res = data.pop("_result", None)
+    if template.get("layout"):
+        from . import report_form
+        data["blank"] = report_form.render(template.get("layout"), _res or {}, data)
+        if not data["blank"].strip():
+            # Форму поставили прогону не её навыков: графы бланка пусты. Пустой документ хуже
+            # общего — показываем то, что в результате есть, а не чистый лист с подписями.
+            data["blank"] = "".join(str(data.get(k) or "") for k in
+                                    ("summary", "skills", "findings", "investigations"))
 
     def _sub(m):
         key = m.group(1).strip()
@@ -272,7 +288,7 @@ def load_files() -> dict[str, dict]:
         m = meta.get(tid) or {}
         out[tid] = {"name": m.get("name") or tid, "html": p.read_text(encoding="utf-8"), "css": css,
                     "pdf_options": m.get("pdf_options") or {"format": "A4", "orientation": "portrait"},
-                    "for_skills": m.get("for_skills") or []}
+                    "for_skills": m.get("for_skills") or [], "layout": m.get("layout") or []}
     return out
 
 
@@ -292,7 +308,8 @@ async def seed_if_empty() -> None:
                 continue             # шаблон отредактирован пользователем — не перезатираем
             if (ex and ex.get("html") == spec["html"] and ex.get("css") == spec["css"]
                     and ex.get("name") == spec["name"]
-                    and list(ex.get("for_skills") or []) == list(spec.get("for_skills") or [])):
+                    and list(ex.get("for_skills") or []) == list(spec.get("for_skills") or [])
+                    and list(ex.get("layout") or []) == list(spec.get("layout") or [])):
                 continue
             await save(tid, spec, editor="seed", builtin=True)
     except Exception:  # noqa: BLE001

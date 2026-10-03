@@ -1430,6 +1430,15 @@ async def report_template_preview(tid: str, body: dict, u: dict = Depends(user))
                       "срок: 25.09 · приоритет: высокий</div><div class='task'>тема: Проверить БФТ</div></div>",
             "deliveries": "<div class='dl'>redmine → #— · awaiting_hitl</div>"}
     ctx = {**demo, **((body or {}).get("context") or {})}
+    # Бланк вертикали нечем показать на демо-строках: его графы берутся из структурированных ответов
+    # навыков. Если дали прогон — рендерим на нём, это и есть честное превью формы.
+    rid = str((body or {}).get("run_id") or "")
+    if rid:
+        run = await run_store.get(rid)
+        if not run:
+            raise HTTPException(404, "нет такого прогона")
+        ag = await agent_store.get(run.get("agent_id") or "") or {"name": run.get("agent_name") or ""}
+        ctx = {**_report_context(ag, run), **(await _labels_ctx(run)), **((body or {}).get("context") or {})}
     return {"html": report_store.render(tpl, ctx)}
 
 
@@ -3708,6 +3717,57 @@ def _requisites_html(agent: dict, result: dict, esc) -> str:
     return f"<section class='req'><h1>{esc(agent.get('name') or 'Отчёт ABOP')}</h1><table><tr>{row}</tr></table></section>"
 
 
+def _sources_html(result: dict, esc) -> str:
+    """Источник данных документа: какие сущности читал прогон, сколько записей и когда загружены.
+
+    В согласованной с заказчиком форме аудита эта строка стоит в шапке: «Источник: снапшот
+    1С:Предприятие 8.3 (закрытый период, read-only)». Без неё документ нечем подтвердить — числа
+    есть, а откуда они, получатель не знает. Строка собирается из провенанса тех сущностей, которые
+    навыки прогона действительно читали, а не из названия кейса.
+    """
+    import datetime as _dtm
+    ents: list[str] = []
+    for f in (result.get("findings") or []):
+        for e in ((f or {}).get("entities") or []) if isinstance(f, dict) else []:
+            if e and e not in ents:
+                ents.append(str(e))
+    if not ents:
+        return ""
+    bits = []
+    for e in ents[:6]:
+        try:
+            p = ape.entity_provenance(e)
+        except Exception:  # noqa: BLE001 — провенанс недоступен: назовём хотя бы сущность
+            p = {"entity": e, "records": 0}
+        src = ", ".join(sorted((p.get("sources") or {}))) or ", ".join(sorted((p.get("recipes") or {}))) or "—"
+        when = ""
+        if p.get("fetched_at"):
+            when = " · загружено " + _dtm.datetime.fromtimestamp(float(p["fetched_at"])).strftime("%d.%m.%Y %H:%M")
+        bits.append(f"<b>{esc(e)}</b> ({esc(src)}, записей {esc(p.get('records') or 0)}{esc(when)})")
+    return "<div class='line'>Источник данных: " + " · ".join(bits) + "</div>"
+
+
+def _service_html(agent: dict, result: dict, esc) -> str:
+    """Служебная отметка бланка: кем и когда сформирован, какими навыками, какой прогон.
+
+    У формы-бланка шапку задаёт сам документ (вид, объём, метод) — реквизиты с собственным
+    заголовком наверху давали вторую «шапку» и спорили с ней. Внизу это служебная отметка: по ней
+    документ подшивают и к ней возвращаются, когда цифры нужно оспорить.
+    """
+    import datetime as _dtm
+    when = str(result.get("created_at") or "")[:16].replace("T", " ") or         _dtm.datetime.now().strftime("%Y-%m-%d %H:%M")
+    skills = ", ".join(str(o.get("skill") or "") for o in (result.get("skill_outputs") or []) if o.get("skill"))
+    cells = [("документ", str(agent.get("name") or "Отчёт ABOP")), ("сформирован", when),
+             ("запустил", result.get("started_by") or "—")]
+    if skills:
+        cells.append(("навыки", skills))
+    rid = str(result.get("run_id") or result.get("id") or "")
+    if rid:
+        cells.append(("прогон", rid))
+    row = "".join(f"<th>{esc(k)}</th><td>{esc(v)}</td>" for k, v in cells)
+    return f"<table class='svc'><tr>{row}</tr></table>"
+
+
 def _report_footer_html(result: dict, esc) -> str:
     """Подвал: чем этот отчёт проверить — вердикт, автономия, число этапов, идентификатор прогона."""
     v = result.get("verdict") or {}
@@ -3901,6 +3961,11 @@ def _report_context(agent: dict, result: dict) -> dict:
             "tool_usage": (f"<h2>Что шаги делали сами</h2>" + report_store.struct_html(result["tool_usage"]))
                           if result.get("tool_usage") else "",
             "requisites": _requisites_html(agent, result, esc),
+            "service": _service_html(agent, result, esc),
+            "sources": _sources_html(result, esc),
+            # Бланк вертикали собирается по раскладке из той же записи БД, что и HTML формы: отдаём
+            # ему результат целиком. Ключ служебный — render() снимает его перед подстановкой.
+            "_result": result,
             "footer": _report_footer_html(result, esc),
             "skills": skills_html,
             # Заголовок приходит вместе с содержимым: раздел «Доставка» над прочерком — тот же

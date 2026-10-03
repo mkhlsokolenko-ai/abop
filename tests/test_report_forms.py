@@ -32,9 +32,13 @@ def test_shipped_forms_declare_their_subject():
 
 
 def test_every_form_has_requisites_and_footer():
-    """Любой бланк — служебный документ: без шапки и подвала его нельзя ни подшить, ни проверить."""
+    """Любой бланк — служебный документ: происхождение цифр и подвал обязательны.
+
+    У формы с раскладкой шапку задаёт сам документ (вид, объём, метод), поэтому реквизиты прогона
+    идут служебной отметкой снизу — `{{service}}`. Два заголовка подряд спорили бы друг с другом.
+    """
     for tid, spec in report_store.load_files().items():
-        assert "{{requisites}}" in spec["html"], tid
+        assert "{{requisites}}" in spec["html"] or "{{service}}" in spec["html"], tid
         assert "{{footer}}" in spec["html"], tid
 
 
@@ -99,11 +103,21 @@ def test_forms_do_not_claim_the_same_skill_twice():
 
 
 def test_responsibility_notes_are_present_where_the_document_decides():
-    """Документ обязан сказать, чего он НЕ заменяет: там, где по нему принимают решение."""
+    """Документ обязан сказать, чего он НЕ заменяет: там, где по нему принимают решение.
+
+    Оговорка живёт либо в HTML формы, либо блоком `note` её раскладки — для получателя это одна и
+    та же строка внизу документа.
+    """
     files = report_store.load_files()
-    for tid, must in (("credit", "не заменяет решение кредитного комитета"),
+    for tid, must in (("credit", "не является офертой"),
+                      ("model", "не оценка независимого оценщика"),
+                      ("project", "не заменяет акт приёмки"),
+                      ("letter", "только после подтверждения ответственным"),
+                      ("close", "выполняет ответственный бухгалтер"),
                       ("audit1c", "не заменяет заключение аудитора")):
-        assert must in files[tid]["html"], tid
+        spec = files[tid]
+        notes = " ".join(str(b.get("text") or "") for b in (spec.get("layout") or []))
+        assert must in spec["html"] or must in notes, tid
 
 
 def test_diagram_is_printed_landscape():
