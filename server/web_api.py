@@ -3897,6 +3897,8 @@ def _report_context(agent: dict, result: dict) -> dict:
             "charts": charts.charts_html(result),
             "findings": findings_html,
             "investigations": investigations_html,
+            "tool_usage": (f"<h2>Что шаги делали сами</h2>" + report_store.struct_html(result["tool_usage"]))
+                          if result.get("tool_usage") else "",
             "requisites": _requisites_html(agent, result, esc),
             "footer": _report_footer_html(result, esc),
             "skills": skills_html,

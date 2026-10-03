@@ -84,6 +84,31 @@ def default_limits() -> dict:
             "body": _LIM["body"], "data": _LIM["data"]}
 
 
+def tool_usage(findings: list) -> list:
+    """Чем шаги пользовались сами: навык, инструмент, сколько раз, сколько токенов, сколько ошибок.
+
+    Вызовы инструментов писались в результат шага и не показывались нигде: свобода внутри шага была,
+    а предъявить её было нечем. Ошибки считаются наравне с удачными вызовами — молчать о них значит
+    выдавать неполную работу за полную.
+    """
+    rows: dict = {}
+    for f in findings or []:
+        if not isinstance(f, dict):
+            continue
+        for tc in (f.get("tool_calls") or []):
+            if not isinstance(tc, dict):
+                continue
+            name = str(tc.get("tool") or tc.get("name") or ("ошибка" if tc.get("error") else "вызов"))
+            row = rows.setdefault((str(f.get("skill") or ""), name),
+                                  {"навык": str(f.get("skill") or ""), "инструмент": name,
+                                   "вызовов": 0, "токенов": 0, "ошибок": 0})
+            row["вызовов"] += 1
+            row["токенов"] += int(tc.get("input_tokens") or 0) + int(tc.get("output_tokens") or 0)
+            if tc.get("error"):
+                row["ошибок"] += 1
+    return sorted(rows.values(), key=lambda r: (r["навык"], r["инструмент"]))
+
+
 def effective_limits(limits: dict | None) -> dict:
     """Умолчания, перекрытые настройкой. Значение вне разумных границ не принимается молча: оно
     подрезается до границы, иначе опечатка в поле («200000 токенов») ломала бы прогон целиком."""
@@ -677,14 +702,31 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
                     # Сколько раз навык может сходить в инструменты до ответа. Ноль — осмысленное
                     # значение «не ходить вовсе», поэтому уровни перебираем по «задано ли», а не по
                     # истинности: иначе ноль проваливался бы на следующий уровень и навык всё равно шёл.
-                    _steps = int(_lim["tool_steps"])
+                    # Лестница: среда задаёт ПОТОЛОК, навык и узел уточняют под себя, причём узел
+                    # точнее навыка — он знает этот шаг. Но выше потолка не поднимается никто:
+                    # граница, которую можно поднять на самом узле, границей не является.
+                    _ceiling = int(_lim["tool_steps"])
+                    _steps = _ceiling
                     for _src in ((_custom or {}).get("tool_steps"), node.get("tool_steps")):
                         if _src is not None and str(_src).strip() != "":
-                            _steps = int(_src)
-                    _obs_block, tool_calls = await tool_loop(sid, _head, chat_fn, safety=(safety_of(sid) or {}),
-                                                             actor=actor, trace_id=trace_id, system=_sys,
-                                                             steps=_steps,
-                                                             family=str(agent.get("family") or ""), agent_id=str(agent.get("id") or ""))
+                            try:
+                                _steps = int(_src)
+                            except (TypeError, ValueError):
+                                pass
+                    _steps = max(0, min(_steps, _ceiling))
+                    # Срок шага: столько секунд навык волен ходить по инструментам. Это и есть
+                    # граница полусвободы — делай что нужно, пока укладываешься в объявленное.
+                    _deadline = node.get("max_sec") or (_custom or {}).get("max_sec")
+                    _call = tool_loop(sid, _head, chat_fn, safety=(safety_of(sid) or {}),
+                                      actor=actor, trace_id=trace_id, system=_sys, steps=_steps,
+                                      family=str(agent.get("family") or ""), agent_id=str(agent.get("id") or ""))
+                    if _deadline:
+                        try:
+                            _obs_block, tool_calls = await asyncio.wait_for(_call, timeout=float(_deadline))
+                        except asyncio.TimeoutError:
+                            _obs_block, tool_calls = "", [{"error": f"срок шага {int(float(_deadline))} с исчерпан"}]
+                    else:
+                        _obs_block, tool_calls = await _call
                 if _obs_block:
                     prompt = prompt.replace("ЗАДАЧА", _obs_block + "ЗАДАЧА", 1)
             except Exception as ex:  # noqa: BLE001
@@ -836,6 +878,9 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
     base["run_metrics"]["board"] = _board.summary()
     # Какие лимиты реально действовали. Без этого «почему ответ обрезан» выясняется чтением кода.
     base["run_metrics"]["limits"] = dict(_lim, source=("настройка" if limits else "по умолчанию"))
+    _usage = tool_usage(base.get("findings") or [])
+    if _usage:
+        base["tool_usage"] = _usage
     base["board_entries"] = _board.export()
     if _bud or _stopped:
         _sec = round(time.perf_counter() - _t_start, 1)
