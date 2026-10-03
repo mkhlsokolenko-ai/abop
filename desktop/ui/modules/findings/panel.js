@@ -60,7 +60,7 @@ export async function mount(root, ctx) {
           <select id="fsev" style="${INP}">${opts(d.severities, severity)}</select></label>
         <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink-2);margin-top:14px">
           <input type="checkbox" id="fcross" ${cross ? "checked" : ""} style="accent-color:var(--accent)"/> только межучастковые</label>
-        <button class="btn sm" id="fReload" style="margin-top:14px">Обновить</button>
+        <button class="ico" id="fReload" style="margin-top:14px" title="Обновить журнал находок" aria-label="Обновить журнал находок">↻</button>
       </div>
       <div style="font-size:11.5px;color:var(--ink-3)">Показано ${esc(String(d.shown || 0))} из ${esc(String(d.total || 0))} находок по ${esc(String((d.runs || []).length))} последним прогонам.</div>
     </div>`;

@@ -70,7 +70,7 @@ export async function mount(root, ctx) {
       <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-2);cursor:pointer">
         <input type="checkbox" id="rDeep"${deep ? " checked" : ""}/> искать внутри прогонов
       </label>
-      <button class="btn sm" id="rReload">Обновить</button>
+      <button class="ico" id="rReload" title="Обновить журнал прогонов" aria-label="Обновить журнал прогонов">↻</button>
     </div>`;
   }
 

@@ -343,7 +343,9 @@ export async function mount(root, ctx) {
   }
   async function cancelCard(i, what) {
     const m = messages[i]; if (!m) return;
-    const task = (m.meta && ((m.meta.chain_suggest || {}).task || (m.meta.decision || {}).text || (m.meta.assemble || {}).task)) || "";
+    const mt = m.meta || {};
+    const task = (mt.chain_suggest || {}).task || (mt.decision || {}).text || (mt.assemble || {}).task
+      || (mt.slot_ask || {}).task || (mt.clarify || {}).text || "";
     m.meta = { cancelled: { what: what || "Предложение отклонено", task } };
     if (task && $("inp") && !$("inp").value) { $("inp").value = task; remember(LS_DRAFT, task); }
     if (cur && m.id) {
@@ -440,7 +442,8 @@ export async function mount(root, ctx) {
     $("col").querySelectorAll(".asmChat").forEach((b) => b.onclick = () => { const m = messages[+b.dataset.i]; if (m && m.meta && m.meta.assemble) sendPrompt(m.meta.assemble.task); });
     $("col").querySelectorAll(".cardNo").forEach((b) => b.onclick = () => {
       const i = +b.dataset.i, m = messages[i], mt = (m && m.meta) || {};
-      cancelCard(i, mt.chain_suggest ? "Сборка цепочки отменена" : mt.assemble ? "Сборка агента отменена" : "Запуск агента отменён");
+      cancelCard(i, mt.chain_suggest ? "Сборка цепочки отменена" : mt.assemble ? "Сборка агента отменена"
+        : mt.slot_ask ? "Уточнение предмета отменено" : mt.clarify ? "Уточнение задачи отменено" : "Запуск агента отменён");
     });
     // правка предложенной цепочки: замена агента на шаге и удаление шага
     $("col").querySelectorAll(".chStep").forEach((sel) => sel.onchange = () => {
@@ -525,7 +528,7 @@ export async function mount(root, ctx) {
   }
   function openPipelines() {
     const rows = pipelines.map((p) => `<div class="hitl-row" style="background:var(--field)"><span style="font-size:15px">🔗</span><span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-size:12.5px;font-weight:600">${esc(p.name)}</span><span style="font-size:11.5px;color:var(--ink-3)">${(p.steps || []).map((s) => esc(s.agent_name || agentName(s.agent_id))).join(" → ")}</span></span>
-      <button type="button" class="btn sm plRun" data-id="${esc(p.id)}">▶ Запустить</button><button type="button" class="ico danger plDel" data-id="${esc(p.id)}" data-n="${esc(p.name)}" title="Удалить цепочку" aria-label="Удалить цепочку">✕</button></div>`).join("");
+      <button type="button" class="ico go plRun" data-id="${esc(p.id)}" title="Запустить цепочку «${esc(p.name)}»" aria-label="Запустить цепочку ${esc(p.name)}">▶</button><button type="button" class="ico danger plDel" data-id="${esc(p.id)}" data-n="${esc(p.name)}" title="Удалить цепочку" aria-label="Удалить цепочку">✕</button></div>`).join("");
     const ov = modal("Цепочки агентов", `<div style="font-size:12px;color:var(--ink-2);margin-bottom:4px">Выход одного агента идёт в контекст следующего; последний шаг доставляет результат.</div><div style="display:flex;flex-direction:column;gap:6px">${rows || '<span style="font-size:12.5px;color:var(--ink-3)">Пока нет цепочек — соберите из двух и более агентов.</span>'}</div>`,
       () => { ov.close(); openPipeBuilder(); return false; }, "＋ Собрать цепочку", { width: "600px", cancelLabel: "Закрыть" });
     ov.querySelectorAll(".plRun").forEach((b) => b.onclick = () => { ov.close(); runPipeline(b.dataset.id, ($("inp").value || "").trim()); });
@@ -555,7 +558,7 @@ export async function mount(root, ctx) {
     }, "Сохранить цепочку", { width: "600px" });
     ov.querySelectorAll(".pld").forEach((b) => b.onclick = () => { finalDeliver = b.dataset.d; ov.querySelectorAll(".pld").forEach((x) => x.classList.toggle("on", x.dataset.d === finalDeliver)); });
     const stepsEl = ov.querySelector("#plSteps");
-    const drawSteps = () => { stepsEl.innerHTML = chosen.map((id, i) => `<div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:6px 9px;border-radius:9px;background:var(--field);border:1px solid var(--line)"><span style="color:var(--ink-3)">${i + 1}.</span><span style="flex:1">${esc(agentName(id))}</span><button type="button" data-i="${i}" class="ico ghost plX" aria-label="Убрать шаг" style="width:26px;height:26px">✕</button></div>`).join("") || `<span style="font-size:11.5px;color:var(--ink-3)">Добавьте шаги ниже.</span>`; stepsEl.querySelectorAll(".plX").forEach((x) => x.onclick = () => { chosen.splice(+x.dataset.i, 1); drawSteps(); }); };
+    const drawSteps = () => { stepsEl.innerHTML = chosen.map((id, i) => `<div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:6px 9px;border-radius:9px;background:var(--field);border:1px solid var(--line)"><span style="color:var(--ink-3)">${i + 1}.</span><span style="flex:1">${esc(agentName(id))}</span><button type="button" data-i="${i}" class="ico ghost plX" title="Убрать шаг из цепочки" aria-label="Убрать шаг" style="width:26px;height:26px">✕</button></div>`).join("") || `<span style="font-size:11.5px;color:var(--ink-3)">Добавьте шаги ниже.</span>`; stepsEl.querySelectorAll(".plX").forEach((x) => x.onclick = () => { chosen.splice(+x.dataset.i, 1); drawSteps(); }); };
     ov.querySelector("#plAdd").onclick = () => { const v = ov.querySelector("#plPick").value; if (v) { chosen.push(v); drawSteps(); } };
     drawSteps();
   }
@@ -1074,7 +1077,7 @@ export async function mount(root, ctx) {
       ? `По запросу ничего похожего не нашлось. Выберите из своих:`
       : (sl.label || "Что именно берём в работу?");
     return `<div data-si="${i}" class="dcard">
-      <div class="dcard-top"><span class="dcard-kicker">предмет работы</span></div>
+      <div class="dcard-top"><span class="dcard-kicker">предмет работы</span>${cardCloseHTML(i, "уточнение предмета")}</div>
       ${sl.task ? `<div class="dcard-quote">${esc(String(sl.task).slice(0, 200))}</div>` : ""}
       <div class="dcard-title">${esc(head)}</div>
       ${sl.hint ? `<div class="dcard-note">${esc(sl.hint)}</div>` : ""}
@@ -1130,8 +1133,9 @@ export async function mount(root, ctx) {
   function clarifyHTML(c) {
     const need = c.need || {};
     const qs = (need["вопросы"] || []).map((q) => `<li style="margin:3px 0">${esc(q)}</li>`).join("");
+    const ci = messages.findIndex((m) => m.meta && m.meta.clarify === c);
     return `<div style="display:flex;flex-direction:column;gap:9px">
-      <div class="ape-label">нужно уточнить задачу</div>
+      <div style="display:flex;align-items:center;gap:8px"><span class="ape-label">нужно уточнить задачу</span>${cardCloseHTML(ci, "уточнение задачи")}</div>
       <div style="font-size:13px;color:var(--ink-2);line-height:1.5">${esc(need["почему"] || "Описания не хватает, чтобы выбрать исполнителя уверенно.")}</div>
       ${qs ? `<ul style="margin:0;padding-left:18px;font-size:12.5px;color:var(--ink)">${qs}</ul>` : ""}
       <div style="font-size:12px;color:var(--ink-3);line-height:1.5">${esc(need["подсказка"] || "")}</div>
@@ -1340,9 +1344,11 @@ export async function mount(root, ctx) {
         <span style="font-size:11.5px;color:var(--ink-2)">видно по роли:</span><span style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--accent-ink-2)">${esc(roleTxt)}</span></div>
       <textarea id="drTask" rows="3" placeholder="Контекст/задача (необязательно): ссылка на документ, выделенный текст, уточнение…"></textarea>
       ${catHTML}
-      <button type="button" id="drRun" class="btn primary" style="padding:11px">▶ Запустить агента в чат</button>
+      <div style="display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:11px;background:var(--hover);border:1px solid var(--line)">
+        <span style="flex:1;font-size:12px;color:var(--ink-2);line-height:1.4">Выберите агента — запуск пойдёт в чат</span>
+        <button type="button" id="drRun" class="ico go" title="Запустить выбранного агента в чат" aria-label="Запустить выбранного агента в чат">▶</button></div>
       <details><summary style="cursor:pointer;font-size:12px;color:var(--ink-3)">Быстрые роли (импровизация без данных)</summary><div style="margin-top:6px">${roles.map((r) => `<label style="display:flex;gap:8px;align-items:flex-start;padding:5px 0;font-size:12.5px"><input type="checkbox" class="rl" value="${esc(r.id)}"/><span><b>${esc(r.name)}</b> <span style="color:var(--ink-3)">${esc(r.brief)}</span></span></label>`).join("")}</div>
-        <button type="button" id="drRunRoles" class="btn sm" style="margin-top:6px">Запустить роли</button></details>`;
+        <button type="button" id="drRunRoles" class="ico go" style="margin-top:6px" title="Запустить выбранные роли" aria-label="Запустить выбранные роли">▶</button></details>`;
     if ($("inp").value.trim()) b.querySelector("#drTask").value = $("inp").value.trim();
     b.querySelectorAll(".drAgTab").forEach((x) => x.onclick = () => { drAgTab = x.dataset.t; renderDrawer(); });
     const dl = b.querySelector("#drLogin"); if (dl) dl.onclick = () => ctx.login();

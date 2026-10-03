@@ -27,11 +27,11 @@ export async function mount(root, ctx) {
       <span id="gDirty" class="chip"></span>
       <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <input id="gTask" placeholder="Задача для графа…" style="width:210px;padding:9px 12px;border-radius:10px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-size:12.5px"/>
-        <button id="gNew" class="btn sm">＋ Новый</button>
-        <button id="gDel" class="btn sm danger" style="display:none" title="Удалить сохранённый граф">Удалить</button>
-        <button id="gCheck" style="padding:9px 16px;border:1px solid rgba(52,211,153,.4);border-radius:10px;background:rgba(16,185,129,.14);color:var(--ok-ink);font-size:12.5px;font-weight:600;cursor:pointer">Проверить</button>
-        <button id="gSave" class="btn sm">Сохранить</button>
-        <button id="gRun" style="padding:9px 16px;border:none;border-radius:10px;background:var(--grad);color:#fff;font-size:12.5px;font-weight:600;cursor:pointer;box-shadow:var(--shadow-accent)">Запустить ▸</button>
+        <button id="gNew" class="ico" title="Новый граф" aria-label="Новый граф">＋</button>
+        <button id="gCheck" class="ico" title="Проверить граф: связи, права, автономия" aria-label="Проверить граф">✓</button>
+        <button id="gSave" class="ico" title="Сохранить граф" aria-label="Сохранить граф">💾</button>
+        <button id="gRun" class="ico go" title="Запустить граф движком ABOP" aria-label="Запустить граф">▶</button>
+        <button id="gDel" class="ico danger" style="display:none" title="Удалить сохранённый граф" aria-label="Удалить сохранённый граф">✕</button>
       </div>
     </div>
     <div style="flex:1;display:flex;min-height:0">
@@ -249,7 +249,7 @@ export async function mount(root, ctx) {
     const task = ($("gTask").value || "").trim();
     if (!task) { const t = $("gTask"); t.focus(); t.style.borderColor = "var(--warn-ink)"; setTimeout(() => (t.style.borderColor = "var(--line)"), 1400); toast("Опишите задачу для графа", "warn"); return; }
     try { if (dirty || !graphId) await $("gSave").onclick(); } catch { return; }
-    running = true; $("gRun").disabled = true; $("gRun").textContent = "Выполняется…";
+    running = true; $("gRun").disabled = true; $("gRun").textContent = "⏳"; $("gRun").title = "Граф выполняется…";
     $("gChk").innerHTML = `<span class="faint">▍ граф выполняется…</span>`;
     try {
       const r = await api(G + "/run", { method: "POST", body: JSON.stringify({ id: graphId, task, name }) });
@@ -267,7 +267,7 @@ export async function mount(root, ctx) {
         const gb = $("gGoRuns"); if (gb) gb.onclick = () => ctx.open && ctx.open("runs");
       }
     } catch (e) { $("gChk").innerHTML = `<span class="danger-ink">${esc(humanError(e))}</span>`; }
-    running = false; $("gRun").disabled = false; $("gRun").textContent = "Запустить ▸";
+    running = false; $("gRun").disabled = false; $("gRun").textContent = "▶"; $("gRun").title = "Запустить граф движком ABOP";
   };
 
   paintPalette(); paintPick(); setDirty(false); paint(); syncDel();
