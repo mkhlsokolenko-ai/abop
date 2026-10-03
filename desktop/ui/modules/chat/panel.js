@@ -200,6 +200,13 @@ export async function mount(root, ctx) {
   }
   async function saveThread(t) { await api(M + "/threads/" + t.id, { method: "PATCH", body: JSON.stringify({ title: t.title, profile: t.profile, skills: t.skills, favorite: t.favorite || 0 }) }); }
   // Сбой сети - это не «чатов нет»: человек с сотней чатов не должен читать «история пуста».
+  // Где человек был и что набрал: пережить пересборку раздела (возврат связи, смена темы, вход).
+  // Без этого после любого обрыва опроса открывался самый свежий чат — обычно тот, где шла цепочка,
+  // потому что прогон поднимает его наверх списка.
+  const LS_OPEN = "ape_chat_open", LS_DRAFT = "ape_chat_draft", NEW_MARK = "__new__";
+  function remember(k, v) { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch { /* приватное окно — переживём */ } }
+  function recall(k) { try { return localStorage.getItem(k) || ""; } catch { return ""; } }
+
   let threadsError = "";
   async function loadThreads() {
     try { threads = await api(M + "/threads"); if (!Array.isArray(threads)) threads = []; threadsError = ""; }
@@ -208,7 +215,7 @@ export async function mount(root, ctx) {
   }
   async function openThread(t) {
     if (!t) return;
-    cur = { ...t, skills: t.skills || [] }; renderThreads(); renderTools();
+    cur = { ...t, skills: t.skills || [] }; remember(LS_OPEN, String(t.id)); renderThreads(); renderTools();
     // догоняем прогоны, чей опрос оборвался: их карточки дописываются в историю до чтения сообщений
     let caught = null;
     try { caught = await api(M + "/threads/" + t.id + "/catchup"); } catch { /* сервер недоступен — покажем что есть */ }
@@ -223,10 +230,11 @@ export async function mount(root, ctx) {
     if (cur) return cur;
     const t = await api(M + "/threads", { method: "POST", body: JSON.stringify({ title: title || NEW_TITLE, profile: pendingProfile, skills: pendingSkills }) });
     cur = { ...t, skills: t.skills || pendingSkills }; messages = []; kbFiles = [];
+    remember(LS_OPEN, String(t.id));
     await loadThreads(); renderTools();
     return cur;
   }
-  async function newChat() { cur = null; messages = []; kbFiles = []; pendingProfile = "standard"; pendingSkills = []; renderThreads(); render(); renderTools(); renderDock(); $("inp").focus(); }
+  async function newChat() { cur = null; messages = []; kbFiles = []; pendingProfile = "standard"; pendingSkills = []; remember(LS_OPEN, NEW_MARK); renderThreads(); render(); renderTools(); renderDock(); $("inp").focus(); }
   // Служебное сообщение ассистента с meta → в историю (D-H3)
   async function note(content, meta) {
     const m = { role: "assistant", content: content || "", meta: meta || {} };
@@ -898,7 +906,7 @@ export async function mount(root, ctx) {
   async function sendFromInput() {
     if (busy) { toast(curAbort ? "Ответ ещё печатается — дождитесь или остановите (Esc)" : "Дождитесь завершения запуска", "warn"); return; }
     const v = ($("inp") ? $("inp").value : "").trim(); if (!v) return;
-    $("inp").value = ""; renderAgentSuggest("");
+    $("inp").value = ""; remember(LS_DRAFT, null); renderAgentSuggest("");
     // Вставленный по хоткею текст или длинный кусок — это работа в чате, НЕ команда агенту.
     const isPasted = /^Проанализируй этот фрагмент/i.test(v);
     // Раньше подбор отключался на формулировках длиннее 240 знаков — то есть ровно там, где человек
@@ -1315,15 +1323,27 @@ export async function mount(root, ctx) {
     if (it.runAgent) { await newChat(); runAbopAgentDeliver(it.runAgent.id, it.runAgent.name || agentName(it.runAgent.id), it.runAgent.task || "", it.runAgent.deliver || ""); return; }
   }
   root.addEventListener("ape:intent", (e) => handleIntent(e.detail));
+  // Связь вернулась: перечитываем списки и очередь подтверждений, НЕ меняя открытый чат и набранный
+  // текст. Переписку не перезагружаем — поток ответа мог идти в этот момент.
+  root.addEventListener("ape:relink", () => { loadThreads(); loadHitlQueue(); loadSchedules(true); loadQuota(); });
   window.__apeAnalyze = (text) => handleIntent({ analyze: text });
 
   $("inp").onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendFromInput(); } };
-  $("inp").oninput = () => { clearTimeout(_sugTimer); _sugTimer = setTimeout(() => renderAgentSuggest($("inp").value), 280); };
+  $("inp").oninput = () => { clearTimeout(_sugTimer); _sugTimer = setTimeout(() => { renderAgentSuggest($("inp").value); remember(LS_DRAFT, $("inp").value); }, 280); };
   setBusy(false);
   render(); renderTools();            // первый экран сразу: шаблоны + живой композер
   await loadThreads();
   const intent = ctx.takeIntent ? ctx.takeIntent() : null;
-  if (threads.length && !(intent && (intent.newChat || intent.runAgent))) await openThread(threads[0]);
+  if (!(intent && (intent.newChat || intent.runAgent))) {
+    // Куда вернуться: в тот чат, что был открыт. Пометка «новый» означает, что человек начинал
+    // новый чат и ещё ничего не отправил — его и оставляем пустым, а не подменяем свежим из списка.
+    const last = recall(LS_OPEN);
+    const prev = last && last !== NEW_MARK ? threads.find((x) => String(x.id) === last) : null;
+    if (prev) await openThread(prev);
+    else if (!last && threads.length) await openThread(threads[0]);
+  }
+  const draft = recall(LS_DRAFT);
+  if (draft && $("inp") && !$("inp").value) $("inp").value = draft;
   loadSchedules(false); loadPipelines(); loadQuota(); loadHitlQueue();
   catalogs.then(() => { renderTools(); if (messages.length) render(); });   // подписи навыков/агентов, когда каталоги доехали
   if (intent) handleIntent(intent);

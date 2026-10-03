@@ -402,6 +402,11 @@ async function loadModule(id, intent) {
   if (intent) rec.root.dispatchEvent(new CustomEvent("ape:intent", { detail: intent }));
 }
 function reloadModule(id) { const rec = mounted.get(id); if (rec) { rec.root.remove(); mounted.delete(id); } if (active === id) loadModule(id); }
+// Мягкое обновление после возврата связи: раздел перечитывает свои данные САМ, оставаясь на месте.
+// Пересборка разделов тут не годится — она уничтожает то, чего ещё нет на сервере: незаписанный
+// новый чат, набранный текст, выбранный профиль. Один сорвавшийся опрос — и человека выбрасывало
+// в последний чат, где шла цепочка.
+function relinkModules() { mounted.forEach((rec) => rec.root.dispatchEvent(new CustomEvent("ape:relink"))); }
 function reloadAll() { const cur = active; mounted.forEach((rec) => rec.root.remove()); mounted.clear(); if (cur) loadModule(cur); }
 
 function renderUpdate(s) {
@@ -578,7 +583,7 @@ async function pingLink(manual) {
   let h = null, engine = true;
   try { h = await api("/api/health"); } catch { engine = false; }
   const ok = !!(h && h.ok && h.abop !== false);
-  if (ok && !linkOk) { toast("Связь с ABOP восстановлена", "ok"); reloadAll(); }
+  if (ok && !linkOk) { toast("Связь с ABOP восстановлена", "ok"); relinkModules(); }
   if (!ok && manual) toast(engine ? "ABOP всё ещё недоступен" : "Движок приложения не отвечает", "warn");
   linkOk = ok;
   renderLink({ ok, engine, url: (h && h.abop_url) || linkState.url, error: (h && h.abop_error) || "" });
