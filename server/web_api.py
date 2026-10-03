@@ -2342,7 +2342,15 @@ async def plan_auto(body: dict, u: dict = Depends(user)) -> dict:
         hints = {}
 
     p = planner.plan(task, catalog, entities=ents, slots=slots_given, max_steps=max_steps, hints=hints)
-    p["report_template"] = planner.report_template(p.get("steps") or [], catalog)
+    # Форму спрашиваем у реестра форм: бланк вертикали объявляет, чьи результаты оформляет, и знает
+    # предмет лучше правила по виду результата. Правило по виду остаётся фолбэком — на случай, когда
+    # под навыки плана бланка нет.
+    _sids = [str(st.get("skill") or "") for st in (p.get("steps") or []) if st.get("skill")]
+    try:
+        _by_skill = await report_store.template_for_skills(_sids)
+    except Exception:  # noqa: BLE001 — реестр недоступен: решает вид результата
+        _by_skill = ""
+    p["report_template"] = _by_skill or planner.report_template(p.get("steps") or [], catalog)
     p["entities_ready"] = sorted(ents)
     p["family"] = fam
     obs.log_event("info", "plan.auto", task=task[:80], steps=len(p.get("steps") or []),

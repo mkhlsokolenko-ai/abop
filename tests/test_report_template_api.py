@@ -70,3 +70,25 @@ def test_превью_общей_формы_осталось_на_демо_ст�
     assert r.status_code == 200
     assert "НДС не сходится" in r.json()["html"]
     assert not r.json().get("note")
+
+
+def test_план_предлагает_бланк_вертикали():
+    """План в «Строю» ставит OUT-узлу форму: у навыка с бланком — его, а не общий дайджест.
+
+    Правило по виду результата («есть путь „задачи“ → дайджест») не знает про бланки вертикалей, и
+    собранный агент получал общую форму вместо кредитного заключения или протокола поручений.
+    """
+    import asyncio
+    asyncio.run(report_store.save("t-vert", {"name": "Бланк для to-tickets", "html": "{{blank}}",
+                                             "layout": LAYOUT, "for_skills": ["to-tickets"]},
+                                  editor="seed", builtin=True))
+    r = CLIENT.post("/api/plan/auto", json={"task": "нарежь задачи в трекере по решениям сверки плана и факта",
+                                            "slots": {"проект": "PRJ-1"}})
+    assert r.status_code == 200, r.text
+    d = r.json()
+    steps = [s.get("skill") for s in (d.get("steps") or [])]
+    if "to-tickets" in steps:
+        assert d.get("report_template") == "t-vert", (steps, d.get("report_template"))
+    else:                      # подбор навыка — отдельный разговор; форму проверяем напрямую
+        got = asyncio.run(report_store.template_for_skills(["to-tickets"]))
+        assert got == "t-vert", got

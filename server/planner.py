@@ -545,7 +545,12 @@ def plan(task: str, catalog: dict, *, entities: set[str], slots: set[str],
 
 
 def report_template(steps: list[dict], catalog: dict) -> str:
-    """Шаблон отчёта под форму результата: по тому, что навыки реально отдают."""
+    """Шаблон отчёта по ВИДУ результата — фолбэк, когда бланка под навыки плана нет.
+
+    Первым спрашивают реестр форм (`report_store.template_for_skills`): бланк вертикали объявляет,
+    чьи результаты оформляет, и знает предмет лучше, чем правило «есть путь „задачи“ → дайджест».
+    Планировщик в базу не ходит, поэтому выбор по навыку делает вызывающая сторона.
+    """
     paths = set()
     for st in steps:
         for it in sc.produces_list((catalog.get(st.get("skill")) or {}).get("produces")):
