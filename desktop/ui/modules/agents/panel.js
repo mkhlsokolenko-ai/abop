@@ -39,32 +39,41 @@ export async function mount(root, ctx) {
     if (mode === "builder") return renderBuilder();
     const mine = agents.filter((a) => a.owner), common = agents.filter((a) => !a.owner);
     const shown = tab === "mine" ? mine : common;
+    // Действия знаками, без подписей: три подписанные кнопки не влезали в карточку 280 px и
+    // переносились — отсюда и съехавшая вёрстка. Подпись у действия осталась в title и aria-label,
+    // то есть и в подсказке, и для чтения с экрана.
+    // Разрушающие действия стоят справа, отдельно от запуска: промах мышью не должен стоить агента.
+    const ico = (cls, glyph, title, a) =>
+      `<button class="ico ${cls}" data-id="${esc(a.id)}" data-name="${esc(a.name)}" title="${esc(title)}" aria-label="${esc(title)}: ${esc(a.name)}">${glyph}</button>`;
+    const actions = (a) => `<div style="display:flex;gap:6px;align-items:center">
+      ${ico("go run", "▶", "Запустить — откроется чат", a)}
+      ${a.owner ? ico("cfg", "✎", "Настроить — сохранит новую версию", a) : ""}
+      ${(a.version || 1) > 1 ? ico("back", "↺", "Вернуться к предыдущей версии", a) : ""}
+      <span style="flex:1"></span>
+      ${a.owner ? ico("arch", "⏹", "В архив — перестанет запускаться, расписания остановятся", a) : ""}
+      ${a.owner ? ico("danger del", "✕", "Удалить навсегда — все версии", a) : ""}
+    </div>`;
     const tabBtn = (id, label, n) => `<button class="tabBtn btn ${tab === id ? "" : ""}" data-tab="${id}" aria-pressed="${tab === id}" style="${tab === id ? "background:var(--accent-bg);color:var(--accent-ink);border-color:var(--line-2)" : "background:transparent;color:var(--ink-2)"}">${label} · ${n}</button>`;
     root.innerHTML = `<div style="flex:1;min-width:0;overflow-y:auto">
       <div style="display:flex;flex-direction:column;gap:18px;padding:22px 26px;max-width:960px;margin:0 auto;animation:ape-in .35s ease-out">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
           <div><div class="ape-label">рантайм ABOP</div><h1 class="ape-h1" style="font-size:22px">Мои агенты</h1>
             <p style="margin:6px 0 0;font-size:12.5px;color:var(--ink-2)">Запуск идёт в чате: там результат, подтверждение внешних действий и «сделать регулярной».</p></div>
-          <span style="display:flex;gap:8px">
+          <span style="display:flex;gap:8px;align-items:center">
             ${tab === "mine" ? `<button id="build" class="btn primary">＋ Собрать агента</button>` : ""}
-            <button id="refresh" class="btn">Обновить</button></span>
+            <button id="refresh" class="ico" title="Обновить список агентов" aria-label="Обновить список агентов">↻</button></span>
         </div>
         ${errorBlock()}
         <div style="display:flex;gap:8px">${tabBtn("mine", "Мои агенты", mine.length)}${tabBtn("common", "Общие агенты", common.length)}</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">
           ${shown.length ? shown.map((a) => `<div class="lift" style="${CARD}">
-            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
+            <div style="min-width:0">
               <div style="min-width:0"><div class="ape-label">${esc(a.family || "—")}${a.role ? " · " + esc(a.role) : ""}</div>
                 <div style="font-size:15px;font-weight:700;color:var(--ink)">${esc(a.name)}</div></div>
-              ${a.owner ? `<button class="ico danger del" data-id="${esc(a.id)}" data-name="${esc(a.name)}" title="Удалить моего агента" aria-label="Удалить агента ${esc(a.name)}">✕</button>` : ""}
             </div>
             ${a.description ? `<div style="font-size:12px;line-height:1.45;color:var(--ink-2)">${esc(a.description)}</div>` : ""}
             <div style="font-size:11.5px;color:var(--ink-3)">автономия ${esc(a.autonomy_max || "?")} · v${esc(String(a.version || 1))}${a.owner ? " · мой" : " · общий"}${a.outward ? " · действует наружу 🛡" : ""}</div>
-            <div style="display:flex;gap:8px">
-              ${a.owner ? `<button class="btn cfg" data-id="${esc(a.id)}" title="Настроить моего агента — сохранит новую версию" style="flex:none">✎ Настроить</button>` : ""}
-              ${(a.version || 1) > 1 ? `<button class="btn back" data-id="${esc(a.id)}" data-name="${esc(a.name)}" title="Вернуться к предыдущей версии агента" style="flex:none">↺ Версии</button>` : ""}
-              <button class="btn primary run" data-id="${esc(a.id)}" data-name="${esc(a.name)}" title="Откроет чат и запустит агента там" style="flex:1;white-space:nowrap">▶ Запустить</button>
-            </div>
+            ${actions(a)}
           </div>`).join("") : (loadErr ? "" : `<div class="faint" style="padding:20px;grid-column:1/-1">${tab === "mine" ? "У вас пока нет своих агентов — нажмите «＋ Собрать агента»." : "Нет общих агентов, доступных вашей роли."}</div>`)}
         </div>
       </div></div>`;
@@ -73,6 +82,7 @@ export async function mount(root, ctx) {
     const bb = root.querySelector("#build"); if (bb) bb.onclick = async () => { if (!families.length) await loadFamilies(); bFamily = ""; bSkills = new Set(); bName = ""; editingId = null; bOutput = ""; mode = "builder"; render(); };
     root.querySelectorAll(".run").forEach((b) => (b.onclick = () => ctx.open("chat", { runAgent: { id: b.dataset.id, name: b.dataset.name } })));
     root.querySelectorAll(".cfg").forEach((b) => (b.onclick = () => reconfig(b.dataset.id)));
+    root.querySelectorAll(".arch").forEach((b) => (b.onclick = () => archiveAgent(b.dataset.id, b.dataset.name)));
     root.querySelectorAll(".del").forEach((b) => (b.onclick = () => deleteAgent(b.dataset.id, b.dataset.name)));
     root.querySelectorAll(".back").forEach((b) => (b.onclick = () => rollbackAgent(b.dataset.id, b.dataset.name)));
     const el = root.querySelector("#errLogin"); if (el) el.onclick = () => ctx.login();
@@ -106,32 +116,23 @@ export async function mount(root, ctx) {
     await loadAgents(); render();
   }
 
-  // Удаление было только жёстким: сносило все версии безвозвратно. Сервер умеет архив, поэтому
-  // сначала предлагаем обратимый вариант, а безвозвратный оставляем отдельной кнопкой.
+  // Архив и удаление раньше жили в одном диалоге под кнопкой «✕»: человек нажимал «удалить», а
+  // выбирать приходилось между двумя действиями с разными последствиями. Теперь у каждого своя
+  // кнопка, и подтверждение спрашивает ровно про то, что нажали.
+  async function archiveAgent(id, name) {
+    if (!(await confirmDialog({ title: `Убрать «${name}» в архив?`,
+      text: "Агент перестанет запускаться и пропадёт из списка, расписания остановятся. История прогонов останется, вернуть можно в любой момент.",
+      okLabel: "В архив" }))) return;
+    try { await api(A + "/retire/" + encodeURIComponent(id), { method: "POST" }); toast(`Агент «${name}» в архиве — можно вернуть`, "ok"); }
+    catch (e) { toast("Не удалось: " + humanError(e), "danger"); }
+    await loadAgents(); render();
+  }
   async function deleteAgent(id, name) {
-    let choice = "";
-    await new Promise((resolve) => {
-      const ov = ctx.modal(`Убрать агента «${name}»?`,
-        `<div style="font-size:12.5px;color:var(--ink-2);line-height:1.6">
-           <b>В архив</b> — агент перестаёт запускаться и пропадает из списка, расписания
-           останавливаются. История прогонов остаётся, вернуть можно в любой момент.<br><br>
-           <b>Удалить навсегда</b> — сносятся все версии агента. Отменить нельзя.
-         </div>
-         <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
-           <button class="btn primary" id="agArch">В архив</button>
-           <button class="btn danger" id="agDel">Удалить навсегда</button>
-         </div>`,
-        null, "", { kicker: "агент", onClose: () => resolve() });
-      const q = (x) => ov.querySelector(x);
-      if (q("#agArch")) q("#agArch").onclick = () => { choice = "retire"; ov.close ? ov.close() : q("#mCancel").click(); resolve(); };
-      if (q("#agDel")) q("#agDel").onclick = () => { choice = "delete"; ov.close ? ov.close() : q("#mCancel").click(); resolve(); };
-    });
-    if (!choice) return;
-    if (choice === "delete" && !(await confirmDialog({ title: `Удалить «${esc(name)}» навсегда?`, text: "Будут удалены все версии агента. Отменить нельзя.", okLabel: "Удалить навсегда" }))) return;
-    try {
-      if (choice === "retire") { await api(A + "/retire/" + encodeURIComponent(id), { method: "POST" }); toast(`Агент «${name}» в архиве — можно вернуть`, "ok"); }
-      else { await api(A + "/" + encodeURIComponent(id), { method: "DELETE" }); toast(`Агент «${name}» удалён`, "ok"); }
-    } catch (e) { toast("Не удалось: " + humanError(e), "danger"); }
+    if (!(await confirmDialog({ title: `Удалить «${name}» навсегда?`,
+      text: "Будут удалены все версии агента. Отменить нельзя. Если нужно просто остановить — отправьте в архив (⏹).",
+      okLabel: "Удалить навсегда" }))) return;
+    try { await api(A + "/" + encodeURIComponent(id), { method: "DELETE" }); toast(`Агент «${name}» удалён`, "ok"); }
+    catch (e) { toast("Не удалось: " + humanError(e), "danger"); }
     await loadAgents(); render();
   }
 

@@ -297,6 +297,8 @@ button:disabled { cursor: default; }
 .ico { width: 30px; height: 30px; flex: none; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 9px; background: transparent; color: var(--ink-2); font-size: 13px; }
 .ico:hover { background: var(--hover); color: var(--ink); }
 .ico.ghost { border-color: transparent; }
+.ico.go { border-color: var(--line-2); background: var(--accent-bg); color: var(--accent-ink); }
+.ico.go:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
 .ico.danger:hover { background: var(--danger-bg); color: var(--danger-ink); border-color: var(--danger-line); }
 /* док статуса над композером: один ряд чипов вместо пяти баров */
 .dock { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-height: 0; }
