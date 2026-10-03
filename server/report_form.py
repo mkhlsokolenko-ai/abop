@@ -284,6 +284,11 @@ def _b_register(b: dict, result: dict, ctx: dict) -> str:
     cols = b.get("cols") or []
     if not items or not cols:
         return ""
+    # Колонка, пустая во ВСЕХ строках, из документа убирается. Форма обслуживает группу навыков, и
+    # у работавшего навыка таких граф нет вовсе: пустой столбец «Решение приёмки» читается как
+    # «приёмка не проведена», хотя приёмки в этом документе и не было.
+    cols = [(lbl, f) for lbl, f in cols
+            if any(str(field(it, f) or "").strip() != "" for it in items)] or cols[:1]
     num = set()
     for lbl, fld in cols:
         vals = [field(it, fld) for it in items if str(field(it, fld) or "").strip() != ""]
