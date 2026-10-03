@@ -312,8 +312,27 @@ async def seed_if_empty() -> None:
                     and list(ex.get("layout") or []) == list(spec.get("layout") or [])):
                 continue
             await save(tid, spec, editor="seed", builtin=True)
+        # Форма, убранная из поставки (вертикаль разделилась на виды документов), должна уйти и из
+        # базы: иначе она остаётся в списке и её можно поставить OUT-узлу — а бланка под ней уже нет.
+        # Трогаем только посевные записи: пользовательские формы не наши.
+        if files:
+            for tid, ex in cur.items():
+                if tid in seeds or not ex.get("builtin") or ex.get("editor") not in (None, "seed"):
+                    continue
+                await _drop_seed(tid)
     except Exception:  # noqa: BLE001
         pass
+
+
+async def _drop_seed(tid: str) -> None:
+    """Снять посевную форму, которой больше нет в поставке. `delete()` для встроенных закрыт
+    намеренно (чтобы её не снёс пользователь), поэтому посев убирает свои записи сам."""
+    if not _has_pg():
+        _MEM.pop(tid, None)
+        return
+    from .db import _conn
+    async with _conn() as conn:
+        await conn.execute("DELETE FROM report_templates WHERE id=%s AND builtin=true", (tid,))
 
 
 # Поля-заголовки карточки: чем назвать находку, если навык не дал явного заголовка.

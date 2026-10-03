@@ -139,3 +139,19 @@ def test_no_heading_can_hang_over_an_optional_block():
         for head, key in re.findall(r"<h2>([^<]+)</h2>\s*\{\{(\w+)\}\}", spec["html"]):
             assert key not in optional and not key.startswith("skill_"), \
                 f"{tid}: «{head}» висит над необязательным блоком {{{{{key}}}}}"
+
+
+def test_снятая_форма_уходит_из_базы():
+    """Вертикаль разделилась на виды документов — прежняя общая форма не должна остаться в списке.
+
+    Иначе её можно поставить OUT-узлу, а бланка под ней уже нет: получатель увидит пустой документ.
+    """
+    async def flow():
+        await report_store.save("architecture", {"name": "старая общая", "html": "x"},
+                                editor="seed", builtin=True)
+        await report_store.save("t-mine", {"name": "моя", "html": "x"}, editor="ivanov")
+        await report_store.seed_if_empty()
+        return await report_store.get("architecture"), await report_store.get("t-mine")
+    gone, mine = asyncio.run(flow())
+    assert gone is None, "посевная форма, убранная из поставки, осталась в базе"
+    assert mine, "пользовательскую форму посев трогать не должен"
