@@ -1011,6 +1011,7 @@ export async function mount(root, ctx) {
       <div class="dcard-title">${esc(chain)}</div>
       <div class="dcard-body">${rows}</div>
       <div class="dcard-why"><span>один агент на ${a.steps.length} навык(ов) — передача по контрактам, отчёт один</span>
+        ${a.steps.length > 1 ? `<span>+ редактор отчёта: сложит разделы в один документ</span>` : ""}
         ${a.report_template ? `<span>бланк «${esc(a.report_template)}»</span>` : ""}</div>
       ${(a.missing || []).length ? `<div class="dcard-warn">Не хватает: ${esc(a.missing.join("; "))}</div>` : ""}
       ${a.note ? `<div class="dcard-note">${esc(a.note)}</div>` : ""}

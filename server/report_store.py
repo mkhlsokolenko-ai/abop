@@ -263,6 +263,10 @@ async def template_for_skills(skills) -> str:
         return ""
     best = []
     for t in await all():
+        # Формы-кэши раскладок (`auto-…`) в подборе не участвуют: они сохранены под конкретное
+        # сочетание навыков и спорили бы с бланками вертикалей.
+        if str(t.get("id") or "").startswith("auto-"):
+            continue
         fs = {str(x) for x in (t.get("for_skills") or [])}
         if fs & want:
             best.append((len(fs), str(t.get("id") or "")))

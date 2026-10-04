@@ -81,7 +81,9 @@ def test_негодная_раскладка_отбрасывается_и_об_
         ([{"t": "verdict", "src": "кто-то-другой:вердикт"}], "вне прогона"),
         ("не список", "не вернул раскладку"),
     ):
-        run = {"skill_outputs": [RUN["skill_outputs"][0],
+        # Набор навыков здесь свой: у набора из других тестов раскладка уже в кэше, и документ
+        # законно собрался бы по кэшу — проверять надо именно отказ от негодной раскладки.
+        run = {"skill_outputs": [{"skill": "devils-advocate", "structured": {"вердикт": {"статус": "рискованно"}}},
                                  {"skill": "report-editor", "structured": {"раскладка": lay}}]}
         got, reason = report_compose.editor_layout(run)
         assert got is None and why in reason, (lay, reason)
@@ -125,3 +127,29 @@ def test_блок_канвы_кладёт_навык():
     block = src[i:i + 700]
     assert "skill: 'report-editor'" in block and "Сборка отчёта" in block
     assert "kindDef.skill || kindDef.label" in src, "идентификатор навыка не доедет до узла"
+
+
+def test_раскладка_кэшируется_по_набору_навыков():
+    """Вызов модели нужен на новое сочетание, а не на каждый запуск."""
+    run = {"run_id": "r-cache", "skill_outputs": [
+        {"skill": "cost-estimator", "structured": {"итого_per_flow": {"стоимость": "12 ₽"}}},
+        {"skill": "report-editor", "structured": {"раскладка": [
+            {"t": "attrs", "title": "Стоимость", "rows": [["Per flow", "cost-estimator:итого_per_flow.стоимость"]]}]}},
+    ]}
+    cid = report_compose.cache_id(["cost-estimator"])
+    assert cid.startswith("auto-")
+    assert asyncio.run(report_store.get(cid)) is None, "кэш уже заполнен — тест потерял смысл"
+    assert asyncio.run(web_api._template_for_run(run))["id"] == "edited"
+    saved = asyncio.run(report_store.get(cid))
+    assert saved and saved.get("layout"), "раскладка не попала в кэш"
+    # следующий прогон того же набора — уже без редактора в графе
+    again = {"run_id": "r-cache-2", "skill_outputs": [run["skill_outputs"][0]]}
+    tpl = asyncio.run(web_api._template_for_run(again))
+    assert tpl["id"] == "edited", "кэш не применился, документ собрался заново"
+
+
+def test_кэш_не_спорит_с_бланками_вертикалей():
+    """Форма-кэш сохранена под сочетание навыков и в подборе по навыку участвовать не должна."""
+    asyncio.run(report_store.save("auto-пример", {"name": "кэш", "html": "x", "layout": [{"t": "note", "text": "н"}],
+                                                  "for_skills": ["idea-scorer"]}, editor="report-editor"))
+    assert asyncio.run(report_store.template_for_skills(["idea-scorer"])) == "decision"

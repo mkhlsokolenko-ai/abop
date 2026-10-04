@@ -2449,20 +2449,35 @@ async def plan_auto_build(body: dict, u: dict = Depends(user)) -> dict:
         return ag
 
     if not as_chain:
+        # Редактор отчёта добавляется сам, когда навыков больше одного: иначе человек получит
+        # документ, сшитый механически по волнам, хотя порядок разделов под задачу бывает другим.
+        # Но только если раскладки для этого набора ещё нет: вызов модели нужен на новое сочетание,
+        # а не на каждый запуск — дальше работает кэш.
+        editor = ""
+        if len(sids) >= 2 and report_compose.EDITOR_SKILL not in sids:
+            _cid = report_compose.cache_id(sids)
+            _cached = await report_store.get(_cid) if _cid else None
+            if _cached and _cached.get("layout"):
+                editor = "cached"
+            else:
+                sids = sids + [report_compose.EDITOR_SKILL]
+                editor = "added"
         exist = await _agent_for_skills(sids, u) if reuse else None
+        _ed = {"added": " Добавлен редактор отчёта — он сложит разделы в один документ.",
+               "cached": " Раскладка отчёта для этого набора уже известна: редактор не нужен."}.get(editor, "")
         if exist:
             return {"ok": True, "agent_id": exist["id"], "name": exist.get("name"), "skills": sids,
-                    "pipeline": None, "created": 0, "reused": 1,
+                    "pipeline": None, "created": 0, "reused": 1, "editor": editor,
                     "agents": [{"agent_id": exist["id"], "name": exist.get("name"),
                                 "skills": sids, "reused": True}],
                     "note": f"готовый агент «{exist.get('name')}» уже умеет эти навыки ({len(sids)}) — "
-                            f"собирать нечего, запускаю его"}
+                            f"собирать нечего, запускаю его." + _ed}
         ag = await _author(name, sids)
         return {"ok": True, "agent_id": ag["id"], "name": name, "skills": sids,
-                "pipeline": None, "created": 1, "reused": 0,
+                "pipeline": None, "created": 1, "reused": 0, "editor": editor,
                 "agents": [{"agent_id": ag["id"], "name": name, "skills": sids, "reused": False}],
                 "note": f"собран агент из {len(sids)} навыков: передача между ними идёт по контрактам, "
-                        f"отчёт будет один"}
+                        f"отчёт будет один." + _ed}
 
     # ── цепочка по явной просьбе: у шагов разная доставка или своё подтверждение ──
     made, ids = [], {}
@@ -3419,11 +3434,18 @@ async def _order_by_contract(nodes: list[dict]) -> list[dict]:
     """
     ids = [n.get("skill") for n in nodes]
     need: dict[str, set] = {}
+    whole: set = set()          # кто объявил чтение всего прогона — такому место в последней волне
     for sid in ids:
         tpl = await schema_store.get(sid) or {}
         req = ((tpl.get("inputs") or {}).get("required") or [])
         need[sid] = {str(it.get("skill")) for it in req
                      if isinstance(it, dict) and it.get("from") == "skill" and it.get("skill") in ids}
+        if any(isinstance(it, dict) and it.get("from") == "run" for it in req):
+            whole.add(str(sid))
+    # «Весь прогон» — это зависимость от ВСЕХ остальных, просто объявленная одной строкой. Без этого
+    # редактор отчёта, у которого поимённых входов нет, попадал бы в первую волну и видел пустоту.
+    for sid in whole:
+        need[sid] |= {str(x) for x in ids if str(x) != str(sid)}
     out: list[dict] = []
     placed: set = set()
     rest = list(nodes)
@@ -3798,6 +3820,16 @@ async def _pick_template_id(result: dict) -> str:
     return by_skill or _auto_template_id(result)
 
 
+def _run_skills(result: dict) -> list[str]:
+    """Навыки прогона в порядке выполнения, без редактора: он задаёт вид, а не содержание."""
+    out: list[str] = []
+    for o in (result or {}).get("skill_outputs") or []:
+        sid = str(o.get("skill") or "")
+        if sid and sid != report_compose.EDITOR_SKILL and o.get("structured") and sid not in out:
+            out.append(sid)
+    return out
+
+
 async def _template_for_run(result: dict, forced: str = "") -> dict | None:
     """Форма этого прогона: выбранная или СШИТАЯ из бланков его навыков.
 
@@ -3815,17 +3847,29 @@ async def _template_for_run(result: dict, forced: str = "") -> dict | None:
     # результаты, и на задачу. Но только если раскладка прошла проверку; негодную отбрасываем и
     # говорим об этом в замечаниях, а не молча собираем документ наугад.
     lay, why = report_compose.editor_layout(result)
+    base0 = await report_store.get("default")
     if lay:
-        base0 = await report_store.get("default")
+        # Пригодную раскладку кладём в кэш: следующий прогон того же набора навыков обойдётся без
+        # вызова модели. Сбой записи отчёт не ломает — он уже собран.
+        try:
+            _cid = report_compose.cache_id(_run_skills(result))
+            if _cid and not await report_store.get(_cid):
+                await report_store.save(_cid, {"name": "Авто-раскладка: " + ", ".join(_run_skills(result)),
+                                               "html": report_compose.HTML, "css": (base0 or {}).get("css") or "",
+                                               "layout": lay, "for_skills": []}, editor="report-editor")
+        except Exception:  # noqa: BLE001
+            pass
         return report_compose.with_editor(lay, title="Отчёт по задаче", css=(base0 or {}).get("css") or "")
     if why:
         result.setdefault("report_notes", []).append("раскладка редактора отброшена: " + why)
-    sids: list[str] = []
-    for o in (result.get("skill_outputs") or []):
-        sid = str(o.get("skill") or "")
-        # Редактор сам разделом не является: его результат — устройство документа.
-        if sid and sid != report_compose.EDITOR_SKILL and o.get("structured") and sid not in sids:
-            sids.append(sid)
+    # Кэш: раскладку для этого набора навыков редактор уже собирал — берём её, модель не нужна.
+    _cid = report_compose.cache_id(_run_skills(result))
+    if _cid:
+        cached = await report_store.get(_cid)
+        if cached and cached.get("layout"):
+            return report_compose.with_editor(cached["layout"], title="Отчёт по задаче",
+                                              css=(base0 or {}).get("css") or "")
+    sids = _run_skills(result)
     forms: dict[str, str] = {}
     for sid in sids:
         try:

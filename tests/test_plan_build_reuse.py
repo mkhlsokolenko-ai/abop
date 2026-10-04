@@ -100,7 +100,8 @@ def test_план_из_нескольких_навыков_собирается_
     """
     r = asyncio.run(web_api.plan_auto_build({"steps": MULTI, "name": "Идея и рынок"}, U))
     assert r["pipeline"] is None, "снова собралась цепочка"
-    assert r["agent_id"] and sorted(r["skills"]) == sorted(["market-research", "idea-scorer"])
+    # К навыкам плана добавляется редактор отчёта — он и складывает разделы в один документ.
+    assert r["agent_id"] and set(r["skills"]) == {"market-research", "idea-scorer", "report-editor"}
     assert "отчёт будет один" in r["note"]
 
     async def graph_of():
@@ -108,7 +109,7 @@ def test_план_из_нескольких_навыков_собирается_
         return [n.get("skill") for n in ((ag or {}).get("graph") or {}).get("nodes") or []
                 if n.get("kind") == "skill"], ((ag or {}).get("graph") or {}).get("edges") or []
     skills, edges = asyncio.run(graph_of())
-    assert sorted(skills) == sorted(["market-research", "idea-scorer"]), skills
+    assert set(skills) == {"market-research", "idea-scorer", "report-editor"}, skills
     assert edges, "навыки в графе не связаны — они пойдут одной волной и не увидят друг друга"
 
 
@@ -124,3 +125,39 @@ def test_цепочка_остаётся_по_явной_просьбе():
     r = asyncio.run(web_api.plan_auto_build({"steps": MULTI, "name": "Цепочкой", "as_chain": True}, U))
     assert r["pipeline"], "явная просьба о цепочке проигнорирована"
     assert len(r["agents"]) == 2
+
+
+def test_редактор_добавляется_сам_и_уходит_при_кэше():
+    """Навыков больше одного — нужен один документ; раскладка уже известна — модель не зовём."""
+    from server import report_compose, report_store
+    pair = [{"skill": "process-map", "title": "Карта процесса"}, {"skill": "c4-diagram", "title": "Схема"}]
+    first = asyncio.run(web_api.plan_auto_build({"steps": pair, "name": "Процесс и схема"}, U))
+    assert first["editor"] == "added" and report_compose.EDITOR_SKILL in first["skills"]
+    assert "редактор отчёта" in first["note"].lower()
+
+    # кладём раскладку в кэш — следующая сборка редактора уже не добавляет
+    cid = report_compose.cache_id(["process-map", "c4-diagram"])
+    asyncio.run(report_store.save(cid, {"name": "кэш", "html": "x", "layout": [{"t": "note", "text": "н"}],
+                                        "for_skills": []}, editor="report-editor"))
+    second = asyncio.run(web_api.plan_auto_build({"steps": pair, "name": "Процесс и схема 2"}, U))
+    assert second["editor"] == "cached"
+    assert report_compose.EDITOR_SKILL not in second["skills"], "редактор добавлен впустую"
+
+
+def test_один_навык_редактора_не_получает():
+    """Сшивать нечего — звать модель незачем."""
+    r = asyncio.run(web_api.plan_auto_build({"steps": [{"skill": "idea-scorer"}], "name": "Одна идея"}, U))
+    assert not r.get("editor") and "report-editor" not in r["skills"]
+
+
+def test_редактор_идёт_последним_в_графе():
+    """Он читает весь прогон: в первой волне он увидел бы пустоту."""
+    pair = [{"skill": "market-research"}, {"skill": "jtbd-formulator"}]
+    r = asyncio.run(web_api.plan_auto_build({"steps": pair, "name": "Рынок и работы"}, U))
+
+    async def order():
+        ag = await agent_store.get(r["agent_id"])
+        return [n.get("skill") for n in ((ag or {}).get("graph") or {}).get("nodes") or []
+                if n.get("kind") == "skill"]
+    seq = asyncio.run(order())
+    assert seq and seq[-1] == "report-editor", seq
