@@ -162,11 +162,17 @@ def _b_stamp(b: dict, result: dict, ctx: dict) -> str:
 def _b_attrs(b: dict, result: dict, ctx: dict) -> str:
     """Таблица реквизитов документа. Пустая графа остаётся со словом «не указано»: в служебном
     документе отсутствие значения — это сведение, а не повод спрятать строку."""
+    # `lean` ставит сшивка: в бланке вертикали пустая графа означает «не указано» и это сведение,
+    # а в разделе сшитого документа графы чужих навыков той же формы просто не имеют смысла —
+    # пять строк «не указано» читаются как потерянные данные.
+    lean = bool(b.get("lean"))
     rows, filled = [], 0
     for lbl, ref in b.get("rows") or []:
         v = value(result, ref)
         if v not in _EMPTY:
             filled += 1
+        elif lean:
+            continue
         rows.append(f"<tr><th>{esc(lbl)}</th><td>{esc(_flat(v)) or 'не указано'}</td></tr>")
     if not filled:
         return ""
@@ -185,6 +191,10 @@ def _b_verdict(b: dict, result: dict, ctx: dict) -> str:
             meta.append(f"<span><i>{esc(lbl)}</i>{esc(_flat(v))}</span>")
     if val in _EMPTY and not meta:
         return ""
+    # Бейдж, слово в слово повторяющий значение, ничего не добавляет: у многих навыков вердикт
+    # один и попадает и в бейдж, и в значение.
+    if badge not in _EMPTY and _flat(badge).strip().lower() == _flat(val).strip().lower():
+        badge = None
     _bc = str(_flat(badge) or "").lower()
     cls = "no" if any(p in _bc for p in ("отказ", "reject", "не прин", "red", "стоп")) else (
         "warn" if any(p in _bc for p in ("замеч", "amber", "услов", "доработ", "hitl")) else "ok")
@@ -321,6 +331,19 @@ def _b_sign(b: dict, result: dict, ctx: dict) -> str:
     return (_h2(b) + f"<div class='sign'>{cells}</div>") if cells else ""
 
 
+def _b_part(b: dict, result: dict, ctx: dict) -> str:
+    """Заголовок части сшитого документа: чей это раздел.
+
+    В документе из нескольких навыков читатель должен видеть, кто что сказал: без этого разделы
+    сливаются в один поток, и спорить с конкретным выводом не получится — непонятно, чей он.
+    """
+    t = esc(b.get("title") or "")
+    sub = esc(b.get("sub") or "")
+    if not t:
+        return ""
+    return (f"<div class='part'><h2>{t}</h2>" + (f"<span>{sub}</span>" if sub else "") + "</div>")
+
+
 def _b_note(b: dict, result: dict, ctx: dict) -> str:
     """Оговорка вида документа: чего он НЕ заменяет. Так же сделано в форме аудита."""
     return f"<div class='meth'>{esc(b.get('text') or '')}</div>" if b.get("text") else ""
@@ -337,9 +360,9 @@ def _h2(b: dict) -> str:
 
 
 # Рамка документа: эти блоки не несут данных прогона и сами по себе содержанием не являются.
-_FRAME = ("head", "note", "sign")
+_FRAME = ("head", "note", "sign", "part")
 
-_BLOCKS = {"head": _b_head, "stamp": _b_stamp, "attrs": _b_attrs, "verdict": _b_verdict,
+_BLOCKS = {"part": _b_part, "head": _b_head, "stamp": _b_stamp, "attrs": _b_attrs, "verdict": _b_verdict,
            "kpi": _b_kpi, "prose": _b_prose, "list": _b_list, "cards": _b_cards,
            "register": _b_register, "pre": _b_pre, "sign": _b_sign, "note": _b_note}
 

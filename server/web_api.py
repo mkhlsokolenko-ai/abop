@@ -30,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, arbiter, assembly, audit_store, blackboard, planner, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, report_store, run_cache_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, arbiter, assembly, audit_store, blackboard, planner, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, report_compose, report_store, run_cache_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
@@ -3798,6 +3798,50 @@ async def _pick_template_id(result: dict) -> str:
     return by_skill or _auto_template_id(result)
 
 
+async def _template_for_run(result: dict, forced: str = "") -> dict | None:
+    """Форма этого прогона: выбранная или СШИТАЯ из бланков его навыков.
+
+    Пока в прогоне навыки одной вертикали, правильно взять её бланк — он под эти результаты и
+    согласован. Как только навыков из разных вертикалей больше одного, прежнее правило («форма,
+    объявленная для наименьшего числа навыков») давало произвол: прогон из статус-отчёта, ADR, письма
+    и БФТ получал бланк ADR, а остальные три навыка — общий хвост. Тогда документ сшивается: раздел
+    каждого навыка из его бланка, в порядке выполнения.
+
+    `forced` — форма, названная человеком или OUT-узлом: её не переигрываем.
+    """
+    if forced:
+        return await report_store.get(forced) or await report_store.get("default")
+    sids: list[str] = []
+    for o in (result.get("skill_outputs") or []):
+        sid = str(o.get("skill") or "")
+        if sid and o.get("structured") and sid not in sids:
+            sids.append(sid)
+    forms: dict[str, str] = {}
+    for sid in sids:
+        try:
+            forms[sid] = await report_store.template_for_skills([sid])
+        except Exception:  # noqa: BLE001 — реестр недоступен: решит форма результата
+            forms[sid] = ""
+    distinct = {f for f in forms.values() if f}
+    if len(distinct) < 2:
+        return await report_store.get(await _pick_template_id(result)) or await report_store.get("default")
+    names = {}
+    try:
+        names = {sid: (t.get("name") or sid) for sid, t in skill_templates.load_all().items()}
+    except Exception:  # noqa: BLE001
+        names = {}
+    sections = []
+    for sid in sids:
+        tpl = await report_store.get(forms.get(sid) or "") if forms.get(sid) else None
+        if tpl and tpl.get("layout"):
+            sections.append((sid, names.get(sid) or sid, tpl["layout"]))
+    if len(sections) < 2:      # сшивать нечего: у бланков нет раскладки (старые формы по виду)
+        return await report_store.get(await _pick_template_id(result)) or await report_store.get("default")
+    base = await report_store.get("default")
+    return report_compose.compose(sections, title="Отчёт по задаче",
+                                  css=(base or {}).get("css") or "")
+
+
 def _auto_template_id(result: dict) -> str:
     """Кейс-шаблон отчёта по форме результата (когда OUT-узел не задал report_template_id явно):
     расследования → invest; аудит-находки A/B/C/D → audit1c; structured-вывод навыка → digest; иначе default."""
@@ -4577,8 +4621,7 @@ async def _deliver_out_nodes(agent: dict, result: dict, actor: str, deliver_filt
     async def _report_for(cfg: dict) -> str:
         # Явно заданный шаблон приоритетен; иначе авто-выбор по форме результата (кейс-шаблон), чтобы
         # демо-агенты давали красивый отчёт без правки графа. Фолбэк — прежний детерминированный HTML.
-        tid = (cfg or {}).get("report_template_id") or await _pick_template_id(result)
-        tpl = await report_store.get(tid) or await report_store.get("default")
+        tpl = await _template_for_run(result, forced=str((cfg or {}).get("report_template_id") or ""))
         if not tpl:
             return html_report
         _ctx = await _asyncio.to_thread(_report_context, agent, result)
@@ -6870,10 +6913,11 @@ async def run_report(run_id: str, template: str = "", format: str = "html", u: d
     run = await _run_visible(run_id, u)
     ag = await agent_store.get(run.get("agent_id") or "") or {"id": run.get("agent_id"), "name": run.get("agent_name") or run.get("agent_id")}
     import re as _re
-    tid = _re.sub(r"[^a-z0-9_-]", "", str(template or "").lower()) or await _pick_template_id(run)
-    tpl = await report_store.get(tid) or await report_store.get("default")
+    tid = _re.sub(r"[^a-z0-9_-]", "", str(template or "").lower())
+    tpl = await _template_for_run(run, forced=tid)
     if not tpl:
         raise HTTPException(404, "нет шаблона отчёта")
+    tid = tpl.get("id") or tid or "composed"
     _ctx = await _asyncio.to_thread(_report_context, ag, run)
     html_doc = report_store.render(tpl, {**_ctx, **(await _labels_ctx(run))})
     if str(format).lower() != "pdf":
