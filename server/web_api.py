@@ -30,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, arbiter, assembly, audit_store, blackboard, planner, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, orchestrator, report_compose, report_store, run_cache_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, arbiter, assembly, audit_store, blackboard, planner, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, chat_store, orchestrator, report_compose, report_store, run_cache_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
@@ -2310,6 +2310,70 @@ async def canvas_layout_save(key: str, body: dict, u: dict = Depends(user)) -> d
     return {"key": key, "saved": True, "updated_at": saved.get("updated_at")}
 
 
+# ── История чатов пользователя: в Postgres, а не в локальной базе машины ─────────────────────────
+# Переписка жила у сайдкара на диске: на каждой машине своя, чистка кэша или новый ноутбук означали
+# «истории не было». В чате принимаются решения и запускаются агенты, в карточках лежат ссылки на
+# прогоны и подтверждения внешних действий — это рабочий журнал, он обязан быть у человека, а не у
+# машины. Владение — по `sub` из JWT; чужую переписку не отдаём, проверка стоит в хранилище.
+
+def _sub(u: dict) -> str:
+    return str((u or {}).get("sub") or (u or {}).get("name") or "dev")
+
+
+@app.get("/api/chat/threads")
+async def chat_threads(u: dict = Depends(user)) -> dict:
+    return {"threads": await chat_store.threads(_sub(u))}
+
+
+@app.post("/api/chat/threads")
+async def chat_thread_create(body: dict, u: dict = Depends(user)) -> dict:
+    t = await chat_store.create(_sub(u), title=str((body or {}).get("title") or "Новый чат"),
+                                profile=str((body or {}).get("profile") or "standard"),
+                                skills=(body or {}).get("skills") or [])
+    return t
+
+
+@app.patch("/api/chat/threads/{thread_id}")
+async def chat_thread_patch(thread_id: int, body: dict, u: dict = Depends(user)) -> dict:
+    t = await chat_store.patch(_sub(u), thread_id, title=(body or {}).get("title"),
+                               profile=(body or {}).get("profile"), skills=(body or {}).get("skills"),
+                               favorite=(body or {}).get("favorite"))
+    if not t:
+        raise HTTPException(404, "нет такого чата")
+    return t
+
+
+@app.delete("/api/chat/threads/{thread_id}")
+async def chat_thread_delete(thread_id: int, u: dict = Depends(user)) -> dict:
+    if not await chat_store.delete(_sub(u), thread_id):
+        raise HTTPException(404, "нет такого чата")
+    return {"ok": True}
+
+
+@app.get("/api/chat/threads/{thread_id}/messages")
+async def chat_messages(thread_id: int, u: dict = Depends(user)) -> dict:
+    if not await chat_store.owns(_sub(u), thread_id):
+        raise HTTPException(404, "нет такого чата")
+    return {"messages": await chat_store.messages(_sub(u), thread_id)}
+
+
+@app.post("/api/chat/threads/{thread_id}/messages")
+async def chat_message_add(thread_id: int, body: dict, u: dict = Depends(user)) -> dict:
+    m = await chat_store.add(_sub(u), thread_id, str((body or {}).get("role") or "user"),
+                             str((body or {}).get("content") or ""), (body or {}).get("meta") or {})
+    if not m:
+        raise HTTPException(404, "нет такого чата")
+    return m
+
+
+@app.patch("/api/chat/threads/{thread_id}/messages/{message_id}")
+async def chat_message_patch(thread_id: int, message_id: int, body: dict, u: dict = Depends(user)) -> dict:
+    m = await chat_store.patch_meta(_sub(u), thread_id, message_id, (body or {}).get("meta") or {})
+    if not m:
+        raise HTTPException(404, "нет такого сообщения")
+    return m
+
+
 @app.post("/api/orchestrate")
 async def orchestrate(body: dict, u: dict = Depends(user)) -> dict:
     """Одно решение по задаче: кого звать, что собрать, какие границы — и запись, почему именно так.
@@ -2673,6 +2737,7 @@ async def _startup() -> None:
     obs.log_event("info", "run_queue.started", workers=run_queue.WORKERS, bus=run_bus.describe().get("bus"))
     await _refresh_skill_ds_cache()  # инжект data-need оверрайдов из PG в ape
     await dataplane_store.init()
+    await chat_store.init()   # история чатов пользователя: в БД, а не на машине
     try:
         await dlq_store.init()
     except Exception as _ex:  # noqa: BLE001
