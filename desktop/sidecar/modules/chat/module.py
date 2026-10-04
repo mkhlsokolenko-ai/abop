@@ -245,6 +245,9 @@ def _run_summary(agent_id: str, run: dict) -> dict:
         "run_id": run.get("run_id") or run.get("id") or (run.get("saved") or {}).get("id"),
         "trace_id": run.get("trace_id"),
         "cached": run.get("cached"),
+        # Что прогон СКАЗАЛ: для навыка, отдающего документ или оценку, находок нет вовсе, и
+        # карточка выглядела как «результата нет». Строки считает сервер — он видит структуру ответа.
+        "summary": [str(x)[:400] for x in (run.get("summary_lines") or [])][:4],
         "findings": findings[:8],
         "findings_total": (run.get("findings_summary") or {}).get("total") or len(findings),
         "investigations_total": (run.get("investigations_summary") or {}).get("total"),

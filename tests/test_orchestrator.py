@@ -150,15 +150,20 @@ def test_оркестратор_решает_но_не_действует():
 # ── перевод чата на оркестратор ──────────────────────────────────────────────────────────────────
 
 def test_чат_спрашивает_решение_у_оркестратора():
-    """Одно решение вместо трёх вызовов по очереди — и прежний путь остаётся запасным."""
+    """Одно решение вместо трёх вызовов по очереди — и прежний путь остаётся запасным.
+
+    Решение принимается в `decideAndOffer`, и только по команде /work: подбор на каждое сообщение
+    превращал переписку в поток предложений собрать агента.
+    """
     chat = (ROOT / "desktop" / "ui" / "modules" / "chat" / "panel.js").read_text(encoding="utf-8")
-    i = chat.index("if (!isPasted) {")
-    body = chat[i:i + 2200]
-    assert "const d = await decide(v)" in body, "чат не спрашивает решение"
+    i = chat.index("async function decideAndOffer")
+    body = chat[i:chat.index("// карточка уточнения", i)]
+    assert "const d = await decide(task)" in body, "чат не спрашивает решение"
     for kind in ('d.kind === "ask"', 'd.kind === "agent"', 'd.kind === "build"'):
         assert kind in body, f"не разобран вид решения: {kind}"
     assert "/match" in body and "/plan" in body, "нет запасного пути для старого сайдкара"
     assert 'api(M + "/orchestrate"' in chat
+    assert "work|задача|агент" in chat, "команда /work не разбирается"
 
 
 def test_решение_пересчитывается_перед_сборкой():

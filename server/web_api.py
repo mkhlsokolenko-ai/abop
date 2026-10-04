@@ -427,6 +427,22 @@ async def identity_unlink(uid: str, system: str, u: dict = Depends(user)) -> dic
     return {"ok": True}
 
 
+# Свободный ответ в чате — это РАЗГОВОР, а не работа. Без этой рамки модель берётся отчитываться за
+# систему: 04.10 в чате появились «цепочка выполнена», «отчёт собран в PDF», имя файла и путь
+# «docs/…» — ничего из этого не существовало. Это худший вид отказа: не ошибка, а правдоподобный
+# отчёт о несделанном, под которым стоит подпись модели и ноль рублей.
+# Рамка добавляется НА СЕРВЕРЕ, а не в клиенте: правило про границы рантайма обязано действовать в
+# любом канале, а не только в той версии десктопа, которую успели обновить.
+CHAT_GUARD = (
+    "Ты отвечаешь ТЕКСТОМ и не выполняешь действий: не запускаешь агентов, не собираешь отчёты, "
+    "не создаёшь файлы, не отправляешь письма и не заводишь задачи. Никогда не утверждай, что "
+    "что-то выполнено, собрано, сохранено, прикреплено или отправлено, и не выдумывай имена файлов, "
+    "пути, ссылки и идентификаторы. Если просят сделать работу — объясни, что её выполняет агент, и "
+    "предложи команду «/work <задача>»: по ней ABOP подберёт исполнителя или соберёт его из навыков. "
+    "О том, что уже сделано, человек узнаёт из карточек прогона, а не из твоего пересказа."
+)
+
+
 @app.post("/api/chat")
 async def chat_freeform(body: dict, u: dict = Depends(user)) -> dict:
     """Свободный LLM-ответ под JWT пользователя — единый рантайм-канал для desktop-чата,
@@ -442,7 +458,7 @@ async def chat_freeform(body: dict, u: dict = Depends(user)) -> dict:
     context = str((body or {}).get("context") or "").strip()
     profile = str((body or {}).get("profile") or "standard").strip() or "standard"
     max_tokens = min(int((body or {}).get("max_tokens") or 1200), 4096)
-    messages: list[dict] = []
+    messages: list[dict] = [{"role": "system", "content": CHAT_GUARD}]
     if system:
         messages.append({"role": "system", "content": system})
     user_content = (f"Контекст:\n{context}\n\n" if context else "") + prompt
@@ -472,7 +488,7 @@ async def chat_freeform_stream(body: dict, u: dict = Depends(user)):
     context = str((body or {}).get("context") or "").strip()
     profile = str((body or {}).get("profile") or "standard").strip() or "standard"
     max_tokens = min(int((body or {}).get("max_tokens") or 1500), 4096)
-    messages: list[dict] = []
+    messages: list[dict] = [{"role": "system", "content": CHAT_GUARD}]
     if system:
         messages.append({"role": "system", "content": system})
     messages.append({"role": "user", "content": (f"Контекст:\n{context}\n\n" if context else "") + prompt})
@@ -5181,6 +5197,48 @@ def _pipeline_checkpoint(step: int, total: int, done: list, prev_ctx, prev_src) 
             "prev_ctx": str(prev_ctx or "")[:6000], "prev_src": prev_src}
 
 
+# Поля, по которым навык сам называет главное. Тот же список использует врезка «Главное» в отчёте:
+# если навык объявил резюме, оно и есть ответ, а не наши догадки по его структуре.
+_SUMMARY_KEYS = ("итог", "вывод", "резюме", "рекомендаци", "вердикт", "главное")
+
+
+def run_summary(result: dict, limit: int = 4) -> list[str]:
+    """Что СКАЗАЛ прогон — короткими строками, для карточки в чате.
+
+    Карточка показывала только счётчики: «находок: 1», «Находок не выявлено». Для навыка, который
+    отдаёт документ или оценку (а не находки), это означало «результата нет» — владелец так и сказал:
+    цепочка отработала, а результата не видно. Сам результат лежал в прогоне и в отчёте, то есть на
+    два клика в стороне.
+
+    Берём то, что навык объявил итогом; списки показываем числом строк. Текст не пересказываем и не
+    сокращаем по смыслу — только обрезаем по длине, иначе карточка начнёт врать мягче, чем счётчики.
+    """
+    out: list[str] = []
+    for so in (result or {}).get("skill_outputs") or []:
+        st = so.get("structured")
+        sid = str(so.get("skill") or "")
+        if not isinstance(st, dict) or not st:
+            txt = str(so.get("text") or "").strip()
+            if txt:
+                out.append(f"{sid}: {txt[:300]}")
+            continue
+        said = ""
+        for key, val in st.items():
+            kl = str(key).lower()
+            if isinstance(val, str) and len(val.strip()) > 20 and any(p in kl for p in _SUMMARY_KEYS):
+                said = val.strip()
+                break
+        if not said:
+            # Навык не объявил итог: называем, что он отдал, объёмом — это правда и это проверяемо.
+            parts = [f"{k}: {len(v)}" for k, v in st.items() if isinstance(v, list) and v][:3]
+            said = ("отдал " + ", ".join(parts)) if parts else ""
+        if said:
+            out.append(f"{sid}: {said[:300]}")
+        if len(out) >= limit:
+            break
+    return out
+
+
 async def _pipeline_job(job: dict) -> dict:
     """Цепочка агентов через очередь: каждый шаг — обычный прогон; выход шага → контекст следующего.
     Если у шага есть доставка «ждёт подтверждения» и шаг не последний — задание уходит в awaiting_hitl
@@ -5228,6 +5286,9 @@ async def _pipeline_job(job: dict) -> dict:
             _sc = ((res.get("saved") or {}).get("run_metrics") or {}).get("cost") or {}
             done_steps.append({"agent_id": agent["id"], "agent_name": agent.get("name"), "run_id": res["saved"]["id"],
                                "deliver": deliver, "tokens": int(_sc.get("input_tokens") or 0) + int(_sc.get("output_tokens") or 0),
+                               # Что шаг сказал — строками. Без этого карточка цепочки показывала
+                               # только счётчики, и результат приходилось искать в прогоне.
+                               "summary": run_summary(result),
                                "findings": result.get("findings") or [],
                                "findings_total": (result.get("findings_summary") or {}).get("total") or len(result.get("findings") or []),
                                "investigations_total": len(result.get("investigations") or []),
@@ -5334,6 +5395,10 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
             if trigger:
                 result["trigger"] = {"id": trigger.get("id"), "type": (trigger.get("trig") or {}).get("type"),
                                      "title": trigger.get("title")}
+            # Что прогон сказал — строками: карточка в чате и журнал показывают результат, а не
+            # только счётчики находок.
+            result["summary_lines"] = run_summary(result)
+
             saved = await run_store.save(result)
             _dt = time.perf_counter() - _t0
             obs.inc("abop_run_cache_total", hit="true")

@@ -282,7 +282,14 @@ export async function mount(root, ctx) {
       ${(() => { const a = s.arbitration; if (!a) return ""; const open = a.open || [];
         return `<div style="font-size:12px;color:${open.length ? "var(--warn-ink)" : "var(--ink-2)"};background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;line-height:1.5">⚖ ${esc(a.note || "")}${open.length ? `<div style="margin-top:4px;color:var(--ink-2)">Ждут вашего решения: ${esc(open.map((o) => [o.item, o.field].filter(Boolean).join(" · ")).join("; ").slice(0, 300))}</div>` : ""}</div>`; })()}
       ${(s.budget_stopped || []).length ? `<div style="font-size:12px;color:var(--warn-ink);background:var(--warn-bg);border:1px solid var(--warn-line);border-radius:8px;padding:8px 10px;line-height:1.5">⚠ Прогон остановлен бюджетом: не запускались навыки ${esc((s.budget_stopped || []).map(skillName).join(", "))}. Результат неполный — поднимите лимит при запуске или сузьте предмет.</div>` : ""}
-      ${fnd || '<div style="font-size:12px;color:var(--ink-3)">Находок не выявлено.</div>'}
+      ${(() => {
+        // Что прогон СКАЗАЛ. Для навыка, отдающего документ или оценку, счётчик находок равен нулю —
+        // и карточка выглядела как «результата нет», хотя результат был, просто в прогоне.
+        const sum = s.summary || [];
+        if (!sum.length) return "";
+        return `<div style="display:flex;flex-direction:column;gap:5px">${sum.map((t) => `<div style="font-size:12.5px;color:var(--ink);background:var(--surface-2);border-left:2px solid var(--ok-line);border-radius:0 8px 8px 0;padding:7px 10px;line-height:1.5">${esc(String(t).slice(0, 400))}</div>`).join("")}</div>`;
+      })()}
+      ${fnd || ((s.summary || []).length ? "" : '<div style="font-size:12px;color:var(--ink-3)">Находок не выявлено.</div>')}
       ${dl ? `<div class="ape-label" style="margin-top:4px">доставка</div>${dl}` : ""}
       ${waits.length ? (s.hitl_done ? `<div style="font-size:12px;font-weight:600;color:${s.hitl_done === "approve" ? "var(--ok-ink)" : "var(--ink-3)"}">${s.hitl_done === "approve" ? "✓ Действие подтверждено" : "⃠ Действие отклонено"}${s.hitl_result ? `<div style="font-size:11px;color:var(--ink-3);font-weight:400;margin-top:3px">${esc(String(s.hitl_result).slice(0, 140))}</div>` : ""}</div>`
         : `<div class="hitl-panel" data-hitl="${esc(hitlIds.join(","))}" data-agent="${esc(s.agent_id || "")}" style="margin-top:4px">
@@ -404,7 +411,9 @@ export async function mount(root, ctx) {
     // «Дописать задачу» возвращает исходную фразу в поле ввода — человек дополняет её, а не набирает заново.
     $("col").querySelectorAll(".clDraft").forEach((b) => b.onclick = () => {
       const t = $("inp"); if (!t) return;
-      t.value = b.dataset.t + " "; t.focus();
+      // Возвращаем задачу С КОМАНДОЙ: подбор идёт только по /work, и без неё дописанный текст уехал
+      // бы в обычную переписку — человек бы решил, что подбор сломался.
+      t.value = "/work " + String(b.dataset.t || "").replace(/^\/(work|задача|агент)\s*/i, "") + " "; t.focus();
       try { t.setSelectionRange(t.value.length, t.value.length); } catch { /* не критично */ }
     });
     $("col").querySelectorAll(".clChat").forEach((b) => b.onclick = () => sendPrompt(b.dataset.t));
@@ -950,37 +959,52 @@ export async function mount(root, ctx) {
     // Раньше подбор отключался на формулировках длиннее 240 знаков — то есть ровно там, где человек
     // подробно описал задачу. Длина больше не отменяет подбор; вставленный по хоткею фрагмент —
     // по-прежнему работа в чате, а не команда агенту.
-    if (!isPasted) {
-      // Одно решение у оркестратора вместо трёх вызовов по очереди: кого звать, что собрать, чего не
-      // хватает в описании. Раньше чат сшивал это сам и каждый канал — по-своему; решение вдобавок
-      // принималось в момент ПОКАЗА карточки и к нажатию успевало устареть.
-      const d = await decide(v);
-      if (d) {
-        if (d.kind === "ask" && (d.questions || []).length) { await clarifyCard(v, { "вопросы": d.questions, "почему": d["итог"] || "" }); return; }
-        if (d.kind === "agent" && d.agent_id) {
-          const top = { id: d.agent_id, name: d.agent_name, score: (d.facts || {})["подбор_агента"] };
-          await decisionCard(v, [top].concat(d.alternatives || []));
-          return;
-        }
-        if (d.kind === "build" && (d.skills || []).length) { await assembleCard(v, decisionToPlan(d)); return; }
-      } else {
-        // Оркестратора нет (старый сайдкар или сервер недоступен) — работаем как прежде.
-        let matches = [], need = null;
-        try {
-          const r = await api(M + "/match", { method: "POST", body: JSON.stringify({ q: v }) });
-          matches = (r && r.matches) || [];
-          if (r && r.need_more) need = r.sufficiency || {};
-        } catch { /* без подсказки */ }
-        if (need) { await clarifyCard(v, need); return; }
-        const top = matches[0];
-        if (top && top.score >= 0.32) { await decisionCard(v, matches); return; }
-        let pl = null;
-        try { pl = await api(M + "/plan", { method: "POST", body: JSON.stringify({ q: v }) }); } catch { /* план не обязателен */ }
-        if (pl && (pl.steps || []).length) { await assembleCard(v, pl); return; }
-      }
+    // Подбор исполнителя и сборка — ТОЛЬКО по команде. Прежде решение принималось на каждое
+    // сообщение: человек писал уточнение, а чат вместо ответа предлагал собрать агента — и потокового
+    // ответа не было вовсе, потому что вместо него приходила карточка. Обычная переписка должна
+    // оставаться перепиской.
+    const work = v.match(/^\/(work|задача|агент)\s*/i);
+    if (work) {
+      const task = v.slice(work[0].length).trim();
+      if (!task) { await note("После /work напишите задачу — например: `/work сверь дорожную карту с отчётами подрядчиков`.", { notice: { icon: "🛠" } }); render(); return; }
+      await decideAndOffer(task);
+      return;
     }
     sendPrompt(v);
   }
+  // Подбор исполнителя по задаче: решение оркестратора, а при его отсутствии — прежний путь.
+  // Вызывается ТОЛЬКО по команде /work: иначе каждое уточнение в переписке превращалось в
+  // предложение собрать агента, а потокового ответа человек не видел вовсе.
+  async function decideAndOffer(task) {
+    const d = await decide(task);
+    if (d) {
+      if (d.kind === "ask" && (d.questions || []).length) { await clarifyCard(task, { "вопросы": d.questions, "почему": d["итог"] || "" }); return; }
+      if (d.kind === "agent" && d.agent_id) {
+        const top = { id: d.agent_id, name: d.agent_name, score: (d.facts || {})["подбор_агента"] };
+        await decisionCard(task, [top].concat(d.alternatives || []));
+        return;
+      }
+      if (d.kind === "build" && (d.skills || []).length) { await assembleCard(task, decisionToPlan(d)); return; }
+      // Решение «ответить в чате» — это и есть ответ: исполнитель не нужен.
+      sendPrompt(task);
+      return;
+    }
+    // Оркестратора нет (старый сайдкар или сервер недоступен) — работаем как прежде.
+    let matches = [], need = null;
+    try {
+      const r = await api(M + "/match", { method: "POST", body: JSON.stringify({ q: task }) });
+      matches = (r && r.matches) || [];
+      if (r && r.need_more) need = r.sufficiency || {};
+    } catch { /* без подсказки */ }
+    if (need) { await clarifyCard(task, need); return; }
+    const top = matches[0];
+    if (top && top.score >= 0.32) { await decisionCard(task, matches); return; }
+    let pl = null;
+    try { pl = await api(M + "/plan", { method: "POST", body: JSON.stringify({ q: task }) }); } catch { /* план не обязателен */ }
+    if (pl && (pl.steps || []).length) { await assembleCard(task, pl); return; }
+    sendPrompt(task);
+  }
+
   // карточка уточнения: описания не хватает, чтобы выбрать исполнителя уверенно
   async function clarifyCard(text, need) {
     await ensureThread(text.slice(0, 50));
@@ -1486,6 +1510,9 @@ export async function mount(root, ctx) {
       _pasteBefore = el.value;
     }
   };
+  // Команда видна там, где человек печатает: правило «подбор только по /work» надо объявить, иначе
+  // оно выглядит как «подбор перестал работать».
+  try { $("inp").placeholder = "Опишите задачу или спросите · /work — подобрать или собрать агента"; } catch { /* не критично */ }
   $("inp").oninput = () => { clearTimeout(_sugTimer); _sugTimer = setTimeout(() => { renderAgentSuggest($("inp").value); remember(LS_DRAFT, $("inp").value); }, 280); };
   setBusy(false);
   render(); renderTools();            // первый экран сразу: шаблоны + живой композер
