@@ -1,6 +1,6 @@
 // Electron main: спавнит Python-сайдкар (движок) и рендерит модульный UI поверх него.
 // Оболочка тонкая — вся логика в сайдкаре; окно можно заменить, не трогая движок.
-const { app, BrowserWindow, shell, ipcMain, globalShortcut, clipboard } = require("electron");
+const { app, BrowserWindow, Menu, shell, ipcMain, globalShortcut, clipboard } = require("electron");
 const { spawn } = require("child_process");
 const path = require("path");
 const net = require("net");
@@ -99,6 +99,7 @@ async function createWindow() {
       preload: path.join(__dirname, "preload.js"),
     },
   });
+  installContextMenu(win);
   // внешние ссылки — в системный браузер (например, окно логина при необходимости)
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
@@ -182,6 +183,8 @@ ipcMain.handle("export:pdf", async (_e, { html, filename }) => {
 
 // Глобальный хоткей Ctrl+Shift+A: берём выделенный текст (через буфер обмена) из ЛЮБОГО
 // приложения — Word/Excel/браузер/PDF — и отправляем в чат ABOP на анализ. Один шаг для пользователя.
+let hotkeyActive = "";      // какое сочетание в итоге занято; "" — ни одно (все были заняты)
+
 function registerHotkey() {
   const { execSync } = require("child_process");
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -211,18 +214,95 @@ function registerHotkey() {
     try { clipboard.writeText(saved || ""); } catch (e) { /* noop */ }
     return out;
   };
-  try {
-    globalShortcut.register("CommandOrControl+Shift+A", async () => {
-      const text = (await grab()).trim();
-      if (!win || win.isDestroyed()) return;
-      if (win.isMinimized()) win.restore();
-      win.show(); win.focus();
-      win.webContents.send("ape:analyze", text);   // пусто → UI покажет подсказку «выделите текст»
-    });
-  } catch (e) { console.error("[hotkey] не зарегистрирован:", e && e.message); }
+  const onFire = async () => {
+    const text = (await grab()).trim();
+    if (!win || win.isDestroyed()) return;
+    if (win.isMinimized()) win.restore();
+    win.show(); win.focus();
+    win.webContents.send("ape:analyze", text);   // пусто → UI покажет подсказку «выделите текст»
+  };
+  // register() возвращает false, когда сочетание уже занято другим приложением, и исключения при
+  // этом НЕ бросает — мы проверяли только try/catch, поэтому «хоткей не работает» выглядело как
+  // молчание. Пробуем по очереди и сообщаем в интерфейс, какое сочетание в итоге живое.
+  const wanted = ["CommandOrControl+Shift+A", "CommandOrControl+Alt+A", "CommandOrControl+Shift+F9"];
+  hotkeyActive = "";
+  for (const combo of wanted) {
+    try {
+      if (globalShortcut.register(combo, onFire) && globalShortcut.isRegistered(combo)) {
+        hotkeyActive = combo;
+        break;
+      }
+      console.warn("[hotkey] занято другим приложением:", combo);
+    } catch (e) { console.error("[hotkey] не зарегистрирован:", combo, e && e.message); }
+  }
+  if (!hotkeyActive) console.error("[hotkey] ни одно сочетание не удалось занять — анализ выделенного недоступен");
+  const tell = () => { try { if (win && !win.isDestroyed()) win.webContents.send("ape:hotkey", hotkeyActive); } catch (e) { /* noop */ } };
+  tell();
+  if (win && !win.isDestroyed()) win.webContents.on("did-finish-load", tell);
 }
 
-app.whenReady().then(() => { createWindow(); registerHotkey(); });
+// Меню приложения держит акселераторы правки. Без него (а мы его не ставили вовсе) Ctrl+C, Ctrl+V,
+// Ctrl+X и Ctrl+A в окне не работают: на Windows Electron без меню их просто не регистрирует —
+// отсюда «текст не вставляется» и «скопировал из чата, а вставлять нечего». Полоску меню прячем,
+// чтобы вид приложения не менялся: горячие клавиши работают и со скрытым меню.
+function installMenu() {
+  const mac = process.platform === "darwin";
+  const template = [
+    ...(mac ? [{ role: "appMenu" }] : []),
+    {
+      label: "Правка",
+      submenu: [
+        { role: "undo", label: "Отменить" },
+        { role: "redo", label: "Повторить" },
+        { type: "separator" },
+        { role: "cut", label: "Вырезать" },
+        { role: "copy", label: "Копировать" },
+        { role: "paste", label: "Вставить" },
+        { role: "pasteAndMatchStyle", label: "Вставить без форматирования" },
+        { role: "selectAll", label: "Выделить всё" },
+      ],
+    },
+    {
+      label: "Вид",
+      submenu: [
+        { role: "reload", label: "Обновить" },
+        { role: "resetZoom", label: "Обычный размер" },
+        { role: "zoomIn", label: "Крупнее" },
+        { role: "zoomOut", label: "Мельче" },
+        { type: "separator" },
+        { role: "toggleDevTools", label: "Инструменты разработчика" },
+      ],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+// Правый клик в поле ввода: путь к буферу мышью. Нужен и сам по себе, и как страховка — если
+// сочетание клавиш перехватит другое приложение, вставить всё равно можно.
+function installContextMenu(w) {
+  w.webContents.on("context-menu", (_e, params) => {
+    const items = [];
+    if (params.isEditable) {
+      items.push({ role: "cut", label: "Вырезать", enabled: params.editFlags.canCut });
+      items.push({ role: "copy", label: "Копировать", enabled: params.editFlags.canCopy });
+      items.push({ role: "paste", label: "Вставить", enabled: params.editFlags.canPaste });
+      items.push({ type: "separator" });
+      items.push({ role: "selectAll", label: "Выделить всё" });
+    } else if (params.selectionText) {
+      items.push({ role: "copy", label: "Копировать" });
+    }
+    if (items.length) Menu.buildFromTemplate(items).popup({ window: w });
+  });
+}
+
+app.whenReady().then(() => { installMenu(); createWindow(); registerHotkey(); });
+// Буфер обмена напрямую: `navigator.clipboard` в окне зависит от разрешений и фокуса документа и
+// молча отказывает — кнопка «копировать» тогда врёт. Модуль clipboard Electron таких условий не
+// имеет, поэтому интерфейсу нужен этот путь как основной.
+ipcMain.handle("clip:write", (_e, text) => { try { clipboard.writeText(String(text == null ? "" : text)); return true; } catch (e) { return false; } });
+ipcMain.handle("clip:read", () => { try { return clipboard.readText(); } catch (e) { return ""; } });
+ipcMain.handle("hotkey:active", () => hotkeyActive);
+
 app.on("will-quit", () => { try { globalShortcut.unregisterAll(); } catch (e) { /* noop */ } });
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();

@@ -13,4 +13,13 @@ contextBridge.exposeInMainWorld("ape", {
   revealFile: (path) => ipcRenderer.invoke("file:reveal", path),
   // глобальный хоткей: выделенный текст из любого приложения (Word/Excel/браузер) → анализ в чате ABOP
   onAnalyze: (cb) => ipcRenderer.on("ape:analyze", (_e, text) => cb(text)),
+  // Какое сочетание в итоге занято: прежде занятый другим приложением хоткей молчал, и «не
+  // работает» нельзя было отличить от «не нажал».
+  onHotkey: (cb) => ipcRenderer.on("ape:hotkey", (_e, combo) => cb(combo)),
+  hotkey: () => ipcRenderer.invoke("hotkey:active"),
+  // Буфер обмена через main: `navigator.clipboard` зависит от разрешений и фокуса и отказывает молча.
+  clipboard: {
+    writeText: (text) => ipcRenderer.invoke("clip:write", text),
+    readText: () => ipcRenderer.invoke("clip:read"),
+  },
 });

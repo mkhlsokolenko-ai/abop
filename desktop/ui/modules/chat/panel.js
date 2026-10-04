@@ -889,7 +889,7 @@ export async function mount(root, ctx) {
     srch.oninput = () => { const q = srch.value.toLowerCase(); ov.querySelectorAll("#skList label").forEach((l) => { l.style.display = l.textContent.toLowerCase().includes(q) ? "" : "none"; }); };
   }
   // авто-подсказка агентов по тексту задачи (семантика через /match) → зелёные хештеги
-  let _sugTimer = null, _sugSeq = 0;
+  let _sugTimer = null, _sugSeq = 0, _pasteBefore = "";
   async function renderAgentSuggest(text) {
     const box = $("agentSug"); if (!box) return;
     const t = (text || "").trim();
@@ -1466,7 +1466,26 @@ export async function mount(root, ctx) {
   root.addEventListener("ape:relink", () => { loadThreads(); loadHitlQueue(); loadSchedules(true); loadQuota(); });
   window.__apeAnalyze = (text) => handleIntent({ analyze: text });
 
-  $("inp").onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendFromInput(); } };
+  $("inp").onkeydown = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendFromInput(); return; }
+    // Запасной путь вставки: если сочетание перехватило другое приложение или окно потеряло
+    // разрешение на буфер, Ctrl+V в поле ввода всё равно должен работать — читаем буфер сами.
+    const paste = (e.ctrlKey || e.metaKey) && (e.key === "v" || e.key === "V" || e.key === "м" || e.key === "М");
+    if (paste && window.ape && window.ape.clipboard) {
+      const el = $("inp");
+      window.ape.clipboard.readText().then((t) => {
+        if (!t) return;
+        // Вставляем только если браузер этого не сделал сам: иначе текст удвоится.
+        if (el.value === _pasteBefore) {
+          const a = el.selectionStart || 0, b = el.selectionEnd || 0;
+          el.value = el.value.slice(0, a) + t + el.value.slice(b);
+          el.selectionStart = el.selectionEnd = a + t.length;
+          remember(LS_DRAFT, el.value);
+        }
+      }).catch(() => {});
+      _pasteBefore = el.value;
+    }
+  };
   $("inp").oninput = () => { clearTimeout(_sugTimer); _sugTimer = setTimeout(() => { renderAgentSuggest($("inp").value); remember(LS_DRAFT, $("inp").value); }, 280); };
   setBusy(false);
   render(); renderTools();            // первый экран сразу: шаблоны + живой композер

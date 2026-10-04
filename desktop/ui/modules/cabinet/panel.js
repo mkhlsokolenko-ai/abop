@@ -14,8 +14,25 @@ const CARD = "padding:20px;border-radius:16px;background:var(--panel);border:1px
 const SHORTCUTS = [
   ["Ctrl K", "поиск и команды"], ["Ctrl N", "новый чат"], ["Enter", "отправить · Shift+Enter — перенос строки"],
   ["Esc", "остановить ответ · закрыть шторку или окно"],
-  ["Ctrl Shift A", "из любого приложения: выделенный текст → в чат ABOP на анализ (буфер обмена не меняется)"],
+  ["Ctrl C / Ctrl V", "копировать и вставить — работают и в поле ввода, и правым щелчком мыши"],
 ];
+
+// Какое сочетание «анализа выделенного» занято на самом деле. Прежде мы писали Ctrl+Shift+A как
+// данность, а если его перехватило другое приложение, человек видел неработающую подсказку: занятый
+// хоткей молчал. Теперь главный процесс сообщает занятое сочетание, и подпись говорит правду.
+const HOTKEY_RU = { "CommandOrControl+Shift+A": "Ctrl Shift A", "CommandOrControl+Alt+A": "Ctrl Alt A",
+                    "CommandOrControl+Shift+F9": "Ctrl Shift F9" };
+
+async function analyzeShortcut() {
+  let combo = "CommandOrControl+Shift+A";
+  try { if (window.ape && window.ape.hotkey) combo = (await window.ape.hotkey()) || ""; } catch { /* старая сборка */ }
+  if (!combo) {
+    return ["— занято", "анализ выделенного недоступен: все сочетания перехвачены другими приложениями. "
+            + "Скопируйте текст и вставьте в чат (Ctrl V)"];
+  }
+  return [HOTKEY_RU[combo] || combo,
+          "из любого приложения: выделенный текст → в чат ABOP на анализ (буфер обмена не меняется)"];
+}
 
 export async function mount(root, ctx) {
   const { api, toast, humanError } = ctx;
@@ -24,6 +41,8 @@ export async function mount(root, ctx) {
   // отдел «—», уровень «—», источников 0. Теперь сбой виден, и есть чем его повторить.
   let loadError = "";
   const keep = (e) => { if (!loadError) loadError = humanError(e); return null; };
+  // Подпись «анализа выделенного» — по факту занятого сочетания, а не по тому, что мы задумали.
+  const analyzeKey = await analyzeShortcut();
   // Руководства отдаёт сам ABOP: документ, лежащий в репозитории, до пользователя не доходит.
   const [u, me, pol, agents, conns, guides] = await Promise.all([
     api(C + "/usage").catch(keep),
@@ -121,7 +140,7 @@ export async function mount(root, ctx) {
         </div>` : ""}
         <div style="display:flex;flex-direction:column;gap:9px">
           <span style="font-size:12.5px;font-weight:600">Горячие клавиши</span>
-          ${SHORTCUTS.map((s) => `<span style="display:flex;align-items:center;gap:10px;font-size:12px;color:var(--ink-2)"><span style="font-family:var(--mono);font-size:11px;padding:3px 8px;border-radius:7px;background:var(--hover);border:1px solid var(--line);white-space:nowrap">${esc(s[0])}</span>${esc(s[1])}</span>`).join("")}
+          ${SHORTCUTS.concat([analyzeKey]).map((s) => `<span style="display:flex;align-items:center;gap:10px;font-size:12px;color:var(--ink-2)"><span style="font-family:var(--mono);font-size:11px;padding:3px 8px;border-radius:7px;background:var(--hover);border:1px solid var(--line);white-space:nowrap">${esc(s[0])}</span>${esc(s[1])}</span>`).join("")}
         </div>
       </div>
     </div></div>`;

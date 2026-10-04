@@ -183,8 +183,24 @@ export function fileToast(msg, path) {
 // Отказ буфера (нет разрешения, пустой источник) теперь виден: прежде кнопка врала «скопировано».
 export async function copyText(text, btn, what) {
   const v = String(text == null ? "" : text);
-  let ok = true;
-  try { await navigator.clipboard.writeText(v); } catch { ok = false; }
+  // Три пути по убыванию надёжности. `navigator.clipboard` зависит от разрешений и фокуса документа
+  // и отказывает МОЛЧА — тогда кнопка говорила «скопировано», а вставлять было нечего. Путь через
+  // main (модуль clipboard Electron) таких условий не имеет; execCommand остаётся для веб-версии.
+  let ok = false;
+  if (window.ape && window.ape.clipboard) {
+    try { ok = !!(await window.ape.clipboard.writeText(v)); } catch { ok = false; }
+  }
+  if (!ok) { try { await navigator.clipboard.writeText(v); ok = true; } catch { ok = false; } }
+  if (!ok) {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = v; ta.setAttribute("readonly", "");
+      ta.style.cssText = "position:fixed;left:-9999px;top:0";
+      document.body.appendChild(ta); ta.select();
+      ok = document.execCommand("copy");
+      ta.remove();
+    } catch { ok = false; }
+  }
   if (btn) {
     const was = btn.dataset.copyWas || btn.textContent;
     btn.dataset.copyWas = was;
