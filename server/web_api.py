@@ -2361,16 +2361,16 @@ async def plan_auto(body: dict, u: dict = Depends(user)) -> dict:
     return p
 
 
-async def _agent_for_skill(sid: str, u: dict) -> dict | None:
-    """Готовый ПРОСТОЙ агент ровно на этот навык — чтобы сборка из плана не плодила однофамильцев.
+async def _agent_for_skills(sids: list[str], u: dict) -> dict | None:
+    """Готовый агент ровно на этот набор навыков — чтобы сборка из плана не плодила однофамильцев.
 
     Прежде каждый шаг плана заводил нового агента (а при повторной сборке — новую версию того же),
     и после нескольких проб «Мои агенты» зарастали карточками, отличающимися только номером версии.
     Если подходящий агент уже есть, цепочка должна ссылаться на него.
 
-    Подходящим считаем активного агента, у которого РОВНО один узел-навык и это нужный навык, и у
-    которого нет вывода во внешний канал: шаг цепочки не должен неожиданно начать отправлять письма
-    или заводить задачи только потому, что когда-то такой агент собрали с доставкой.
+    Подходящим считаем активного агента, у которого набор узлов-навыков совпадает с планом и нет
+    вывода во внешний канал: собранный по плану агент не должен неожиданно начать отправлять письма
+    или заводить задачи только потому, что когда-то такого агента собрали с доставкой.
 
     Свои агенты предпочтительнее общих: у общего может не хватить прав на запуск у этого человека.
     """
@@ -2388,7 +2388,7 @@ async def _agent_for_skill(sid: str, u: dict) -> dict | None:
         graph = (ag or {}).get("graph") or {}
         nodes = [n for n in (graph.get("nodes") or []) if isinstance(n, dict)]
         skills = [str(n.get("skill") or "") for n in nodes if n.get("kind") == "skill"]
-        if skills != [sid]:
+        if sorted(skills) != sorted(sids):
             continue
         outward = any(n.get("kind") == "out"
                       and str((n.get("out") or {}).get("channel") or "") not in assembly._LOCAL_CHANNELS
@@ -2405,49 +2405,86 @@ async def _agent_for_skill(sid: str, u: dict) -> dict | None:
 
 @app.post("/api/plan/auto/build")
 async def plan_auto_build(body: dict, u: dict = Depends(user)) -> dict:
-    """Собрать из плана настоящих агентов и цепочку — один шаг от плана к исполнению.
+    """Собрать из плана исполнителя — ОДНОГО агента на все навыки плана.
 
-    Каждый шаг плана становится агентом из одного навыка (семья берётся из навыка), а сами шаги —
-    цепочкой с зависимостями. Пока планировщик умеет только это: собирать новых агентов, а не
-    подбирать существующих, — зато цепочка исполнима по построению.
+    Прежде каждый шаг плана становился отдельным агентом, а шаги — цепочкой. Владелец, прогнав такую
+    цепочку, сказал главное: «навыки работают в вакууме, и отчёт получается на каждый шаг». Так и
+    было. У цепочки агентов вход следующего шага — это ТЕКСТОВЫЙ блок с результатом предыдущего,
+    склеенный в промпт; каждый шаг — отдельный прогон, а значит и отдельный отчёт.
+
+    Внутри ОДНОГО агента всё иначе: навыки идут волнами, выход кладётся на доску прогона под
+    объявленным ключом, а приёмник получает ровно тот ключ, который объявил входом (`from: skill` /
+    `from: board`). Это и есть точная передача — по контракту, а не пересказом. И прогон один, значит
+    отчёт один: бланк вертикали собирает разделы по всем навыкам прогона.
+    Поэтому план теперь собирается в одного агента, а цепочка остаётся по явной просьбе
+    (`as_chain: true`) — она нужна там, где у шагов разная доставка или своё подтверждение.
     """
     require_level(u, "manager")
     steps = (body or {}).get("steps") or []
     if not steps:
         raise HTTPException(422, "нечего собирать: план пуст")
-    name = str((body or {}).get("name") or "Цепочка по плану").strip()
-    reuse = bool((body or {}).get("reuse", True))   # по умолчанию переиспользуем готовых
-    made, ids = [], {}
+    name = str((body or {}).get("name") or "Агент по плану").strip()
+    reuse = bool((body or {}).get("reuse", True))      # по умолчанию переиспользуем готовых
+    as_chain = bool((body or {}).get("as_chain", False))
+    sids: list[str] = []
     for st in steps:
         sid = str(st.get("skill") or "")
         if sid not in ape.SKILLS:
             raise HTTPException(422, f"нет навыка «{sid}»")
+        if sid not in sids:
+            sids.append(sid)
+
+    def _family_of(sid: str) -> str:
         fams = [f for f, spec in ape.AGENT_FAMILIES.items()
                 if any(sid in (m[1] or []) for m in (spec.get("members") or {}).values())]
-        fam = fams[0] if fams else "management"
-        # Готовый простой агент на этот навык — берём его: ссылка на существующего честнее, чем
-        # ещё одна карточка с тем же навыком и другим номером версии.
-        exist = await _agent_for_skill(sid, u) if reuse else None
-        if exist:
-            ids[sid] = exist["id"]
-            made.append({"skill": sid, "agent_id": exist["id"],
-                         "family": exist.get("family") or fam, "name": exist.get("name"), "reused": True})
-            continue
-        resp = await agent_author({"name": f"{st.get('title') or sid}", "family": fam,
-                                   "skills": [sid]}, u)
-        # agent_author отдаёт JSONResponse (201) — достаём тело, иначе id потеряется молча
-        import json as _json  # noqa: PLC0415 — модуль импортируется по месту, как и в соседних роутах
+        return fams[0] if fams else "management"
+
+    async def _author(one_name: str, skills: list[str]) -> dict:
+        """Создать агента и вернуть тело ответа: agent_author отдаёт JSONResponse."""
+        resp = await agent_author({"name": one_name, "family": _family_of(skills[0]), "skills": skills}, u)
+        import json as _json  # noqa: PLC0415 — как и в соседних роутах, модуль по месту
         ag = _json.loads(bytes(resp.body).decode()) if hasattr(resp, "body") else (resp or {})
         if not ag.get("id"):
-            raise HTTPException(500, f"агент по навыку «{sid}» не собрался")
+            raise HTTPException(500, "агент по плану не собрался")
+        return ag
+
+    if not as_chain:
+        exist = await _agent_for_skills(sids, u) if reuse else None
+        if exist:
+            return {"ok": True, "agent_id": exist["id"], "name": exist.get("name"), "skills": sids,
+                    "pipeline": None, "created": 0, "reused": 1,
+                    "agents": [{"agent_id": exist["id"], "name": exist.get("name"),
+                                "skills": sids, "reused": True}],
+                    "note": f"готовый агент «{exist.get('name')}» уже умеет эти навыки ({len(sids)}) — "
+                            f"собирать нечего, запускаю его"}
+        ag = await _author(name, sids)
+        return {"ok": True, "agent_id": ag["id"], "name": name, "skills": sids,
+                "pipeline": None, "created": 1, "reused": 0,
+                "agents": [{"agent_id": ag["id"], "name": name, "skills": sids, "reused": False}],
+                "note": f"собран агент из {len(sids)} навыков: передача между ними идёт по контрактам, "
+                        f"отчёт будет один"}
+
+    # ── цепочка по явной просьбе: у шагов разная доставка или своё подтверждение ──
+    made, ids = [], {}
+    for st in steps:
+        sid = str(st.get("skill") or "")
+        if sid in ids:
+            continue
+        exist = await _agent_for_skills([sid], u) if reuse else None
+        if exist:
+            ids[sid] = exist["id"]
+            made.append({"skill": sid, "agent_id": exist["id"], "family": exist.get("family") or _family_of(sid),
+                         "name": exist.get("name"), "reused": True})
+            continue
+        ag = await _author(str(st.get("title") or sid), [sid])
         ids[sid] = ag["id"]
-        made.append({"skill": sid, "agent_id": ag["id"], "family": fam,
+        made.append({"skill": sid, "agent_id": ag["id"], "family": _family_of(sid),
                      "name": ag.get("name"), "reused": False})
     pl_steps = []
     for i, st in enumerate(steps, 1):
         sid = str(st.get("skill") or "")
         step = {"id": "p" + str(i), "agent_id": ids[sid], "deliver": "chat"}
-        after = [f"p{j}" for j, prev in enumerate(steps, 1) if str(prev.get('skill')) in (st.get("after") or [])]
+        after = [f"p{j}" for j, prev in enumerate(steps, 1) if str(prev.get("skill")) in (st.get("after") or [])]
         if after:
             step["after"] = after
         pl_steps.append(step)
@@ -2456,7 +2493,8 @@ async def plan_auto_build(body: dict, u: dict = Depends(user)) -> dict:
     _who = f"агентов {len(made)}: новых {_new}, переиспользовано {_reused}"
     if len(pl_steps) < 2:
         return {"ok": True, "agents": made, "pipeline": None, "created": _new, "reused": _reused,
-                "note": f"в плане один шаг — цепочка не нужна, запускайте агента напрямую ({_who})"}
+                "agent_id": made[0]["agent_id"],
+                "note": f"в плане один шаг — цепочка не нужна, запускаю агента напрямую ({_who})"}
     pl = await pipeline_save({"name": name, "steps": pl_steps}, u)
     return {"ok": True, "agents": made, "pipeline": pl.get("id"), "name": pl.get("name"),
             "created": _new, "reused": _reused,

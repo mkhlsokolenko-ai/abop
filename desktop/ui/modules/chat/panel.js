@@ -1010,7 +1010,8 @@ export async function mount(root, ctx) {
       <div class="dcard-quote">${esc(String(a.task).slice(0, 200))}</div>
       <div class="dcard-title">${esc(chain)}</div>
       <div class="dcard-body">${rows}</div>
-      ${a.report_template ? `<div class="dcard-why"><span>результат оформит бланк «${esc(a.report_template)}»</span></div>` : ""}
+      <div class="dcard-why"><span>один агент на ${a.steps.length} навык(ов) — передача по контрактам, отчёт один</span>
+        ${a.report_template ? `<span>бланк «${esc(a.report_template)}»</span>` : ""}</div>
       ${(a.missing || []).length ? `<div class="dcard-warn">Не хватает: ${esc(a.missing.join("; "))}</div>` : ""}
       ${a.note ? `<div class="dcard-note">${esc(a.note)}</div>` : ""}
       <div class="dcard-acts">
@@ -1030,16 +1031,14 @@ export async function mount(root, ctx) {
     try { const cat = await api(M + "/abop-agents"); if (Array.isArray(cat) && cat.length) abopAgents = cat; } catch { /* имена подтянутся позже */ }
     await loadPipelines();
     const made = (r && r.agents) || [];
-    // Сколько заведено нового, а сколько взято готовым: иначе каждая проба выглядит как новая
-    // порция карточек в «Моих агентах», даже когда там ничего не прибавилось.
-    const fresh = (r && r.created != null) ? r.created : made.filter((m) => !m.reused).length;
-    const kept = (r && r.reused != null) ? r.reused : made.filter((m) => m.reused).length;
-    const what = fresh ? `новых агентов ${fresh}` + (kept ? `, готовых ${kept}` : "") : `все ${kept} агента взяты готовыми`;
-    await note(`Собрано: ${what}${r && r.pipeline ? ", цепочка готова" : ""}. Запускаю.`, { notice: { icon: "🧩" } });
+    // Что получилось: ABOP собирает ОДНОГО агента на все навыки плана — тогда передача между
+    // навыками идёт по контрактам (доска прогона), и отчёт выходит один, а не по одному на шаг.
+    await note(r && r.note ? r.note : "Собрано. Запускаю.", { notice: { icon: "🧩" } });
     render();
-    if (r && r.pipeline) runPipeline(r.pipeline, a.task);
+    if (r && r.agent_id) runAbopAgentDeliver(r.agent_id, r.name || agentName(r.agent_id), a.task, "");
+    else if (r && r.pipeline) runPipeline(r.pipeline, a.task);
     else if (made.length === 1) runAbopAgentDeliver(made[0].agent_id, skillName(made[0].skill) || made[0].skill, a.task, "");
-    else { await note("Собрать не удалось: ABOP не вернул ни цепочки, ни агента.", { notice: { icon: "⚠" } }); render(); }
+    else { await note("Собрать не удалось: ABOP не вернул ни агента, ни цепочки.", { notice: { icon: "⚠" } }); render(); }
   }
 
   // Почему выбран этот агент: оценка совпадения и слова, по которым он подобран. Для цепочки это

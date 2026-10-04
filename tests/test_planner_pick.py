@@ -117,3 +117,9 @@ def test_в_исходниках_нет_управляющих_символов(
             if ch in txt:
                 bad.append(f"{p.relative_to(root)}: символ {hex(ord(ch))}")
     assert not bad, "управляющий символ в исходнике: " + "; ".join(bad)
+
+
+def test_подсказка_слабее_названного_адресата_по_построению():
+    """Неравенство между весами — часть правила, а не случайность подбора чисел."""
+    assert planner.HINT_CAP < planner.TARGET_BONUS,         "подсказка от похожего агента стала сильнее слов человека про адресата"
+    assert 0 < planner.HINT_WEIGHT <= 1 and planner.MIN_CANDIDATE > 0
