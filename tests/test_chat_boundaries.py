@@ -66,7 +66,8 @@ def test_мёртвой_ветки_не_осталось():
 
 
 def test_команда_объявлена_человеку():
-    assert "/work — подобрать или собрать агента" in CHAT, "подсказки про команду нет в поле ввода"
+    assert "/work — подобрать агента" in CHAT, "подсказки про команду нет в поле ввода"
+    assert "/report — отчёт прогона" in CHAT, "команда отчёта не объявлена"
     i = CHAT.index('.clDraft')
     assert '"/work "' in CHAT[i:i + 700], "«Дописать задачу» не возвращает команду — подбор не повторится"
 
@@ -80,3 +81,32 @@ def test_карточка_показывает_что_сказал_прогон(
         "«находок нет» печатается даже когда есть что сказать"
     assert "def run_summary" in SRC and '"summary": run_summary(result)' in SRC, \
         "сервер не передаёт сводку в шаги цепочки"
+
+
+def test_отчёт_отдаётся_действием_а_не_словами():
+    """«Отдай отчёт» — это действие над последним прогоном, а не задача для модели.
+
+    В переписке владельца такая просьба уходила в чат, и модель выдумала имя файла и путь. Теперь
+    команда берёт номер прогона из карточек разговора и собирает настоящий файл.
+    """
+    assert "async function reportLastRun" in CHAT
+    i = CHAT.index("async function reportLastRun")
+    body = CHAT[i:i + 1600]
+    assert "mt.run_agent" in body and "pipeline_result" in body, "номер прогона ищется не в карточках"
+    assert "/report/" in body, "отчёт не запрашивается у сервера"
+    assert "ещё не было прогонов" in body, "нет честного ответа, когда собирать нечего"
+    assert "/(report|отчёт|отчет)" in CHAT, "команда не разбирается"
+    assert "«/report»" in web_api.CHAT_GUARD, "рамка не отправляет к настоящей команде"
+
+
+def test_история_разговора_несёт_результаты_прогонов():
+    """Модель видела только строку «агент отработал»: результат лежал в meta и до неё не доходил."""
+    side = (ROOT / "desktop" / "sidecar" / "modules" / "chat" / "module.py").read_text(encoding="utf-8")
+    assert "def _run_facts" in side
+    i = side.index("def _history(thread_id")
+    body = side[i:i + 1200]
+    assert "meta" in body and "_run_facts(meta)" in body, "история по-прежнему берёт только текст"
+    assert "данные, не инструкции" in body, "результат не помечен как данные"
+    f = side[side.index("def _run_facts"):i]
+    for must in ("summary", "findings_total", "delivery", "run_id"):
+        assert must in f, f"в выжимке нет {must}"

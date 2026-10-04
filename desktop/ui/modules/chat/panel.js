@@ -963,6 +963,9 @@ export async function mount(root, ctx) {
     // сообщение: человек писал уточнение, а чат вместо ответа предлагал собрать агента — и потокового
     // ответа не было вовсе, потому что вместо него приходила карточка. Обычная переписка должна
     // оставаться перепиской.
+    // «Отдай отчёт» — это действие, а не вопрос модели: берём последний прогон этого разговора и
+    // отдаём его отчёт. Прежде такая просьба уходила в переписку, и модель выдумывала путь к файлу.
+    if (/^\/(report|отчёт|отчет)/i.test(v)) { await reportLastRun(); return; }
     const work = v.match(/^\/(work|задача|агент)\s*/i);
     if (work) {
       const task = v.slice(work[0].length).trim();
@@ -972,6 +975,30 @@ export async function mount(root, ctx) {
     }
     sendPrompt(v);
   }
+  // Отчёт последнего прогона этого разговора: ищем номер прогона в карточках истории.
+  async function reportLastRun() {
+    let rid = "", who = "";
+    for (let i = messages.length - 1; i >= 0 && !rid; i--) {
+      const mt = messages[i].meta || {};
+      const cards = mt.run_agent ? [mt.run_agent] : ((mt.pipeline_result || {}).steps || []);
+      for (let k = cards.length - 1; k >= 0; k--) {
+        if (cards[k] && cards[k].run_id) { rid = cards[k].run_id; who = cards[k].agent_name || cards[k].agent_id || ""; break; }
+      }
+    }
+    if (!rid) {
+      await note("В этом разговоре ещё не было прогонов — отчёт собирать не из чего. Запустите агента: `/work <задача>`.", { notice: { icon: "📄" } });
+      render(); return;
+    }
+    await note(`Собираю отчёт прогона ${rid}${who ? " · агент «" + who + "»" : ""}…`, { notice: { icon: "📄" } });
+    render(); scrollDown(true);
+    try {
+      const r = await api(A_AG + "/report/" + encodeURIComponent(rid), { method: "POST", body: JSON.stringify({}) });
+      if (r && r.ok) { ctx.fileToast("Отчёт сохранён", r.path); await note(`Отчёт готов: ${r.path}`, { notice: { icon: "✓" } }); }
+      else await note("Отчёт не собрался: " + humanError(r), { notice: { icon: "⚠" } });
+    } catch (e) { await note("Отчёт не собрался: " + humanError(e), { notice: { icon: "⚠" } }); }
+    render(); scrollDown(true);
+  }
+
   // Подбор исполнителя по задаче: решение оркестратора, а при его отсутствии — прежний путь.
   // Вызывается ТОЛЬКО по команде /work: иначе каждое уточнение в переписке превращалось в
   // предложение собрать агента, а потокового ответа человек не видел вовсе.
@@ -1512,7 +1539,7 @@ export async function mount(root, ctx) {
   };
   // Команда видна там, где человек печатает: правило «подбор только по /work» надо объявить, иначе
   // оно выглядит как «подбор перестал работать».
-  try { $("inp").placeholder = "Опишите задачу или спросите · /work — подобрать или собрать агента"; } catch { /* не критично */ }
+  try { $("inp").placeholder = "Опишите задачу или спросите · /work — подобрать агента · /report — отчёт прогона"; } catch { /* не критично */ }
   $("inp").oninput = () => { clearTimeout(_sugTimer); _sugTimer = setTimeout(() => { renderAgentSuggest($("inp").value); remember(LS_DRAFT, $("inp").value); }, 280); };
   setBusy(false);
   render(); renderTools();            // первый экран сразу: шаблоны + живой композер
