@@ -109,7 +109,7 @@ export async function mount(root, ctx) {
         <div style="max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:9px">
           <div id="hitlBar"></div>
           <div id="dock" class="dock"></div>
-          <div style="padding:12px 14px;border-radius:16px;background:var(--panel);border:1px solid var(--line-2);backdrop-filter:var(--blur-strong);box-shadow:var(--shadow-2);display:flex;flex-direction:column;gap:10px">
+          <div style="padding:12px 14px;border-radius:var(--r-xl);background-color:var(--panel);background-image:var(--panel-grad);border:1px solid var(--line-2);backdrop-filter:var(--blur-strong);box-shadow:var(--shadow-2),var(--edge);display:flex;flex-direction:column;gap:10px">
             <div id="tools" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"></div>
             <div style="display:flex;align-items:flex-end;gap:10px">
               <textarea id="inp" rows="2" aria-label="Сообщение" placeholder="Опишите задачу…  (Enter — отправить, Shift+Enter — перенос)" style="flex:1;min-width:0;padding:10px 12px;border-radius:12px;font-size:13.5px;line-height:1.55"></textarea>
@@ -409,10 +409,10 @@ export async function mount(root, ctx) {
           <h1 style="margin:0;font-size:24px;font-weight:800;letter-spacing:-.6px">С чего начнём?</h1>
           <p style="margin:0;max-width:460px;font-size:13.5px;line-height:1.55;color:var(--ink-2)">Опишите задачу словами или возьмите готовый шаблон — чат создастся сам. Файлы можно просто перетащить в окно.</p></div></div>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(214px,1fr));gap:12px">
-        ${TEMPLATES.map((t, i) => `<button type="button" data-tpl="${i}" class="lift" style="display:flex;flex-direction:column;align-items:flex-start;gap:7px;padding:15px;border:1px solid var(--line);border-radius:14px;background:var(--panel);backdrop-filter:blur(16px);box-shadow:var(--shadow-1);text-align:left;color:inherit">
+        ${TEMPLATES.map((t, i) => `<button type="button" data-tpl="${i}" class="lift" style="display:flex;flex-direction:column;align-items:flex-start;gap:7px;padding:16px;border:1px solid var(--line);border-radius:var(--r-lg);background-color:var(--panel);background-image:var(--panel-grad);backdrop-filter:blur(16px);box-shadow:var(--shadow-1),var(--edge);text-align:left;color:inherit">
           <span style="font-size:17px" aria-hidden="true">${t[0]}</span><span style="font-size:13.5px;font-weight:600;color:var(--ink)">${t[1]}</span><span style="font-size:11.5px;line-height:1.45;color:var(--ink-3)">${t[2]}</span></button>`).join("")}
       </div>
-      <div style="display:flex;align-items:center;gap:16px;padding:14px 18px;border-radius:14px;background:var(--panel);border:1px solid var(--line);flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:16px;padding:14px 18px;border-radius:var(--r-lg);background-color:var(--panel);background-image:var(--panel-grad);border:1px solid var(--line);box-shadow:var(--edge);flex-wrap:wrap">
         <span class="ape-label">${ctx.authed ? "как это работает" : "первый запуск"}</span>
         ${steps.map((o) => `<span style="display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-2)"><span style="width:20px;height:20px;border-radius:7px;background:var(--hover);color:var(--accent-ink);font-family:var(--mono);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">${o[0]}</span>${o[1]}</span>`).join("")}
       </div></div>`;

@@ -39,20 +39,25 @@ export function apeMascot(state = "idle", size = 32) {
 
 // Лого в шапке (1:1 из header макета).
 export function apeLogo(size = 30) {
+  // Знак — тот же, что в вебе, вплоть до плашки и кольца: тёмная плашка, по ней градиентное кольцо
+  // (фиолетовый → индиго → изумруд) и светлый корпус. Раньше десктоп заливал плашку сплошным
+  // градиентом — знак читался как другой продукт, хотя робот тот же.
   return `<svg width="${size}" height="${size}" viewBox="0 0 72 72" fill="none" style="flex:none">
     <defs>
-      <linearGradient id="apeMark" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8b5cf6"/><stop offset=".55" stop-color="#6366f1"/><stop offset="1" stop-color="#4338ca"/></linearGradient>
-      <linearGradient id="apeVisor" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1e1b4b"/><stop offset="1" stop-color="#3730a3"/></linearGradient>
+      <linearGradient id="apePlate" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0f172a"/><stop offset="1" stop-color="#1e1b4b"/></linearGradient>
+      <linearGradient id="apeMark" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#c7d2fe"/><stop offset=".5" stop-color="#818cf8"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient>
+      <linearGradient id="apeRing" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8b5cf6" stop-opacity=".9"/><stop offset=".5" stop-color="#6366f1" stop-opacity=".35"/><stop offset="1" stop-color="#34d399" stop-opacity=".75"/></linearGradient>
+      <linearGradient id="apeVisor" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0f172a"/><stop offset="1" stop-color="#1e1b4b"/></linearGradient>
     </defs>
-    <rect width="72" height="72" rx="20" fill="url(#apeMark)"/>
-    <g transform="translate(3.45 5.85) scale(0.84)">
-      <rect x="34.4" y="9" width="3.2" height="8" rx="1.6" fill="#ffffff" opacity=".8"/>
-      <circle cx="36" cy="7.4" r="3.6" fill="#34d399"/>
-      <rect x="53" y="37" width="7.5" height="17" rx="3.75" fill="#c7d2fe"/>
-      <path d="M17 38a19 19 0 0 1 38 0v16a9 9 0 0 1-9 9H26a9 9 0 0 1-9-9Z" fill="#ffffff"/>
-      <rect x="24" y="60" width="11" height="8" rx="4" fill="#ffffff"/>
-      <rect x="38" y="60" width="11" height="8" rx="4" fill="#ffffff"/>
-      <rect x="23.5" y="33" width="25" height="14" rx="7" fill="url(#apeVisor)"/>
-    </g>
+    <rect width="72" height="72" rx="20" fill="url(#apePlate)"/>
+    <rect x="1.2" y="1.2" width="69.6" height="69.6" rx="19" stroke="url(#apeRing)" stroke-width="2.4"/>
+    <rect x="34.4" y="10" width="3.2" height="8" rx="1.6" fill="#818cf8" opacity=".85"/>
+    <circle cx="36" cy="8.4" r="3.6" fill="#34d399"/>
+    <rect x="53" y="38" width="7" height="16" rx="3.5" fill="#6366f1" opacity=".85"/>
+    <path d="M17 39a19 19 0 0 1 38 0v15a9 9 0 0 1-9 9H26a9 9 0 0 1-9-9Z" fill="url(#apeMark)"/>
+    <rect x="24" y="60" width="11" height="8" rx="4" fill="#c7d2fe"/>
+    <rect x="38" y="60" width="11" height="8" rx="4" fill="#c7d2fe"/>
+    <rect x="23.5" y="34" width="25" height="14" rx="7" fill="url(#apeVisor)"/>
+    <rect x="26.5" y="37" width="10" height="4" rx="2" fill="#ffffff" opacity=".2"/>
   </svg>`;
 }

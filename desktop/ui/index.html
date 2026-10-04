@@ -20,6 +20,7 @@
           <span style="font-family:var(--mono);font-size:15px;font-weight:700;letter-spacing:-.3px">ABOP</span>
           <span id="verChip" style="font-size:11px;color:var(--ink-3)"></span>
         </span>
+        <button id="railToggle" class="ico" title="Свернуть меню разделов" aria-label="Свернуть меню разделов" aria-expanded="true" style="margin-left:4px">«</button>
       </div>
       <button id="cmdBtn" title="Командная палитра · Ctrl+K" aria-label="Поиск и команды, Ctrl+K" style="display:flex;align-items:center;gap:10px;min-width:240px;padding:7px 12px;border:1px solid var(--line);border-radius:9999px;background:var(--panel);color:var(--ink-3);font-size:12.5px;text-align:left">
         <span>Поиск и команды</span>
@@ -45,11 +46,12 @@
     <div id="updateBar" style="display:none"></div>
 
     <div style="flex:1;display:flex;min-height:0;position:relative">
-      <aside aria-label="Разделы" style="flex:none;width:86px;display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 8px;border-right:1px solid var(--line);background:var(--rail);backdrop-filter:blur(16px)">
-        <div id="railNav" style="display:flex;flex-direction:column;align-items:center;gap:6px;width:100%"></div>
-        <span style="width:34px;height:1px;background:var(--line);margin:10px 0 6px"></span>
-        <span style="font-family:var(--mono);font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:var(--ink-3)">быстрые</span>
-        <div id="railQuick" style="display:flex;flex-direction:column;align-items:center;gap:6px;width:100%"></div>
+      <aside id="rail" aria-label="Разделы" style="flex:none;width:var(--rail-w);display:flex;flex-direction:column;gap:3px;padding:14px 10px 14px 0;border-right:1px solid var(--line);background-image:var(--rail-grad);backdrop-filter:blur(18px);transition:width .26s cubic-bezier(.4,0,.2,1);overflow:hidden">
+        <span class="railcap" style="margin:0 0 6px 11px">маршрут</span>
+        <div id="railNav" style="display:flex;flex-direction:column;gap:3px;width:100%"></div>
+        <span style="height:1px;background:var(--line);margin:12px 8px 10px 11px"></span>
+        <span class="railcap" style="margin:0 0 6px 11px">быстрые</span>
+        <div id="railQuick" style="display:flex;flex-direction:column;gap:4px;width:100%;padding:0 0 0 11px"></div>
       </aside>
       <main id="panel" style="flex:1;display:flex;min-width:0;min-height:0"></main>
     </div>

@@ -280,12 +280,29 @@ async function startLogin() {
 function renderAuthBox(me) {
   const box = $("authBox"); if (!box) return;
   if (me.authed) {
-    const mail = me.email ? `<span title="почта, под которой действуют агенты" style="font-size:11px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px">✉ ${esc(me.email)}</span>` : "";
-    const dept = me.department ? `<span style="font-size:11px;color:var(--accent-ink-2)">· ${esc(me.department)}</span>` : "";
-    box.innerHTML = `<span style="display:flex;flex-direction:column;line-height:1.25;min-width:0;max-width:210px">
-        <span style="font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">🔑 ${esc(me.name || me.user || "")}${dept}</span>${mail}</span>
-      <button class="btn sm" id="logoutBtn" style="flex:none">Выйти</button>`;
-    $("logoutBtn").onclick = async () => { try { await api("/api/auth/logout", { method: "POST" }); } catch { /* noop */ } await renderAuth(); reloadAll(); };
+    // Учётная запись занимала треть шапки: имя, почта и «Выйти» в строку. Теперь одна плашка с
+    // инициалами, а имя, почта, отдел и выход — по нажатию: шапка про состояние работы, а не про то,
+    // кто вошёл. Почта остаётся видимой в подсказке — под ней действуют агенты.
+    const nm = String(me.name || me.user || "").trim();
+    const ini = (nm.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("") || "·").toUpperCase();
+    box.innerHTML = `<button id="meBtn" title="${esc(nm + (me.email ? " · " + me.email : ""))}" aria-label="Учётная запись: ${esc(nm)}"
+        style="display:flex;align-items:center;gap:9px;padding:4px 11px 4px 4px;border:1px solid var(--line);border-radius:9999px;background-color:var(--panel);background-image:var(--panel-grad);box-shadow:var(--edge);color:var(--ink-2)">
+        <span aria-hidden="true" style="width:28px;height:28px;flex:none;border-radius:9999px;background-image:var(--grad);color:#fff;font-family:var(--mono);font-size:11.5px;font-weight:700;display:flex;align-items:center;justify-content:center;box-shadow:var(--edge-strong)">${esc(ini)}</span>
+        <span style="font-size:12.5px;font-weight:600;color:var(--ink);max-width:132px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(nm)}</span></button>`;
+    $("meBtn").onclick = () => {
+      const rows = [["имя", nm], ["почта", me.email || "—"], ["отдел", me.department || "—"],
+                    ["роль", (ctx.roles || []).join(", ") || ctx.level || "—"]];
+      const ov = modal("Учётная запись",
+        `<div style="display:flex;flex-direction:column;gap:8px">${rows.map(([k, v]) => `<div style="display:flex;gap:10px;align-items:baseline">
+          <span class="ape-label" style="min-width:52px">${k}</span><span style="font-size:13px;color:var(--ink);word-break:break-all">${esc(String(v))}</span></div>`).join("")}
+          <div class="dcard-note">Под этой почтой агенты отправляют письма и заводят задачи — проверяйте её перед внешними действиями.</div>
+          <button class="btn danger" id="logoutBtn" style="align-self:flex-start;margin-top:4px">Выйти из ABOP</button></div>`,
+        null, "Закрыть", { width: "420px" });
+      ov.querySelector("#logoutBtn").onclick = async () => {
+        try { await api("/api/auth/logout", { method: "POST" }); } catch { /* noop */ }
+        ov.close(true); await renderAuth(); reloadAll();
+      };
+    };
   } else if (me.busy) {
     box.innerHTML = `<span style="display:flex;align-items:center;gap:8px">
         <span style="font-size:12px;color:var(--ink-2)">${apeMascot("thinking", 18)}</span>
@@ -334,19 +351,45 @@ export function setHitlCount(n) {
   renderNav();
 }
 
+// Раздел в рейле — строка маршрута, как в вебе: плашка знака, подпись, полоса слева у текущего.
+// Форма и цвет живут в теме (.navitem), здесь только данные: иначе вид расходился между рейлом
+// десктопа и навигацией веба при каждой правке.
 function railBtn(m, on) {
-  const bg = on ? "var(--accent-bg)" : "var(--panel)", fg = on ? "var(--accent-ink)" : "var(--ink-2)", bd = on ? "var(--line-2)" : "var(--line)";
   const label = RAIL_TITLE[m.id] || m.title;
   const badge = (m.id === "chat" && hitlCount)
-    ? `<span title="Ждут вашего решения" style="position:absolute;top:5px;right:8px;min-width:17px;height:17px;padding:0 4px;border-radius:9999px;background:var(--warn-ink);color:#1a1205;font-size:10.5px;font-weight:800;display:flex;align-items:center;justify-content:center">${hitlCount > 99 ? "99+" : hitlCount}</span>` : "";
+    ? `<span class="bdg" title="Ждут вашего решения">${hitlCount > 99 ? "99+" : hitlCount}</span>` : "";
   const aria = (m.id === "chat" && hitlCount) ? `${label}, ждут решения: ${hitlCount}` : label;
-  return `<button data-id="${esc(m.id)}" aria-label="${esc(aria)}" aria-current="${on ? "page" : "false"}" style="position:relative;width:100%;padding:10px 4px;display:flex;flex-direction:column;align-items:center;gap:5px;border:1px solid ${bd};border-radius:12px;background:${bg};color:${fg}">
-    ${badge}<span style="font-size:16px;line-height:1" aria-hidden="true">${icon(m.icon)}</span><span style="font-size:11px;font-weight:600">${esc(label)}</span></button>`;
+  return `<button class="navitem${on ? " on" : ""}" data-id="${esc(m.id)}" title="${esc(label)}" aria-label="${esc(aria)}" aria-current="${on ? "page" : "false"}">
+    <span class="glyph" aria-hidden="true">${icon(m.icon)}</span><span class="lbl">${esc(label)}</span>${badge}</button>`;
 }
 function renderNav() {
   const nav = $("railNav"); if (!nav) return;
   nav.innerHTML = railModules().map((m) => railBtn(m, m.id === active)).join("");
   nav.querySelectorAll("[data-id]").forEach((b) => { b.onclick = () => loadModule(b.dataset.id); });
+}
+
+// Свёрнутый рейл: место под работу на небольшом экране. Выбор человека переживает перезапуск —
+// иначе каждый вход возвращал меню в состояние по умолчанию.
+const LS_RAIL = "ape_rail_narrow";
+function railNarrow() { try { return localStorage.getItem(LS_RAIL) === "1"; } catch { return false; } }
+function applyRail() {
+  const aside = $("rail"), btn = $("railToggle");
+  if (!aside) return;
+  const narrow = railNarrow();
+  aside.classList.toggle("rail-narrow", narrow);
+  aside.style.width = narrow ? "68px" : "var(--rail-w)";
+  aside.style.padding = narrow ? "14px 8px" : "14px 10px 14px 0";
+  const q = $("railQuick"); if (q) q.style.padding = narrow ? "0" : "0 0 0 11px";
+  if (btn) {
+    btn.textContent = narrow ? "»" : "«";
+    btn.title = btn.ariaLabel = narrow ? "Развернуть меню разделов" : "Свернуть меню разделов";
+    btn.setAttribute("aria-expanded", narrow ? "false" : "true");
+  }
+  renderQuick();
+}
+function toggleRail() {
+  try { localStorage.setItem(LS_RAIL, railNarrow() ? "0" : "1"); } catch { /* приватное окно */ }
+  applyRail();
 }
 
 // Быстрые функции в рейле (настраиваемые, persist localStorage) — из макета.
@@ -362,14 +405,20 @@ function quickActions() {
 }
 function getPins() { try { return JSON.parse(localStorage.getItem("ape_quickfns")) || QF_DEFAULT; } catch { return QF_DEFAULT; } }
 function slotBtn(inner, attrs, title, dashed) {
-  const b = dashed ? "dashed var(--line-2)" : "solid var(--line)";
-  return `<button ${attrs} title="${esc(title)}" aria-label="${esc(title)}" style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;border:1px ${b};border-radius:12px;background:var(--panel);color:var(--ink-2);font-size:15px">${inner}</button>`;
+  // Свёрнутый рейл — только плашка знака; развёрнутый — строка с подписью, как у разделов:
+  // два разных вида одной кнопки в одном меню выглядели как две разные системы.
+  if (railNarrow()) {
+    const b = dashed ? "dashed var(--line-2)" : "solid var(--line)";
+    return `<button ${attrs} title="${esc(title)}" aria-label="${esc(title)}" style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;border:1px ${b};border-radius:var(--r-md);background:var(--panel);color:var(--ink-2);font-size:15px">${inner}</button>`;
+  }
+  return `<button class="navitem" ${attrs} title="${esc(title)}" aria-label="${esc(title)}" style="border-radius:var(--r-md);padding:7px 10px 7px 8px">
+    <span class="glyph" aria-hidden="true"${dashed ? ' style="border:1px dashed var(--line-2);background:transparent"' : ""}>${inner}</span><span class="lbl">${esc(title)}</span></button>`;
 }
 function renderQuick() {
   const el = $("railQuick"); if (!el) return;
   const acts = quickActions(), pins = getPins();
   el.innerHTML = pins.map((id) => { const a = acts.find((x) => x.id === id); return a ? slotBtn(a.icon, `data-id="${esc(a.id)}"`, a.label) : ""; }).join("")
-    + slotBtn("＋", `id="qfAdd"`, "Настроить быстрые функции", true);
+    + slotBtn("＋", `id="qfAdd"`, "Настроить", true);
   el.querySelectorAll("[data-id]").forEach((b) => b.onclick = () => { const a = acts.find((x) => x.id === b.dataset.id); if (a) a.run(); });
   $("qfAdd").onclick = openQuickManage;
 }
@@ -607,7 +656,9 @@ async function pingLink(manual) {
 }
 
 async function boot() {
-  const lg = $("apeLogo"); if (lg) lg.innerHTML = apeLogo(30);
+  const lg = $("apeLogo"); if (lg) lg.innerHTML = apeLogo(32);
+  const rt = $("railToggle"); if (rt) rt.onclick = toggleRail;
+  applyRail();
   initTheme();
   const h = await waitEngine();
   const v = $("verChip"); if (v) v.textContent = "v" + ((h && h.version) || "?");
