@@ -2322,6 +2322,9 @@ async def plan_auto(body: dict, u: dict = Depends(user)) -> dict:
             "body": (ape.load_skill_body(sid) or (meta[2] if len(meta) > 2 else ""))[:6000],
             "inputs": tpl.get("inputs") or {},
             "produces": tpl.get("produces") or {},
+            # Куда навык объявил доставку: если человек назвал адресата («в трекер»), планировщик
+            # сравнивает объявленное с названным, а не угадывает по словам методики.
+            "delivery": tpl.get("delivery") or {},
             "mode": (ape.skill_safety(sid) or {}).get("mode") or "read",
         }
 

@@ -23,6 +23,19 @@ MAX_DEPTH = 5
 # Сколько кандидатов рассматриваем на шаг. Больше — дольше и без пользы: разница в хвосте рейтинга
 # уже случайная.
 MAX_CANDIDATES = 6
+# Ниже этого счёта навык в кандидаты не идёт. Та же величина решает, можно ли ему помочь подсказкой:
+# подсказка усиливает кандидата, но не создаёт его из ничего.
+MIN_CANDIDATE = 0.08
+# Сколько добавляет подсказка «похожий агент пользуется этим навыком». Прежде подсказка БРАЛАСЬ
+# ВМЕСТО собственного счёта (max), и этого хватало, чтобы собрать план из всех навыков похожего
+# агента: на запрос «проанализируй идею» уехала цепочка из статус-отчёта, ADR, письма и БФТ —
+# навыков агента, который лишь отдалённо похож на задачу. Теперь это прибавка, и только тем, кто
+# и сам подходит. Вес выбран так, чтобы подсказка решала СПОРЫ (типичный разрыв между соседними
+# навыками — сотые доли), но не перебивала названного человеком адресата: его слова сильнее
+# статистики по соседним агентам.
+HINT_WEIGHT = 0.15
+# Названная система доставки — такой же объявленный факт, как названный источник данных.
+TARGET_BONUS = 0.3
 
 _STOP = {"и", "в", "на", "по", "с", "для", "из", "что", "как", "мне", "нам", "где", "за", "от", "до",
          "это", "все", "всех", "весь", "надо", "нужно", "сделай", "сделать", "покажи", "посмотри"}
@@ -195,6 +208,63 @@ def _match_score(task_words: set[str], sid: str, meta: dict, index: dict | None 
     return 0.65 * overlap + 0.45 * gives + direct + title_hit + short_hit
 
 
+# Куда человек просит положить результат. Требуем предлог («в трекер», «на почту») или само имя
+# системы: без этого «разбери почту» читалось бы как «отправь почтой» — там почта источник, а не
+# адресат, и навык-письмо получал бы прибавку ни за что.
+# Куда человек просит положить результат. Ищем ПОДСТРОКАМИ с предлогом («в трекер», «на почту») или
+# имя системы: без предлога «разбери почту» читалось бы как «отправь почтой» — там почта источник, а
+# не адресат. Регулярки здесь не нужны и однажды уже обошлись дорого: экранирование границы слова
+# в патче превратилось в управляющий символ, и правило молча перестало срабатывать.
+_TARGET_WORDS = {
+    "redmine": ("в трекер", "во трекер", "в тикет", "в наш трекер", "redmine", "jira", "джира"),
+    "bookstack": ("в вики", "во вики", "в confluence", "в конфлюенс", "bookstack", "на вики"),
+    "mailpit": ("на почту", "по почте", "на email", "письмом", "в письме"),
+    "yandex": ("на почту", "по почте", "на email", "письмом", "в письме"),
+    "nocodb": ("в таблицу", "в nocodb"),
+    "twenty": ("в crm", "в twenty"),
+}
+# Чем называется в этой системе то, что в неё кладут. Сравниваем СЫРЫЕ начала слов, без реестра
+# понятий: там «тикет» сведён к «задаче», и тогда любой навык, отдающий задачи, считался бы
+# нацеленным в трекер — ровно та ошибка, из-за которой «нарежь задачи в трекере» уходило в разбор
+# почты.
+_TARGET_ARTIFACTS = {
+    "redmine": ("тикет", "issue"),
+    "bookstack": ("страниц", "page", "вики"),
+    "mailpit": ("письм", "email"),
+    "yandex": ("письм", "email"),
+    "nocodb": ("строк", "row"),
+    "twenty": ("сделк", "deal"),
+}
+
+
+def _named_targets(text: str) -> set[str]:
+    """Системы, названные адресатом результата. Пусто — человек не сказал, куда класть."""
+    low = str(text or "").lower()
+    return {name for name, words in _TARGET_WORDS.items() if any(w in low for w in words)}
+
+
+def _delivery_systems(meta: dict) -> set[str]:
+    """Системы, в которые навык ОБЪЯВИЛ доставку (контракт, а не слова методики)."""
+    d = (meta or {}).get("delivery")
+    specs = d if isinstance(d, list) else ([d] if isinstance(d, dict) else [])
+    return {str(x.get("system") or "") for x in specs if isinstance(x, dict) and x.get("system")}
+
+
+def _aims_at(meta: dict, targets: set[str]) -> bool:
+    """Навык нацелен в названную систему: объявил туда доставку или отдаёт то, что в неё кладут."""
+    if not targets:
+        return False
+    if targets & _delivery_systems(meta):
+        return True
+    paths: set[str] = set()
+    for it in sc.produces_list((meta or {}).get("produces")):
+        paths |= _words(str(it.get("path") or ""))
+    for name in targets:
+        if paths & {_stem(w) for w in _TARGET_ARTIFACTS.get(name, ())}:
+            return True
+    return False
+
+
 def _producers(catalog: dict, want: str) -> list[str]:
     """Кто отдаёт нужный раздел результата. Сравниваем понятиями: «тикеты» и «задачи» — одно и то же."""
     target = _concepts(want) or {want}
@@ -359,10 +429,20 @@ def plan(task: str, catalog: dict, *, entities: set[str], slots: set[str],
 
     def rank_for(text: str) -> list[tuple[float, str]]:
         tw, tc = _words(text), _concepts(text)
-        r = sorted((((max(_match_score(tw, sid, m, index, tc), float(hints.get(sid) or 0))
-                      + _source_bonus(sid, m)), sid)
-                    for sid, m in catalog.items()), key=lambda x: (-x[0], x[1]))
-        return [(v, sid) for v, sid in r if v > 0.08][:MAX_CANDIDATES]
+        targets = _named_targets(text)
+
+        def score(sid: str, m: dict) -> float:
+            own = _match_score(tw, sid, m, index, tc)
+            # Подсказка от похожего агента помогает только тому, кто и сам подходит под задачу.
+            # Иначе один отдалённо похожий агент диктовал план целиком — всеми своими навыками.
+            boost = HINT_WEIGHT * min(1.0, float(hints.get(sid) or 0)) if own >= MIN_CANDIDATE else 0.0
+            # Человек назвал адресата («в трекер») — навык, объявивший доставку туда, ближе к делу,
+            # чем навык, который просто часто пишет слово «задачи» в методике.
+            aim = TARGET_BONUS if _aims_at(m, targets) else 0.0
+            return own + boost + aim + _source_bonus(sid, m)
+
+        r = sorted(((score(sid, m), sid) for sid, m in catalog.items()), key=lambda x: (-x[0], x[1]))
+        return [(v, sid) for v, sid in r if v > MIN_CANDIDATE][:MAX_CANDIDATES]
 
     ranked = rank_for(task)
     if not ranked:
