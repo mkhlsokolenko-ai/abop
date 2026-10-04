@@ -40,6 +40,40 @@ CREATE INDEX IF NOT EXISTS idx_board_scope ON board_entries (scope, key);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_board_unique ON board_entries (scope, key, author);
 """
 
+# Доска, живущая дольше прогона: общая память человека и отдела. Прежде области были только внутри
+# одного запроса (прогон, задание, группа), и выводы умирали вместе с ним — соседний разговор о них
+# не знал. Долгие области добавляют два поля, которых прогону не требовалось:
+#   · срок жизни факта — факты портятся, и месячный факт, выданный за текущий, хуже отсутствия;
+#   · ссылка на прогон — утверждение без происхождения проверить нечем.
+SCHEMA_LONG = """
+ALTER TABLE board_entries ADD COLUMN IF NOT EXISTS ttl_sec INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE board_entries ADD COLUMN IF NOT EXISTS run_id TEXT;
+"""
+
+USER_PREFIX = "usr-"        # личная доска: видит только владелец
+FAMILY_PREFIX = "fam-"      # доска отдела: видят те, кому открыта эта семья (ABAC)
+# Сколько факт считается свежим, если срок не указан. Месяц — компромисс: решения по проектам живут
+# дольше, но факт без пересмотра месяц спустя уже требует проверки.
+DEFAULT_TTL_SEC = 30 * 24 * 3600
+
+
+def user_scope(sub: str) -> str:
+    return USER_PREFIX + str(sub or "").strip() if str(sub or "").strip() else ""
+
+
+def family_scope(family: str) -> str:
+    return FAMILY_PREFIX + str(family or "").strip() if str(family or "").strip() else ""
+
+
+def scope_owner(scope: str) -> tuple[str, str]:
+    """(вид, владелец) области: («user», sub) | («family», семья) | («run», остаток)."""
+    sc_ = str(scope or "")
+    if sc_.startswith(USER_PREFIX):
+        return "user", sc_[len(USER_PREFIX):]
+    if sc_.startswith(FAMILY_PREFIX):
+        return "family", sc_[len(FAMILY_PREFIX):]
+    return "run", sc_
+
 _MEM: dict[str, list[dict]] = {}          # фолбэк без Postgres: scope → записи
 _MAX_ENTRIES = 400                        # доска не архив: ограничиваем, чтобы прогон не распухал
 _VAL_CHARS = 20000                        # один вывод не должен вытеснить остальные
@@ -336,6 +370,12 @@ async def init() -> None:
     from .db import _conn
     async with _conn() as conn:
         await conn.execute(SCHEMA)
+        # Долгие области добавляют колонки отдельными инструкциями: базы, созданные раньше, должны
+        # получить их без пересоздания таблицы.
+        for chunk in SCHEMA_LONG.split(";"):
+            stmt = chunk.strip()
+            if stmt:
+                await conn.execute(stmt)
 
 
 async def save(scope: str, entries: list[dict]) -> int:
@@ -363,17 +403,85 @@ async def save(scope: str, entries: list[dict]) -> int:
     return len(rows)
 
 
-async def load(scope: str) -> list[dict]:
-    """Прочитать общую область: что уже выложили другие ветви."""
+async def put_fact(scope: str, key: str, value, *, author: str, note: str = "",
+                   ttl_sec: int = DEFAULT_TTL_SEC, run_id: str = "", kind: str = "fact") -> dict:
+    """Положить факт в долгую область: с автором, сроком жизни и ссылкой на прогон.
+
+    Факт без происхождения проверить нечем, поэтому `run_id` и `author` идут вместе со значением.
+    Срок жизни обязателен по смыслу: факты портятся, и месячный факт, выданный за текущий, хуже
+    отсутствия факта. Один автор под одним ключом держит одну запись — повтор уточняет её.
+    """
+    row = {"key": str(key or ""), "author": str(author or "—"), "kind": kind, "note": str(note or ""),
+           "value": _trim(value), "ttl_sec": max(0, int(ttl_sec or 0)), "run_id": str(run_id or ""),
+           "at": _now()}
+    if not scope or not row["key"]:
+        return {}
+    if not _has_pg():
+        cur = _MEM.setdefault(scope, [])
+        cur[:] = [x for x in cur if not (x.get("key") == row["key"] and x.get("author") == row["author"])]
+        cur.append(dict(row))
+        del cur[0:max(0, len(cur) - _MAX_ENTRIES)]
+        return row
+    from .db import _conn
+    async with _conn() as conn:
+        await conn.execute(
+            "INSERT INTO board_entries(scope,key,author,kind,note,value,ttl_sec,run_id) "
+            "VALUES(%s,%s,%s,%s,%s,%s,%s,%s) "
+            "ON CONFLICT (scope,key,author) DO UPDATE SET kind=EXCLUDED.kind, note=EXCLUDED.note, "
+            "value=EXCLUDED.value, ttl_sec=EXCLUDED.ttl_sec, run_id=EXCLUDED.run_id, created_at=now()",
+            (scope, row["key"], row["author"], row["kind"], row["note"],
+             json.dumps(row["value"], ensure_ascii=False), row["ttl_sec"], row["run_id"]))
+    return row
+
+
+async def drop_fact(scope: str, key: str, author: str = "") -> int:
+    """Убрать факт. Автор задан — убираем только его запись, иначе весь ключ."""
+    if not scope or not key:
+        return 0
+    if not _has_pg():
+        cur = _MEM.get(scope) or []
+        before = len(cur)
+        cur[:] = [x for x in cur if not (x.get("key") == key and (not author or x.get("author") == author))]
+        return before - len(cur)
+    from .db import _conn
+    async with _conn() as conn:
+        if author:
+            await conn.execute("DELETE FROM board_entries WHERE scope=%s AND key=%s AND author=%s",
+                               (scope, key, author))
+        else:
+            await conn.execute("DELETE FROM board_entries WHERE scope=%s AND key=%s", (scope, key))
+    return 1
+
+
+def _stale(row: dict) -> bool:
+    """Факт просрочен? Срок 0 означает «без срока» — так ведут себя доски одного прогона."""
+    ttl = int(row.get("ttl_sec") or 0)
+    if ttl <= 0:
+        return False
+    at = str(row.get("at") or "")[:19]
+    try:
+        made = time.mktime(time.strptime(at, "%Y-%m-%dT%H:%M:%S"))
+    except Exception:  # noqa: BLE001 — время не разобралось: считаем факт свежим, а не прячем его
+        return False
+    return (time.time() - made) > ttl
+
+
+async def load(scope: str, *, include_stale: bool = False) -> list[dict]:
+    """Прочитать общую область: что уже выложили другие ветви.
+
+    Просроченные факты по умолчанию НЕ отдаём: показать месячный факт как текущий хуже, чем не
+    показать ничего. `include_stale` нужен разбору («что было и когда истекло»), а не работе.
+    """
     scope = str(scope or "")
     if not scope:
         return []
     if not _has_pg():
-        return [dict(e) for e in _MEM.get(scope, [])]
+        rows = [dict(e) for e in _MEM.get(scope, [])]
+        return rows if include_stale else [r for r in rows if not _stale(r)]
     from .db import _conn
     async with _conn() as conn:
         cur = await conn.execute(
-            "SELECT key,author,kind,note,value,created_at FROM board_entries "
+            "SELECT key,author,kind,note,value,created_at,ttl_sec,run_id FROM board_entries "
             "WHERE scope=%s ORDER BY id", (scope,))
         rows = await cur.fetchall()
     out = []
@@ -384,8 +492,10 @@ async def load(scope: str) -> list[dict]:
                 val = json.loads(val)
             except Exception:  # noqa: BLE001 — значение могло лечь строкой, это не повод терять запись
                 pass
-        out.append({"key": r[0], "author": r[1], "kind": r[2], "note": r[3],
-                    "value": val, "at": str(r[5])[:19]})
+        row = {"key": r[0], "author": r[1], "kind": r[2], "note": r[3], "value": val,
+               "at": str(r[5])[:19], "ttl_sec": int(r[6] or 0), "run_id": r[7] or ""}
+        if include_stale or not _stale(row):
+            out.append(row)
     return out
 
 

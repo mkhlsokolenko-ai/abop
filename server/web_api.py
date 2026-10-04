@@ -2320,6 +2320,96 @@ def _sub(u: dict) -> str:
     return str((u or {}).get("sub") or (u or {}).get("name") or "dev")
 
 
+# ── Блекборд: общая память человека и отдела, живущая дольше прогона ────────────────────────────
+# Доска была только внутри запроса: выводы умирали вместе с прогоном, и соседний разговор о них не
+# знал. Долгая доска добавляет к ней два правила, без которых она превратилась бы в свалку:
+#   · на доску попадает ОБЪЯВЛЕННОЕ — факт кладёт либо прогон, либо человек нажатием, но не «всё
+#     подряд из всех чатов»: именно дисциплина (ключ, автор, срок) делает доску полезной;
+#   · у каждого факта автор, время, срок жизни и ссылка на прогон — утверждение без происхождения
+#     проверить нечем, а месячный факт, выданный за текущий, хуже отсутствия факта.
+# Доступ: личная доска — только владельцу; доска отдела — тем, кому открыта эта семья (ABAC). Это не
+# формальность: доска не должна стать каналом в обход прав на данные.
+
+def _board_scope(kind: str, u: dict, family: str = "") -> str:
+    k = str(kind or "user").strip().lower()
+    if k in ("family", "fam", "отдел"):
+        fam = str(family or u.get("department") or "").strip()
+        if not fam or fam == "*":
+            raise HTTPException(422, "для доски отдела нужна семья")
+        if not can_see_family(u, fam):
+            raise HTTPException(403, f"доска отдела «{fam}» вне вашей области ({u.get('department')})")
+        return blackboard.family_scope(fam)
+    return blackboard.user_scope(_sub(u))
+
+
+@app.get("/api/board")
+async def board_read(kind: str = "user", family: str = "", stale: bool = False,
+                     u: dict = Depends(user)) -> dict:
+    """Факты доски: личной или отдела. Просроченные не отдаём, пока не попросят явно."""
+    scope = _board_scope(kind, u, family)
+    rows = await blackboard.load(scope, include_stale=bool(stale))
+    return {"scope": scope, "facts": rows, "count": len(rows)}
+
+
+@app.post("/api/board/facts")
+async def board_put(body: dict, u: dict = Depends(user)) -> dict:
+    """Положить факт на доску руками: «вынести на общую доску».
+
+    Автором ставим человека, а не агента: это его утверждение, даже если взято из прогона.
+    """
+    key = str((body or {}).get("key") or "").strip()
+    if not key:
+        raise HTTPException(422, "нужен ключ факта")
+    scope = _board_scope(str((body or {}).get("kind") or "user"), u, str((body or {}).get("family") or ""))
+    row = await blackboard.put_fact(
+        scope, key, (body or {}).get("value"),
+        author=u.get("name") or _sub(u), note=str((body or {}).get("note") or ""),
+        ttl_sec=int((body or {}).get("ttl_sec") or blackboard.DEFAULT_TTL_SEC),
+        run_id=str((body or {}).get("run_id") or ""))
+    await audit_store.record(u.get("name") or _sub(u), "board.put", scope,
+                             {"key": key, "run_id": row.get("run_id"), "ttl_sec": row.get("ttl_sec")})
+    return {"ok": True, "scope": scope, "fact": row}
+
+
+@app.delete("/api/board/facts/{key}")
+async def board_drop(key: str, kind: str = "user", family: str = "", author: str = "",
+                     u: dict = Depends(user)) -> dict:
+    scope = _board_scope(kind, u, family)
+    n = await blackboard.drop_fact(scope, key, author)
+    await audit_store.record(u.get("name") or _sub(u), "board.drop", scope, {"key": key})
+    return {"ok": True, "removed": n}
+
+
+@app.post("/api/runs/{run_id}/to-board")
+async def board_from_run(run_id: str, body: dict, u: dict = Depends(user)) -> dict:
+    """Вынести итоги прогона на доску: по одному факту на навык, со ссылкой на прогон.
+
+    Берём то, что навык объявил итогом (ту же сводку, что показывает карточка), а не весь результат:
+    доска — общая память, а не копия прогонов. Значение остаётся дословным.
+    """
+    run = await _run_visible(run_id, u)
+    scope = _board_scope(str((body or {}).get("kind") or "user"), u, str((body or {}).get("family") or ""))
+    ttl = int((body or {}).get("ttl_sec") or blackboard.DEFAULT_TTL_SEC)
+    put: list[dict] = []
+    for so in (run.get("skill_outputs") or []):
+        sid = str(so.get("skill") or "")
+        st = so.get("structured")
+        if not sid or not isinstance(st, dict) or not st:
+            continue
+        row = await blackboard.put_fact(
+            scope, sid, st, author=f"{run.get('agent_name') or run.get('agent_id') or 'агент'} · {sid}",
+            note=str((body or {}).get("note") or ""), ttl_sec=ttl,
+            run_id=str(run.get("run_id") or run.get("id") or run_id))
+        if row:
+            put.append({"key": row["key"], "author": row["author"]})
+    if not put:
+        raise HTTPException(422, "в прогоне нет структурированных итогов — выносить нечего")
+    await audit_store.record(u.get("name") or _sub(u), "board.from_run", scope,
+                             {"run_id": run_id, "keys": [p["key"] for p in put]})
+    return {"ok": True, "scope": scope, "facts": put,
+            "note": f"на доску вынесено фактов: {len(put)} · срок {ttl // 86400} дн."}
+
+
 @app.get("/api/chat/threads")
 async def chat_threads(u: dict = Depends(user)) -> dict:
     return {"threads": await chat_store.threads(_sub(u))}
