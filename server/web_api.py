@@ -4911,6 +4911,20 @@ async def _pipeline_graph_job(job: dict) -> dict:
     return {"run_id": (last or {}).get("run_id") or "", "pipeline": pipe.get("id"), "steps": done_steps}
 
 
+def _pipeline_checkpoint(step: int, total: int, done: list, prev_ctx, prev_src) -> dict:
+    """Чекпойнт шага цепочки: что уже сделано и с чем идём дальше.
+
+    Ограничение по длине относится к КОНТЕКСТУ — он текст, и в следующий шаг его нужно отдать
+    урезанным. `prev_src` — объект «от кого пришёл вход» ({шаг, агент, прогон}); срез словаря роняет
+    всё задание (`TypeError: unhashable type: 'slice'`), и именно это случилось: ограничение стояло
+    на соседнем ключе, поэтому падала ЛЮБАЯ цепочка из очереди — на первом же шаге, уже после того
+    как агент отработал. Отдельная функция ради одной строки нужна затем, что эту строку можно
+    проверить тестом, а не только живым прогоном.
+    """
+    return {"step": step, "steps_total": total, "steps": done,
+            "prev_ctx": str(prev_ctx or "")[:6000], "prev_src": prev_src}
+
+
 async def _pipeline_job(job: dict) -> dict:
     """Цепочка агентов через очередь: каждый шаг — обычный прогон; выход шага → контекст следующего.
     Если у шага есть доставка «ждёт подтверждения» и шаг не последний — задание уходит в awaiting_hitl
@@ -4968,7 +4982,7 @@ async def _pipeline_job(job: dict) -> dict:
             done_steps.append({"agent_id": agent["id"], "agent_name": agent.get("name"), "error": str(ex)[:300]})
             waits = []
         i += 1
-        cp.update({"step": i, "steps_total": len(steps), "steps": done_steps, "prev_ctx": prev_ctx, "prev_src": prev_src[:6000]})
+        cp.update(_pipeline_checkpoint(i, len(steps), done_steps, prev_ctx, prev_src))
         await run_queue.set_checkpoint(job["id"], cp)
         if waits and i < len(steps):   # HITL-пауза: следующий шаг только после решения оператора
             cp["hitl_ids"] = waits
