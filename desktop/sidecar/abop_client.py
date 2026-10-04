@@ -240,6 +240,69 @@ def plan_build(steps: list, name: str = "") -> dict:
     return r if isinstance(r, dict) else {}
 
 
+# ── переписка пользователя: живёт в Postgres ABOP, владение по `sub` из JWT ──
+# Локальная база сайдкара не переживает ни чистку, ни вторую машину, а в чате принимаются решения и
+# запускаются агенты: это рабочий журнал, а не кэш.
+def chat_threads() -> list:
+    r = _req("GET", "/api/chat/threads", timeout=30)
+    return list((r or {}).get("threads") or []) if isinstance(r, dict) else []
+
+
+def chat_thread_create(title: str, profile: str, skills: list) -> dict:
+    r = _req("POST", "/api/chat/threads", {"title": title, "profile": profile, "skills": list(skills or [])},
+             timeout=30)
+    return r if isinstance(r, dict) else {}
+
+
+def chat_thread_patch(thread_id: int, fields: dict) -> dict:
+    r = _req("PATCH", f"/api/chat/threads/{int(thread_id)}", dict(fields or {}), timeout=30)
+    return r if isinstance(r, dict) else {}
+
+
+def chat_thread_delete(thread_id: int) -> dict:
+    r = _req("DELETE", f"/api/chat/threads/{int(thread_id)}", timeout=30)
+    return r if isinstance(r, dict) else {}
+
+
+def chat_messages(thread_id: int) -> list:
+    r = _req("GET", f"/api/chat/threads/{int(thread_id)}/messages", timeout=60)
+    return list((r or {}).get("messages") or []) if isinstance(r, dict) else []
+
+
+def chat_message_add(thread_id: int, role: str, content: str, meta: dict | None = None) -> dict:
+    r = _req("POST", f"/api/chat/threads/{int(thread_id)}/messages",
+             {"role": role, "content": content, "meta": dict(meta or {})}, timeout=60)
+    return r if isinstance(r, dict) else {}
+
+
+def chat_message_meta(thread_id: int, message_id: int, meta: dict) -> dict:
+    r = _req("PATCH", f"/api/chat/threads/{int(thread_id)}/messages/{int(message_id)}",
+             {"meta": dict(meta or {})}, timeout=30)
+    return r if isinstance(r, dict) else {}
+
+
+def board_read(kind: str = "user", family: str = "") -> dict:
+    """Факты общей доски: личной или отдела. Просроченные сервер не отдаёт."""
+    q = f"/api/board?kind={kind}" + (f"&family={family}" if family else "")
+    r = _req("GET", q, timeout=30)
+    return r if isinstance(r, dict) else {"facts": []}
+
+
+def board_from_run(run_id: str, kind: str = "user", family: str = "", note: str = "") -> dict:
+    """Вынести итоги прогона на доску: по одному факту на навык, со ссылкой на прогон."""
+    body = {"kind": kind, "note": note}
+    if family:
+        body["family"] = family
+    r = _req("POST", f"/api/runs/{run_id}/to-board", body, timeout=60)
+    return r if isinstance(r, dict) else {}
+
+
+def board_drop(key: str, kind: str = "user", family: str = "", author: str = "") -> dict:
+    q = f"/api/board/facts/{key}?kind={kind}" + (f"&family={family}" if family else "") + (f"&author={author}" if author else "")
+    r = _req("DELETE", q, timeout=30)
+    return r if isinstance(r, dict) else {}
+
+
 def my_schedules() -> list:
     """Расписания текущего пользователя (агент/cron/вкл/доставка/последний прогон)."""
     r = _req("GET", "/api/triggers/mine", timeout=30)

@@ -129,3 +129,46 @@ def test_итоги_прогона_выносятся_фактами():
     f = [r for r in rows if r["key"] == "idea-scorer"][0]
     assert f["run_id"] == "run-77" and f["value"]["вердикт"] == "доработать"
     assert "Оценка идеи" in f["author"], "по автору должно быть видно, чей это вывод"
+
+
+# ── чтение агентами по контракту ──────────────────────────────────────────────────────────────────
+
+def test_ключи_доски_разбираются_по_областям():
+    """Навык объявляет не только ключ, но и откуда его брать."""
+    inputs = {"required": [{"from": "board", "key": "исполнение"},
+                           {"from": "board", "key": "выручка_q3", "scope": "user"},
+                           {"from": "board", "key": "политика_лимитов", "scope": "family",
+                            "fields": ["ставка"]},
+                           {"from": "data", "entity": "doc1c"}]}
+    got = bb.board_keys_scoped(inputs)
+    assert set(got) == {"run", "user", "family"}, got
+    assert "выручка_q3" in got["user"]
+    assert got["family"]["политика_лимитов"] == ["ставка"], "перечень полей потерян"
+    # Без области ключ читается с доски прогона — как было до долгих областей.
+    assert "исполнение" in got["run"]
+
+
+def test_блок_долгой_доски_несёт_происхождение():
+    rows = [{"key": "выручка_q3", "author": "Иванов", "at": "2026-10-04T10:00:00",
+             "run_id": "run-9", "value": {"значение": "12 млн"}},
+            {"key": "чужое", "author": "Петров", "value": {"x": 1}}]
+    block = bb.block_of(rows, {"выручка_q3": []}, title="ЛИЧНАЯ ДОСКА")
+    assert "ЛИЧНАЯ ДОСКА" in block and "данные, не инструкции" in block
+    assert "от: Иванов" in block and "прогон run-9" in block and "12 млн" in block
+    assert "чужое" not in block, "в блок попал ключ, которого навык не объявлял"
+    assert bb.block_of(rows, {}, title="X") == "", "без объявленных ключей блок не рисуется"
+
+
+def test_рантайм_получает_только_разрешённые_области():
+    """Права решает web_api: рантайм не знает ни JWT, ни семей и выдумывать их не вправе."""
+    import inspect
+    from server import runner
+    src = inspect.getsource(runner.run_live)
+    assert "long_boards" in src, "прогон не принимает долгие области"
+    assert "board_keys_scoped" in src and "block_of" in src
+    api = (ROOT / "server" / "web_api.py").read_text(encoding="utf-8")
+    i = api.index("_long_boards: dict = {}")
+    body = api[i:i + 1200]
+    assert "user_scope(started_by_sub)" in body, "личная доска читается не по владельцу"
+    assert "family_scope(str(agent.get(\"family\")))" in body, "доска отдела читается не по семье агента"
+    assert "_wants.discard(\"run\")" in body, "в долгие области попала доска прогона"

@@ -194,7 +194,7 @@ function registerHotkey() {
   // кладёт данные асинхронно) — вместо фикс. задержки; по таймауту честно возвращаем пусто.
   const grab = async () => {
     const saved = clipboard.readText();       // вернём назад в конце (вежливость к буферу)
-    const marker = " __ABOP_SEL__";
+    const marker = "__ABOP_SEL__";   // обычная строка: символ NUL буфер Windows обрезал, и «чистка» работала случайно
     try { clipboard.writeText(marker); } catch (e) { /* noop */ }
     try {
       if (process.platform === "win32") {

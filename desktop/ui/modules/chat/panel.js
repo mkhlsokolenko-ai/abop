@@ -74,6 +74,9 @@ export async function mount(root, ctx) {
   const { api, mascot, modal, confirm: confirmDialog, toast, humanError } = ctx;
   let threads = [], cur = null, messages = [], skills = [], roles = [], search = "", curAbort = null, abopAgents = [];
   let schedules = [], _schedSeen = {}, pipelines = [], hitlQueue = [], quota = null, kbFiles = [];
+  // Общая доска — не чат: это долгая память человека и его отдела. Держим её состояние отдельно от
+  // переписки, чтобы открытие доски не трогало открытый разговор и набранный текст.
+  let boardMode = false, boardKind = "user", boardRows = [], boardErr = "", boardAt = "";
   let busy = false;          // идёт стрим/прогон — композер и запуски блокируются (D-H4)
   let curJob = null;         // задание очереди ABOP (async-прогон): можно отменить
   const persona = () => { try { return localStorage.getItem("ape_persona") || ""; } catch { return ""; } };
@@ -88,6 +91,10 @@ export async function mount(root, ctx) {
   root.innerHTML = `
     <aside aria-label="Чаты" style="flex:none;width:252px;display:flex;flex-direction:column;gap:10px;padding:14px 12px;border-right:1px solid var(--line);background:var(--rail);min-height:0">
       <button id="newTh" class="btn primary" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:10px;border-radius:11px;font-size:13px">＋ Новый чат</button>
+      <button id="boardPin" title="Общая доска: факты, которые вы вынесли из прогонов. Их читают следующие разговоры и агенты, объявившие эти ключи." aria-label="Общая доска" style="display:flex;align-items:center;gap:8px;padding:9px 11px;border:1px solid var(--warn-line);border-radius:11px;background:var(--warn-bg);color:var(--warn-ink);font-size:12.5px;font-weight:700;text-align:left">
+        <span aria-hidden="true">&#129523;</span><span style="flex:1;min-width:0">Общая доска</span><span id="boardCnt" style="font-family:var(--mono);font-size:11px;font-weight:600;opacity:.8"></span>
+      </button>
+      <div style="height:1px;background:var(--line);margin:2px 0"></div>
       <input id="thSearch" placeholder="Поиск по чатам" aria-label="Поиск по чатам" style="padding:9px 12px;border-radius:10px;font-size:12.5px"/>
       <div id="thList" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:5px;min-height:0"></div>
     </aside>
@@ -161,6 +168,8 @@ export async function mount(root, ctx) {
 
   // ── чаты ──
   function renderThreads() {
+    const pin = $("boardPin");
+    if (pin) pin.style.boxShadow = boardMode ? "0 0 0 2px var(--warn-line)" : "none";
     const list = threads.filter((t) => !search || (t.title || "").toLowerCase().includes(search));
     const fav = list.filter((t) => t.favorite), rest = list.filter((t) => !t.favorite);
     const row = (t) => { const on = cur && t.id === cur.id; return `<div class="thr" data-id="${t.id}" style="display:flex;align-items:center;gap:4px;padding:6px 6px 6px 9px;border:1px solid ${on ? "var(--line-2)" : "var(--line)"};border-radius:10px;background:${on ? "var(--hover)" : "transparent"}">
@@ -214,6 +223,7 @@ export async function mount(root, ctx) {
     renderThreads();
   }
   async function openThread(t) {
+    boardMode = false;
     if (!t) return;
     cur = { ...t, skills: t.skills || [] }; remember(LS_OPEN, String(t.id)); renderThreads(); renderTools();
     // догоняем прогоны, чей опрос оборвался: их карточки дописываются в историю до чтения сообщений
@@ -234,7 +244,7 @@ export async function mount(root, ctx) {
     await loadThreads(); renderTools();
     return cur;
   }
-  async function newChat() { cur = null; messages = []; kbFiles = []; pendingProfile = "standard"; pendingSkills = []; remember(LS_OPEN, NEW_MARK); renderThreads(); render(); renderTools(); renderDock(); $("inp").focus(); }
+  async function newChat() { boardMode = false; cur = null; messages = []; kbFiles = []; pendingProfile = "standard"; pendingSkills = []; remember(LS_OPEN, NEW_MARK); renderThreads(); render(); renderTools(); renderDock(); $("inp").focus(); }
   // Служебное сообщение ассистента с meta → в историю (D-H3)
   async function note(content, meta) {
     const m = { role: "assistant", content: content || "", meta: meta || {} };
@@ -296,7 +306,7 @@ export async function mount(root, ctx) {
         <span class="hitl-head">🛡 Агент подготовил внешнее действие — нужно ваше решение</span>
         <span style="font-size:11.5px;color:var(--ink-2)">${waits.map((d) => `${CH_ICON(d.channel)} ${esc(d.title || d.channel)}${d.to ? " → " + esc(d.to) : ""}`).join(" · ")}</span>
         <span style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn ok hitlOk">Посмотреть и подтвердить</button><button type="button" class="btn hitlNo">Отклонить</button></span></div>`) : ""}
-      <span style="display:flex;gap:8px;flex-wrap:wrap;margin-top:2px"><button type="button" class="btn sm mkRecurring" data-agent="${esc(s.agent_id || "")}" data-name="${esc(name)}">🔁 Сделать регулярной</button>${s.run_id ? `<button type="button" class="btn sm runOpen" data-run="${esc(s.run_id)}" title="Все находки, доставка и затраты прогона">Открыть прогон</button><button type="button" class="btn sm runPdf" data-run="${esc(s.run_id)}" title="Отчёт прогона по шаблону — PDF в «Загрузки»">📄 Отчёт PDF</button>` : ""}</span></div>`;
+      <span style="display:flex;gap:8px;flex-wrap:wrap;margin-top:2px"><button type="button" class="btn sm mkRecurring" data-agent="${esc(s.agent_id || "")}" data-name="${esc(name)}">🔁 Сделать регулярной</button>${s.run_id ? `<button type="button" class="btn sm runOpen" data-run="${esc(s.run_id)}" title="Все находки, доставка и затраты прогона">Открыть прогон</button><button type="button" class="btn sm runPdf" data-run="${esc(s.run_id)}" title="Отчёт прогона по шаблону — PDF в «Загрузки»">📄 Отчёт PDF</button><button type="button" class="btn sm toBoard" data-run="${esc(s.run_id)}" title="Вынести итоги прогона на общую доску: их увидят ваши следующие разговоры и агенты, которые объявили эти ключи">🧷 На доску</button>` : ""}</span></div>`;
   }
   // карточка результата цепочки — из данных (D-H3), legacy-строка HTML тоже поддерживается
   function pipelineHTML(pr) {
@@ -380,6 +390,7 @@ export async function mount(root, ctx) {
       </div></div>`;
   }
   function render() {
+    if (boardMode) { renderBoard(); return; }
     $("col").innerHTML = messages.length ? messages.map(bubble).join("") : emptyState();
     $("col").querySelectorAll("[data-tpl]").forEach((e) => e.onclick = async () => {
       const [, , , prompt, skill] = TEMPLATES[+e.dataset.tpl];
@@ -401,6 +412,17 @@ export async function mount(root, ctx) {
     $("col").querySelectorAll("[data-edit]").forEach((e) => e.onclick = () => { $("inp").value = messages[+e.dataset.edit].content; $("inp").focus(); });
     $("col").querySelectorAll(".codecopy").forEach((b) => b.onclick = () => { const code = b.closest("span").parentElement.querySelector(".codebody"); ctx.copy(code ? code.textContent : "", b, "код"); });
     // карточка показывает первые находки — за полным прогоном уходим в журнал
+    $("col").querySelectorAll(".toBoard").forEach((b) => b.onclick = async () => {
+      // Факты на доску выносит ЧЕЛОВЕК — и автором становится он: это его утверждение, даже если
+      // значение взято из прогона. Автоматически туда ничего не попадает.
+      b.disabled = true; const t = b.textContent; b.textContent = "…";
+      try {
+        const r = await api(A_AG + "/board/from-run/" + encodeURIComponent(b.dataset.run), { method: "POST", body: JSON.stringify({ kind: "user" }) });
+        if (r && r.ok) { toast(r.note || "Вынесено на доску", "ok"); await note(r.note || "Итоги вынесены на общую доску.", { notice: { icon: "🧷" } }); render(); }
+        else toast(humanError(r), "danger");
+      } catch (e) { toast(humanError(e), "danger"); }
+      b.disabled = false; b.textContent = t;
+    });
     $("col").querySelectorAll(".runOpen").forEach((b) => b.onclick = () => ctx.open("runs", { run: b.dataset.run }));
     $("col").querySelectorAll(".runPdf").forEach((b) => b.onclick = async () => { b.disabled = true; const t = b.textContent; b.textContent = "…"; try { const r = await api(A_AG + "/report/" + encodeURIComponent(b.dataset.run), { method: "POST", body: JSON.stringify({}) }); if (r && r.ok) ctx.fileToast("Отчёт сохранён", r.path); else toast(humanError(r), "danger"); } catch (e) { toast(humanError(e), "danger"); } b.disabled = false; b.textContent = t; });
     $("col").querySelectorAll(".hitlOk").forEach((b) => b.onclick = () => decideDelivery(b, "approve"));
@@ -472,6 +494,71 @@ export async function mount(root, ctx) {
     });
     $("col").querySelectorAll(".msgact").forEach((b) => { b.style.cssText += ";padding:5px 9px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--ink-3);font-size:11.5px;min-height:26px"; });
   }
+  // ── общая доска ──
+  // Факты живут на сервере (областями «личная» и «отдела»), а не в этой вкладке: человек должен
+  // видеть их с любой машины, и агенты читают ровно эти же записи по контракту. Здесь — только
+  // показ и две операции человека: снять факт и начать по нему работу.
+  function boardVal(v) {
+    if (v == null) return "";
+    if (typeof v !== "object") return String(v);
+    const line = (x) => (typeof x === "object" ? JSON.stringify(x) : String(x)).slice(0, 180);
+    if (Array.isArray(v)) return v.slice(0, 6).map((x) => "\u2022 " + line(x)).join("\n");
+    return Object.entries(v).slice(0, 8).map(([k, x]) => k + ": " + line(x)).join("\n");
+  }
+  function boardTaskText(r) {
+    const head = skillName(r.key);
+    return "/work по факту \u00ab" + head + "\u00bb \u2014 " + String(boardVal(r.value) || "").replace(/\s+/g, " ").slice(0, 300);
+  }
+  async function loadBoard(silent) {
+    try {
+      const r = await api(A_AG + "/board?kind=" + boardKind);
+      boardRows = (r && r.facts) || []; boardErr = (r && r.error) ? humanError(r) : "";
+      boardAt = new Date().toLocaleTimeString("ru-RU").slice(0, 5);
+    } catch (e) { boardErr = humanError(e); if (!silent) boardRows = []; }
+    const c = $("boardCnt"); if (c) c.textContent = boardErr ? "\u2014" : String(boardRows.length || "");
+    if (boardMode && !silent) renderBoard();
+  }
+  function renderBoard() {
+    const tab = (k, l) => `<button type="button" class="bKind" data-k="${k}" style="padding:6px 12px;border:1px solid ${boardKind === k ? "var(--warn-line)" : "var(--line)"};border-radius:9999px;background:${boardKind === k ? "var(--warn-bg)" : "transparent"};color:${boardKind === k ? "var(--warn-ink)" : "var(--ink-2)"};font-size:11.5px;font-weight:600">${l}</button>`;
+    const rows = boardRows.map((r, i) => `<div style="display:flex;flex-direction:column;gap:6px;padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="font-size:12.5px;font-weight:700;color:var(--ink)">${esc(skillName(r.key))}</span>
+        <span style="font-size:11px;color:var(--ink-3)">${esc(r.author || "\u2014")}${r.at ? " \u00b7 " + esc(String(r.at).slice(0, 16).replace("T", " ")) : ""}${r.ttl_sec ? " \u00b7 срок " + Math.round(r.ttl_sec / 86400) + " дн." : ""}</span>
+        <span style="margin-left:auto;display:flex;gap:6px">${r.run_id ? `<button type="button" class="btn sm bRun" data-run="${esc(r.run_id)}" title="Прогон, из которого взят факт">Прогон</button>` : ""}<button type="button" class="btn sm bTask" data-i="${i}" title="Начать работу по этому факту">\u25b6 В задачу</button><button type="button" class="ico ghost danger bDrop" data-key="${esc(r.key)}" title="Снять факт с доски" aria-label="Снять факт" style="width:26px;height:26px;font-size:11px">\u2715</button></span>
+      </div>
+      ${r.note ? `<div style="font-size:11.5px;color:var(--ink-3)">${esc(r.note)}</div>` : ""}
+      <div style="font-size:12.5px;color:var(--ink-2);line-height:1.5;white-space:pre-wrap;font-family:var(--mono);max-height:168px;overflow:auto">${esc(boardVal(r.value))}</div>
+    </div>`).join("");
+    const empty = `<div style="padding:18px 4px;font-size:12.5px;color:var(--ink-3);line-height:1.6">Доска пуста. На карточке прогона нажмите «\u{1F9F3} На доску» — итог станет общим фактом: его увидят следующие разговоры и агенты, которые объявили этот ключ во входах.</div>`;
+    $("col").innerHTML = `<div style="display:flex;flex-direction:column;gap:12px;padding:14px;border:2px solid var(--warn-line);border-radius:16px;background:var(--warn-bg)">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span style="font-size:16px" aria-hidden="true">\u{1F9F3}</span>
+        <span style="font-size:15px;font-weight:800;color:var(--warn-ink)">Общая доска</span>
+        ${tab("user", "личная")}${tab("family", "отдела")}
+        <span style="margin-left:auto;display:flex;gap:6px;align-items:center">${boardAt ? `<span style="font-size:11px;color:var(--ink-3)">обновлено ${esc(boardAt)}</span>` : ""}<button type="button" class="ico ghost" id="bRefresh" title="Обновить" aria-label="Обновить доску" style="width:26px;height:26px;font-size:12px">\u27f3</button><button type="button" class="ico ghost" id="bExit" title="Вернуться к чату" aria-label="Закрыть доску" style="width:26px;height:26px;font-size:12px">\u2715</button></span>
+      </div>
+      <div style="font-size:12px;color:var(--ink-2);line-height:1.55">Это долгая память, а не переписка: факты сюда выносит человек, автором остаётся он. Агент видит факт только если объявил его ключ во входах — доска не подмешивается в прогоны сама.</div>
+      ${boardErr ? `<div style="font-size:12px;color:var(--danger-ink)">Доска не загрузилась: ${esc(boardErr)}</div>` : ""}
+      ${rows || (boardErr ? "" : empty)}
+    </div>`;
+    $("col").querySelectorAll(".bKind").forEach((b) => b.onclick = () => { boardKind = b.dataset.k; boardRows = []; renderBoard(); loadBoard(); });
+    const _r = $("col").querySelector("#bRefresh"); if (_r) _r.onclick = () => loadBoard();
+    const _x = $("col").querySelector("#bExit"); if (_x) _x.onclick = () => closeBoard();
+    $("col").querySelectorAll(".bRun").forEach((b) => b.onclick = () => ctx.open("runs", { run: b.dataset.run }));
+    $("col").querySelectorAll(".bTask").forEach((b) => b.onclick = () => {
+      const r = boardRows[+b.dataset.i]; if (!r) return;
+      closeBoard(); $("inp").value = boardTaskText(r); $("inp").focus(); remember(LS_DRAFT, $("inp").value);
+    });
+    $("col").querySelectorAll(".bDrop").forEach((b) => b.onclick = async () => {
+      if (!(await confirmDialog({ title: "Снять факт с доски?", text: `«${esc(skillName(b.dataset.key))}» перестанет быть общим фактом — агенты и следующие разговоры его больше не увидят.`, okLabel: "Снять" }))) return;
+      try { await api(A_AG + "/board/facts/" + encodeURIComponent(b.dataset.key) + "?kind=" + boardKind, { method: "DELETE" }); }
+      catch (e) { toast(humanError(e), "danger"); return; }
+      await loadBoard();
+    });
+  }
+  function openBoard() { boardMode = true; renderThreads(); renderBoard(); loadBoard(); $("scroll").scrollTop = 0; }
+  function closeBoard() { boardMode = false; renderThreads(); render(); }
+
   function _decisionOf(btn) { const idx = +btn.closest("[data-di]").dataset.di; const m = messages[idx]; return m && m.meta && m.meta.decision; }
 
   // «Сделать регулярной»: периодичность + куда доставлять → крон-триггер (новая версия агента на «Строю»)
@@ -953,6 +1040,7 @@ export async function mount(root, ctx) {
   async function sendFromInput() {
     if (busy) { toast(curAbort ? "Ответ ещё печатается — дождитесь или остановите (Esc)" : "Дождитесь завершения запуска", "warn"); return; }
     const v = ($("inp") ? $("inp").value : "").trim(); if (!v) return;
+    if (boardMode) closeBoard();   // работа идёт в разговоре, доска — только память
     $("inp").value = ""; remember(LS_DRAFT, null); renderAgentSuggest("");
     // Вставленный по хоткею текст или длинный кусок — это работа в чате, НЕ команда агенту.
     const isPasted = /^Проанализируй этот фрагмент/i.test(v);
@@ -965,8 +1053,8 @@ export async function mount(root, ctx) {
     // оставаться перепиской.
     // «Отдай отчёт» — это действие, а не вопрос модели: берём последний прогон этого разговора и
     // отдаём его отчёт. Прежде такая просьба уходила в переписку, и модель выдумывала путь к файлу.
-    if (/^\/(report|отчёт|отчет)/i.test(v)) { await reportLastRun(); return; }
-    const work = v.match(/^\/(work|задача|агент)\s*/i);
+    if (/^\/(report|отчёт|отчет)\b/i.test(v)) { await reportLastRun(); return; }
+    const work = v.match(/^\/(work|задача|агент)\b\s*/i);
     if (work) {
       const task = v.slice(work[0].length).trim();
       if (!task) { await note("После /work напишите задачу — например: `/work сверь дорожную карту с отчётами подрядчиков`.", { notice: { icon: "🛠" } }); render(); return; }
@@ -1496,6 +1584,7 @@ export async function mount(root, ctx) {
   }
 
   $("newTh").onclick = newChat;
+  $("boardPin").onclick = () => (boardMode ? closeBoard() : openBoard());
   // Намерения от ядра/других модулей: новый чат, анализ выделенного (Ctrl+Shift+A), текст из
   // «Источников»/«Распознать», запуск агента из «Моих агентов» (D-H6, D-H8).
   async function handleIntent(it) {
@@ -1514,7 +1603,7 @@ export async function mount(root, ctx) {
   root.addEventListener("ape:intent", (e) => handleIntent(e.detail));
   // Связь вернулась: перечитываем списки и очередь подтверждений, НЕ меняя открытый чат и набранный
   // текст. Переписку не перезагружаем — поток ответа мог идти в этот момент.
-  root.addEventListener("ape:relink", () => { loadThreads(); loadHitlQueue(); loadSchedules(true); loadQuota(); });
+  root.addEventListener("ape:relink", () => { loadThreads(); loadHitlQueue(); loadSchedules(true); loadQuota(); loadBoard(true); });
   window.__apeAnalyze = (text) => handleIntent({ analyze: text });
 
   $("inp").onkeydown = (e) => {
@@ -1555,7 +1644,7 @@ export async function mount(root, ctx) {
   }
   const draft = recall(LS_DRAFT);
   if (draft && $("inp") && !$("inp").value) $("inp").value = draft;
-  loadSchedules(false); loadPipelines(); loadQuota(); loadHitlQueue();
+  loadSchedules(false); loadPipelines(); loadQuota(); loadHitlQueue(); loadBoard(true);
   catalogs.then(() => { renderTools(); if (messages.length) render(); });   // подписи навыков/агентов, когда каталоги доехали
   if (intent) handleIntent(intent);
   if (window.__apeSchedTimer) clearInterval(window.__apeSchedTimer);

@@ -199,6 +199,34 @@ class ReportIn(BaseModel):
     template: str = ""
 
 
+@router.post("/board/from-run/{run_id}")
+def board_from_run(run_id: str, body: dict | None = None):
+    """Вынести итоги прогона на общую доску. Автором станет человек — это его утверждение."""
+    b = body or {}
+    try:
+        return abop.board_from_run(run_id, str(b.get("kind") or "user"), str(b.get("family") or ""),
+                                   str(b.get("note") or ""))
+    except abop.AbopError as e:
+        return _err(e)
+
+
+@router.get("/board")
+def board_read(kind: str = "user", family: str = ""):
+    """Факты общей доски: личной или отдела."""
+    try:
+        return abop.board_read(kind, family)
+    except abop.AbopError as e:
+        return _err(e)
+
+
+@router.delete("/board/facts/{key}")
+def board_drop(key: str, kind: str = "user", family: str = "", author: str = ""):
+    try:
+        return abop.board_drop(key, kind, family, author)
+    except abop.AbopError as e:
+        return _err(e)
+
+
 @router.post("/report/{run_id}")
 def run_report(run_id: str, body: ReportIn | None = None):
     """PDF-отчёт прогона по шаблону → файл в «Загрузки» пользователя (путь в ответе)."""

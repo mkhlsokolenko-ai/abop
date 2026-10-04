@@ -499,11 +499,14 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
                    findings_context=None, user_context="", skill_schemas=None, should_cancel=None,
                    tool_loop=None, actor: str = "", trace_id: str = "", on_progress=None,
                    budget: dict | None = None, board=None, data_snapshot: dict | None = None,
-                   arbiter_ask=None, limits: dict | None = None) -> dict:
+                   arbiter_ask=None, limits: dict | None = None,
+                   long_boards: dict | None = None) -> dict:
     """НАСТОЯЩИЙ прогон: governance-каркас (run_agent) + для каждого навыка с data-scope
     собирает РЕАЛЬНЫЕ данные из canonical store (data_query) и прогоняет их через LLM
     (тело навыка = методика) → находки на доску. Числа — только из данных (анти-галлюцинация).
-    blocked_entities — сущности, закрытые ABAC (система вне scope семьи): навык их НЕ читает."""
+    blocked_entities — сущности, закрытые ABAC (система вне scope семьи): навык их НЕ читает.
+    long_boards — уже РАЗРЕШЁННЫЕ долгие области доски {«user»|«family»: записи}. Права решает
+    вызывающая сторона: рантайм не знает ни JWT, ни семей пользователя, и выдумывать их ему нельзя."""
     import json as _json
     import asyncio
     blocked = set(blocked_entities or [])
@@ -666,10 +669,23 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
         # видеть ВСЕ разделы, иначе сложить из них один документ нечем. Привилегия берётся из
         # контракта навыка, а не из его имени: по контракту видно, кто читает больше остальных.
         run_block = _whole_run_block((_custom or {}).get("inputs"), produced)
+        # Долгие области доски: личная память человека и память отдела. Навык получает только те
+        # ключи, которые объявил, и только из областей, которые ему разрешили выше.
+        long_block = ""
+        if long_boards:
+            _scoped = _bb.board_keys_scoped((_custom or {}).get("inputs"))
+            for _kind, _want in _scoped.items():
+                if _kind == "run" or not long_boards.get(_kind):
+                    continue
+                _title = {"user": "ЛИЧНАЯ ДОСКА (факты, которые человек вынес сам)",
+                          "family": "ДОСКА ОТДЕЛА (факты, общие для семьи агентов)"}.get(
+                              _kind, "ДОЛГАЯ ДОСКА")
+                long_block += _bb.block_of(long_boards.get(_kind) or [], _want, title=_title)
         _head = (uc_block
                  + know_block
                  + up_block
                  + board_block
+                 + long_block
                  + run_block
                  + "=== ДАННЫЕ (дайджест: всего+по_типам = полный scope, сэмпл = примеры записей) ===\n"
                  + _json.dumps(digest, ensure_ascii=False)[:int(_lim["data"])] + "\n\n")

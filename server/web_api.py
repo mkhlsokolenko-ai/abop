@@ -5230,7 +5230,9 @@ async def _handle_job(job: dict) -> dict:
     if not agent:
         raise RuntimeError("агент не найден")
     contract = await _contract_for_agent(agent, p.get("contract_audit_id") or "")
-    out = await execute_agent_run(agent, contract, job["actor"], use_cache=bool(p.get("use_cache", False)),
+    out = await execute_agent_run(agent, contract, job["actor"],
+                                  started_by_sub=str(p.get("actor_sub") or job.get("actor_sub") or ""),
+                                  use_cache=bool(p.get("use_cache", False)),
                                   user_context=p.get("user_context") or "", deliver_filter=p.get("deliver_filter") or "",
                                   data_scope=p.get("data_scope") or None,   # предмет работы едет с заданием
                                   budget=p.get("budget") or None, limits=p.get("limits") or None,
@@ -5498,7 +5500,8 @@ def _input_received(user_context: str, src: dict | None) -> dict | None:
     return out
 
 
-async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, trigger: dict | None = None,
+async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, started_by_sub: str = "",
+                            trigger: dict | None = None,
                             use_cache: bool = True, user_context: str = "", deliver_filter: str = "",
                             job_id: str | None = None, data_scope: dict | None = None,
                             budget: dict | None = None, board_scope: str = "",
@@ -5506,7 +5509,10 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
                             limits: dict | None = None, input_from: dict | None = None) -> dict:
     """Ядро прогона (LLM-раскладка + находки audit1c + сохранение + аудит). Переиспользуется
     POST /api/runs и планировщиком триггеров (server/triggers.py). Возвращает {saved, result}.
-    Кэш результатов (multi-user): при попадании возвращает сохранённый вывод без LLM/доставки."""
+    Кэш результатов (multi-user): при попадании возвращает сохранённый вывод без LLM/доставки.
+    `started_by_sub` — устойчивый идентификатор владельца (sub из JWT): по нему читается ЛИЧНАЯ доска.
+    Имя для этого не годится — оно меняется, а доска переживает переименования. Пусто — личная доска
+    не читается вовсе: без личности подставлять чью-то память нельзя."""
     _t0 = time.perf_counter()
     _trace = obs.current_trace_id()
     if job_id:
@@ -5649,6 +5655,25 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
     # данных: иначе «на основании чего он так решил» отвечается только логом, который
     # живёт недолго.
     _recv = _input_received(user_context, input_from)
+    # Долгие области доски — личная память человека и память отдела. Права решаются ЗДЕСЬ: рантайм не
+    # знает ни JWT, ни семей, и выдумывать их ему нельзя. Читаем только то, что навыки объявили: если
+    # ни один не просил долгую доску, в базу не ходим вовсе.
+    _long_boards: dict = {}
+    try:
+        _wants = set()
+        for _n in ((agent.get("graph") or {}).get("nodes") or []):
+            if _n.get("kind") != "skill":
+                continue
+            _tpl = (_skill_schemas or {}).get(_n.get("skill")) or {}
+            _wants |= set(blackboard.board_keys_scoped(_tpl.get("inputs")).keys())
+        _wants.discard("run")
+        if "user" in _wants and started_by_sub:
+            _long_boards["user"] = await blackboard.load(blackboard.user_scope(started_by_sub))
+        if "family" in _wants and agent.get("family"):
+            _long_boards["family"] = await blackboard.load(blackboard.family_scope(str(agent.get("family"))))
+    except Exception as _ex:  # noqa: BLE001 — доска усиление, а не условие работы прогона
+        obs.log_event("warning", "board.long.read_failed", error=str(_ex)[:200])
+
     result = await runner.run_live(agent, contract, ape.skill_safety,
                                    data_query=ape.data_query,
                                    skill_sources=ape.skill_datasources_resolved,
@@ -5663,7 +5688,7 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, tri
                                    trace_id=(obs.current_trace_id() if hasattr(obs, "current_trace_id") else "") or "",
                                    on_progress=_on_skill_progress,
                                    board=_board, data_snapshot=data_snapshot, arbiter_ask=_arbiter_ask,
-                                   limits=_limits or None)
+                                   limits=_limits or None, long_boards=_long_boards or None)
     if _recv:
         result["input_received"] = _recv
     # Выводы ветви выкладываем в общую область, чтобы следующие ветви и сводка их увидели. Сбой записи
@@ -5913,6 +5938,9 @@ async def run_start(body: dict, u: dict = Depends(user),
                                                "deliver_filter": deliver_filter, "data_scope": _data_scope,
                                                "budget": _budget or None,
                                                "limits": _run_limits or None,
+                                               # Владелец личной доски едет с заданием: имя может
+                                               # смениться, а доска переживает переименования.
+                                               "actor_sub": _sub(u),
                                                "trace_id": obs.current_trace_id()},
                                       priority=int((body or {}).get("priority") or 5))
         await run_bus.bus().publish_request(job, obs.current_trace_id())
@@ -5921,7 +5949,8 @@ async def run_start(body: dict, u: dict = Depends(user),
         return JSONResponse({**run_queue.public(job, pos), "poll": f"/api/runs/jobs/{job['id']}",
                              "deduped": bool(job.get("deduped"))}, status_code=202)
     async with _run_lock(lock_key):
-        out = await execute_agent_run(agent, contract, actor, use_cache=use_cache, data_scope=_data_scope,
+        out = await execute_agent_run(agent, contract, actor, started_by_sub=_sub(u),
+                                      use_cache=use_cache, data_scope=_data_scope,
                                       budget=_budget or None, limits=_run_limits or None,
                                       user_context=user_context, deliver_filter=deliver_filter)
     return JSONResponse({"run_id": out["saved"]["id"], **out["result"]}, status_code=201)

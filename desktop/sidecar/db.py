@@ -94,6 +94,14 @@ def init() -> None:
             c.execute("ALTER TABLE attachments ADD COLUMN content TEXT NOT NULL DEFAULT ''")
         except sqlite3.OperationalError:
             pass
+        # Область чата: переписка вошедшего живёт на сервере ABOP, у гостя — здесь. Идентификаторы
+        # чатов в двух хранилищах означают РАЗНЫЕ чаты, поэтому локальные вложения и задания догона
+        # помечаем областью: иначе чат сервера №3 показал бы файлы прежнего локального чата №3.
+        for tbl in ("attachments", "pending_runs"):
+            try:
+                c.execute(f"ALTER TABLE {tbl} ADD COLUMN scope TEXT NOT NULL DEFAULT 'local'")
+            except sqlite3.OperationalError:
+                pass
         c.commit()
 
 

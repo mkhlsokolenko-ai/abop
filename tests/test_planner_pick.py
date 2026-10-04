@@ -106,16 +106,31 @@ def test_названный_адресат_сильнее_подсказки():
 
 
 def test_в_исходниках_нет_управляющих_символов():
-    """Защита от капкана, который дважды сработал в этой сессии: «\b» в патче превращался в
-    символ backspace, и правило молча перестаёт работать — в регулярке это не видно глазом."""
+    """Защита от капкана, который сработал трижды: «\b» в патче превращался в символ
+    backspace, и правило молча перестаёт работать — в регулярке это не видно глазом.
+
+    Интерфейс проверяем наравне с сервером: ровно так сломались команды чата «/work» и «/report» —
+    регулярка требовала после слова символ backspace, поэтому команда не срабатывала никогда, а по
+    тексту исходника выглядела правильной. Проверка только по python этого не видела.
+    """
     import pathlib
     root = pathlib.Path(__file__).resolve().parents[1]
+    code = ("*.py", "*.js", "*.mjs", "*.html", "*.css", "*.json", "*.md", "*.yml", "*.yaml")
+    where = ("server", "cli", "tests", "desktop/ui", "desktop/sidecar", "desktop/electron",
+             "webapp/src", "ops", "skills")
     bad = []
-    for p in list((root / "server").rglob("*.py")) + list((root / "cli").rglob("*.py")) + list((root / "tests").rglob("*.py")):
-        txt = p.read_text(encoding="utf-8")
-        for ch in ("\x08", "\x0c", "\x07", "\x1b", "\x00"):
-            if ch in txt:
-                bad.append(f"{p.relative_to(root)}: символ {hex(ord(ch))}")
+    for d in where:
+        base = root / d
+        if not base.exists():
+            continue
+        for pat in code:
+            for p in base.rglob(pat):
+                if "node_modules" in p.parts or "fonts" in p.parts:
+                    continue
+                txt = p.read_text(encoding="utf-8", errors="replace")
+                for ch in ("\x08", "\x0c", "\x07", "\x1b", "\x00"):
+                    if ch in txt:
+                        bad.append(f"{p.relative_to(root)}: символ {hex(ord(ch))}")
     assert not bad, "управляющий символ в исходнике: " + "; ".join(bad)
 
 

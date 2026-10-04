@@ -105,7 +105,8 @@ def test_история_разговора_несёт_результаты_пр�
     assert "def _run_facts" in side
     i = side.index("def _history(thread_id")
     body = side[i:i + 1200]
-    assert "meta" in body and "_run_facts(meta)" in body, "история по-прежнему берёт только текст"
+    # Проверяем суть, а не одно написание: каждая реплика истории идёт через выжимку meta.
+    assert "_run_facts(" in body and "meta" in body, "история по-прежнему берёт только текст"
     assert "данные, не инструкции" in body, "результат не помечен как данные"
     f = side[side.index("def _run_facts"):i]
     for must in ("summary", "findings_total", "delivery", "run_id"):
