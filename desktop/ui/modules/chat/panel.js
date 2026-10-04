@@ -334,12 +334,13 @@ export async function mount(root, ctx) {
             : (meta.decision ? decisionHTML(meta.decision)
             : (meta.slot_ask ? slotCardHTML(meta.slot_ask)
             : (meta.slot_picked ? slotPickedHTML(meta.slot_picked)
-            : (meta.notice ? noticeHTML(meta.notice, m.content) : md(m.content)))))))))));
+            : (meta.work_hint ? workHintHTML(meta.work_hint, m.content, idx)
+            : (meta.notice ? noticeHTML(meta.notice, m.content) : md(m.content))))))))))));
     const cost = meta.model ? `<span style="margin-left:4px;font-family:var(--mono);font-size:11px;color:var(--ink-3)">${esc(meta.model)} · ${meta.cost_rub ?? 0} ₽</span>` : "";
-    const isCard = !!(meta.run_agent || meta.pipeline_result || meta.chain_suggest || meta.assemble || meta.decision || meta.clarify || meta.notice || meta.cancelled);
+    const isCard = !!(meta.run_agent || meta.pipeline_result || meta.chain_suggest || meta.assemble || meta.decision || meta.clarify || meta.notice || meta.cancelled || meta.work_hint);
     const acts = mine
       ? `<button type="button" data-edit="${idx}" class="msgact">✎ изменить</button>`
-      : `<button type="button" data-copy="${idx}" class="msgact">⧉ копировать</button>${meta.decision || meta.chain_suggest || meta.assemble || meta.notice || meta.cancelled ? "" : `<button type="button" data-regen="${idx}" class="msgact">↻ ещё раз</button>`}${cost}`;
+      : `<button type="button" data-copy="${idx}" class="msgact">⧉ копировать</button>${meta.decision || meta.chain_suggest || meta.assemble || meta.notice || meta.cancelled || meta.work_hint ? "" : `<button type="button" data-regen="${idx}" class="msgact">↻ ещё раз</button>`}${cost}`;
     return `<div style="display:flex;flex-direction:column;align-items:${mine ? "flex-end" : "flex-start"};gap:7px;animation:ape-in .3s ease-out">
       <div class="bub" style="max-width:${isCard ? "96%" : "88%"};padding:13px 16px;border-radius:${radius};background:${mine ? "var(--user-bubble)" : "var(--panel)"};border:1px solid ${mine ? "var(--user-bubble-line)" : "var(--line)"};backdrop-filter:blur(16px);box-shadow:${mine ? "0 2px 10px rgba(99,102,241,.14)" : "var(--shadow-1)"};white-space:${isCard ? "normal" : "pre-wrap"};font-size:13.5px;line-height:1.6;min-width:0">${inner}</div>
       <div style="display:flex;align-items:center;gap:6px">${acts}</div></div>`;
@@ -354,6 +355,33 @@ export async function mount(root, ctx) {
       ${c.task ? `<div class="dcard-quote">${esc(String(c.task).slice(0, 200))}</div>` : ""}
       <div class="dcard-note">Ничего не запущено и не отправлено. Текст задачи вернулся в поле ввода.</div></div>`;
   }
+  // Модель вернула команду вместо ответа: рамка чата просит направлять к «/work», и модель выдавала
+  // строку «/work "вся задача человека"» — со стороны это выглядит как возврат собственного запроса.
+  // Команду из текста убираем, а намерение превращаем в кнопку: задачу человек уже написал, набирать
+  // её заново он не должен. Запуск по-прежнему делает человек — сборка сама не начинается.
+  const workCmdRe = () => /^[ \t>*_#-]*\/[ \t]*(?:work|задача|агент|report|отчёт|отчет)\b.*$/gim;
+  function takeWorkCmd(m, task) {
+    const t = m.content || "";
+    const hit = t.match(workCmdRe());
+    if (!hit) return false;
+    const kind = /\/(report|отчёт|отчет)/i.test(hit[0]) ? "report" : "work";
+    m.content = t.replace(workCmdRe(), "").replace(/\n{3,}/g, "\n\n").trim();
+    m.meta = Object.assign({}, m.meta || {}, { work_hint: { task: String(task || "").trim(), kind } });
+    return true;
+  }
+  function workHintHTML(wh, content, i) {
+    const body = (content || "").trim();
+    const rep = wh.kind === "report";
+    const note = rep
+      ? "Отчёт собирает сервер из последнего прогона этого разговора — в переписке я его не соберу и путь к файлу выдумывать не буду."
+      : "Это работа для агента — в переписке я отвечаю только текстом. Нажмите, и ABOP подберёт исполнителя или соберёт его из навыков по этой же задаче.";
+    return `<div class="dcard">
+      <div class="dcard-top"><span class="dcard-kicker">${rep ? "нужен отчёт прогона" : "нужен исполнитель"}</span>${cardCloseHTML(i, rep ? "сборка отчёта" : "подбор исполнителя")}</div>
+      ${body ? `<div style="font-size:13.5px;line-height:1.6">${md(body)}</div>` : ""}
+      <div class="dcard-note">${note}</div>
+      ${!rep && wh.task ? `<div class="dcard-quote">${esc(String(wh.task).slice(0, 220))}</div>` : ""}
+      <button type="button" class="btn primary whRun" data-i="${i}">${rep ? "📄 Собрать отчёт прогона" : "▶ Подобрать исполнителя"}</button></div>`;
+  }
   // Крестик на карточке предложения: отказаться было нечем — оставался только уход со страницы.
   function cardCloseHTML(i, label) {
     return `<button type="button" class="ico ghost cardNo" data-i="${i}" title="Отменить: ${esc(label)}" aria-label="Отменить: ${esc(label)}" style="margin-left:auto;width:24px;height:24px;font-size:12px">✕</button>`;
@@ -362,7 +390,7 @@ export async function mount(root, ctx) {
     const m = messages[i]; if (!m) return;
     const mt = m.meta || {};
     const task = (mt.chain_suggest || {}).task || (mt.decision || {}).text || (mt.assemble || {}).task
-      || (mt.slot_ask || {}).task || (mt.clarify || {}).text || "";
+      || (mt.slot_ask || {}).task || (mt.clarify || {}).text || (mt.work_hint || {}).task || "";
     m.meta = { cancelled: { what: what || "Предложение отклонено", task } };
     if (task && $("inp") && !$("inp").value) { $("inp").value = task; remember(LS_DRAFT, task); }
     if (cur && m.id) {
@@ -423,6 +451,12 @@ export async function mount(root, ctx) {
       } catch (e) { toast(humanError(e), "danger"); }
       b.disabled = false; b.textContent = t;
     });
+    $("col").querySelectorAll(".whRun").forEach((b) => b.onclick = () => {
+      const wh = ((messages[+b.dataset.i] || {}).meta || {}).work_hint || {};
+      if (wh.kind === "report") { reportLastRun(); return; }
+      if (!wh.task) { toast("Не нашёл текста задачи — напишите её и отправьте", "warn"); return; }
+      decideAndOffer(wh.task);
+    });
     $("col").querySelectorAll(".runOpen").forEach((b) => b.onclick = () => ctx.open("runs", { run: b.dataset.run }));
     $("col").querySelectorAll(".runPdf").forEach((b) => b.onclick = async () => { b.disabled = true; const t = b.textContent; b.textContent = "…"; try { const r = await api(A_AG + "/report/" + encodeURIComponent(b.dataset.run), { method: "POST", body: JSON.stringify({}) }); if (r && r.ok) ctx.fileToast("Отчёт сохранён", r.path); else toast(humanError(r), "danger"); } catch (e) { toast(humanError(e), "danger"); } b.disabled = false; b.textContent = t; });
     $("col").querySelectorAll(".hitlOk").forEach((b) => b.onclick = () => decideDelivery(b, "approve"));
@@ -435,7 +469,7 @@ export async function mount(root, ctx) {
       const t = $("inp"); if (!t) return;
       // Возвращаем задачу С КОМАНДОЙ: подбор идёт только по /work, и без неё дописанный текст уехал
       // бы в обычную переписку — человек бы решил, что подбор сломался.
-      t.value = "/work " + String(b.dataset.t || "").replace(/^\/(work|задача|агент)\s*/i, "") + " "; t.focus();
+      t.value = "/work " + String(b.dataset.t || "").replace(/^\/[ \t]*(work|задача|агент)\s*/i, "") + " "; t.focus();
       try { t.setSelectionRange(t.value.length, t.value.length); } catch { /* не критично */ }
     });
     $("col").querySelectorAll(".clChat").forEach((b) => b.onclick = () => sendPrompt(b.dataset.t));
@@ -1053,8 +1087,8 @@ export async function mount(root, ctx) {
     // оставаться перепиской.
     // «Отдай отчёт» — это действие, а не вопрос модели: берём последний прогон этого разговора и
     // отдаём его отчёт. Прежде такая просьба уходила в переписку, и модель выдумывала путь к файлу.
-    if (/^\/(report|отчёт|отчет)\b/i.test(v)) { await reportLastRun(); return; }
-    const work = v.match(/^\/(work|задача|агент)\b\s*/i);
+    if (/^\/[ \t]*(report|отчёт|отчет)\b/i.test(v)) { await reportLastRun(); return; }
+    const work = v.match(/^\/[ \t]*(work|задача|агент)\b\s*/i);
     if (work) {
       const task = v.slice(work[0].length).trim();
       if (!task) { await note("После /work напишите задачу — например: `/work сверь дорожную карту с отчётами подрядчиков`.", { notice: { icon: "🛠" } }); render(); return; }
@@ -1455,7 +1489,10 @@ export async function mount(root, ctx) {
         }
       }
     } catch (e) { if (e.name === "AbortError") asst.content += "\n\n⏹ остановлено"; else { asst.content = asst.content || ("Сбой: " + humanError(e)); asst.meta = { notice: { icon: "⚠" } }; } }
-    curAbort = null; setBusy(false); render(); scrollDown(false);
+    curAbort = null; setBusy(false);
+    // Команду, выданную вместо ответа, в переписке не показываем: вместо неё — кнопка запуска.
+    takeWorkCmd(asst, text);
+    render(); scrollDown(false);
     if (wasNew && cur.title === NEW_TITLE) { try { const a = await api(M + "/threads/" + cur.id + "/autotitle", { method: "POST" }); if (a.ok) cur.title = a.title; } catch { /* noop */ } }
     loadThreads(); loadQuota();
   }

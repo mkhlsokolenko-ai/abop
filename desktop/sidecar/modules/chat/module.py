@@ -149,6 +149,27 @@ def _run_facts(meta: dict) -> str:
     return "\n".join(out)
 
 
+# Команда в ответе модели — это НЕ ответ. Рамка чата просит направлять к «/work», и модель
+# исполняла это буквально: выдавала строку «/work "вся задача человека"» — со стороны выглядит так,
+# будто ассистент вернул человеку его же запрос. Строку убираем из текста, а намерение сохраняем
+# отметкой: интерфейс покажет кнопку запуска, и задачу не придётся набирать заново.
+_WORK_CMD = re.compile(r"^[ \t>*_#-]*/[ \t]*(?:work|задача|агент|report|отчёт|отчет)\b.*$",
+                       re.IGNORECASE | re.MULTILINE)
+
+
+def _strip_work_cmd(text: str) -> tuple[str, str]:
+    """Текст без командной строки и вид намерения: «work» (нужен исполнитель) или «report» (нужен
+    отчёт прошлого прогона). Пустая строка — команды не было."""
+    t = str(text or "")
+    m = _WORK_CMD.search(t)
+    if not m:
+        return t, ""
+    kind = "report" if re.search(r"/(?:report|отчёт|отчет)", m.group(0), re.IGNORECASE) else "work"
+    out = _WORK_CMD.sub("", t)
+    out = re.sub(r"\n{3,}", "\n\n", out).strip()
+    return out, kind
+
+
 def _history(thread_id: int, limit: int = 10) -> str:
     lines: list[str] = []
     for r in store.tail(thread_id, limit):
@@ -695,9 +716,11 @@ def send(thread_id: int, body: SendIn) -> dict:
     except abop.AbopError as e:
         return {"ok": False, "error": str(e)}
 
-    text = res.get("text", "")
+    text, cmd = _strip_work_cmd(res.get("text", ""))
     meta = {"model": res.get("model"),
             "input_tokens": res.get("input_tokens"), "output_tokens": res.get("output_tokens")}
+    if cmd:
+        meta["work_hint"] = {"task": (body.prompt or "").strip()[:2000], "kind": cmd}
     mid = store.add(thread_id, "assistant", text, meta)
     return {"ok": True, "id": mid, "content": text, "meta": meta}
 
@@ -777,7 +800,10 @@ def send_stream(thread_id: int, body: SendIn) -> StreamingResponse:
         except abop.AbopError as e:
             yield _sse({"error": str(e)})
         if full:
-            store.add(thread_id, "assistant", full, meta)
+            clean, cmd = _strip_work_cmd(full)
+            if cmd:
+                meta["work_hint"] = {"task": (body.prompt or "").strip()[:2000], "kind": cmd}
+            store.add(thread_id, "assistant", clean or full, meta)
         yield _sse({"done": True, "meta": meta})
 
     return StreamingResponse(gen(), media_type="text/event-stream",
