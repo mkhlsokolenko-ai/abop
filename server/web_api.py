@@ -30,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, arbiter, assembly, audit_store, blackboard, planner, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, report_compose, report_store, run_cache_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, arbiter, assembly, audit_store, blackboard, planner, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, orchestrator, report_compose, report_store, run_cache_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
@@ -2288,6 +2288,58 @@ async def canvas_layout_save(key: str, body: dict, u: dict = Depends(user)) -> d
     edges = (body or {}).get("edges") or []
     saved = await layout_store.save(key, nodes, edges)
     return {"key": key, "saved": True, "updated_at": saved.get("updated_at")}
+
+
+@app.post("/api/orchestrate")
+async def orchestrate(body: dict, u: dict = Depends(user)) -> dict:
+    """Одно решение по задаче: кого звать, что собрать, какие границы — и запись, почему именно так.
+
+    До этого каждый канал (чат десктопа, веб, крон, шина) сам сшивал последовательность: достаточно
+    ли описания → есть ли готовый агент → собрать ли из навыков → какой документ. Они расходились:
+    карточка в чате держала план, собранный до правки подбора, и человек запускал устаревший. Теперь
+    решение принимается здесь, целиком, и ложится в журнал.
+
+    Тело: {task, slots?: {имя: значение}, max_steps?}. Ответ — решение и его трасса; выполнять его
+    (запустить агента, собрать из навыков) вызывающая сторона идёт отдельными ручками: оркестратор
+    решает, а не действует. Это не формальность — у действия своя проверка прав и свой журнал.
+    """
+    task = str((body or {}).get("task") or (body or {}).get("goal") or "").strip()
+    if not task:
+        raise HTTPException(422, "нужна задача")
+    max_steps = max(1, min(6, int((body or {}).get("max_steps") or 4)))
+    slots_given = {str(k) for k, v in ((body or {}).get("slots") or {}).items() if str(v or "").strip()}
+
+    # Факты собираем здесь, решение принимает чистая функция: тогда его можно проверить тестом.
+    matches = []
+    try:
+        m = await agents_match({"q": task}, u)
+        matches = [{"id": it.get("id"), "name": it.get("name"), "score": it.get("score")}
+                   for it in (m.get("matches") or [])]
+    except Exception:  # noqa: BLE001 — без подбора агентов решение всё равно принимается
+        matches = []
+    plan = await plan_auto({"task": task, "slots": (body or {}).get("slots") or {},
+                            "max_steps": max_steps}, u)
+    _sids = [str(s.get("skill") or "") for s in (plan.get("steps") or []) if s.get("skill")]
+    cached = False
+    if len(_sids) >= orchestrator.EDITOR_FROM:
+        _cid = report_compose.cache_id(_sids)
+        cached = bool(_cid and (await report_store.get(_cid) or {}).get("layout"))
+
+    d = orchestrator.decide(task, catalog={}, entities=set(plan.get("entities_ready") or []),
+                            slots=slots_given, matches=matches, plan=plan, cached_layout=cached,
+                            max_steps=max_steps)
+    out = d.as_dict()
+    out["итог"] = orchestrator.explain(d)
+    # Журнал решений: по нему видно, почему выбран этот исполнитель. Именно это дважды позволило
+    # поймать неверный подбор — незаметный оркестратор выдал бы гладкий документ не по задаче.
+    await audit_store.record(u.get("name") or u.get("sub") or "dev", "orchestrator.decide",
+                             d.agent_id or ",".join(d.skills) or d.kind,
+                             {"kind": d.kind, "task": task[:200], "skills": d.skills,
+                              "editor": d.editor, "form": d.form, "facts": d.facts,
+                              "why": d.why[:8]})
+    obs.log_event("info", "orchestrator.decide", kind=d.kind, skills=len(d.skills),
+                  editor=d.editor or "-", score=d.facts.get("подбор_агента"))
+    return out
 
 
 @app.post("/api/plan/auto")
