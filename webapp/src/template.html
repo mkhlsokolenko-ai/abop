@@ -5813,15 +5813,38 @@ class Component extends DCLogic {
     var self = this, goal = (this.state.goalText || '').trim();
     if (!goal) { this.showToast('Опишите цель прогона'); return; }
     this.setState({ planChecking: true, planOk: false, planSteps: [{ text: 'Спрашиваю среду: какие семьи агентов подходят под цель…', ok: false }] });
-    // План собирается ПО КОНТРАКТАМ навыков: среда смотрит, что реально сможет выполниться на
-    // текущих данных, и показывает это до того, как потрачены деньги. Перечисление семей агентов
-    // (старый /api/plan) отвечало на вопрос «кто похож», а не «что запустится».
-    fetch('/api/plan/auto', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ task: goal }) })
+    // Решение спрашиваем у ОРКЕСТРАТОРА — того же, что отвечает чату десктопа: кого звать, что
+    // собрать, чего не хватает в описании. Раньше веб звал планировщик напрямую и решал сам, поэтому
+    // каналы расходились: один предлагал собрать из навыков, другой — запустить похожего агента.
+    // Ответ оркестратора приводим к прежнему виду плана, чтобы вёрстка и сборка не менялись.
+    fetch('/api/orchestrate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ task: goal }) })
       .then(function(r){ return r.json().then(function(j){ return { ok: r.ok, j: j || {} }; }); })
       .then(function(res){
         if (!res.ok) { self.setState({ planChecking: false, planOk: false, planSteps: [{ text: 'План не собран: ' + ((res.j && res.j.detail) || 'ошибка ABOP'), ok: false }] }); return; }
-        var p = res.j || {};
-        var waves = (p.waves || []).map(function(w, i){ return { n: i + 1, text: (w || []).join(' · '), family: '' }; });
+        var d = res.j || {};
+        // Решение оркестратора → прежний вид плана: вёрстка ниже и сборка по кнопке остаются как были.
+        var p = {
+          ok: d.kind === 'build', need_more: d.kind === 'ask',
+          sufficiency: d.kind === 'ask' ? { 'почему': d['итог'] || '', 'вопросы': d.questions || [] } : null,
+          steps: (d.skills || []).map(function(sid){ return { skill: sid, title: sid, why: '' }; }),
+          missing: ((d.facts || {})['не_хватает']) || [], note: (d.why || []).join(' · '),
+          decision: d
+        };
+        var waves = [];
+        // Готовый агент — тоже решение: его не надо собирать, и в вёрстке это должно быть видно.
+        if (d.kind === 'agent') {
+          self.setState({ planChecking: false, planOk: false, planAuto: p, planWavesReal: [],
+            planSteps: [{ text: 'Задачу закроет готовый агент «' + (d.agent_name || d.agent_id) + '» — собирать нечего', ok: true }]
+              .concat((d.why || []).slice(0, 2).map(function(w){ return { text: w, ok: true }; }))
+              .concat([{ text: 'Запустить его можно из «Флота» или из чата', ok: true }]) });
+          return;
+        }
+        if (d.kind === 'chat') {
+          self.setState({ planChecking: false, planOk: false, planAuto: p, planWavesReal: [],
+            planSteps: [{ text: d['итог'] || 'Отдельный исполнитель не нужен', ok: true }]
+              .concat((d.why || []).slice(0, 2).map(function(w){ return { text: w, ok: false }; })) });
+          return;
+        }
         var c = self.state.contract, hasContract = !!(c && c.audit_id);
         var steps = [];
         if (p.need_more) {
@@ -5839,6 +5862,9 @@ class Component extends DCLogic {
           (p.steps || []).slice(0, 5).forEach(function(x){
             steps.push({ text: '· ' + (x.title || x.skill) + ' — ' + (x.why || ''), ok: true });
           });
+          (((p.decision || {}).why) || []).slice(0, 3).forEach(function(w){ steps.push({ text: w, ok: true }); });
+          if ((p.decision || {}).editor === 'added') steps.push({ text: 'Документ соберёт редактор отчёта: разделы навыков в одном документе', ok: true });
+          if ((p.decision || {}).editor === 'cached') steps.push({ text: 'Раскладка отчёта для этого набора уже известна — лишнего вызова модели не будет', ok: true });
           if ((p.ask_slots || []).length) steps.push({ text: 'Уточним предмет работы: ' + p.ask_slots.join(', '), ok: true });
           (p.unclear || []).forEach(function(u){
             steps.push({ text: 'Этап «' + String(u['этап']).slice(0, 48) + '» не определён: ' + (u['почему'] || ''), ok: false });

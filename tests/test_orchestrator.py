@@ -208,3 +208,22 @@ def test_планировщик_отдаёт_счёт_шага():
     from server import planner as P
     p = P.plan("нарежь задачи в трекере", CATALOG, entities=set(), slots=set(), max_steps=2)
     assert p["steps"] and p["steps"][0].get("score") is not None, p["steps"]
+
+
+def test_веб_тоже_спрашивает_решение_у_оркестратора():
+    """Один вопрос на все каналы: иначе веб предлагает собрать, а чат — запустить похожего агента."""
+    web = (ROOT / "webapp" / "src" / "template.html").read_text(encoding="utf-8")
+    assert "'/api/orchestrate'" in web, "веб всё ещё решает сам через планировщик"
+    i = web.index("'/api/orchestrate'")
+    body = web[i:i + 2600]
+    for kind in ("d.kind === 'build'", "d.kind === 'ask'", "d.kind === 'agent'", "d.kind === 'chat'"):
+        assert kind in body, f"веб не разбирает вид решения: {kind}"
+    assert "planAuto: p" in body, "решение не приведено к виду плана — сборка по кнопке сломается"
+    # Трасса решения показывается человеку: выбор должен быть проверяем, а не на слово.
+    assert "(p.decision || {}).why" in web or "((p.decision || {}).why)" in web
+
+
+def test_собранный_бандл_веба_содержит_оркестратор():
+    """webapp/index.html — артефакт сборки: без пересборки правка не доедет до стенда."""
+    idx = (ROOT / "webapp" / "index.html").read_text(encoding="utf-8")
+    assert "/api/orchestrate" in idx
