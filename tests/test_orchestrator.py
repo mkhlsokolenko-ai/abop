@@ -175,3 +175,36 @@ def test_сайдкар_отдаёт_решение():
     cli = (ROOT / "desktop" / "sidecar" / "abop_client.py").read_text(encoding="utf-8")
     assert '@router.post("/orchestrate")' in mod and "def orchestrate" in cli
     assert "/api/orchestrate" in cli
+
+
+# ── слабое совпадение навыка: спрашиваем, а не угадываем ─────────────────────────────────────────
+
+def test_слабое_совпадение_навыка_превращается_в_вопрос():
+    """На проде «проверь идею ниже — идея сервиса…» дало цепочку аудита 1С со счётом 0.2.
+
+    Уверенно неверный ответ хуже вопроса: он выглядит как работа и стоит реального прогона. Поэтому
+    при слабом лидере оркестратор спрашивает — теми же словами, что и при слабом подборе агента.
+    """
+    plan = {"ok": True, "report_template": "audit1c",
+            "steps": [{"skill": "audit1c-extract", "title": "Извлечение 1С", "score": 0.2},
+                      {"skill": "audit1c-checks", "title": "Проверки", "score": 0.18}]}
+    d = _d("проверь идею ниже - идея сервиса - надстройка над гитхаб с рейтингами", plan=plan)
+    assert d.kind == "ask", d.why
+    assert d.questions and "слишком много навыков" in d.questions[0]
+    assert d.facts["догадка"][:1] == ["audit1c-extract"], d.facts
+    assert any("догадка" in w for w in d.why), d.why
+
+
+def test_уверенный_лидер_собирается_как_прежде():
+    plan = {"ok": True, "report_template": "tickets",
+            "steps": [{"skill": "to-tickets", "title": "Задачи в трекер", "score": 0.9}]}
+    d = _d("нарежь задачи в трекере по решениям сверки", plan=plan)
+    assert d.kind == "build" and d.skills == ["to-tickets"]
+    assert d.facts["совпадение_навыка"] == 0.9
+
+
+def test_планировщик_отдаёт_счёт_шага():
+    """Счёт нужен числом: по словам в «why» решение принимать нельзя."""
+    from server import planner as P
+    p = P.plan("нарежь задачи в трекере", CATALOG, entities=set(), slots=set(), max_steps=2)
+    assert p["steps"] and p["steps"][0].get("score") is not None, p["steps"]

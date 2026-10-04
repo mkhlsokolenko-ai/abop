@@ -461,7 +461,7 @@ def plan(task: str, catalog: dict, *, entities: set[str], slots: set[str],
     have_out: dict[str, dict] = {}   # что уже отдают выбранные навыки
     missing: list[str] = []
 
-    def add(sid: str, why: str, depth: int = 0) -> bool:
+    def add(sid: str, why: str, depth: int = 0, score: float | None = None) -> bool:
         """Добавить навык, предварительно добавив тех, чьих выходов ему не хватает."""
         if any(st["skill"] == sid for st in chosen):
             return True
@@ -493,6 +493,9 @@ def plan(task: str, catalog: dict, *, entities: set[str], slots: set[str],
                 if depth < MAX_DEPTH and producers:
                     add(producers[0], f"даёт «{key}» на общую доску для «{sid}»", depth + 1)
         chosen.append({"skill": sid, "why": why,
+                       # Счёт числом, а не только словами в «why»: по нему вызывающая сторона решает,
+                       # уверенный это выбор или догадка. Догадку честнее превратить в вопрос.
+                       "score": round(float(score), 3) if score is not None else None,
                        "title": str(meta.get("title") or sid),
                        "slots": need["slots"],
                        "entities": need["entities"],
@@ -545,14 +548,14 @@ def plan(task: str, catalog: dict, *, entities: set[str], slots: set[str],
                             and sid in (_needs(catalog.get(c) or {})["skills"] + _accepts(catalog.get(c) or {}))), None)
                 if nxt is None:
                     break
-                if add(nxt, f"этап «{stage[:48]}»: продолжает «{sid}»"):
+                if add(nxt, f"этап «{stage[:48]}»: продолжает «{sid}»", score=score):
                     given |= {str(it.get("path") or "")
                               for it in sc.produces_list((catalog.get(nxt) or {}).get("produces"))}
                 break
             outs = {str(it.get("path") or "") for it in sc.produces_list((catalog.get(sid) or {}).get("produces"))}
             if outs and outs <= given:
                 continue       # такой же результат уже даёт выбранный навык
-            if add(sid, f"этап «{stage[:48]}» (совпадение {round(score, 2)})"):
+            if add(sid, f"этап «{stage[:48]}» (совпадение {round(score, 2)})", score=score):
                 given |= outs
                 break
 
@@ -602,7 +605,7 @@ def plan(task: str, catalog: dict, *, entities: set[str], slots: set[str],
         outs = {str(it.get("path") or "") for it in sc.produces_list((catalog.get(sid) or {}).get("produces"))}
         if chosen and outs and outs <= given:
             continue
-        if add(sid, f"похож на задачу (совпадение {round(score, 2)})"):
+        if add(sid, f"похож на задачу (совпадение {round(score, 2)})", score=score):
             given |= outs
 
     if not chosen:
