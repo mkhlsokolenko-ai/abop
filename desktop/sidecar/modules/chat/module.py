@@ -147,6 +147,15 @@ class PlanBuildIn(BaseModel):
     name: str = ""
 
 
+@router.post("/orchestrate")
+def orchestrate(body: PlanIn) -> dict:
+    """Решение по задаче целиком. Пустой ответ — не ошибка: чат тогда работает как прежде."""
+    try:
+        return abop.orchestrate(body.q, body.slots or {})
+    except abop.AbopError as e:
+        return {"kind": "", "error": str(e)}
+
+
 @router.post("/plan")
 def plan(body: PlanIn) -> dict:
     """План из НАВЫКОВ под задачу — когда готового агента нет.

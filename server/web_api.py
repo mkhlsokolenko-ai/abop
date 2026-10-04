@@ -2313,8 +2313,14 @@ async def orchestrate(body: dict, u: dict = Depends(user)) -> dict:
     matches = []
     try:
         m = await agents_match({"q": task}, u)
-        matches = [{"id": it.get("id"), "name": it.get("name"), "score": it.get("score")}
-                   for it in (m.get("matches") or [])]
+        for it in (m.get("matches") or [])[:5]:
+            # Навыки агента нужны решению: «звать готового или собирать» решается сравнением того,
+            # что агент УМЕЕТ, с тем, что нужно задаче — а не двух счётов из разных шкал.
+            ag = await agent_store.get(str(it.get("id") or "")) or {}
+            sk = [str(n.get("skill") or "") for n in ((ag.get("graph") or {}).get("nodes") or [])
+                  if n.get("kind") == "skill" and n.get("skill")]
+            matches.append({"id": it.get("id"), "name": it.get("name"), "score": it.get("score"),
+                            "skills": sk})
     except Exception:  # noqa: BLE001 — без подбора агентов решение всё равно принимается
         matches = []
     plan = await plan_auto({"task": task, "slots": (body or {}).get("slots") or {},

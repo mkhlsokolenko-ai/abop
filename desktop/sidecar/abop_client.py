@@ -211,6 +211,18 @@ def match_full(q: str) -> dict:
     return r if isinstance(r, dict) else {"matches": r or []}
 
 
+def orchestrate(task: str, slots: dict | None = None, max_steps: int = 4) -> dict:
+    """Одно решение по задаче: кого звать, что собрать, какие границы — и трасса, почему так.
+
+    Прежде чат сам сшивал последовательность: подбор агента → план из навыков → карточка. Решение
+    принималось в момент ПОКАЗА карточки и к моменту нажатия успевало устареть — на этом владелец и
+    запустил план, собранный до правки подбора.
+    """
+    r = _req("POST", "/api/orchestrate", {"task": task, "slots": slots or {}, "max_steps": max_steps},
+             timeout=60)
+    return r if isinstance(r, dict) else {}
+
+
 def plan_auto(task: str, slots: dict | None = None, max_steps: int = 4) -> dict:
     """План под задачу ИЗ НАВЫКОВ: что выполнимо по контрактам, чего не хватает и в каком порядке.
 

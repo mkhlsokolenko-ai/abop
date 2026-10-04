@@ -21,8 +21,10 @@ from dataclasses import dataclass, field
 
 from . import planner
 
-# Порог уверенного подбора готового агента. Ниже — не угадываем исполнителя, а собираем из навыков:
-# это та же величина, по которой чат решал запускать агента, просто теперь она одна и объявлена.
+# Нижняя планка подбора готового агента: ниже этого совпадение — шум, агента даже не рассматриваем.
+# Сама по себе планка исполнителя НЕ выбирает: счёт подбора агента и счёт подбора навыка считаются
+# по-разному и в одной шкале не сравниваются. Проверено на живом запросе: «проверь идею сервиса…»
+# давало агента «Финаналитик» со счётом выше порога, хотя собрать нужно было оценку идеи.
 AGENT_SURE = 0.32
 # Ниже этого агента даже не упоминаем: совпадение на уровне шума.
 AGENT_FLOOR = 0.25
@@ -70,28 +72,43 @@ def decide(task: str, *, catalog: dict, entities: set, slots: set, matches: list
     top = (matches or [{}])[0] if matches else {}
     score = float(top.get("score") or 0)
     d.facts["подбор_агента"] = round(score, 3)
-    d.facts["порог_агента"] = AGENT_SURE
+    d.facts["планка_агента"] = AGENT_SURE
 
-    # 1. Готовый агент, если совпадение уверенное. Это самый дешёвый путь: ни сборки, ни лишних
-    #    вызовов модели — запускаем то, что уже собрано и проверено.
-    if score >= AGENT_SURE:
+    # План считаем ВСЕГДА, даже когда готовый агент выглядит подходящим: решение «звать готового или
+    # собирать» принимается сравнением сопоставимого — что умеет агент против того, что нужно задаче.
+    # Подбор детерминированный, модель тут не участвует, так что лишнего вызова это не стоит.
+    p = plan if isinstance(plan, dict) else planner.plan(
+        t, catalog, entities=set(entities or ()), slots=set(slots or ()),
+        max_steps=max_steps, hints=hints or {})
+    steps = [str(s.get("skill") or "") for s in (p.get("steps") or []) if s.get("skill")]
+
+    # 1. Готовый агент — если он прошёл планку И УМЕЕТ то, что нужно задаче: его навыки покрывают
+    #    план. Сравниваем объявленное с объявленным, а не два счёта из разных шкал. Пустой план с
+    #    подходящим агентом — тоже его случай: собирать всё равно нечего.
+    cover = {str(x) for x in (top.get("skills") or [])}
+    covers = bool(steps) and set(steps) <= cover
+    if score >= AGENT_SURE and (covers or not steps):
         d.kind = "agent"
         d.agent_id = str(top.get("id") or "")
         d.agent_name = str(top.get("name") or d.agent_id)
         d.alternatives = [{"id": m.get("id"), "name": m.get("name"), "score": round(float(m.get("score") or 0), 3)}
                           for m in (matches or [])[1:3] if float(m.get("score") or 0) >= AGENT_FLOOR]
-        d.why.append(f"готовый агент «{d.agent_name}» подходит уверенно: совпадение "
-                     f"{score:.2f} ≥ порога {AGENT_SURE}")
+        d.facts["покрывает_план"] = sorted(steps)
+        d.why.append(f"готовый агент «{d.agent_name}» умеет то, что нужно задаче"
+                     + (f" ({', '.join(steps)})" if steps else "")
+                     + f"; совпадение {score:.2f}")
         if d.alternatives:
             d.why.append("рядом были: " + ", ".join(f"{a['name']} {a['score']:.2f}" for a in d.alternatives))
         return d
 
-    # 2. Готового нет — спрашиваем план из навыков. Пустой план тоже ответ: исполнителя в каталоге нет.
-    p = plan if isinstance(plan, dict) else planner.plan(
-        t, catalog, entities=set(entities or ()), slots=set(slots or ()),
-        max_steps=max_steps, hints=hints or {})
-    if score > 0:
-        d.why.append(f"готовый агент не выбран: лучшее совпадение {score:.2f} < порога {AGENT_SURE}")
+    if score >= AGENT_SURE and steps and not covers:
+        # Самый коварный случай: агент похож по словам, но делает не то. Раньше он выигрывал по
+        # порогу, и человек получал гладкий документ не по своей задаче.
+        d.why.append(f"готовый агент «{top.get('name') or top.get('id')}» похож ({score:.2f}), но делает другое: "
+                     f"задаче нужны {', '.join(steps)}, а он умеет "
+                     + (", ".join(sorted(cover)) if cover else "другое"))
+    elif score > 0:
+        d.why.append(f"готовый агент не выбран: лучшее совпадение {score:.2f} < планки {AGENT_SURE}")
     else:
         d.why.append("похожих агентов нет")
 
@@ -101,7 +118,6 @@ def decide(task: str, *, catalog: dict, entities: set, slots: set, matches: list
         d.why.append("описания не хватает, чтобы выбрать исполнителя: " + str(p.get("note") or ""))
         return d
 
-    steps = [str(s.get("skill") or "") for s in (p.get("steps") or []) if s.get("skill")]
     if not steps:
         d.why.append("исполнителя под такую задачу в каталоге нет: " + str(p.get("note") or ""))
         d.facts["не_хватает"] = list(p.get("missing") or [])[:4]

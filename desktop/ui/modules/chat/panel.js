@@ -951,24 +951,33 @@ export async function mount(root, ctx) {
     // подробно описал задачу. Длина больше не отменяет подбор; вставленный по хоткею фрагмент —
     // по-прежнему работа в чате, а не команда агенту.
     if (!isPasted) {
-      let matches = [], need = null;
-      try {
-        const r = await api(M + "/match", { method: "POST", body: JSON.stringify({ q: v }) });
-        matches = (r && r.matches) || [];
-        if (r && r.need_more) need = r.sufficiency || {};
-      } catch { /* без подсказки */ }
-      // Описания не хватает — не угадываем исполнителя, а спрашиваем ровно о недостающем.
-      if (need) { await clarifyCard(v, need); return; }
-      const top = matches[0];
-      // уверенный подбор — карточка решения; средняя уверенность — тоже карточка, но с оговоркой,
-      // потому что раньше в этом диапазоне агент не предлагался вовсе, а подсказки уже стирались
-      if (top && top.score >= 0.32) { await decisionCard(v, matches); return; }
-      // Готового агента под задачу нет. Это не повод отвечать текстом: каталог навыков и
-      // планировщик умеют собрать исполнителя с нуля — цепочку, выполнимую по контрактам. Спрашиваем
-      // план и предлагаем сборку; пустой план тоже ответ — тогда работаем в чате.
-      let pl = null;
-      try { pl = await api(M + "/plan", { method: "POST", body: JSON.stringify({ q: v }) }); } catch { /* план не обязателен */ }
-      if (pl && (pl.steps || []).length) { await assembleCard(v, pl); return; }
+      // Одно решение у оркестратора вместо трёх вызовов по очереди: кого звать, что собрать, чего не
+      // хватает в описании. Раньше чат сшивал это сам и каждый канал — по-своему; решение вдобавок
+      // принималось в момент ПОКАЗА карточки и к нажатию успевало устареть.
+      const d = await decide(v);
+      if (d) {
+        if (d.kind === "ask" && (d.questions || []).length) { await clarifyCard(v, { "вопросы": d.questions, "почему": d["итог"] || "" }); return; }
+        if (d.kind === "agent" && d.agent_id) {
+          const top = { id: d.agent_id, name: d.agent_name, score: (d.facts || {})["подбор_агента"] };
+          await decisionCard(v, [top].concat(d.alternatives || []));
+          return;
+        }
+        if (d.kind === "build" && (d.skills || []).length) { await assembleCard(v, decisionToPlan(d)); return; }
+      } else {
+        // Оркестратора нет (старый сайдкар или сервер недоступен) — работаем как прежде.
+        let matches = [], need = null;
+        try {
+          const r = await api(M + "/match", { method: "POST", body: JSON.stringify({ q: v }) });
+          matches = (r && r.matches) || [];
+          if (r && r.need_more) need = r.sufficiency || {};
+        } catch { /* без подсказки */ }
+        if (need) { await clarifyCard(v, need); return; }
+        const top = matches[0];
+        if (top && top.score >= 0.32) { await decisionCard(v, matches); return; }
+        let pl = null;
+        try { pl = await api(M + "/plan", { method: "POST", body: JSON.stringify({ q: v }) }); } catch { /* план не обязателен */ }
+        if (pl && (pl.steps || []).length) { await assembleCard(v, pl); return; }
+      }
     }
     sendPrompt(v);
   }
@@ -986,6 +995,19 @@ export async function mount(root, ctx) {
     await note("предложен агент", { decision: { text, top, alt } });
     render(); scrollDown(true);
   }
+  // Решение по задаче: спрашиваем оркестратор. Пусто — его нет (старый сайдкар), работаем как прежде.
+  async function decide(text) {
+    try {
+      const d = await api(M + "/orchestrate", { method: "POST", body: JSON.stringify({ q: text }) });
+      return d && d.kind ? d : null;
+    } catch { return null; }
+  }
+  // Решение «собрать из навыков» → вид, который понимает карточка сборки.
+  function decisionToPlan(d) {
+    return { steps: (d.skills || []).map((sid) => ({ skill: sid })), missing: (d.facts || {})["не_хватает"] || [],
+             note: (d.why || []).join(" · "), report_template: d.form || "", editor: d.editor || "" };
+  }
+
   // Сборка из навыков: готового агента нет, но план по контрактам есть.
   async function assembleCard(text, pl) {
     await ensureThread(text.slice(0, 50));
@@ -1025,6 +1047,19 @@ export async function mount(root, ctx) {
   // же путём, что и обычную цепочку, — отдельного пути исполнения для собранного агента нет.
   async function buildAndRunPlan(a) {
     setBusy(true);
+    // Карточка могла пролежать в чате долго, а подбор за это время поправили. Решение
+    // пересчитывается здесь, в момент нажатия: именно на устаревшей карточке владелец запустил план,
+    // собранный до правки подбора. Расхождение не прячем — говорим и идём с новым.
+    const fresh = await decide(a.task);
+    if (fresh && fresh.kind === "build" && (fresh.skills || []).length) {
+      const was = (a.steps || []).map((s) => s.skill).join(",");
+      const now = (fresh.skills || []).join(",");
+      if (was !== now) {
+        await note(`Подбор пересчитан перед запуском: было «${was}», стало «${now}».`, { notice: { icon: "↻" } });
+        a = Object.assign({}, a, decisionToPlan(fresh), { task: a.task, name: a.name });
+        render();
+      }
+    }
     let r = null;
     try { r = await api(M + "/plan/build", { method: "POST", body: JSON.stringify({ steps: a.steps, name: a.name }) }); }
     catch (e) { setBusy(false); toast(humanError(e), "danger"); return; }

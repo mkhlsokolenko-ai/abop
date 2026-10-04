@@ -50,20 +50,43 @@ def _d(task, **kw):
     return orchestrator.decide(task, **kw)
 
 
-def test_уверенный_подбор_запускает_готового_агента():
-    """Самый дешёвый путь: ни сборки, ни вызова модели — то, что уже собрано и проверено."""
-    d = _d("разбери почту за день", matches=[{"id": "a1", "name": "Почтовик", "score": 0.81},
-                                             {"id": "a2", "name": "Секретарь", "score": 0.4}])
-    assert d.kind == "agent" and d.agent_id == "a1"
+def test_готовый_агент_берётся_когда_умеет_нужное():
+    """Самый дешёвый путь: ни сборки, ни вызова модели — но только если агент делает именно это."""
+    d = _d("разбери почту за день: задачи, сроки, что требует ответа",
+           matches=[{"id": "a1", "name": "Почтовик", "score": 0.81, "skills": ["mail-triage"]},
+                    {"id": "a2", "name": "Секретарь", "score": 0.4, "skills": ["mail-triage"]}])
+    assert d.kind == "agent" and d.agent_id == "a1", d.why
     assert d.alternatives and d.alternatives[0]["name"] == "Секретарь"
-    assert any("0.81" in w for w in d.why), d.why
+    assert any("умеет то, что нужно" in w for w in d.why), d.why
     assert "Почтовик" in orchestrator.explain(d)
 
 
+def test_похожий_но_не_умеющий_агент_не_выигрывает():
+    """Коварный случай: агент похож по словам, а делает другое — раньше он выигрывал по порогу.
+
+    Ровно это и случилось на проде: «проверь идею сервиса…» уходило к «Финаналитику», потому что его
+    счёт подбора прошёл порог, хотя собрать нужно было оценку идеи.
+    """
+    d = _d("нарежь задачи в трекере по решениям сверки",
+           matches=[{"id": "a1", "name": "Финаналитик", "score": 0.6, "skills": ["mail-triage"]}])
+    assert d.kind == "build", d.why
+    assert "to-tickets" in d.skills, d.skills
+    assert any("делает другое" in w for w in d.why), d.why
+
+
+def test_нечего_собирать_но_агент_подходит():
+    """План пуст (исполнителя из навыков не выходит), а похожий агент есть — звать его."""
+    d = _d("покажи, как у нас устроен процесс закупки от заявки до оплаты",
+           matches=[{"id": "a9", "name": "Карта процессов", "score": 0.7, "skills": []}],
+           plan={"ok": True, "steps": []})
+    assert d.kind == "agent" and d.agent_id == "a9", d.why
+
+
 def test_слабый_подбор_уходит_в_сборку_из_навыков():
-    d = _d("нарежь задачи в трекере по решениям сверки", matches=[{"id": "a1", "name": "Почтовик", "score": 0.2}])
+    d = _d("нарежь задачи в трекере по решениям сверки",
+           matches=[{"id": "a1", "name": "Почтовик", "score": 0.2, "skills": ["mail-triage"]}])
     assert d.kind == "build" and d.skills, d.why
-    assert any("порога" in w for w in d.why), "не сказано, почему готовый агент не выбран"
+    assert any("планки" in w for w in d.why), "не сказано, почему готовый агент не выбран"
 
 
 def test_короткая_задача_возвращает_вопросы():
@@ -122,3 +145,33 @@ def test_оркестратор_решает_но_не_действует():
     body = r.json()
     assert "agent_id" in body and "skills" in body
     assert "run_id" not in body and "pipeline" not in body, "оркестратор что-то запустил сам"
+
+
+# ── перевод чата на оркестратор ──────────────────────────────────────────────────────────────────
+
+def test_чат_спрашивает_решение_у_оркестратора():
+    """Одно решение вместо трёх вызовов по очереди — и прежний путь остаётся запасным."""
+    chat = (ROOT / "desktop" / "ui" / "modules" / "chat" / "panel.js").read_text(encoding="utf-8")
+    i = chat.index("if (!isPasted) {")
+    body = chat[i:i + 2200]
+    assert "const d = await decide(v)" in body, "чат не спрашивает решение"
+    for kind in ('d.kind === "ask"', 'd.kind === "agent"', 'd.kind === "build"'):
+        assert kind in body, f"не разобран вид решения: {kind}"
+    assert "/match" in body and "/plan" in body, "нет запасного пути для старого сайдкара"
+    assert 'api(M + "/orchestrate"' in chat
+
+
+def test_решение_пересчитывается_перед_сборкой():
+    """Карточка могла пролежать в чате долго: именно на устаревшей запустили прежний план."""
+    chat = (ROOT / "desktop" / "ui" / "modules" / "chat" / "panel.js").read_text(encoding="utf-8")
+    i = chat.index("async function buildAndRunPlan")
+    body = chat[i:i + 1200]
+    assert "await decide(a.task)" in body, "перед сборкой решение не пересчитывается"
+    assert "Подбор пересчитан" in body, "расхождение с карточкой не показано человеку"
+
+
+def test_сайдкар_отдаёт_решение():
+    mod = (ROOT / "desktop" / "sidecar" / "modules" / "chat" / "module.py").read_text(encoding="utf-8")
+    cli = (ROOT / "desktop" / "sidecar" / "abop_client.py").read_text(encoding="utf-8")
+    assert '@router.post("/orchestrate")' in mod and "def orchestrate" in cli
+    assert "/api/orchestrate" in cli
