@@ -113,3 +113,68 @@ def compose(sections: list[tuple[str, str, list]], *, title: str, css: str = "",
             "layout": blocks, "builtin": True,
             "pdf_options": pdf_options or {"format": "A4", "orientation": "portrait"},
             "for_skills": list(used)}
+
+
+# ── раскладка от навыка-редактора ────────────────────────────────────────────────────────────────
+
+EDITOR_SKILL = "report-editor"
+
+
+def editor_layout(result: dict):
+    """Раскладка, объявленная навыком-редактором, если она пригодна к рендеру.
+
+    Проверяем, а не доверяем: модель могла придумать тип блока, вернуть строку вместо списка или
+    забыть пришпилить ссылку к навыку. Негодную раскладку отбрасываем целиком — честный механический
+    порядок по волнам лучше документа, собранного наугад. Отброс не прячем: вызывающая сторона
+    получает причину и пишет её в замечания к отчёту.
+
+    Возвращает (раскладка | None, причина отказа).
+    """
+    from . import report_form
+    out = None
+    for o in (result or {}).get("skill_outputs") or []:
+        if str(o.get("skill") or "") == EDITOR_SKILL and isinstance(o.get("structured"), dict):
+            out = o["structured"]
+    if not out:
+        return None, ""
+    lay = out.get("раскладка")
+    if not isinstance(lay, list) or not lay:
+        return None, "редактор не вернул раскладку"
+    known = set(report_form.BLOCK_NAMES)
+    bad = sorted({str(b.get("t") or "?") for b in lay if not isinstance(b, dict) or str(b.get("t") or "") not in known})
+    if bad:
+        return None, "неизвестные блоки раскладки: " + ", ".join(bad)
+    # Ссылки должны быть пришпилены к навыку: иначе графа возьмёт одноимённое поле у соседа.
+    loose = [r for r in report_form.used_refs(lay) if ":" not in r.split("|")[0]]
+    if loose:
+        return None, "ссылки без имени навыка: " + ", ".join(sorted(set(loose))[:4])
+    sids = {str(o.get("skill") or "") for o in (result or {}).get("skill_outputs") or []}
+    alien = sorted({r.split(":", 1)[0] for r in report_form.used_refs(lay)
+                    if ":" in r.split("|")[0]} - sids)
+    if alien:
+        return None, "ссылки на навыки вне прогона: " + ", ".join(alien[:4])
+    return lay, ""
+
+
+def with_editor(lay: list, *, title: str, css: str = "", pdf_options: dict | None = None) -> dict:
+    """Форма прогона по раскладке редактора: его порядок, но рамка документа наша.
+
+    Шапку, оговорку и подписи ставим сами: это свойства документа, а не выбор модели. Если редактор
+    прислал свои — они останутся внутри, но рамка будет в любом случае.
+    """
+    blocks = [{"t": "head", "title": title or "Отчёт по задаче",
+               "sub": "Документ собран редактором отчёта · агентный процесс ABOP",
+               "ctx": ["sources"], "note": EDITOR_NOTE}]
+    blocks += [b for b in lay if isinstance(b, dict)]
+    blocks.append({"t": "ctx", "key": "charts"})
+    blocks.append({"t": "note", "text": FOOT_NOTE})
+    blocks.append({"t": "sign", "rows": ["Подготовил (агентный процесс ABOP)", "Проверил"]})
+    return {"id": "edited", "name": "Отчёт по раскладке редактора", "html": HTML, "css": css,
+            "layout": blocks, "builtin": True,
+            "pdf_options": pdf_options or {"format": "A4", "orientation": "portrait"},
+            "for_skills": []}
+
+
+EDITOR_NOTE = ("Порядок разделов объявил навык-редактор, глядя на все результаты прогона и на задачу. "
+               "Значения в графах — из ответов навыков, дословно: редактор выбирает вид документа, "
+               "а не его содержание.")

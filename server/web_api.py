@@ -3811,10 +3811,20 @@ async def _template_for_run(result: dict, forced: str = "") -> dict | None:
     """
     if forced:
         return await report_store.get(forced) or await report_store.get("default")
+    # Редактор отчёта в прогоне — его раскладка главнее механической сшивки: он смотрел и на
+    # результаты, и на задачу. Но только если раскладка прошла проверку; негодную отбрасываем и
+    # говорим об этом в замечаниях, а не молча собираем документ наугад.
+    lay, why = report_compose.editor_layout(result)
+    if lay:
+        base0 = await report_store.get("default")
+        return report_compose.with_editor(lay, title="Отчёт по задаче", css=(base0 or {}).get("css") or "")
+    if why:
+        result.setdefault("report_notes", []).append("раскладка редактора отброшена: " + why)
     sids: list[str] = []
     for o in (result.get("skill_outputs") or []):
         sid = str(o.get("skill") or "")
-        if sid and o.get("structured") and sid not in sids:
+        # Редактор сам разделом не является: его результат — устройство документа.
+        if sid and sid != report_compose.EDITOR_SKILL and o.get("structured") and sid not in sids:
             sids.append(sid)
     forms: dict[str, str] = {}
     for sid in sids:
@@ -4132,6 +4142,10 @@ def _report_context(agent: dict, result: dict) -> dict:
             miss_rows.append("<div class='dl'>" + esc(so.get("skill"))
                              + (": не заполнено — " + esc(", ".join(ms)) if ms else "")
                              + (" · ответ обрезан по лимиту токенов" if cut else "") + "</div>")
+    # Отброшенная раскладка редактора — тоже замечание к отчёту: читатель должен знать, что документ
+    # собран механической сшивкой, потому что предложенный порядок не прошёл проверку.
+    for _n in (result.get("report_notes") or []):
+        miss_rows.append("<div class='dl'>" + esc(_n) + "</div>")
     schema_notes_html = ("<h2>Замечания к сбору данных</h2>" + "".join(miss_rows)) if miss_rows else ""
 
     # by_class бейджи (аудит)

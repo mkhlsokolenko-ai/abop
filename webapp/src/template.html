@@ -2373,6 +2373,9 @@ const PALETTE = [
     { kind: 'hitl', label: 'Подтверждение', glyph: '✋', iconBg: 'rgba(245,158,11,.24)', meta: 'оператор · dry_run' }
   ]},
   { title: 'Выходы', items: [
+    // Сборка отчёта — обычный узел-навык, просто в палитре у него человеческое имя: на холст
+    // кладётся навык report-editor, который складывает разделы всех навыков прогона в один документ.
+    { kind: 'skill', skill: 'report-editor', label: 'Сборка отчёта', glyph: '🧾', iconBg: 'rgba(56,189,248,.24)', meta: 'один документ из разделов' },
     { kind: 'out', label: 'Вывод наружу', glyph: '➤', iconBg: 'rgba(249,115,22,.24)' }
   ]}
 ];
@@ -6649,10 +6652,13 @@ class Component extends DCLogic {
 
   addCanvasNode(kindDef, x, y) {
     const id = 'n' + Date.now().toString(36);
-    const node = { id, kind: kindDef.kind, title: kindDef.label, family: kindDef.family || 'Аналитика', member: kindDef.member || FAMILIES['Аналитика'][0], x: Math.max(8, Math.min(x, this.state.surfaceW - 216)), y: Math.max(8, Math.min(y, this.state.surfaceH - 100)), meta: kindDef.meta || '' };
+    // Узел-навык сервер опознаёт по title (идентификатор навыка). У блоков палитры с человеческим
+    // именем идентификатор лежит отдельно, в skill: иначе на холст попал бы узел «Сборка отчёта»,
+    // которого в каталоге навыков нет.
+    const node = { id, kind: kindDef.kind, title: kindDef.skill || kindDef.label, family: kindDef.family || 'Аналитика', member: kindDef.member || FAMILIES['Аналитика'][0], x: Math.max(8, Math.min(x, this.state.surfaceW - 216)), y: Math.max(8, Math.min(y, this.state.surfaceH - 100)), meta: kindDef.meta || '' };
     this.setState({ canvasNodes: this.state.canvasNodes.concat([node]), selectedNode: id, checkState: 'idle', checkSteps: [], checkOk: false, issues: {} });
     this.touchGraph();
-    this.showToast('Блок «' + kindDef.label + '» добавлен на холст');
+    this.showToast('Блок «' + (kindDef.label || node.title) + '» добавлен на холст');
   }
 
   removeNode(id) {

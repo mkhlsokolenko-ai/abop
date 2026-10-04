@@ -88,6 +88,9 @@ def test_every_skill_has_a_form():
     from pathlib import Path as _P
     skills = sorted(p.parent.name for p in (_P(__file__).resolve().parents[1] / "skills").glob("*/template.json"))
     by_shape = {s for s in skills if s.startswith("audit1c-") or s.startswith("invest1c-")}
+    # Редактор отчёта формы не имеет и иметь не должен: его результат — не документ, а УСТРОЙСТВО
+    # документа (раскладка). Форму он задаёт, а не получает.
+    by_shape.add("report-editor")
     taken = {s for spec in report_store.load_files().values() for s in (spec.get("for_skills") or [])}
     orphan = [s for s in skills if s not in taken and s not in by_shape]
     assert not orphan, f"без формы: {orphan}"
