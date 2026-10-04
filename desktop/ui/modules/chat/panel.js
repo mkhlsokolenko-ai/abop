@@ -1030,7 +1030,12 @@ export async function mount(root, ctx) {
     try { const cat = await api(M + "/abop-agents"); if (Array.isArray(cat) && cat.length) abopAgents = cat; } catch { /* имена подтянутся позже */ }
     await loadPipelines();
     const made = (r && r.agents) || [];
-    await note(`Собрано: агентов ${made.length}${r && r.pipeline ? ", цепочка готова" : ""}. Запускаю.`, { notice: { icon: "🧩" } });
+    // Сколько заведено нового, а сколько взято готовым: иначе каждая проба выглядит как новая
+    // порция карточек в «Моих агентах», даже когда там ничего не прибавилось.
+    const fresh = (r && r.created != null) ? r.created : made.filter((m) => !m.reused).length;
+    const kept = (r && r.reused != null) ? r.reused : made.filter((m) => m.reused).length;
+    const what = fresh ? `новых агентов ${fresh}` + (kept ? `, готовых ${kept}` : "") : `все ${kept} агента взяты готовыми`;
+    await note(`Собрано: ${what}${r && r.pipeline ? ", цепочка готова" : ""}. Запускаю.`, { notice: { icon: "🧩" } });
     render();
     if (r && r.pipeline) runPipeline(r.pipeline, a.task);
     else if (made.length === 1) runAbopAgentDeliver(made[0].agent_id, skillName(made[0].skill) || made[0].skill, a.task, "");
