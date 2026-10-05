@@ -167,6 +167,16 @@ def fetch(url: str, allow: set[str], *, headers: dict | None = None) -> dict:
             return {"url": url, "ok": False, "error": f"{type(e).__name__}: {str(e)[:120]}"}
         cut = len(raw) > MAX_BYTES
         text, kind = _text_from(raw[:MAX_BYTES], ctype, final or cur)
+        # Страница входа вместо документа. Вики и порталы отвечают на анонимный запрос формой логина,
+        # и текст у неё есть — значит формально «прочитано». Молча отдать агенту страницу входа хуже
+        # отказа: он сошлётся на «регламент», в котором на деле поля «пароль». Проверено на стенде:
+        # BookStack отвечает 302 на /login, страница содержит поле password.
+        low = (text or "").lower()
+        if "/login" in (final or cur).lower() or ('type="password"' in raw[:MAX_BYTES].decode("utf-8", "replace").lower()
+                                                  or ("password" in low and "log in" in low)):
+            return {"url": url, "ok": False, "kind": kind,
+                    "error": "по ссылке страница входа, а не документ — нужен доступ без авторизации "
+                             "или система в реестре с ключом"}
         clipped = len(text) > MAX_CHARS
         if clipped:
             text = text[:MAX_CHARS]

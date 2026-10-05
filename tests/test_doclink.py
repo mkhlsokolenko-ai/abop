@@ -96,3 +96,38 @@ def test_непрочитанная_ссылка_не_молчит():
     src = (pathlib.Path(__file__).resolve().parents[1] / "server" / "web_api.py").read_text(encoding="utf-8")
     i = src.index("ССЫЛКИ, КОТОРЫЕ ПРОЧИТАТЬ НЕ УДАЛОСЬ")
     assert "Не ссылайся на их содержимое" in src[i:i + 400], "модели не сказано, что документа нет"
+
+def test_страница_входа_не_считается_документом():
+    """Проверено на стенде: вики отвечает анонимному читателю формой логина, и текст у неё есть.
+    Принять её за регламент — значит дать агенту сослаться на документ, которого он не видел."""
+    import urllib.request
+    raw = (b"<html><body><h1>Log in</h1><form><input name=email><input type=\"password\" "
+           b"name=password></form></body></html>")
+
+    class _R:
+        headers = {"Content-Type": "text/html"}
+
+        def read(self, n=None):
+            return raw
+
+        def geturl(self):
+            return "http://wiki.local/login"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    class _O:
+        def open(self, req, timeout=0):
+            return _R()
+
+    saved = urllib.request.build_opener
+    urllib.request.build_opener = lambda *a, **k: _O()
+    try:
+        d = doclink.fetch("http://wiki.local/books/1/page/reglament", {"wiki.local:80"})
+    finally:
+        urllib.request.build_opener = saved
+    assert d["ok"] is False, "страница входа принята за документ"
+    assert "страница входа" in d["error"], d["error"]
