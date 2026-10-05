@@ -132,3 +132,21 @@ def test_без_отрыва_слабый_лидер_остаётся_вопро
     d = orchestrator.decide("проверь идею ниже", catalog={}, entities=set(), slots=set(),
                             matches=[], plan=plan_data)
     assert d.kind == "ask", d.why
+
+
+def test_ссылка_не_становится_этапом_работы():
+    """05.10, стресс-тест: в финансовом запросе стояли ссылки на регламент и выгрузку, в адресах
+    встречались «1c», «invoices», «reglament» — подбор увидел в ссылке этап «аудит 1С» со счётом
+    0.49 и потащил в план чужую вертикаль целиком. Ссылка — источник, а не работа."""
+    t = ("посчитай P&L и драйверы по транзакциям за квартал, прогноз бюджета по статьям, объясни "
+         "дельты, собери финотчёт с KPI. Регламент: "
+         "http://5.129.192.63:6875/books/1/page/reglament-rascetov-s-podriadcikami-izvlecenie "
+         "Выгрузка счетов: http://5.129.192.63:9000/abop-demo/1c/invoices.json")
+    assert "reglament" not in planner.without_links(t), "ссылка осталась в тексте для подбора"
+    assert len(planner.clauses(t)) == 1, "ссылка снова стала отдельным этапом"
+    got = [s["skill"] for s in planner.plan(t, CATALOG, entities=ENTITIES, slots=set(),
+                                            max_steps=6)["steps"]]
+    for чужой in ("audit1c-extract", "audit1c-graph-build", "audit1c-checks", "audit1c-root-cause"):
+        assert чужой not in got, f"ссылка притащила чужую вертикаль: {got}"
+    assert any(s.startswith(("budget", "finance", "variance", "dashboard", "three")) for s in got), \
+        f"финансовая задача не попала в финансовые навыки: {got}"

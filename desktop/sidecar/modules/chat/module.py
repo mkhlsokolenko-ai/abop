@@ -372,9 +372,23 @@ def run_agent(thread_id: int, body: RunAgentIn) -> dict:
             "position": r.get("position"), "deduped": bool(r.get("deduped"))}
 
 
+# Короткий кэш ответа на опрос: два окна десктопа (или забытая вкладка ожидания) опрашивают одно и
+# то же задание каждые 2.5 с, и каждый опрос занимал поток сайдкара на время сетевого запроса к
+# ABOP. 05.10 стресс-тест показал цену: пока в фоне крутился лишний опрос, запрос на ЗАПУСК прогона
+# не доходил до сервера вовсе; после его остановки тот же запрос прошёл за 0.6 с. Ответ статуса
+# живёт секунду — этого хватает, чтобы лишние опросы не стучались в сеть, и не хватает, чтобы
+# человек заметил задержку.
+_JOB_CACHE: dict[str, tuple[float, dict]] = {}
+_JOB_TTL = 1.0
+
+
 @router.get("/threads/{thread_id}/run-job/{job_id}")
 def run_job_status(thread_id: int, job_id: str, agent_id: str = "") -> dict:
     """Один шаг поллинга. done → карточка сохраняется в тред и возвращается run; failed/cancelled → ошибка."""
+    import time as _t
+    _c = _JOB_CACHE.get(job_id)
+    if _c and (_t.time() - _c[0]) < _JOB_TTL and not (_c[1] or {}).get("done"):
+        return _c[1]
     try:
         j = abop.run_job(job_id)
     except abop.AbopError as e:
@@ -389,7 +403,14 @@ def run_job_status(thread_id: int, job_id: str, agent_id: str = "") -> dict:
     if st in ("failed", "cancelled"):
         db.run("DELETE FROM pending_runs WHERE job_id=?", (job_id,))
         return {"ok": False, "done": True, "status": st, "error": j.get("error") or ("прогон отменён" if st == "cancelled" else "прогон не выполнен")}
-    return {"ok": True, "done": False, "status": st, "position": j.get("position") or 0, "progress": j.get("progress")}
+    out = {"ok": True, "done": False, "status": st, "position": j.get("position") or 0,
+           "progress": j.get("progress")}
+    _JOB_CACHE[job_id] = (_t.time(), out)
+    # Кэш не должен расти бесконечно: заданий за день бывает много, а нужен только последний десяток.
+    if len(_JOB_CACHE) > 64:
+        for k in sorted(_JOB_CACHE, key=lambda x: _JOB_CACHE[x][0])[:32]:
+            _JOB_CACHE.pop(k, None)
+    return out
 
 
 @router.get("/threads/{thread_id}/catchup")

@@ -5948,6 +5948,10 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, sta
         result.setdefault("run_metrics", {})["parent_trace_id"] = parent_trace_id
         obs.log_event("info", "run.child", parent_trace=parent_trace_id, trace=_trace,
                       agent=agent.get("id"), group=board_scope or "")
+    # Что СКАЗАЛ прогон — строками для карточки в чате. Строилось это только на попадании в кэш, а
+    # на обычном прогоне поле не заполнялось вовсе: человек видел «находок 7» и ни одной строки о
+    # том, что именно нашли, хотя каждый навык отдал по 3–6 тысяч знаков. Найдено стресс-тестом 05.10.
+    result["summary_lines"] = run_summary(result)
     _entries = result.pop("board_entries", None) or []
     saved = await run_store.save(result)
     if _entries:

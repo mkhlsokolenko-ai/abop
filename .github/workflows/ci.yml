@@ -58,24 +58,32 @@ jobs:
         run: tail -100 server.log
 
   desktop-guard:
-    name: десктоп · правки сайдкара/UI требуют версии и тега
+    name: десктоп · правки сайдкара и Electron требуют версии и тега
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: версия package.json должна быть новее последнего тега, если менялся desktop/
+      # Версию требуем ТОЛЬКО за то, что доезжает до человека переустановкой: сайдкар и Electron.
+      # Интерфейс (`desktop/ui`) приезжает с сервера «Путём А» — требовать за него релиз значит
+      # ломать сборку на каждой правке кнопки и приучать проходить мимо проверки. Ровно это и
+      # произошло: пять подряд падений CI на UI-правках, которые релиза не требуют.
+      - name: версия package.json новее последнего тега, если менялись сайдкар или Electron
         run: |
           LAST=$(git tag -l 'desktop-v*' --sort=-v:refname | head -1)
           VER=$(python3 -c "import json;print(json.load(open('desktop/package.json'))['version'])")
           echo "last tag: $LAST · package.json: $VER"
           if [ -z "$LAST" ]; then echo "тегов нет — пропуск"; exit 0; fi
-          CHANGED=$(git diff --name-only "$LAST"...HEAD -- desktop/sidecar desktop/electron desktop/ui desktop/package.json | wc -l)
-          echo "файлов desktop/ изменено с $LAST: $CHANGED"
-          if [ "$CHANGED" -gt 0 ] && [ "desktop-v$VER" = "$LAST" ]; then
-            echo "::error::desktop/ изменён после $LAST, а версия в desktop/package.json не поднята ($VER). Подними версию и поставь тег desktop-v<версия> (см. docs/RELEASE_DISCIPLINE.md)"; exit 1
+          RELEASE=$(git diff --name-only "$LAST"...HEAD -- desktop/sidecar desktop/electron | wc -l)
+          UIONLY=$(git diff --name-only "$LAST"...HEAD -- desktop/ui | wc -l)
+          echo "релиз-гейтед файлов (сайдкар/electron): $RELEASE · файлов UI (Путь А): $UIONLY"
+          if [ "$RELEASE" -gt 0 ] && [ "desktop-v$VER" = "$LAST" ]; then
+            echo "::error::сайдкар или Electron изменены после $LAST, а версия в desktop/package.json не поднята ($VER). Подними версию и поставь тег desktop-v<версия> (см. docs/RELEASE_DISCIPLINE.md)"; exit 1
           fi
-          if [ "$CHANGED" -gt 0 ] && ! git tag -l "desktop-v$VER" | grep -q .; then
+          if [ "$RELEASE" -gt 0 ] && ! git tag -l "desktop-v$VER" | grep -q .; then
             echo "::warning::версия $VER поднята, но тега desktop-v$VER ещё нет — релиз не собран (тег ставит владелец)"
+          fi
+          if [ "$RELEASE" -eq 0 ] && [ "$UIONLY" -gt 0 ]; then
+            echo "правки только в UI — едут Путём А, релиз не нужен"
           fi

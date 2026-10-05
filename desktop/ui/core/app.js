@@ -333,9 +333,13 @@ async function renderAuth() {
 const MODULE_ROLES = { security: ["lecturer", "admin"], graphlens: ["lecturer", "admin"], opslens: ["lecturer", "admin"] };
 function canSee(id) { const req = MODULE_ROLES[id]; if (!req) return true; return (ctx.roles || []).some((r) => req.includes(r)); }
 // «Операции» (opslens) убраны как лишние (#10); «Безопасность» слита в «Кабинет» (#11).
-const HIDDEN_MODULES = new Set(["opslens", "security"]);
+// «Находки» и «Источники» убраны из маршрута по решению владельца 05.10: находки видны в карточке
+// прогона и в отчёте, а подключение источников — работа по управлению, её место в вебе (там же
+// создаются агенты и правятся рецепты). Разделы не удалены: они открываются из палитры команд
+// (Ctrl+K) и по прямой ссылке — убрана только постоянная кнопка, которой никто не пользовался.
+const HIDDEN_MODULES = new Set(["opslens", "security", "findings", "connectors"]);
 function visibleModules() { return MODULES.filter((m) => !HIDDEN_MODULES.has(m.id) && canSee(m.id)); }
-const RAIL_ORDER = ["chat", "runs", "connectors", "agents", "graphlens", "cabinet", "ocr"];
+const RAIL_ORDER = ["chat", "runs", "agents", "graphlens", "cabinet", "ocr"];
 const RAIL_TITLE = { agents: "Мои агенты" };
 function railModules() {
   const rank = (id) => { const i = RAIL_ORDER.indexOf(id); return i < 0 ? RAIL_ORDER.length : i; };
@@ -400,7 +404,8 @@ function quickActions() {
     { id: "palette", label: "Команды", icon: "⌘", run: openPalette },
     { id: "theme", label: "Тема", icon: "🌓", run: toggleTheme },
   ];
-  visibleModules().forEach((m) => a.push({ id: "mod:" + m.id, label: m.title, icon: icon(m.icon), run: () => loadModule(m.id) }));
+  // В палитре — ВСЕ разделы, включая убранные из маршрута: убрать кнопку не значит отнять раздел.
+  MODULES.filter((m) => canSee(m.id)).forEach((m) => a.push({ id: "mod:" + m.id, label: m.title, icon: icon(m.icon), run: () => loadModule(m.id) }));
   return a;
 }
 function getPins() { try { return JSON.parse(localStorage.getItem("ape_quickfns")) || QF_DEFAULT; } catch { return QF_DEFAULT; } }
@@ -500,7 +505,12 @@ function initTheme() { applyTheme(localStorage.getItem("ape_theme") || "dark"); 
 
 // ── командная палитра (Ctrl+K) — из макета «Поиск и команды» ────────────────────────────────────
 function buildCommands() {
-  const cmds = visibleModules().map((m) => ({ glyph: icon(m.icon), label: "Открыть: " + (RAIL_TITLE[m.id] || m.title), note: "раздел", run: () => loadModule(m.id) }));
+  // Палитра знает про ВСЕ разделы, включая убранные из маршрута («Находки», «Источники»): кнопку
+  // убрали, раздел остался — иначе это не уборка интерфейса, а потеря функции.
+  const cmds = MODULES.filter((m) => canSee(m.id)).map((m) => ({
+    glyph: icon(m.icon), label: "Открыть: " + (RAIL_TITLE[m.id] || m.title),
+    note: HIDDEN_MODULES.has(m.id) ? "раздел · не в маршруте" : "раздел",
+    run: () => loadModule(m.id) }));
   cmds.push({ glyph: "➕", label: "Новый чат", note: "чат", keys: "Ctrl N", run: () => loadModule("chat", { newChat: true }) });
   cmds.push({ glyph: "🌓", label: "Переключить тему", note: "светлая / тёмная", run: toggleTheme });
   if (!ctx.authed) cmds.push({ glyph: "🔑", label: "Войти в ABOP", note: "вход", run: startLogin });

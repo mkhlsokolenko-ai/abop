@@ -16,7 +16,8 @@
 
 ## Десктоп (`desktop/`)
 
-- Любая правка `desktop/sidecar`, `desktop/electron`, `desktop/ui` → поднять `version` в `desktop/package.json` **и** `desktop/sidecar/config.py` (fallback-версия) в том же коммите.
+- Правка `desktop/sidecar` или `desktop/electron` → поднять `version` в `desktop/package.json` **и** `desktop/sidecar/config.py` (fallback-версия) в том же коммите: это доезжает до человека только переустановкой.
+- Правка `desktop/ui` версии НЕ требует — интерфейс приезжает с сервера «Путём А». Прежде проверка требовала версию и за UI, и CI падал на каждой правке кнопки; исправлено 05.10.
 - Релиз собирает `desktop-release.yml` по тегу `desktop-vX.Y.Z`; **тег ставит владелец** (явное слово), не ассистент.
 - CI job `desktop-guard`: если `desktop/` менялся после последнего тега, а версия в `package.json` равна версии тега → ошибка; если версия поднята, а тега нет → предупреждение «релиз не собран».
 - UI по «Пути А» (`/desktop-ui-bundle`) приезжает с сервера без пересборки .exe; сайдкар и Electron — только через релиз.
