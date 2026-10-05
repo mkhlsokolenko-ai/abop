@@ -138,3 +138,25 @@ def test_подсказка_слабее_названного_адресата_�
     """Неравенство между весами — часть правила, а не случайность подбора чисел."""
     assert planner.HINT_CAP < planner.TARGET_BONUS,         "подсказка от похожего агента стала сильнее слов человека про адресата"
     assert 0 < planner.HINT_WEIGHT <= 1 and planner.MIN_CANDIDATE > 0
+
+
+def test_редактор_отчёта_не_бывает_планом():
+    """«сделай квартальный финансовый обзор…» давал план из одного `report-editor`: сборщик
+    документа без того, что собирать. Редактор — оформление, его добавляет оркестратор, когда работ
+    уже несколько."""
+    cat = dict(CATALOG)
+    cat["report-editor"] = {"title": "Редактор отчёта", "short": "складывает разделы в документ",
+                            "body": "отчёт обзор сводка документ разделы", "inputs": {}, "produces": {}}
+    got = [s["skill"] for s in planner.plan("сделай обзор и сводку документом", cat,
+                                            entities=set(), slots=set(), max_steps=3)["steps"]]
+    assert "report-editor" not in got, f"редактор снова предлагается как работа: {got}"
+
+
+def test_смысловая_прибавка_растёт_от_порога():
+    """Косинус ниже шума (медиана 0.40–0.43 на живом каталоге) не значит ничего, выше — прибавка
+    пропорциональна превышению и ограничена потолком."""
+    assert planner.semantic_bonus(0.30) == 0.0
+    assert planner.semantic_bonus(planner.SEM_FLOOR) == 0.0
+    assert 0 < planner.semantic_bonus(0.55) < planner.SEM_CAP
+    assert planner.semantic_bonus(0.99) <= planner.SEM_CAP
+    assert planner.semantic_bonus(0.63) > planner.semantic_bonus(0.50), "прибавка должна расти"

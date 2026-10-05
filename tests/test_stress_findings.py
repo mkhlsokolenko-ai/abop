@@ -80,3 +80,30 @@ def test_лишние_разделы_убраны_из_маршрута_но_н�
     cmds = app[app.index("function buildCommands"):app.index("function openPalette")]
     assert "MODULES.filter" in cmds and "HIDDEN_MODULES.has" in cmds, \
         "палитра перестала показывать убранные разделы — это уже не уборка, а потеря функции"
+
+
+def test_живая_строка_навыка_и_источники_шага():
+    """Прогон молчал 40–60 секунд на навык, и человек не видел, на чём стоит каждый шаг."""
+    runner_src = (ROOT / "server" / "runner.py").read_text(encoding="utf-8")
+    assert 'await _notify(sid, "done", said=' in runner_src, "первая строка ответа не уходит в прогресс"
+    assert '"sources": _srcs' in runner_src, "источники шага не возвращаются навыком"
+    chat = (ROOT / "desktop" / "ui" / "modules" / "chat" / "panel.js").read_text(encoding="utf-8")
+    assert "function skillSaid" in chat, "лента ожидания не показывает, что сказал навык"
+    assert "источники шагов" in chat, "в карточке прогона нет источников шага"
+
+
+def test_плитки_из_своих_цепочек():
+    """Шесть общих шаблонов одинаковы у всех: человеку, который третью неделю гоняет свои задачи,
+    они ничего не говорят."""
+    chat = (ROOT / "desktop" / "ui" / "modules" / "chat" / "panel.js").read_text(encoding="utf-8")
+    assert "function myTilesHTML" in chat and "loadMyTiles" in chat, "нет плиток из своих цепочек"
+    assert "ваши цепочки" in chat, "плитки не подписаны"
+    assert "TEMPLATES.map" in chat, "общие шаблоны должны остаться — они для первого дня"
+
+
+def test_распознать_убрано_из_маршрута():
+    app = (ROOT / "desktop" / "ui" / "core" / "app.js").read_text(encoding="utf-8")
+    i = app.index("const HIDDEN_MODULES")
+    assert '"ocr"' in app[i:i + 220], "«Распознать» всё ещё в маршруте"
+    j = app.index("const RAIL_ORDER")
+    assert '"ocr"' not in app[j:j + 160], "«Распознать» осталось в порядке маршрута"

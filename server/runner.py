@@ -513,6 +513,16 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
     чего ещё нет."""
     import json as _json
     import asyncio
+
+    def _accepts_of(custom: dict | None) -> list[str]:
+        """Навыки, чей вход объявлен в контракте этого навыка, — для источников шага."""
+        ins = (custom or {}).get("inputs") or {}
+        out = []
+        for bucket in ("required", "optional"):
+            for it in (ins.get(bucket) or []):
+                if isinstance(it, dict) and it.get("from") == "skill" and it.get("skill"):
+                    out.append(str(it["skill"]))
+        return out
     blocked = set(blocked_entities or [])
     skill_schemas = skill_schemas or {}
     base = run_agent(agent, contract, safety_of)
@@ -890,7 +900,16 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
         ms = round((time.perf_counter() - _t) * 1000, 1)  # per-skill тайминг (observability)
         for tc in tool_calls:   # токены вызовов инструментов — в биллинг навыка
             tin += int(tc.get("input_tokens") or 0); tout += int(tc.get("output_tokens") or 0)
-        return {"skill": sid, "entities": entities, "model": model, "text": txt,
+        # Источники ШАГА: по карточке прогона должно быть видно, на чём стоит каждый навык, а не
+        # только общий список сущностей прогона. Человек прикладывает файл и даёт ссылку — и хочет
+        # знать, дошли ли они до навыка.
+        _srcs = {"сущности": list(entities),
+                 "документы": bool(_has_docs),
+                 "вложение_или_задача": bool(_has_material),
+                 "нормы": bool(know_block),
+                 "вход_от_навыков": sorted({u for u in _accepts_of(_custom)}) if _custom else [],
+                 "доска": bool(board_block or long_block)}
+        return {"skill": sid, "entities": entities, "model": model, "text": txt, "sources": _srcs,
                 # На чём стоит вывод: «data» — данные стенда, нормы, выходы соседей; «knowledge» —
                 # общие знания модели и приложенный материал. Без этой пометки отчёт выглядит
                 # одинаково убедительно в обоих случаях, а стоит он разного.
@@ -916,6 +935,13 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
             await _notify(sid, "cached", reason="часть готова с прошлой попытки")
             return dict(ready)
         r = await _analyze(n)
+        # Что навык СКАЗАЛ — первой строкой, сразу как ответил. Прогон молчал по 40–60 секунд на
+        # навык: человек видел «агент работает» и не знал, движется ли дело. Строка короткая и это
+        # не пересказ — ровно начало того, что навык отдал.
+        if r and r.get("text"):
+            _said = " ".join(str(r.get("text") or "").split())[:160]
+            await _notify(sid, "done", said=_said, ms=r.get("ms"),
+                          tokens=int(r.get("input_tokens") or 0) + int(r.get("output_tokens") or 0))
         if r and _save_part and sid:
             try:
                 await _save_part(sid, r)

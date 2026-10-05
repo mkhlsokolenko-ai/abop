@@ -30,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, arbiter, assembly, audit_store, blackboard, planner, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, chat_store, orchestrator, report_compose, report_store, doclink, run_cache_store, run_parts_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, arbiter, assembly, audit_store, blackboard, planner, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, chat_store, orchestrator, report_compose, report_store, choice_store, doclink, run_cache_store, run_parts_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
@@ -2529,6 +2529,46 @@ async def orchestrate(body: dict, u: dict = Depends(user)) -> dict:
     return out
 
 
+_SKILL_EMB_CACHE: dict[str, tuple[str, list]] = {}
+
+
+async def _skill_semantics(q: str, catalog: dict) -> dict:
+    """Смысловая близость запроса к каждому навыку (эмбеддинги BGE-M3, best-effort).
+
+    Семантика применялась только к агентам, а навыки искались словами — и запрос, написанный другими
+    словами, не находил навык вовсе. Кэш по содержимому описания: методики меняются редко, пересчёт
+    на каждый запрос стоил бы дороже самого подбора. Сбой эмбеддингов не ломает подбор: словарная
+    часть работает всегда.
+    """
+    import hashlib as _h
+    out: dict = {}
+    if not q or not catalog:
+        return out
+    try:
+        need, ids = [], []
+        for sid, meta in catalog.items():
+            doc = " ".join(str(meta.get(k) or "") for k in ("title", "short"))[:400] \
+                + " " + str(meta.get("body") or "")[:1200]
+            dh = _h.md5(doc.encode("utf-8")).hexdigest()
+            c = _SKILL_EMB_CACHE.get(sid)
+            if not c or c[0] != dh:
+                need.append(doc)
+                ids.append((sid, dh))
+        if need:
+            embs = await clients.embed(need)
+            for (sid, dh), e in zip(ids, embs):
+                _SKILL_EMB_CACHE[sid] = (dh, e)
+        qe = (await clients.embed([q]))[0]
+        for sid in catalog:
+            c = _SKILL_EMB_CACHE.get(sid)
+            if c:
+                out[sid] = round(_cosine(qe, c[1]), 4)
+    except Exception as _ex:  # noqa: BLE001 — смысл усиление, а не условие подбора
+        obs.log_event("warning", "plan.semantics_failed", error=str(_ex)[:160])
+        return {}
+    return out
+
+
 @app.post("/api/plan/auto")
 async def plan_auto(body: dict, u: dict = Depends(user)) -> dict:
     """Собрать исполнимую цепочку под задачу ПО КОНТРАКТАМ навыков (этап 8).
@@ -2587,7 +2627,14 @@ async def plan_auto(body: dict, u: dict = Depends(user)) -> dict:
     except Exception:  # noqa: BLE001 — подсказки усиление, а не условие работы планировщика
         hints = {}
 
-    p = planner.plan(task, catalog, entities=ents, slots=slots_given, max_steps=max_steps, hints=hints)
+    sem = await _skill_semantics(planner.without_links(task), catalog)
+    try:
+        pref = await choice_store.prefer(_sub(u))
+    except Exception as _ex:  # noqa: BLE001 — предпочтения усиление, а не условие подбора
+        obs.log_event("warning", "plan.prefer_failed", error=str(_ex)[:160])
+        pref = {}
+    p = planner.plan(task, catalog, entities=ents, slots=slots_given, max_steps=max_steps,
+                     hints=hints, semantic=sem, prefer=pref)
     # Форму спрашиваем у реестра форм: бланк вертикали объявляет, чьи результаты оформляет, и знает
     # предмет лучше правила по виду результата. Правило по виду остаётся фолбэком — на случай, когда
     # под навыки плана бланка нет.
@@ -2644,6 +2691,30 @@ async def _agent_for_skills(sids: list[str], u: dict) -> dict | None:
         if rank == 0:
             break                      # свой нашёлся — дальше искать нечего
     return best[1] if best else None
+
+
+@app.post("/api/plan/feedback")
+async def plan_feedback(body: dict, u: dict = Depends(user)) -> dict:
+    """Исход предложения: человек отказался или взял своё. Нужен, чтобы подбор учился.
+
+    Отмена — самый ценный сигнал: её делают осознанно, в отличие от согласия, которое часто
+    случается по инерции. Без этой ручки отказ оставался только в карточке чата.
+    """
+    task = str((body or {}).get("task") or "")
+    offered = [str(x) for x in ((body or {}).get("offered") or [])]
+    taken = [str(x) for x in ((body or {}).get("taken") or [])]
+    outcome = str((body or {}).get("outcome") or "cancelled")
+    if outcome not in ("accepted", "edited", "cancelled"):
+        raise HTTPException(422, "исход бывает accepted | edited | cancelled")
+    await choice_store.record(_sub(u), task, offered, taken, outcome)
+    return {"ok": True}
+
+
+@app.get("/api/plan/prefer")
+async def plan_prefer(u: dict = Depends(user)) -> dict:
+    """Что подбор выучил на решениях этого человека — чтобы это можно было посмотреть, а не гадать."""
+    return {"prefer": await choice_store.prefer(_sub(u)),
+            "history": (await choice_store.history(_sub(u), 20))[:20]}
 
 
 @app.post("/api/plan/auto/build")
@@ -2705,6 +2776,14 @@ async def plan_auto_build(body: dict, u: dict = Depends(user)) -> dict:
             else:
                 sids = sids + [report_compose.EDITOR_SKILL]
                 editor = "added"
+        # Решение человека — факт, который стоит помнить: он взял ИМЕННО эти навыки, и если правил
+        # цепочку руками, это сильнее простого согласия.
+        try:
+            await choice_store.record(_sub(u), str((body or {}).get("task") or ""),
+                                      list((body or {}).get("offered") or sids), sids,
+                                      "edited" if (body or {}).get("manual") else "accepted")
+        except Exception as _ex:  # noqa: BLE001
+            obs.log_event("warning", "plan.choice_failed", error=str(_ex)[:160])
         exist = await _agent_for_skills(sids, u) if reuse else None
         _ed = {"added": " Добавлен редактор отчёта — он сложит разделы в один документ.",
                "cached": " Раскладка отчёта для этого набора уже известна: редактор не нужен."}.get(editor, "")
@@ -2818,6 +2897,7 @@ async def _startup() -> None:
     # ── очередь прогонов (гейт масштабирования, Фаза 1): воркеры вместо исполнения в HTTP-запросе ──
     await run_queue.init()
     await run_parts_store.init()
+    await choice_store.init()
     try:
         _st = await run_queue.requeue_stale()
         if _st:
@@ -5835,6 +5915,7 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, sta
     result["skill_outputs"] = [
         {"skill": f.get("skill"), "structured": f.get("structured") if isinstance(f.get("structured"), dict) else None,
          "text": str(f.get("text") or "")[:6000],
+         "sources": f.get("sources") or {},
          "model": f.get("model"), "template_id": f.get("template_id") or "",
          "sources_mode": f.get("sources_mode") or "", "schema_miss": f.get("schema_miss") or []}
         for f in (result.get("findings") or [])

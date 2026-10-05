@@ -301,7 +301,14 @@ def _run_summary(agent_id: str, run: dict) -> dict:
                   "hitl_id": d.get("hitl_id"), "title": d.get("title"), "subject": d.get("subject"),
                   "result": (d.get("result") or "")[:200]}
                  for d in (run.get("delivery") or []) ]
+    # На чём стоял каждый шаг: сущности, документ по ссылке, вложение, нормы, вход от соседей.
+    # Человек прикладывает файл и даёт ссылку — и должен видеть, дошли ли они до навыка, а не
+    # догадываться по тексту ответа.
+    шаги = [{"skill": so.get("skill"), "sources": so.get("sources") or {},
+             "mode": so.get("sources_mode") or ""}
+            for so in (run.get("skill_outputs") or []) if so.get("skill")]
     return {
+        "steps_sources": шаги,
         "agent_id": agent_id,
         "agent_name": (run.get("agent") or {}).get("name") if isinstance(run.get("agent"), dict) else run.get("agent_name"),
         "run_id": run.get("run_id") or run.get("id") or (run.get("saved") or {}).get("id"),

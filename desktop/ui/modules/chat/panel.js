@@ -299,6 +299,27 @@ export async function mount(root, ctx) {
         if (!sum.length) return "";
         return `<div style="display:flex;flex-direction:column;gap:5px">${sum.map((t) => `<div style="font-size:12.5px;color:var(--ink);background:var(--surface-2);border-left:2px solid var(--ok-line);border-radius:0 8px 8px 0;padding:7px 10px;line-height:1.5">${esc(String(t).slice(0, 400))}</div>`).join("")}</div>`;
       })()}
+      ${(() => {
+        // Источники ШАГА: на чём стоял каждый навык. Без этого непонятно, дошли ли до него
+        // приложенный файл и ссылка — а это первое, что спрашивают про результат.
+        const st = s.steps_sources || [];
+        if (!st.length) return "";
+        const row = (x) => {
+          const sr = x.sources || {};
+          const bits = [];
+          if ((sr["сущности"] || []).length) bits.push("данные: " + esc((sr["сущности"] || []).join(", ")));
+          if (sr["документы"]) bits.push("документ по ссылке");
+          if (sr["вложение_или_задача"]) bits.push("вложение/задача");
+          if (sr["нормы"]) bits.push("нормы");
+          if ((sr["вход_от_навыков"] || []).length) bits.push("вход от: " + esc((sr["вход_от_навыков"] || []).map((y) => skillName(y) || y).join(", ")));
+          if (sr["доска"]) bits.push("доска");
+          const знания = x.mode === "knowledge";
+          return `<div style="font-size:11.5px;color:${знания ? "var(--warn-ink)" : "var(--ink-3)"};line-height:1.5">
+            ${esc(skillName(x.skill) || x.skill)} — ${bits.join(" · ") || (знания ? "источников не было, работал по знаниям модели" : "—")}</div>`;
+        };
+        return `<details style="margin-top:2px"><summary style="font-size:11.5px;color:var(--ink-3);cursor:pointer">источники шагов (${st.length})</summary>
+          <div style="display:flex;flex-direction:column;gap:3px;margin-top:5px">${st.map(row).join("")}</div></details>`;
+      })()}
       ${fnd || ((s.summary || []).length ? "" : '<div style="font-size:12px;color:var(--ink-3)">Находок не выявлено.</div>')}
       ${dl ? `<div class="ape-label" style="margin-top:4px">доставка</div>${dl}` : ""}
       ${waits.length ? (s.hitl_done ? `<div style="font-size:12px;font-weight:600;color:${s.hitl_done === "approve" ? "var(--ok-ink)" : "var(--ink-3)"}">${s.hitl_done === "approve" ? "✓ Действие подтверждено" : "⃠ Действие отклонено"}${s.hitl_result ? `<div style="font-size:11px;color:var(--ink-3);font-weight:400;margin-top:3px">${esc(String(s.hitl_result).slice(0, 140))}</div>` : ""}</div>`
@@ -401,6 +422,36 @@ export async function mount(root, ctx) {
   }
 
   function noticeHTML(n, content) { return `<div style="display:flex;gap:10px;align-items:flex-start"><span style="font-size:15px">${n.icon || "🔔"}</span><span style="font-size:13px;line-height:1.55">${md(content)}</span></div>`; }
+  // Плитки из СВОИХ цепочек: шесть общих шаблонов одинаковы у всех и ни о чём не говорят человеку,
+  // который третью неделю гоняет свои задачи. Берём то, что у него РЕАЛЬНО работало: собранных им
+  // агентов и прогоны, которые он запускал. Общие шаблоны остаются ниже — для первого дня.
+  let myTiles = [];
+  async function loadMyTiles() {
+    try {
+      const rs = await api(A_AG + "/runs?limit=24");
+      const rows = Array.isArray(rs) ? rs : (rs && rs.runs) || [];
+      const seen = new Map();
+      for (const r of rows) {
+        const aid = String(r.agent_id || "");
+        if (!aid || seen.has(aid)) continue;
+        const nm = agentName(aid, aid.replace(/^authored-[^-]+-/, "").replace(/\.v\d+$/, ""));
+        seen.set(aid, { agent_id: aid, name: nm, when: r.created_at || "" });
+      }
+      myTiles = [...seen.values()].slice(0, 6);
+    } catch { myTiles = []; }
+    if (!messages.length) render();
+  }
+  function myTilesHTML() {
+    if (!myTiles.length) return "";
+    return `<div style="display:flex;flex-direction:column;gap:9px">
+      <span class="ape-label">ваши цепочки — запускались раньше</span>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(214px,1fr));gap:12px">
+        ${myTiles.map((t, i) => `<button type="button" data-mine="${i}" class="lift" style="display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:14px;border:1px solid var(--line);border-radius:var(--r-lg);background-color:var(--panel);background-image:var(--panel-grad);box-shadow:var(--shadow-1),var(--edge);text-align:left;color:inherit">
+          <span style="font-size:13px;font-weight:600;color:var(--ink)">${esc(t.name)}</span>
+          <span style="font-size:11.5px;color:var(--ink-3)">запустить ещё раз</span></button>`).join("")}
+      </div></div>`;
+  }
+
   function emptyState() {
     const steps = [ctx.authed ? null : ["1", "войдите в ABOP (кнопка вверху справа)"], [ctx.authed ? "1" : "2", "выберите шаблон или опишите задачу"], [ctx.authed ? "2" : "3", "перетащите файл — он попадёт в контекст"]].filter(Boolean);
     return `<div style="display:flex;flex-direction:column;gap:22px;padding:26px 0;animation:ape-in .4s ease-out">
@@ -408,6 +459,7 @@ export async function mount(root, ctx) {
         <div style="display:flex;flex-direction:column;gap:6px">
           <h1 style="margin:0;font-size:24px;font-weight:800;letter-spacing:-.6px">С чего начнём?</h1>
           <p style="margin:0;max-width:460px;font-size:13.5px;line-height:1.55;color:var(--ink-2)">Опишите задачу словами или возьмите готовый шаблон — чат создастся сам. Файлы можно просто перетащить в окно.</p></div></div>
+      ${myTilesHTML()}
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(214px,1fr));gap:12px">
         ${TEMPLATES.map((t, i) => `<button type="button" data-tpl="${i}" class="lift" style="display:flex;flex-direction:column;align-items:flex-start;gap:7px;padding:16px;border:1px solid var(--line);border-radius:var(--r-lg);background-color:var(--panel);background-image:var(--panel-grad);backdrop-filter:blur(16px);box-shadow:var(--shadow-1),var(--edge);text-align:left;color:inherit">
           <span style="font-size:17px" aria-hidden="true">${t[0]}</span><span style="font-size:13.5px;font-weight:600;color:var(--ink)">${t[1]}</span><span style="font-size:11.5px;line-height:1.45;color:var(--ink-3)">${t[2]}</span></button>`).join("")}
@@ -420,6 +472,12 @@ export async function mount(root, ctx) {
   function render() {
     if (boardMode) { renderBoard(); return; }
     $("col").innerHTML = messages.length ? messages.map(bubble).join("") : emptyState();
+    $("col").querySelectorAll("[data-mine]").forEach((e) => e.onclick = () => {
+      const t = myTiles[+e.dataset.mine]; if (!t) return;
+      const task = ($("inp").value || "").trim();
+      if (!task) { $("inp").focus(); toast("Опишите задачу — и запущу эту цепочку по ней", "warn"); return; }
+      runAbopAgentDeliver(t.agent_id, t.name, task, "");
+    });
     $("col").querySelectorAll("[data-tpl]").forEach((e) => e.onclick = async () => {
       const [, , , prompt, skill] = TEMPLATES[+e.dataset.tpl];
       if (skill) { if (cur) { if (!cur.skills.includes(skill)) { cur.skills.push(skill); await saveThread(cur); } } else if (!pendingSkills.includes(skill)) pendingSkills.push(skill); renderTools(); }
@@ -877,6 +935,15 @@ export async function mount(root, ctx) {
   }
 
   // прогресс прогона (очередь → статус задания): фаза + навыки «3/7 · сейчас: audit1c-explain (42 с)»
+  // Что навык СКАЗАЛ, первой строкой — прямо в ленте ожидания. Прогон молчал по 40–60 секунд на
+  // шаг: человек видел «агент работает» и не знал, движется ли дело.
+  function skillSaid(pr) {
+    const sk = (pr || {}).skills || {};
+    const готовые = Object.entries(sk).filter(([, v]) => (v || {}).said);
+    if (!готовые.length) return "";
+    const [sid, v] = готовые[готовые.length - 1];
+    return `${skillName(sid) || sid}: ${String(v.said).slice(0, 110)}`;
+  }
   function progressText(pr) {
     if (!pr) return "работает";
     const sk = pr.skills || {}; const ids = Object.keys(sk);
@@ -1570,6 +1637,8 @@ export async function mount(root, ctx) {
           // Возврат в очередь после таймаута — не сбой: готовые навыки уже в кэше, пересчитываться
           // они не будут. Человек должен видеть именно это, а не «в очереди» без объяснения.
           if (j.status === "queued" && sec > 30) _requeued = 1;
+          const _said = skillSaid((j.progress || {}).run);
+          if (_said) { status(`${progressText((j.progress || {}).run)} · ${sec} с — ${_said}`); continue; }
           status(j.status === "queued"
             ? (_requeued ? `попытка прервалась по времени — продолжаю с готовых частей · ${sec} с`
                          : `в очереди · впереди ${Math.max(0, (j.position || 1) - 1)} · ${sec} с`)
@@ -1802,7 +1871,7 @@ export async function mount(root, ctx) {
   }
   const draft = recall(LS_DRAFT);
   if (draft && $("inp") && !$("inp").value) $("inp").value = draft;
-  loadSchedules(false); loadPipelines(); loadQuota(); loadHitlQueue(); loadBoard(true);
+  loadSchedules(false); loadPipelines(); loadQuota(); loadHitlQueue(); loadBoard(true); loadMyTiles();
   catalogs.then(() => { renderTools(); if (messages.length) render(); });   // подписи навыков/агентов, когда каталоги доехали
   if (intent) handleIntent(intent);
   if (window.__apeSchedTimer) clearInterval(window.__apeSchedTimer);

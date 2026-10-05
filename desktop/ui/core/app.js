@@ -337,9 +337,9 @@ function canSee(id) { const req = MODULE_ROLES[id]; if (!req) return true; retur
 // прогона и в отчёте, а подключение источников — работа по управлению, её место в вебе (там же
 // создаются агенты и правятся рецепты). Разделы не удалены: они открываются из палитры команд
 // (Ctrl+K) и по прямой ссылке — убрана только постоянная кнопка, которой никто не пользовался.
-const HIDDEN_MODULES = new Set(["opslens", "security", "findings", "connectors"]);
+const HIDDEN_MODULES = new Set(["opslens", "security", "findings", "connectors", "ocr"]);
 function visibleModules() { return MODULES.filter((m) => !HIDDEN_MODULES.has(m.id) && canSee(m.id)); }
-const RAIL_ORDER = ["chat", "runs", "agents", "graphlens", "cabinet", "ocr"];
+const RAIL_ORDER = ["chat", "runs", "agents", "graphlens", "cabinet"];
 const RAIL_TITLE = { agents: "Мои агенты" };
 function railModules() {
   const rank = (id) => { const i = RAIL_ORDER.indexOf(id); return i < 0 ? RAIL_ORDER.length : i; };
