@@ -224,7 +224,16 @@ def _b_kpi(b: dict, result: dict, ctx: dict) -> str:
 
 
 def _b_prose(b: dict, result: dict, ctx: dict) -> str:
-    """Раздел связным текстом: цель, контекст, обоснование. Список строк — абзацами."""
+    """Раздел связным текстом: цель, контекст, обоснование. Список строк — абзацами.
+
+    Блок может нести текст сам (`text`), а не только ссылку в результат (`src`). Это нужно навыкам,
+    которые отвечают прозой: ссылаться у них не на что — схемы они не объявляли, — и без этого их
+    работа в документ не попадала вовсе.
+    """
+    if not b.get("src") and str(b.get("text") or "").strip():
+        parts = str(b["text"]).split("\n\n")
+        body = "".join("<p>" + esc(x).replace("\n", "<br>") + "</p>" for x in parts if x.strip())
+        return (_h2(b) + f"<div class='prose'>{body}</div>") if body else ""
     v = value(result, b.get("src") or "")
     if v in _EMPTY:
         return ""

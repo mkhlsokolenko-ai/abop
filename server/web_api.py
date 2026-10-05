@@ -4075,6 +4075,33 @@ def _run_skills(result: dict) -> list[str]:
     return out
 
 
+def _with_prose(form: dict | None, result: dict, names: dict | None = None) -> dict | None:
+    """Дописать в форму разделы навыков, ответивших прозой.
+
+    Бланк рисует только объявленные поля, поэтому навык без схемы в него не попадал — ни в выбранный
+    бланк вертикали, ни в сшитый. Прогон на шесть навыков давал документ, в котором нет ни одного из
+    них. Их текст — тоже работа, и место ему в документе, перед оговоркой и подписями.
+    """
+    if not form or not isinstance(form.get("layout"), list):
+        return form
+    extra = report_compose.prose_sections(result, names or {})
+    if not extra:
+        return form
+    lay = list(form.get("layout") or [])
+    tail = [b for b in lay if isinstance(b, dict) and b.get("t") in ("note", "sign", "svc")]
+    head = [b for b in lay if b not in tail]
+    out = dict(form)
+    out["layout"] = head + extra + tail
+    return out
+
+
+async def _skill_names() -> dict:
+    try:
+        return {sid: (t.get("name") or sid) for sid, t in skill_templates.load_all().items()}
+    except Exception:  # noqa: BLE001 — названия украшают, а не определяют документ
+        return {}
+
+
 async def _template_for_run(result: dict, forced: str = "") -> dict | None:
     """Форма этого прогона: выбранная или СШИТАЯ из бланков его навыков.
 
@@ -4087,7 +4114,8 @@ async def _template_for_run(result: dict, forced: str = "") -> dict | None:
     `forced` — форма, названная человеком или OUT-узлом: её не переигрываем.
     """
     if forced:
-        return await report_store.get(forced) or await report_store.get("default")
+        return _with_prose(await report_store.get(forced) or await report_store.get("default"),
+                           result, await _skill_names())
     # Редактор отчёта в прогоне — его раскладка главнее механической сшивки: он смотрел и на
     # результаты, и на задачу. Но только если раскладка прошла проверку; негодную отбрасываем и
     # говорим об этом в замечаниях, а не молча собираем документ наугад.
@@ -4104,7 +4132,9 @@ async def _template_for_run(result: dict, forced: str = "") -> dict | None:
                                                "layout": lay, "for_skills": []}, editor="report-editor")
         except Exception:  # noqa: BLE001
             pass
-        return report_compose.with_editor(lay, title="Отчёт по задаче", css=(base0 or {}).get("css") or "")
+        return _with_prose(report_compose.with_editor(lay, title="Отчёт по задаче",
+                                                      css=(base0 or {}).get("css") or ""),
+                           result, await _skill_names())
     if why:
         result.setdefault("report_notes", []).append("раскладка редактора отброшена: " + why)
     # Кэш: раскладку для этого набора навыков редактор уже собирал — берём её, модель не нужна.
@@ -4123,7 +4153,8 @@ async def _template_for_run(result: dict, forced: str = "") -> dict | None:
             forms[sid] = ""
     distinct = {f for f in forms.values() if f}
     if len(distinct) < 2:
-        return await report_store.get(await _pick_template_id(result)) or await report_store.get("default")
+        return _with_prose(await report_store.get(await _pick_template_id(result))
+                           or await report_store.get("default"), result, await _skill_names())
     names = {}
     try:
         names = {sid: (t.get("name") or sid) for sid, t in skill_templates.load_all().items()}
@@ -4135,10 +4166,11 @@ async def _template_for_run(result: dict, forced: str = "") -> dict | None:
         if tpl and tpl.get("layout"):
             sections.append((sid, names.get(sid) or sid, tpl["layout"]))
     if len(sections) < 2:      # сшивать нечего: у бланков нет раскладки (старые формы по виду)
-        return await report_store.get(await _pick_template_id(result)) or await report_store.get("default")
+        return _with_prose(await report_store.get(await _pick_template_id(result))
+                           or await report_store.get("default"), result, await _skill_names())
     base = await report_store.get("default")
-    return report_compose.compose(sections, title="Отчёт по задаче",
-                                  css=(base or {}).get("css") or "")
+    return _with_prose(report_compose.compose(sections, title="Отчёт по задаче",
+                                             css=(base or {}).get("css") or ""), result, names)
 
 
 def _auto_template_id(result: dict) -> str:
@@ -4250,18 +4282,18 @@ def _sources_html(result: dict, esc) -> str:
         for e in ((f or {}).get("entities") or []) if isinstance(f, dict) else []:
             if e and e not in ents:
                 ents.append(str(e))
+    # Документы по ссылке — такой же источник, как выгрузка: показываем их ВМЕСТЕ с сущностями, а не
+    # вместо. Прогон может стоять и на том, и на другом, и получателю документа нужно видеть оба.
+    docs = [d for d in ((result.get("run_metrics") or {}).get("documents") or []) if d.get("ok")]
+    doc_bits = [f"<b>{esc(str(d.get('url'))[:120])}</b> ({esc(d.get('kind') or 'документ')}, "
+                f"знаков {esc(d.get('chars') or 0)})" for d in docs[:6]]
     if not ents:
         # Молчание здесь — худший из вариантов: документ без строки источника выглядит так же
         # убедительно, как документ по выгрузке из 1С, хотя стоит за ним только текст задачи и общие
         # знания модели. Говорим прямо и называем, чего не хватило, — тогда читатель знает цену
         # выводам, а автор знает, что приложить в следующий раз.
-        docs = [d for d in ((result.get("run_metrics") or {}).get("documents") or []) if d.get("ok")]
-        if docs:
-            # Документ по ссылке — такой же источник, как выгрузка: его видно в документе, и к нему
-            # возвращаются, когда вывод нужно проверить.
-            bits = [f"<b>{esc(str(d.get('url'))[:120])}</b> ({esc(d.get('kind') or 'документ')}, "
-                    f"знаков {esc(d.get('chars') or 0)})" for d in docs[:6]]
-            return "<div class='line'>Источник данных: " + " · ".join(bits) + "</div>"
+        if doc_bits:
+            return "<div class='line'>Источник данных: " + " · ".join(doc_bits) + "</div>"
         km = [str(x) for x in ((result.get("run_metrics") or {}).get("knowledge_mode") or [])]
         if km:
             return ("<div class='line'>Источник данных: <b>данные и документы по задаче "
@@ -4275,12 +4307,16 @@ def _sources_html(result: dict, esc) -> str:
             p = ape.entity_provenance(e)
         except Exception:  # noqa: BLE001 — провенанс недоступен: назовём хотя бы сущность
             p = {"entity": e, "records": 0}
-        src = ", ".join(sorted((p.get("sources") or {}))) or ", ".join(sorted((p.get("recipes") or {}))) or "—"
+        # Провенанс отдаёт источники вида «http:http://host/path» (вид адаптера + адрес). Вторая
+        # приставка в документе выглядит ошибкой, поэтому показываем адрес как есть.
+        src = ", ".join(sorted(str(x).split(":", 1)[1] if str(x).startswith(("http:http", "https:http"))
+                               else str(x) for x in (p.get("sources") or {}))) \
+            or ", ".join(sorted((p.get("recipes") or {}))) or "—"
         when = ""
         if p.get("fetched_at"):
             when = " · загружено " + _dtm.datetime.fromtimestamp(float(p["fetched_at"])).strftime("%d.%m.%Y %H:%M")
         bits.append(f"<b>{esc(e)}</b> ({esc(src)}, записей {esc(p.get('records') or 0)}{esc(when)})")
-    return "<div class='line'>Источник данных: " + " · ".join(bits) + "</div>"
+    return "<div class='line'>Источник данных: " + " · ".join(bits + doc_bits) + "</div>"
 
 
 def _service_html(agent: dict, result: dict, esc) -> str:
@@ -5717,7 +5753,7 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, sta
             except Exception:  # noqa: BLE001 — реестр недоступен: читаем только публичные адреса
                 _allow = doclink.trusted_hosts([])
             for _u in _urls:
-                _d = await asyncio.to_thread(doclink.fetch, _u, _allow)
+                _d = await _asyncio.to_thread(doclink.fetch, _u, _allow)
                 _docs.append(_d)
                 obs.log_event("info" if _d.get("ok") else "warning", "run.doclink",
                               url=_u[:120], ok=bool(_d.get("ok")), chars=_d.get("chars") or 0,
@@ -5791,9 +5827,19 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, sta
                           error=f"{type(_bex).__name__}: {str(_bex)[:200]}")
     await _push_progress("доставка и отчёт")
     # Структурированные ответы навыков (по шаблонам) — отдельно: ниже findings подменяются детерминированными
-    result["skill_outputs"] = [{"skill": f.get("skill"), "structured": f.get("structured"), "model": f.get("model"),
-                                "template_id": f.get("template_id") or "", "schema_miss": f.get("schema_miss") or []}
-                               for f in (result.get("findings") or []) if isinstance(f, dict) and f.get("skill") and isinstance(f.get("structured"), dict)]
+    # Выходы навыков: берём КАЖДЫЙ, а не только отдавший строгий JSON. Прежде условие было
+    # «structured — словарь», и навык, пишущий прозой (разбор идеи, адвокат дьявола, ревью
+    # спецификации) выпадал из выходов целиком: прогон на шесть навыков оставлял в отчёте ноль
+    # разделов, и документ выглядел пустым при 85 тысячах потраченных токенов. Текст кладём
+    # обрезанным: он нужен отчёту как материал раздела, а не как второй экземпляр прогона.
+    result["skill_outputs"] = [
+        {"skill": f.get("skill"), "structured": f.get("structured") if isinstance(f.get("structured"), dict) else None,
+         "text": str(f.get("text") or "")[:6000],
+         "model": f.get("model"), "template_id": f.get("template_id") or "",
+         "sources_mode": f.get("sources_mode") or "", "schema_miss": f.get("schema_miss") or []}
+        for f in (result.get("findings") or [])
+        if isinstance(f, dict) and f.get("skill")
+        and (isinstance(f.get("structured"), dict) or str(f.get("text") or "").strip())]
     # Петля прогон→канва: прикрепляем детерминированные находки (истина, не LLM).
     if "audit1c-checks" in _skills:
         if _det_findings_err:

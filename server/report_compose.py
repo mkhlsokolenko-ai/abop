@@ -83,6 +83,25 @@ FOOT_NOTE = ("Разделы приведены так, как их сформи
              "пересказа. Решение по документу принимает человек.")
 
 
+def prose_sections(result: dict, titles: dict | None = None) -> list[dict]:
+    """Разделы для навыков, которые ответили прозой, а не схемой.
+
+    Бланк собирается из объявленных схем навыков, и навык без структуры в него не попадал вовсе —
+    отчёт по разбору идеи выходил пустым, хотя шесть навыков отработали и потратили токены. Текст
+    такого навыка — тоже результат: ему место в документе отдельным разделом, а не в никуда.
+    """
+    из_них = []
+    for o in (result or {}).get("skill_outputs") or []:
+        sid = str(o.get("skill") or "")
+        if not sid or sid == EDITOR_SKILL or isinstance(o.get("structured"), dict):
+            continue
+        txt = str(o.get("text") or "").strip()
+        if not txt:
+            continue
+        из_них.append({"t": "prose", "title": (titles or {}).get(sid) or sid, "text": txt[:6000]})
+    return из_них
+
+
 def compose(sections: list[tuple[str, str, list]], *, title: str, css: str = "",
             pdf_options: dict | None = None) -> dict:
     """Форма под этот прогон: шапка, разделы навыков, графики, оговорка, подписи.
