@@ -317,6 +317,14 @@ def _run_summary(agent_id: str, run: dict) -> dict:
         "verdict": run.get("verdict") if isinstance(run.get("verdict"), dict) else None,
         "tokens": int(((run.get("run_metrics") or {}).get("cost") or {}).get("input_tokens") or 0)
                   + int(((run.get("run_metrics") or {}).get("cost") or {}).get("output_tokens") or 0),
+        # Чем именно считали и во сколько обошлось. Без этого по карточке нельзя отличить прогон на
+        # своём боксе (0 ₽) от молчаливого отката на облачный роутер — а это разница в деньгах и в
+        # том, какие данные ушли наружу. 05.10 владелец спрашивал ровно это, и ответить было нечем.
+        "model": (lambda c: (sorted((c.get("by_model") or {}).items(),
+                                    key=lambda kv: -(kv[1].get("calls") or 0))[0][0]
+                             if (c.get("by_model") or {}) else None))(
+            ((run.get("run_metrics") or {}).get("cost") or {})),
+        "cost_rub": ((run.get("run_metrics") or {}).get("cost") or {}).get("rub"),
         # Прогон, обрезанный лимитом, выглядел как обычный: находок меньше — и непонятно почему.
         "budget_stopped": [str(x) for x in (((run.get("run_metrics") or {}).get("budget") or {}).get("stopped_skills") or [])],
         # Расхождения между ветвями: сколько закрыто правилом и что ждёт решения человека. Молчать об
