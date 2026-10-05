@@ -30,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, arbiter, assembly, audit_store, blackboard, planner, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, chat_store, orchestrator, report_compose, report_store, run_cache_store, run_parts_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, arbiter, assembly, audit_store, blackboard, planner, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, chat_store, orchestrator, report_compose, report_store, doclink, run_cache_store, run_parts_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
@@ -4255,6 +4255,13 @@ def _sources_html(result: dict, esc) -> str:
         # убедительно, как документ по выгрузке из 1С, хотя стоит за ним только текст задачи и общие
         # знания модели. Говорим прямо и называем, чего не хватило, — тогда читатель знает цену
         # выводам, а автор знает, что приложить в следующий раз.
+        docs = [d for d in ((result.get("run_metrics") or {}).get("documents") or []) if d.get("ok")]
+        if docs:
+            # Документ по ссылке — такой же источник, как выгрузка: его видно в документе, и к нему
+            # возвращаются, когда вывод нужно проверить.
+            bits = [f"<b>{esc(str(d.get('url'))[:120])}</b> ({esc(d.get('kind') or 'документ')}, "
+                    f"знаков {esc(d.get('chars') or 0)})" for d in docs[:6]]
+            return "<div class='line'>Источник данных: " + " · ".join(bits) + "</div>"
         km = [str(x) for x in ((result.get("run_metrics") or {}).get("knowledge_mode") or [])]
         if km:
             return ("<div class='line'>Источник данных: <b>данные и документы по задаче "
@@ -5696,6 +5703,34 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, sta
     except Exception as _ex:  # noqa: BLE001 — доска усиление, а не условие работы прогона
         obs.log_event("warning", "board.long.read_failed", error=str(_ex)[:200])
 
+    # Документы по ссылке: то, на чём агент должен стоять вместо общих знаний. Ссылку человек даёт
+    # прямо в задаче («оцени идею по регламенту http://…»), читает её СЕРВЕР — у рантайма нет сети, и
+    # давать её ему незачем. Что прочитано, попадает в прогон помеченным блоком вместе с
+    # происхождением, а что не прочитано — честной строкой: молча проглоченная ссылка хуже отказа,
+    # человек будет думать, что документ учтён.
+    _docs: list = []
+    if user_context:
+        _urls = doclink.links_in(user_context)
+        if _urls:
+            try:
+                _allow = doclink.trusted_hosts(await systems_store.all())
+            except Exception:  # noqa: BLE001 — реестр недоступен: читаем только публичные адреса
+                _allow = doclink.trusted_hosts([])
+            for _u in _urls:
+                _d = await asyncio.to_thread(doclink.fetch, _u, _allow)
+                _docs.append(_d)
+                obs.log_event("info" if _d.get("ok") else "warning", "run.doclink",
+                              url=_u[:120], ok=bool(_d.get("ok")), chars=_d.get("chars") or 0,
+                              error=str(_d.get("error") or "")[:120])
+            _block = doclink.block(_docs)
+            if _block:
+                user_context = _block + user_context
+            _bad = [d for d in _docs if not d.get("ok")]
+            if _bad:
+                user_context = (user_context + "\n\n=== ССЫЛКИ, КОТОРЫЕ ПРОЧИТАТЬ НЕ УДАЛОСЬ ===\n"
+                                + "\n".join(f"{d.get('url')} — {d.get('error')}" for d in _bad)
+                                + "\nНе ссылайся на их содержимое и скажи, что документ не прочитан.\n")
+
     # Готовые части прогона: что навык уже отдал, при повторной попытке не считаем заново. Длинная
     # цепочка не укладывалась в таймаут попытки (600 с), и работа терялась ЦЕЛИКОМ — вместе с уже
     # отработавшими навыками и оплаченными токенами. Кэш живёт ровно столько, сколько идёт прогон,
@@ -5734,6 +5769,11 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, sta
                                    parts=_parts)
     if _recv:
         result["input_received"] = _recv
+    if _docs:
+        result.setdefault("run_metrics", {})["documents"] = [
+            {"url": d.get("url"), "ok": bool(d.get("ok")), "kind": d.get("kind") or "",
+             "chars": int(d.get("chars") or 0), "error": str(d.get("error") or "")[:160]}
+            for d in _docs]
     # Отчёт сведён — части больше ничего не значат. Инвалидация сразу, а не по сроку: иначе кэш
     # притворяется памятью и однажды подсунет вчерашний результат на свежий запуск.
     if job_id:

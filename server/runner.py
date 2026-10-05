@@ -700,8 +700,12 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
         # выдумывай» и ссылку на id записи: навык без источников оказывался в вакууме — ему
         # запрещали пользоваться собственными знаниями и не давали ничего взамен. Отсюда пустые
         # оценки идей: данных нет, знания запрещены, остаётся вода.
-        _has_sources = bool(entities and any(data.values())) or bool(know_block or up_block
-                                                                    or board_block or run_block)
+        # Прочитанный по ссылке документ — полноценный источник: на него можно ссылаться, и правила
+        # строгие («ничего не выдумывай») снова уместны. Блок кладёт сервер, рантайм узнаёт его по
+        # заголовку — сети у рантайма нет и не будет.
+        _has_docs = "=== ДОКУМЕНТЫ ПО ССЫЛКЕ" in (user_context or "")
+        _has_sources = (bool(entities and any(data.values()))
+                        or bool(know_block or up_block or board_block or run_block) or _has_docs)
         _has_material = bool((user_context or "").strip())
         _knowledge_mode = not _has_sources
         # GROUNDED-режим: если детерминированный движок уже посчитал находки (истина), навык их ОБЪЯСНЯЕТ,
@@ -721,12 +725,14 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
         else:
             _task_verb = "примени методику к данным и найди конкретные расхождения"
         _src = "блока НАХОДКИ, данных и норм" if explain else "ДАННЫХ и норм"
+        if _has_docs and not explain:
+            _src = "ДОКУМЕНТОВ ПО ССЫЛКЕ, данных и норм"
         # Без источников правила другие: работаем по приложенному материалу, а общие знания модели
         # разрешены ЯВНО — с пометкой, что это они, и с перечнем документов, которых не хватило.
         # Молчаливое «ничего не выдумывай» в вакууме даёт не честность, а пустоту.
         _know_rules = ""
         if _knowledge_mode:
-            _src = ("ПРИЛОЖЕННОГО МАТЕРИАЛА" if _has_material else "общих знаний модели")
+            _src = ("ПРИЛОЖЕННОГО МАТЕРИАЛА" if _has_material else "общих знаний модели")  # noqa: E501
             _task_verb = (("примени методику навыка к ПРИЛОЖЕННОМУ МАТЕРИАЛУ" if _has_material
                            else "примени методику навыка к задаче")
                           + " и дай содержательный разбор по её структуре")
