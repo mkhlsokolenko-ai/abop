@@ -35,6 +35,13 @@ EDITOR_FROM = 2
 # неверный ответ, который стоил бы реального прогона. Порог кандидатности (0.08) тут не годится: он
 # отвечает на вопрос «рассматривать ли вообще», а не «можно ли на этом строить план».
 SKILL_SURE = 0.30
+# Счёт подбора — величина относительная: на длинной формулировке своими словами даже точный навык
+# набирает 0.2, потому что слов в запросе много, а совпадают не все. Поэтому планка не единственный
+# признак решения: лидер, который ОТОРВАЛСЯ от следующего кандидата, — это выбор, а не догадка.
+# Проверено на живом запросе «проанализируй идею сервиса…»: idea-scorer 0.215 против 0.143 у
+# следующего — по абсолютной планке это был бы вопрос, хотя навык найден верно.
+SKILL_LEAD = 1.4      # во сколько раз лидер должен опережать следующего
+SKILL_FLOOR = 0.15    # ниже этого отрыв уже ни о чём не говорит
 
 
 @dataclass
@@ -131,17 +138,24 @@ def decide(task: str, *, catalog: dict, entities: set, slots: set, matches: list
     # Слабое совпадение лидера — не решение, а догадка: спрашиваем, вместо того чтобы собрать
     # красивую цепочку не по задаче. Те же слова, что и у агента: не угадываем исполнителя.
     lead = max((float(st.get("score") or 0) for st in (p.get("steps") or [])), default=0.0)
+    runner_up = float((p.get("runner_up") or {}).get("score") or 0)
+    # Отрыв считается только когда второй кандидат ИЗВЕСТЕН: без него «ноль у следующего» — это
+    # отсутствие данных, а не отрыв. Иначе любой слабый лидер выглядел бы уверенным.
+    clear = lead >= SKILL_FLOOR and runner_up > 0 and lead >= runner_up * SKILL_LEAD
     d.facts["совпадение_навыка"] = round(lead, 3)
     d.facts["планка_навыка"] = SKILL_SURE
-    if lead and lead < SKILL_SURE:
+    if runner_up:
+        d.facts["следующий_кандидат"] = round(runner_up, 3)
+    if lead and lead < SKILL_SURE and not clear:
         d.kind = "ask"
         d.questions = ["Что именно сделать с этим? По описанию подходит слишком много навыков — "
                        "назовите действие или предмет работы.",
                        "Ближе всего: " + ", ".join(
                            f"{st.get('title') or st.get('skill')}" for st in (p.get("steps") or [])[:3])]
         d.facts["догадка"] = [str(st.get("skill")) for st in (p.get("steps") or [])][:4]
-        d.why.append(f"лучшее совпадение навыка {lead:.2f} < планки {SKILL_SURE}: это догадка, "
-                     f"а не выбор — спрашиваем вместо сборки")
+        d.why.append(f"лучшее совпадение навыка {lead:.2f} < планки {SKILL_SURE}"
+                     + (f" и отрыв от следующего ({runner_up:.2f}) мал" if runner_up else "")
+                     + ": это догадка, а не выбор — спрашиваем вместо сборки")
         d.why.append("на чём остановился подбор: " + " → ".join(steps))
         return d
 
@@ -151,6 +165,9 @@ def decide(task: str, *, catalog: dict, entities: set, slots: set, matches: list
     d.facts["шагов"] = len(steps)
     d.facts["не_хватает"] = list(p.get("missing") or [])[:4]
     d.why.append("собираем исполнителя из навыков: " + " → ".join(steps))
+    if lead < SKILL_SURE and clear:
+        d.why.append(f"совпадение {lead:.2f} ниже планки, но лидер оторвался от следующего "
+                     f"({runner_up:.2f}) — это выбор, а не догадка")
     for s in (p.get("steps") or []):
         if s.get("why"):
             d.why.append(f"  {s.get('skill')}: {s.get('why')}")

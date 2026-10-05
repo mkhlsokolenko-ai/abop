@@ -451,6 +451,53 @@ export async function mount(root, ctx) {
       } catch (e) { toast(humanError(e), "danger"); }
       b.disabled = false; b.textContent = t;
     });
+    // Правка цепочки до запуска: человек видит подбор и может его исправить, а не только отменить.
+    // Исправленный план помечается как ручной — в трассе решения это должно быть видно, иначе
+    // непонятно, почему запустилось не то, что подобрал оркестратор.
+    function asmOf(btn) { const m = messages[+btn.dataset.i]; return (m && m.meta && m.meta.assemble) || null; }
+    async function asmSave(a, i) {
+      a.manual = true;
+      const m = messages[i];
+      if (m && m.id && cur) {
+        try { await api(M + "/threads/" + cur.id + "/messages/" + m.id + "/meta", { method: "PATCH", body: JSON.stringify({ meta: { assemble: a } }) }); }
+        catch { /* история — best effort, карточка уже исправлена на экране */ }
+      }
+      render();
+    }
+    $("col").querySelectorAll(".asmEdit").forEach((b) => b.onclick = () => {
+      const a = asmOf(b); if (!a) return;
+      const n = +b.dataset.n, cu = (a.steps[n] || {}).skill;
+      const rows = skills.map((sk) => `<label style="display:flex;align-items:flex-start;gap:9px;padding:7px 9px;border-radius:9px;border:1px solid ${sk.id === cu ? "var(--accent)" : "var(--line)"};background:${sk.id === cu ? "var(--accent-bg)" : "var(--field)"};cursor:pointer;margin:4px 0">
+        <input type="radio" name="asmSk" value="${esc(sk.id)}" ${sk.id === cu ? "checked" : ""} style="accent-color:var(--accent);margin-top:2px"/>
+        <span style="display:flex;flex-direction:column;gap:2px;min-width:0"><span style="font-size:12.5px;font-weight:600">${esc(sk.title || sk.id)}</span><span style="font-size:11px;color:var(--ink-3)">${esc(sk.hint || "")}</span></span></label>`).join("");
+      const ov = modal(`Шаг ${n + 1}: чем его делать`, `<input id="asmSearch" placeholder="Поиск навыка…" style="width:100%;margin-bottom:8px" autofocus/><div id="asmList" style="max-height:52vh;overflow:auto">${rows || '<span class="faint">Каталог навыков пуст.</span>'}</div>`,
+        async (body) => {
+          const v = body.querySelector("input[name=asmSk]:checked"); if (!v) return false;
+          a.steps[n] = { ...(a.steps[n] || {}), skill: v.value, title: (skills.find((x) => x.id === v.value) || {}).title || v.value, why: "выбрано вручную", score: null };
+          await asmSave(a, +b.dataset.i);
+        }, "Заменить");
+      const srch = ov.querySelector("#asmSearch");
+      srch.oninput = () => { const q = srch.value.toLowerCase(); ov.querySelectorAll("#asmList label").forEach((l) => { l.style.display = l.textContent.toLowerCase().includes(q) ? "" : "none"; }); };
+    });
+    $("col").querySelectorAll(".asmDrop").forEach((b) => b.onclick = async () => {
+      const a = asmOf(b); if (!a || (a.steps || []).length < 2) return;
+      a.steps.splice(+b.dataset.n, 1);
+      await asmSave(a, +b.dataset.i);
+    });
+    $("col").querySelectorAll(".asmAdd").forEach((b) => b.onclick = () => {
+      const a = asmOf(b); if (!a) return;
+      const rows = skills.map((sk) => `<label style="display:flex;align-items:flex-start;gap:9px;padding:7px 9px;border-radius:9px;border:1px solid var(--line);background:var(--field);cursor:pointer;margin:4px 0">
+        <input type="radio" name="asmNew" value="${esc(sk.id)}" style="accent-color:var(--accent);margin-top:2px"/>
+        <span style="display:flex;flex-direction:column;gap:2px;min-width:0"><span style="font-size:12.5px;font-weight:600">${esc(sk.title || sk.id)}</span><span style="font-size:11px;color:var(--ink-3)">${esc(sk.hint || "")}</span></span></label>`).join("");
+      const ov = modal("Добавить шаг в конец цепочки", `<input id="asmSearch2" placeholder="Поиск навыка…" style="width:100%;margin-bottom:8px" autofocus/><div id="asmList2" style="max-height:52vh;overflow:auto">${rows}</div>`,
+        async (body) => {
+          const v = body.querySelector("input[name=asmNew]:checked"); if (!v) return false;
+          a.steps.push({ skill: v.value, title: (skills.find((x) => x.id === v.value) || {}).title || v.value, why: "добавлено вручную", score: null });
+          await asmSave(a, +b.dataset.i);
+        }, "Добавить");
+      const srch = ov.querySelector("#asmSearch2");
+      srch.oninput = () => { const q = srch.value.toLowerCase(); ov.querySelectorAll("#asmList2 label").forEach((l) => { l.style.display = l.textContent.toLowerCase().includes(q) ? "" : "none"; }); };
+    });
     $("col").querySelectorAll(".whRun").forEach((b) => b.onclick = () => {
       const wh = ((messages[+b.dataset.i] || {}).meta || {}).work_hint || {};
       if (wh.kind === "report") { reportLastRun(); return; }
@@ -1192,16 +1239,21 @@ export async function mount(root, ctx) {
   }
   function assembleHTML(a) {
     const i = messages.findIndex((m) => m.meta && m.meta.assemble === a);
+    // Подбор может ошибиться — и человек должен иметь возможность поправить ИМЕННО тот шаг, который
+    // неверен, а не отменять всю сборку. Карандаш меняет навык шага, крестик убирает шаг.
     const rows = (a.steps || []).map((st, n) => `<div class="drow">
         <span class="drow-num">${n + 1}</span>
         <span class="drow-main">
           <span class="drow-name">${esc(skillName(st.skill) || st.title || st.skill)}</span>
           <span class="drow-sub">${esc(st.why || st.short || "шаг плана")}</span>
         </span>
-        ${st.score != null ? meterHTML(st.score, { short: true }) : ""}</div>`).join("");
+        ${st.score != null ? meterHTML(st.score, { short: true }) : ""}
+        <button type="button" class="ico ghost asmEdit" data-i="${i}" data-n="${n}" title="Заменить навык этого шага" aria-label="Заменить навык шага ${n + 1}" style="width:26px;height:26px;font-size:12px">✎</button>
+        ${(a.steps || []).length > 1 ? `<button type="button" class="ico ghost danger asmDrop" data-i="${i}" data-n="${n}" title="Убрать шаг" aria-label="Убрать шаг ${n + 1}" style="width:26px;height:26px;font-size:11px">✕</button>` : ""}
+        </div>`).join("");
     const chain = (a.steps || []).map((st) => skillName(st.skill) || st.skill).join(" → ");
     return `<div class="dcard">
-      <div class="dcard-top"><span class="dcard-kicker">готового агента нет — соберём из навыков</span>${cardCloseHTML(i, "сборка агента")}</div>
+      <div class="dcard-top"><span class="dcard-kicker">${a.manual ? "цепочка исправлена вручную" : "готового агента нет — соберём из навыков"}</span>${cardCloseHTML(i, "сборка агента")}</div>
       <div class="dcard-quote">${esc(String(a.task).slice(0, 200))}</div>
       <div class="dcard-title">${esc(chain)}</div>
       <div class="dcard-body">${rows}</div>
@@ -1212,6 +1264,7 @@ export async function mount(root, ctx) {
       ${a.note ? `<div class="dcard-note">${esc(a.note)}</div>` : ""}
       <div class="dcard-acts">
         <button type="button" class="btn primary asmRun" data-i="${i}">Собрать агента и запустить</button>
+        <button type="button" class="btn sm asmAdd" data-i="${i}" title="Добавить шаг в цепочку">＋ навык</button>
         <button type="button" class="btn sm asmChat" data-i="${i}">Агент не нужен, ответь в чате</button>
         <button type="button" class="btn sm cardNo" data-i="${i}">Не запускать</button>
       </div></div>`;
@@ -1223,7 +1276,9 @@ export async function mount(root, ctx) {
     // Карточка могла пролежать в чате долго, а подбор за это время поправили. Решение
     // пересчитывается здесь, в момент нажатия: именно на устаревшей карточке владелец запустил план,
     // собранный до правки подбора. Расхождение не прячем — говорим и идём с новым.
-    const fresh = await decide(a.task);
+    // Но если цепочку правил ЧЕЛОВЕК, пересчёт её не трогает: его выбор важнее свежего подбора,
+    // иначе правка молча отменялась бы в момент запуска — и это выглядело бы как потеря данных.
+    const fresh = a.manual ? null : await decide(a.task);
     if (fresh && fresh.kind === "build" && (fresh.skills || []).length) {
       const was = (a.steps || []).map((s) => s.skill).join(",");
       const now = (fresh.skills || []).join(",");

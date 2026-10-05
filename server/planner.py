@@ -105,10 +105,47 @@ _SPLIT = re.compile(
     + r"|\bа\s+также\b|\bзатем\b|\bпотом\b|\bпосле\s+чего\b)\s*", re.I)
 
 
+# Вставленный в чат документ или кусок переписки — это МАТЕРИАЛ к задаче, а не список этапов.
+# 05.10 владелец вставил свою идею вместе с ответом ассистента (1.5 тыс. знаков) и попросил её
+# разобрать. Текст разрезался по точкам на 11 «этапов», и каждый кусок подбирался отдельно: абзац
+# про спам в Awesome-списках дал разбор почты со счётом 0.95, абзац про альтернативы — ADR. Человек
+# получил цепочку из пяти навыков, не имеющих отношения к его просьбе. Разрезать чужой текст на
+# работы нельзя: работа названа в УКАЗАНИИ, остальное — то, над чем работать.
+_PASTE_FROM = 600     # знаков: длиннее — считаем, что к указанию приложен материал
+_MAX_STAGES = 4       # больше четырёх работ в одной фразе человек не ставит; остальное — разметка текста
+
+
+def directive(task: str) -> str:
+    """Что человек ПРОСИТ, без приложенного материала.
+
+    Указание почти всегда стоит первым абзацем, а вставка отделена пустой строкой (так её кладёт и
+    буфер обмена, и наш же хоткей анализа выделенного). Если в первом абзаце действия нет, ищем
+    первый абзац, в котором оно есть: человек мог начать с приветствия.
+    """
+    t = str(task or "").strip()
+    if not t:
+        return ""
+    blocks = [b.strip() for b in re.split(r"\n\s*\n", t) if b.strip()]
+    if not blocks:
+        return t
+    act = re.compile("|".join(_ACTIONS), re.I)
+    for b in blocks[:4]:
+        if act.search(b):
+            return b[:600]
+    return blocks[0][:600]
+
+
 def clauses(task: str) -> list[str]:
     """Этапы задачи. Слишком короткие куски не считаем этапом: «и» внутри перечисления не делит работу."""
-    parts = [p.strip(" ,;.") for p in _SPLIT.split(str(task or "")) if p and len(p.strip()) > 12]
-    return parts or ([str(task or "").strip()] if str(task or "").strip() else [])
+    t = str(task or "").strip()
+    # Длинный текст: этапы ищем ТОЛЬКО в указании. Если указание и есть весь текст (человек правда
+    # написал длинную многосоставную задачу одним абзацем) — ничего не меняется, режем как прежде.
+    if len(t) > _PASTE_FROM:
+        d = directive(t)
+        if d and len(d) < len(t):
+            t = d
+    parts = [p.strip(" ,;.") for p in _SPLIT.split(t) if p and len(p.strip()) > 12]
+    return (parts[:_MAX_STAGES] or ([t] if t else []))
 
 
 def _skill_text(sid: str, meta: dict) -> str:
@@ -414,19 +451,24 @@ def plan(task: str, catalog: dict, *, entities: set[str], slots: set[str],
     Возвращает шаги в порядке исполнения, волны, чего не хватает и почему выбран каждый навык.
     """
     hints = hints or {}
-    enough = sufficiency(task, catalog)
+    # Подбор ведём по УКАЗАНИЮ, а не по всему тексту. Приложенный материал (вставленный документ,
+    # кусок переписки) остаётся контекстом для самого прогона, но на выбор исполнителя влиять не
+    # должен: иначе слово «Telegram/Email» в чужом абзаце добавляло в цепочку черновик письма, а
+    # абзац про спам — разбор почты. Если материала нет, work совпадает с task и ничего не меняется.
+    work = directive(task) if len(str(task or "").strip()) > _PASTE_FROM else str(task or "")
+    enough = sufficiency(work, catalog)
     if not enough["ok"]:
         # Не подбираем наугад: возвращаем ровно те вопросы, ответы на которые сделают запрос рабочим.
         return {"ok": False, "need_more": True, "steps": [], "waves": [], "missing": [],
                 "sufficiency": enough, "note": enough["почему"]}
-    stages = clauses(task)
+    stages = clauses(work)
 
     index = _index(catalog)
 
     # Если человек назвал источник («в 1С», «по почте»), навыки, читающие эту сущность, получают
     # прибавку. Это не эвристика по словам: и то, что названо, и то, что навык читает, взято из
     # контрактов — сравниваем объявленное с объявленным.
-    named = _named_sources(task, entities)
+    named = _named_sources(work, entities)
 
     def _source_bonus(sid: str, meta: dict) -> float:
         if not named:
@@ -452,7 +494,12 @@ def plan(task: str, catalog: dict, *, entities: set[str], slots: set[str],
         r = sorted(((score(sid, m), sid) for sid, m in catalog.items()), key=lambda x: (-x[0], x[1]))
         return [(v, sid) for v, sid in r if v > MIN_CANDIDATE][:MAX_CANDIDATES]
 
-    ranked = rank_for(task)
+    ranked = rank_for(work)
+    # Второй кандидат — мера того, НАСКОЛЬКО уверен выбор. Абсолютный счёт на длинной формулировке
+    # своими словами низкий даже у точного навыка: слов много, совпадают не все. А вот отрыв от
+    # следующего показывает, выбор это или догадка; решение по нему принимает оркестратор.
+    runner_up = ({"skill": ranked[1][1], "score": round(float(ranked[1][0]), 3)}
+                 if len(ranked) > 1 else {})
     if not ranked:
         return {"ok": False, "steps": [], "waves": [], "missing": ["ни один навык не похож на задачу"],
                 "note": "исполнителя под такую задачу в каталоге нет"}
@@ -562,7 +609,10 @@ def plan(task: str, catalog: dict, *, entities: set[str], slots: set[str],
     # Достройка «вниз»: задача просит результат, которого никто из выбранных не отдаёт, а в каталоге
     # есть навык, который его делает ИЗ уже выбранного. «Нарежь тикеты по решениям сверки» — сверка
     # даёт решения, тикеты делает другой навык; без этого шага задача осталась бы недоделанной.
-    task_concepts = _concepts(task)
+    # Достраиваем по словам УКАЗАНИЯ. Слово из приложенного материала — не просьба: в тексте
+    # владельца «дайджест в Telegram/Email» стояло внутри чужого абзаца, и в план попадал
+    # черновик письма, которого никто не просил.
+    task_concepts = _concepts(work)
     have_concepts: set[str] = set()
     for st in chosen:
         for it in sc.produces_list((catalog.get(st["skill"]) or {}).get("produces")):
@@ -628,7 +678,7 @@ def plan(task: str, catalog: dict, *, entities: set[str], slots: set[str],
     # Предметы, которые придётся уточнить у человека.
     ask = sorted({s for st in chosen for s in st["slots"] if s not in slots})
     return {"ok": True, "steps": chosen, "waves": waves, "missing": missing, "ask_slots": ask,
-            "unclear": unclear,
+            "unclear": unclear, "runner_up": runner_up, "directive": work,
             "note": (f"цепочка из {len(chosen)} навыков в {len(waves)} волнах"
                      + (f"; уточнить предмет: {', '.join(ask)}" if ask else "")
                      + (f"; этапов без исполнителя: {len(unclear)}" if unclear else "")
