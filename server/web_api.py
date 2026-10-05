@@ -30,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, arbiter, assembly, audit_store, blackboard, planner, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, chat_store, orchestrator, report_compose, report_store, run_cache_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, arbiter, assembly, audit_store, blackboard, planner, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, chat_store, orchestrator, report_compose, report_store, run_cache_store, run_parts_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
@@ -2817,6 +2817,7 @@ async def _startup() -> None:
     _asyncio.create_task(triggers.scheduler_loop(execute_agent_run))  # фоновый планировщик (leader-election)
     # ── очередь прогонов (гейт масштабирования, Фаза 1): воркеры вместо исполнения в HTTP-запросе ──
     await run_queue.init()
+    await run_parts_store.init()
     try:
         _st = await run_queue.requeue_stale()
         if _st:
@@ -5685,6 +5686,26 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, sta
     except Exception as _ex:  # noqa: BLE001 — доска усиление, а не условие работы прогона
         obs.log_event("warning", "board.long.read_failed", error=str(_ex)[:200])
 
+    # Готовые части прогона: что навык уже отдал, при повторной попытке не считаем заново. Длинная
+    # цепочка не укладывалась в таймаут попытки (600 с), и работа терялась ЦЕЛИКОМ — вместе с уже
+    # отработавшими навыками и оплаченными токенами. Кэш живёт ровно столько, сколько идёт прогон,
+    # и гасится после сведения отчёта: это не долгая память (для неё доска), а страховка попытки.
+    _parts = None
+    if job_id:
+        _rev = run_parts_store.rev_of(agent)
+        try:
+            _done = await run_parts_store.load(job_id, rev=_rev)
+        except Exception as _ex:  # noqa: BLE001 — кэш ускоряет, но не является условием работы
+            obs.log_event("warning", "run.parts.read_failed", error=str(_ex)[:200])
+            _done = {}
+        if _done:
+            obs.log_event("info", "run.parts.resume", job_id=job_id, parts=len(_done))
+
+        async def _save_part(skill: str, res: dict) -> None:
+            await run_parts_store.save(job_id, skill, res, rev=_rev)
+
+        _parts = {"done": _done, "save": _save_part}
+
     result = await runner.run_live(agent, contract, ape.skill_safety,
                                    data_query=ape.data_query,
                                    skill_sources=ape.skill_datasources_resolved,
@@ -5699,9 +5720,17 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, sta
                                    trace_id=(obs.current_trace_id() if hasattr(obs, "current_trace_id") else "") or "",
                                    on_progress=_on_skill_progress,
                                    board=_board, data_snapshot=data_snapshot, arbiter_ask=_arbiter_ask,
-                                   limits=_limits or None, long_boards=_long_boards or None)
+                                   limits=_limits or None, long_boards=_long_boards or None,
+                                   parts=_parts)
     if _recv:
         result["input_received"] = _recv
+    # Отчёт сведён — части больше ничего не значат. Инвалидация сразу, а не по сроку: иначе кэш
+    # притворяется памятью и однажды подсунет вчерашний результат на свежий запуск.
+    if job_id:
+        try:
+            await run_parts_store.drop(job_id)
+        except Exception as _ex:  # noqa: BLE001
+            obs.log_event("warning", "run.parts.drop_failed", error=str(_ex)[:200])
     # Выводы ветви выкладываем в общую область, чтобы следующие ветви и сводка их увидели. Сбой записи
     # прогон не валит: доска — усиление, а не условие работы.
     if board_scope:

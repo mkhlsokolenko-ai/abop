@@ -595,11 +595,18 @@ async def worker_loop(worker_id: str, handler, *, on_done=None, on_error=None) -
                         except Exception:  # noqa: BLE001
                             pass
             except asyncio.TimeoutError:
-                await fail(job["id"], f"таймаут ({RUN_TIMEOUT} с)")
-                obs.inc("abop_run_jobs_total", status="failed")
-                if on_error:
+                # Таймаут попытки — не конец работы. Готовые части навыков лежат в кэше задания
+                # (run_parts_store), поэтому следующая попытка продолжит с того места, где встала,
+                # а не начнёт десятиминутный прогон заново. Раньше длинная цепочка теряла ВСЁ:
+                # и отработавшие навыки, и оплаченные токены.
+                rq = job.get("attempts", 1) < MAX_ATTEMPTS
+                msg = (f"таймаут ({RUN_TIMEOUT} с)"
+                       + (" — продолжим с готовых частей" if rq else " — попытки исчерпаны"))
+                await fail(job["id"], msg, requeue=rq)
+                obs.inc("abop_run_jobs_total", status="requeued" if rq else "failed")
+                if on_error and not rq:
                     try:
-                        await on_error(job, f"таймаут ({RUN_TIMEOUT} с)")
+                        await on_error(job, msg)
                     except Exception:  # noqa: BLE001
                         pass
             except Exception as ex:  # noqa: BLE001

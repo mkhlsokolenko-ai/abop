@@ -500,13 +500,17 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
                    tool_loop=None, actor: str = "", trace_id: str = "", on_progress=None,
                    budget: dict | None = None, board=None, data_snapshot: dict | None = None,
                    arbiter_ask=None, limits: dict | None = None,
-                   long_boards: dict | None = None) -> dict:
+                   long_boards: dict | None = None, parts=None) -> dict:
     """НАСТОЯЩИЙ прогон: governance-каркас (run_agent) + для каждого навыка с data-scope
     собирает РЕАЛЬНЫЕ данные из canonical store (data_query) и прогоняет их через LLM
     (тело навыка = методика) → находки на доску. Числа — только из данных (анти-галлюцинация).
     blocked_entities — сущности, закрытые ABAC (система вне scope семьи): навык их НЕ читает.
     long_boards — уже РАЗРЕШЁННЫЕ долгие области доски {«user»|«family»: записи}. Права решает
-    вызывающая сторона: рантайм не знает ни JWT, ни семей пользователя, и выдумывать их ему нельзя."""
+    вызывающая сторона: рантайм не знает ни JWT, ни семей пользователя, и выдумывать их ему нельзя.
+    parts — кэш готовых частей между попытками: {"done": {навык: результат}, "save": async (навык, результат)}.
+    Длинная цепочка не укладывалась в таймаут попытки, и работа терялась ЦЕЛИКОМ — вместе с уже
+    отработавшими навыками и оплаченными токенами. С кэшем следующая попытка считает только то,
+    чего ещё нет."""
     import json as _json
     import asyncio
     blocked = set(blocked_entities or [])
@@ -861,8 +865,26 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
     # между волнами последовательно, и выходы волны становятся входом следующей. До этого все навыки
     # стартовали одним gather, поэтому рёбра графа ни на что не влияли и передать результат было нельзя.
     findings: list = []
+    _done = dict((parts or {}).get("done") or {})
+    _save_part = (parts or {}).get("save")
+
+    async def _step(n: dict):
+        """Шаг волны: готовую часть берём из кэша, новую — считаем и сразу откладываем туда."""
+        sid = str(n.get("skill") or "")
+        ready = _done.get(sid)
+        if ready:
+            await _notify(sid, "cached", reason="часть готова с прошлой попытки")
+            return dict(ready)
+        r = await _analyze(n)
+        if r and _save_part and sid:
+            try:
+                await _save_part(sid, r)
+            except Exception:  # noqa: BLE001 — кэш ускоряет, но не является условием работы
+                pass
+        return r
+
     for wave in _waves(skills, graph.get("edges") or []):
-        res = await asyncio.gather(*[_analyze(n) for n in wave])
+        res = await asyncio.gather(*[_step(n) for n in wave])
         for r in res:
             if not r:
                 continue

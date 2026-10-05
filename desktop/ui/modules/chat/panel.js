@@ -1541,8 +1541,11 @@ export async function mount(root, ctx) {
         curJob = { id: r.job_id, agent: agentId }; setBusy(true, "агент");
         if (r.deduped) toast("Такой прогон уже в очереди — присоединяюсь к нему", "warn");
         status(r.position > 1 ? `в очереди · впереди ${r.position - 1} · агент «${esc(agentNm)}»` : `агент «${esc(agentNm)}» запускается…`);
-        const t0 = Date.now(); let res = null; let _miss = 0;
-        while (Date.now() - t0 < 15 * 60 * 1000) {
+        // Длинная цепочка живёт дольше одной попытки: по таймауту сервер возвращает задание в
+        // очередь и продолжает с готовых частей (кэш прогона). Ждать 15 минут и объявлять провал
+        // там, где работа идёт, — врать человеку; поэтому ждём до трёх попыток сервера.
+        const t0 = Date.now(); let res = null; let _miss = 0, _requeued = 0;
+        while (Date.now() - t0 < 40 * 60 * 1000) {
           await new Promise((ok) => setTimeout(ok, 2500));
           if (!root.isConnected) return;
           let j;
@@ -1556,9 +1559,15 @@ export async function mount(root, ctx) {
           }
           if (j.done) { res = j; break; }
           const sec = Math.round((Date.now() - t0) / 1000);
-          status(j.status === "queued" ? `в очереди · впереди ${Math.max(0, (j.position || 1) - 1)} · ${sec} с` : `агент «${esc(agentNm)}» ${progressText((j.progress || {}).run)} · ${sec} с`);
+          // Возврат в очередь после таймаута — не сбой: готовые навыки уже в кэше, пересчитываться
+          // они не будут. Человек должен видеть именно это, а не «в очереди» без объяснения.
+          if (j.status === "queued" && sec > 30) _requeued = 1;
+          status(j.status === "queued"
+            ? (_requeued ? `попытка прервалась по времени — продолжаю с готовых частей · ${sec} с`
+                         : `в очереди · впереди ${Math.max(0, (j.position || 1) - 1)} · ${sec} с`)
+            : `агент «${esc(agentNm)}» ${progressText((j.progress || {}).run)} · ${sec} с`);
         }
-        finish(res || { ok: false, error: "прогон не завершился за 15 минут — результат появится в карточке прогона в этом чате" });
+        finish(res || { ok: false, error: "прогон идёт дольше 40 минут — ожидание в чате закрыто, результат появится в карточке прогона и в разделе «Прогоны»" });
       }
     } catch (e) { run.content = "Не удалось запустить агента: " + humanError(e); run.meta = { notice: { icon: "⚠" } }; toast(humanError(e), "danger"); }
     curJob = null; setBusy(false);
