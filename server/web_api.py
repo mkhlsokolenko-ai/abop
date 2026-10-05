@@ -2500,8 +2500,12 @@ async def orchestrate(body: dict, u: dict = Depends(user)) -> dict:
                             "skills": sk})
     except Exception:  # noqa: BLE001 — без подбора агентов решение всё равно принимается
         matches = []
+    # План для РЕШЕНИЯ считаем без подсказок от похожих агентов. Иначе получается круг: агент
+    # «ADR» похож на задачу → его навык adr-writer получает прибавку → он возглавляет план →
+    # агент «покрывает план» → запускаем ADR на разбор идеи сервиса. Подсказка подтверждала сама
+    # себя, и никакая правка подбора этого не перебивала. Проверено на проде 05.10.
     plan = await plan_auto({"task": task, "slots": (body or {}).get("slots") or {},
-                            "max_steps": max_steps}, u)
+                            "max_steps": max_steps, "hints": False}, u)
     _sids = [str(s.get("skill") or "") for s in (plan.get("steps") or []) if s.get("skill")]
     cached = False
     if len(_sids) >= orchestrator.EDITOR_FROM:
@@ -2567,9 +2571,13 @@ async def plan_auto(body: dict, u: dict = Depends(user)) -> dict:
     ents = {e["entity"] for e in ((await data_entities(u)).get("entities") or []) if (e.get("rows") or 0) > 0}
     slots_given = {str(k) for k, v in ((body or {}).get("slots") or {}).items() if str(v or "").strip()}
 
-    # подсказки по смыслу: у подбора агентов уже есть словарь и сравнение по смыслу — используем их
+    # подсказки по смыслу: у подбора агентов уже есть словарь и сравнение по смыслу — используем их.
+    # Вызывающая сторона может их отключить (`"hints": false`): решение «звать готового или собирать»
+    # нельзя принимать на плане, который сам же построен под похожего агента — это круг.
     hints: dict = {}
     try:
+        if (body or {}).get("hints") is False:
+            raise RuntimeError("подсказки отключены вызывающей стороной")
         m = await agents_match({"q": task}, u)
         for it in (m.get("matches") or [])[:5]:
             ag = await agent_store.get(it.get("id") or "")

@@ -520,7 +520,27 @@ export async function mount(root, ctx) {
       try { t.setSelectionRange(t.value.length, t.value.length); } catch { /* не критично */ }
     });
     $("col").querySelectorAll(".clChat").forEach((b) => b.onclick = () => sendPrompt(b.dataset.t));
-    $("col").querySelectorAll(".dcChain").forEach((b) => b.onclick = () => { const dc = _decisionOf(b); if (dc) suggestChain(dc.text); });
+    // «Собрать из навыков» на карточке агента — это ТО ЖЕ решение оркестратора, вид «build», а не
+    // второй механизм. Прежняя кнопка уходила в подбор цепочки ИЗ АГЕНТОВ: он не знал ни про навыки,
+    // ни про решение, и шаги в нём можно было менять только на других агентов. Два механизма
+    // подбора, не знающие друг о друге, — это и была дыра.
+    // Выбор кандидата прямо из вопроса: человек отвечает действием, а не перепиской.
+    $("col").querySelectorAll(".clPick").forEach((b) => b.onclick = async () => {
+      await assembleCard(b.dataset.t || "", { steps: [{ skill: b.dataset.skill }],
+                                              note: "выбрано человеком из предложенных кандидатов" });
+    });
+    $("col").querySelectorAll(".dcBuild").forEach((b) => b.onclick = async () => {
+      const dc = _decisionOf(b); if (!dc) return;
+      const steps = (dc.alt_skills || []).map((sid) => ({ skill: sid }));
+      if (!steps.length) { toast("Оркестратор не предложил сборку из навыков для этой задачи", "warn"); return; }
+      await assembleCard(dc.text, { steps, note: "та же задача, собранная из навыков",
+                                    alt_agent: { id: dc.top && dc.top.id, name: dc.top && dc.top.name,
+                                                 score: dc.top && dc.top.score } });
+    });
+    $("col").querySelectorAll(".asmAgent").forEach((b) => b.onclick = () => {
+      const m = messages[+b.dataset.i]; const a = m && m.meta && m.meta.assemble;
+      runAbopAgentDeliver(b.dataset.id, b.dataset.name || b.dataset.id, (a && a.task) || "", "");
+    });
     // выбор предмета работы: подставляем запись и запускаем агента уже по ней
     $("col").querySelectorAll(".slotPick").forEach((b) => b.onclick = async () => {
       const m = messages[+b.dataset.i]; const sl = m && m.meta && m.meta.slot_ask; if (!sl) return;
@@ -708,6 +728,14 @@ export async function mount(root, ctx) {
       <button type="button" class="ico go plRun" data-id="${esc(p.id)}" title="Запустить цепочку «${esc(p.name)}»" aria-label="Запустить цепочку ${esc(p.name)}">▶</button><button type="button" class="ico danger plDel" data-id="${esc(p.id)}" data-n="${esc(p.name)}" title="Удалить цепочку" aria-label="Удалить цепочку">✕</button></div>`).join("");
     const ov = modal("Цепочки агентов", `<div style="font-size:12px;color:var(--ink-2);margin-bottom:4px">Выход одного агента идёт в контекст следующего; последний шаг доставляет результат.</div><div style="display:flex;flex-direction:column;gap:6px">${rows || '<span style="font-size:12.5px;color:var(--ink-3)">Пока нет цепочек — соберите из двух и более агентов.</span>'}</div>`,
       () => { ov.close(); openPipeBuilder(); return false; }, "＋ Собрать цепочку", { width: "600px", cancelLabel: "Закрыть" });
+    // Подбор цепочки ИЗ ГОТОВЫХ АГЕНТОВ остаётся здесь — в инструменте цепочек, где человек этого
+    // и ждёт. Из решения по задаче он убран: там работает оркестратор, и два механизма подбора,
+    // не знающие друг о друге, расходились (владелец: «это прямо UX-дыра»).
+    const sg = document.createElement("button");
+    sg.type = "button"; sg.className = "btn sm"; sg.textContent = "✨ Подобрать цепочку по задаче";
+    sg.style.cssText = "margin-top:10px";
+    sg.onclick = () => { const t = ($("inp").value || "").trim(); if (!t) { toast("Напишите задачу в поле ввода — по ней подберу цепочку", "warn"); return; } ov.close(); suggestChain(t); };
+    ov.querySelector("#mBody").appendChild(sg);
     ov.querySelectorAll(".plRun").forEach((b) => b.onclick = () => { ov.close(); runPipeline(b.dataset.id, ($("inp").value || "").trim()); });
     ov.querySelectorAll(".plDel").forEach((b) => b.onclick = async () => {
       if (!(await confirmDialog({ title: "Удалить цепочку?", text: `«${esc(b.dataset.n)}» будет удалена. Прогоны в истории чата останутся.`, okLabel: "Удалить" }))) return;
@@ -1174,10 +1202,16 @@ export async function mount(root, ctx) {
   async function decideAndOffer(task) {
     const d = await decide(task);
     if (d) {
-      if (d.kind === "ask" && (d.questions || []).length) { await clarifyCard(task, { "вопросы": d.questions, "почему": d["итог"] || "" }); return; }
+      if (d.kind === "ask" && (d.questions || []).length) {
+        // Кандидаты, на которых подбор остановился, — это выбор, который человек может сделать за
+        // один клик. Раньше они были текстом внутри вопроса: прочитать можно, нажать нельзя.
+        await clarifyCard(task, { "вопросы": d.questions, "почему": d["итог"] || "",
+                                  "кандидаты": (d.facts || {})["догадка"] || [] });
+        return;
+      }
       if (d.kind === "agent" && d.agent_id) {
         const top = { id: d.agent_id, name: d.agent_name, score: (d.facts || {})["подбор_агента"] };
-        await decisionCard(task, [top].concat(d.alternatives || []));
+        await decisionCard(task, [top].concat(d.alternatives || []), d);
         return;
       }
       if (d.kind === "build" && (d.skills || []).length) { await assembleCard(task, decisionToPlan(d)); return; }
@@ -1208,11 +1242,14 @@ export async function mount(root, ctx) {
     render(); scrollDown(true);
   }
   // карточка выбора: агент + куда положить результат (чат / Redmine / почта / BookStack / просто ответить)
-  async function decisionCard(text, matches) {
+  async function decisionCard(text, matches, d) {
     const top = matches[0];
     const alt = matches.slice(1, 3).filter((m) => m.score >= 0.25);
     await ensureThread(text.slice(0, 50));
-    await note("предложен агент", { decision: { text, top, alt } });
+    // Вторая возможность и пробелы агента приходят из решения — карточка не должна их терять:
+    // человек выбирает между «запустить готового» и «собрать из навыков» в ОДНОМ месте.
+    await note("предложен агент", { decision: { text, top, alt,
+      alt_skills: (d && d.alt_skills) || [], gaps: (d && d.gaps) || [] } });
     render(); scrollDown(true);
   }
   // Решение по задаче: спрашиваем оркестратор. Пусто — его нет (старый сайдкар), работаем как прежде.
@@ -1225,7 +1262,9 @@ export async function mount(root, ctx) {
   // Решение «собрать из навыков» → вид, который понимает карточка сборки.
   function decisionToPlan(d) {
     return { steps: (d.skills || []).map((sid) => ({ skill: sid })), missing: (d.facts || {})["не_хватает"] || [],
-             note: (d.why || []).join(" · "), report_template: d.form || "", editor: d.editor || "" };
+             note: (d.why || []).join(" · "), report_template: d.form || "", editor: d.editor || "",
+             // Близкий готовый агент — не мусор: человек вправе запустить его вместо сборки.
+             alt_agent: d.alt_agent || {} };
   }
 
   // Сборка из навыков: готового агента нет, но план по контрактам есть.
@@ -1234,6 +1273,7 @@ export async function mount(root, ctx) {
     await note("предложена сборка из навыков", { assemble: {
       task: text, steps: pl.steps || [], missing: pl.missing || [], note: pl.note || "",
       report_template: pl.report_template || "", family: pl.family || "",
+      alt_agent: pl.alt_agent || {},
       name: "Под задачу: " + text.slice(0, 40) } });
     render(); scrollDown(true);
   }
@@ -1261,10 +1301,12 @@ export async function mount(root, ctx) {
         ${a.steps.length > 1 ? `<span>+ редактор отчёта: сложит разделы в один документ</span>` : ""}
         ${a.report_template ? `<span>бланк «${esc(a.report_template)}»</span>` : ""}</div>
       ${(a.missing || []).length ? `<div class="dcard-warn">Не хватает: ${esc(a.missing.join("; "))}</div>` : ""}
+      ${(a.alt_agent && a.alt_agent.id) ? `<div class="dcard-note">рядом был готовый агент «${esc(a.alt_agent.name)}» (${Math.round((a.alt_agent.score || 0) * 100)}%)${(a.alt_agent.covers || []).length ? `, умеет ${esc((a.alt_agent.covers || []).map((x) => skillName(x) || x).join(", "))}` : ""} — но закрывает задачу не целиком</div>` : ""}
       ${a.note ? `<div class="dcard-note">${esc(a.note)}</div>` : ""}
       <div class="dcard-acts">
         <button type="button" class="btn primary asmRun" data-i="${i}">Собрать агента и запустить</button>
         <button type="button" class="btn sm asmAdd" data-i="${i}" title="Добавить шаг в цепочку">＋ навык</button>
+        ${(a.alt_agent && a.alt_agent.id) ? `<button type="button" class="btn sm asmAgent" data-i="${i}" data-id="${esc(a.alt_agent.id)}" data-name="${esc(a.alt_agent.name)}" title="Запустить готового агента вместо сборки">Запустить «${esc(a.alt_agent.name)}»</button>` : ""}
         <button type="button" class="btn sm asmChat" data-i="${i}">Агент не нужен, ответь в чате</button>
         <button type="button" class="btn sm cardNo" data-i="${i}">Не запускать</button>
       </div></div>`;
@@ -1408,6 +1450,11 @@ export async function mount(root, ctx) {
       ${qs ? `<ul style="margin:0;padding-left:18px;font-size:12.5px;color:var(--ink)">${qs}</ul>` : ""}
       <div style="font-size:12px;color:var(--ink-3);line-height:1.5">${esc(need["подсказка"] || "")}</div>
       ${need["пример"] ? `<div style="font-size:12px;color:var(--ink-2);background:var(--surface-2);border:1px solid var(--line);border-radius:9px;padding:8px 10px;line-height:1.5">Например: ${esc(need["пример"])}</div>` : ""}
+      ${(need["кандидаты"] || []).length ? `<div style="display:flex;flex-direction:column;gap:5px">
+        <span class="ape-label">подбор остановился на этом — можно выбрать сразу</span>
+        ${(need["кандидаты"] || []).slice(0, 4).map((sid) => `<button type="button" class="drow pick clPick" data-t="${esc(c.text)}" data-skill="${esc(sid)}">
+          <span class="drow-main"><span class="drow-name">${esc(skillName(sid) || sid)}</span><span class="drow-sub">собрать исполнителя по этому навыку</span></span></button>`).join("")}
+      </div>` : ""}
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button type="button" class="btn clDraft" data-t="${esc(c.text)}" style="padding:7px 13px;font-size:12px">Дописать задачу</button>
         <button type="button" class="btn clChat" data-t="${esc(c.text)}" style="padding:7px 13px;font-size:12px">Просто ответь в чате</button>
@@ -1436,8 +1483,10 @@ export async function mount(root, ctx) {
         ${chanBtn("redmine", "В трекер")}${chanBtn("email", "На почту")}${chanBtn("bookstack", "В вики")}
       </div>
       ${alts ? `<div class="dcard-sep"></div><div class="dcard-note">другой агент:</div><div class="dcard-body">${alts}</div>` : ""}
+      ${(dc.gaps || []).length ? `<div class="dcard-warn">Из плана он не делает: ${esc(dc.gaps.join(", "))}</div>` : ""}
+      ${(dc.alt_skills || []).length ? `<div class="dcard-sep"></div><div class="dcard-note">или собрать исполнителя из навыков: ${esc((dc.alt_skills || []).map((x) => skillName(x) || x).join(" → "))}</div>` : ""}
       <div class="dcard-acts">
-        ${(dc.alt && dc.alt.length) ? `<button type="button" class="btn sm dcChain">Задача многошаговая, собрать цепочку</button>` : ""}
+        ${(dc.alt_skills || []).length ? `<button type="button" class="btn sm dcBuild" data-i="${i}">Собрать из навыков</button>` : ""}
         <button type="button" class="btn sm dcChat">Агент не нужен, ответь в чате</button>
       </div></div>`;
   }
