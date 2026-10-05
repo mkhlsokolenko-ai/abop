@@ -693,6 +693,17 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
                  + run_block
                  + "=== ДАННЫЕ (дайджест: всего+по_типам = полный scope, сэмпл = примеры записей) ===\n"
                  + _json.dumps(digest, ensure_ascii=False)[:int(_lim["data"])] + "\n\n")
+        # ОТКУДА навык берёт основание. Источники — это данные стенда, нормы из корпуса, выходы
+        # предыдущих навыков и доска. Если их НЕТ ни одного, навык работает либо по приложенному
+        # материалу (вставленный текст, документ), либо на общих знаниях модели — и об этом нужно
+        # сказать вслух. Прежде промпт в любом случае требовал «только из ДАННЫХ, ничего не
+        # выдумывай» и ссылку на id записи: навык без источников оказывался в вакууме — ему
+        # запрещали пользоваться собственными знаниями и не давали ничего взамен. Отсюда пустые
+        # оценки идей: данных нет, знания запрещены, остаётся вода.
+        _has_sources = bool(entities and any(data.values())) or bool(know_block or up_block
+                                                                    or board_block or run_block)
+        _has_material = bool((user_context or "").strip())
+        _knowledge_mode = not _has_sources
         # GROUNDED-режим: если детерминированный движок уже посчитал находки (истина), навык их ОБЪЯСНЯЕТ,
         # а не ищет заново на сэмпле (иначе на дайджесте LLM ложно пишет «расхождений нет» — противоречит коду).
         explain = bool(findings_context)
@@ -710,6 +721,23 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
         else:
             _task_verb = "примени методику к данным и найди конкретные расхождения"
         _src = "блока НАХОДКИ, данных и норм" if explain else "ДАННЫХ и норм"
+        # Без источников правила другие: работаем по приложенному материалу, а общие знания модели
+        # разрешены ЯВНО — с пометкой, что это они, и с перечнем документов, которых не хватило.
+        # Молчаливое «ничего не выдумывай» в вакууме даёт не честность, а пустоту.
+        _know_rules = ""
+        if _knowledge_mode:
+            _src = ("ПРИЛОЖЕННОГО МАТЕРИАЛА" if _has_material else "общих знаний модели")
+            _task_verb = (("примени методику навыка к ПРИЛОЖЕННОМУ МАТЕРИАЛУ" if _has_material
+                           else "примени методику навыка к задаче")
+                          + " и дай содержательный разбор по её структуре")
+            _know_rules = (
+                " ВНУТРЕННИХ ДАННЫХ И ДОКУМЕНТОВ ПО ЭТОЙ ЗАДАЧЕ НЕ ПРЕДОСТАВЛЕНО. "
+                "Поэтому: (1) опирайся на приложенный материал, если он есть; "
+                "(2) там, где материала не хватает, ПОЛЬЗУЙСЯ СВОИМИ ЗНАНИЯМИ — но каждое такое "
+                "утверждение помечай «(по общим знаниям модели)», а не выдавай за факт о заказчике; "
+                "(3) не придумывай id записей, суммы, цитаты из внутренних документов и ссылки; "
+                "(4) в конце перечисли, какие документы или ссылки (регламент, выгрузка, страница в "
+                "вики, файл) нужно приложить, чтобы вывод стал обоснованным.")
         if use_struct:
             prompt = (_head
                       + "ЗАДАЧА: " + _task_verb + ". Верни СТРОГО JSON по схеме "
@@ -718,13 +746,13 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
                       "(НК РФ ст.N / ФСБУ / ПБУ)" + (" из блока ЗНАНИЕ" if know_block else "") + "; если такой нормы "
                       "нет — оставь «норма» ПУСТЫМ, НЕ вписывай методику, инструкции или общие фразы. "
                       "БЕЗ markdown, БЕЗ преамбулы, БЕЗ рассуждений — только факты из " + _src + ". "
-                      "Ничего не выдумывай.")
+                      "Ничего не выдумывай." + _know_rules)
         else:
             prompt = (_head
                       + "ЗАДАЧА: " + _task_verb + ". Верни КОНКРЕТНЫЕ находки списком — "
                       "каждая со ссылкой на id записи и суммой"
                       + (", и на норму из блока ЗНАНИЕ, если применимо" if know_block else "")
-                      + ". Только из " + _src + ", ничего не выдумывай.")
+                      + ". Только из " + _src + ", ничего не выдумывай." + _know_rules)
         # Schema-driven: навык ссылается на шаблон извлечения (JSON Schema из БД) → его инструкция +
         # response_format перекрывают дефолт. ЛЛМ раскладывает данные строго по схеме из БД.
         # freeform (документ/проза) — БЕЗ схемы: раньше дефолтная схема находок навязывалась и навыку-документу
@@ -732,7 +760,8 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
         _resp_fmt = _RESPONSE_FORMAT if (_STRUCTURED and use_struct) else None
         if _custom and use_struct:
             prompt = _head + "ЗАДАЧА (парсер): " + (_custom.get("instruction") or _task_verb) + \
-                     " Верни СТРОГО JSON по заданной схеме. Только из " + _src + ", ничего не выдумывай."
+                     " Верни СТРОГО JSON по заданной схеме. Только из " + _src + ", ничего не выдумывай." \
+                     + _know_rules
             _resp_fmt = _custom.get("response_format") or _resp_fmt
         _t = time.perf_counter()
         if should_cancel and should_cancel():   # отмена из очереди: навык не стартует, прогон завершится частично
@@ -856,6 +885,11 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
         for tc in tool_calls:   # токены вызовов инструментов — в биллинг навыка
             tin += int(tc.get("input_tokens") or 0); tout += int(tc.get("output_tokens") or 0)
         return {"skill": sid, "entities": entities, "model": model, "text": txt,
+                # На чём стоит вывод: «data» — данные стенда, нормы, выходы соседей; «knowledge» —
+                # общие знания модели и приложенный материал. Без этой пометки отчёт выглядит
+                # одинаково убедительно в обоих случаях, а стоит он разного.
+                "sources_mode": ("knowledge" if _knowledge_mode else "data"),
+                "material": bool(_has_material),
                 "structured": struct, "input_tokens": tin, "output_tokens": tout, "ms": ms, "error": err,
                 "schema_miss": miss if resp is not None else [],
                 "template_id": (_custom or {}).get("template_id") or "",
@@ -902,6 +936,18 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
                 _board.put_structured(r["skill"], st,
                                       (skill_schemas.get(r["skill"]) or {}).get("produces"))
     base["run_metrics"]["waves"] = len(_waves(skills, graph.get("edges") or []))
+    # Навыки, которым не дали ни данных, ни документов. Это не ошибка прогона, но читатель отчёта
+    # обязан знать, что часть выводов стоит на общих знаниях модели, а не на его данных.
+    _no_src = [str(r.get("skill")) for r in findings
+               if isinstance(r, dict) and r.get("sources_mode") == "knowledge"]
+    if _no_src:
+        base["run_metrics"]["knowledge_mode"] = _no_src
+        base["board"].append({
+            "kind": "warning", "agent": "источники",
+            "text": ("⚠ внутренних данных и документов по задаче не предоставлено — выводы навыков "
+                     + ", ".join(_no_src[:6])
+                     + " опираются на общие знания модели и приложенный материал. Приложите "
+                       "регламент, выгрузку или ссылку на страницу вики, чтобы вывод стал обоснованным.")})
     # ── Снимок данных: одна картина для всех ветвей одного запроса ──
     if _snap_rows:
         _snap_drift = _bb.drift(data_snapshot, _snap_rows)

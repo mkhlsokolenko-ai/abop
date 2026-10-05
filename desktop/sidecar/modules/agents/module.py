@@ -238,7 +238,12 @@ def run_report(run_id: str, body: ReportIn | None = None):
         return _err(e)
     d = Path.home() / "Downloads"
     d = d if d.exists() else Path.home()
-    p = d / (re.sub(r"[^\w\-.]+", "_", f"abop_{run_id}")[:80] + ".pdf")
+    # Имя с датой и временем: два файла с почти одинаковыми именами владелец принял за «начало и
+    # конец разорванного отчёта», хотя это были разные прогоны. Документ должен сам говорить, когда
+    # и по какому прогону он собран, — и не затирать предыдущий молча.
+    import datetime as _dt
+    stamp = _dt.datetime.now().strftime("%Y-%m-%d_%H%M")
+    p = d / (re.sub(r"[^\w\-.]+", "_", f"abop_{stamp}_{run_id}")[:96] + ".pdf")
     p.write_bytes(data)
     return {"ok": True, "path": str(p), "bytes": len(data)}
 
