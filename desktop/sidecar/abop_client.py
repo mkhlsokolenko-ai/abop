@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from . import auth, config
@@ -21,8 +22,16 @@ class AbopError(Exception):
 
 
 def _req(method: str, path: str, body: dict | None = None, timeout: int = 120) -> dict | list:
-    """Вызов ABOP /api/* с JWT пользователя. Пробрасывает статус/ошибку наверх (не глушим молча)."""
-    url = config.ABOP.rstrip("/") + path
+    """Вызов ABOP /api/* с JWT пользователя. Пробрасывает статус/ошибку наверх (не глушим молча).
+
+    Адрес экранируем ЗДЕСЬ, один раз на все вызовы. Идентификаторы у нас кириллические — агент
+    «Анализ идеи» получает id `authored-…-анализ-идеи.v1`, а прогон наследует его, — и urllib на
+    такой путь падает `UnicodeEncodeError: 'ascii' codec can't encode characters`. До 06.10 каждый
+    вызов экранировал путь сам, и там, где об этом забывали (вынос прогона на доску), кнопка
+    отвечала «ABOP недоступен — проверьте сеть», хотя сеть была ни при чём. `safe` сохраняет уже
+    экранированные куски (`%D0%90`) и разделители запроса, поэтому двойного экранирования нет.
+    """
+    url = config.ABOP.rstrip("/") + urllib.parse.quote(path, safe="/%?&=+:,@!$'()*;~")
     headers = {"Content-Type": "application/json"}
     tok = auth.token()
     if tok:
