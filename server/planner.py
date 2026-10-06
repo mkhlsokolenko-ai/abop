@@ -43,6 +43,12 @@ HINT_WEIGHT = 0.3
 HINT_CAP = 0.1
 # Названная система доставки — такой же объявленный факт, как названный источник данных.
 TARGET_BONUS = 0.3
+# Обратная сторона того же факта: систему назвали ИСТОЧНИКОМ, а навык в неё ДОСТАВЛЯЕТ и сам её
+# данных не читает. «Разбери входящие письма» — про разбор ящика, а не про написание письма, но по
+# словам методики навык-письмо выигрывает этап: слово «письмо» у него в каждой строке. Штраф держим
+# крупнее TARGET_BONUS: названный источник — это прямая речь человека о предмете работы, и она
+# сильнее словарного совпадения.
+SOURCE_ROLE_PENALTY = 0.35
 # Продолжение цепочки по контракту: насколько навык должен быть сам по себе относим к задаче, чтобы
 # его стоило добавить следующим звеном. Без порога «следование контракту» вытянет полкаталога: у
 # финансовых навыков объявлены входы друг от друга по кругу. С порогом добавляются только те, кто и
@@ -320,10 +326,51 @@ _TARGET_ARTIFACTS = {
 }
 
 
+# «Напиши письмо», «подготовь страницу», «составь тикет» — человек назвал адресата не предлогом, а
+# глаголом: артефакт здесь результат работы, а не её предмет. Без этого «напиши письмо клиенту»
+# выглядело бы как задача про разбор ящика — ровно наоборот от сказанного.
+_PRODUCE = ("напиш", "подготов", "состав", "сформир", "оформ", "сдела", "сочин", "набросай")
+_PRODUCE_SPAN = 60      # знаков от глагола до артефакта: дальше это уже другая мысль
+# Предлог перед артефактом переворачивает роль: «подготовь ответ ПО ПИСЬМУ заказчика» — письмо здесь
+# материал, а не результат, и считать его заказанным артефактом нельзя. Без этой проверки правило
+# давало прибавку навыкам-письмам ровно там, где просят совсем другой документ: регресс подбора
+# показал это на «подготовь черновик ответа в БФТ по письму заказчика».
+_SOURCE_MARK = ("по", "из", "от", "входящ", "входящи", "полученн", "пришедш", "присланн", "согласно")
+
+
+def _produced_targets(text: str) -> set[str]:
+    """Системы, чей артефакт человек просит ПРОИЗВЕСТИ («напиши письмо» → почта).
+
+    Артефакт считается заказанным, только если перед ним нет предлога источника: иначе названный
+    материал («по письму», «из письма») читался бы как заказанный результат.
+    """
+    low = str(text or "").lower()
+    out: set[str] = set()
+    for v in _PRODUCE:
+        i = low.find(v)
+        while i >= 0:
+            окно = low[i:i + _PRODUCE_SPAN]
+            for name, arts in _TARGET_ARTIFACTS.items():
+                for a in arts:
+                    j = окно.find(a)
+                    while j >= 0:
+                        перед = окно[max(0, j - 14):j].strip().split()
+                        if not (перед and перед[-1].strip(",.:;»«()") in _SOURCE_MARK):
+                            out.add(name)
+                            break
+                        j = окно.find(a, j + 1)
+                    else:
+                        continue
+                    break
+            i = low.find(v, i + 1)
+    return out
+
+
 def _named_targets(text: str) -> set[str]:
     """Системы, названные адресатом результата. Пусто — человек не сказал, куда класть."""
     low = str(text or "").lower()
-    return {name for name, words in _TARGET_WORDS.items() if any(w in low for w in words)}
+    named = {name for name, words in _TARGET_WORDS.items() if any(w in low for w in words)}
+    return named | _produced_targets(text)
 
 
 def _delivery_systems(meta: dict) -> set[str]:
@@ -345,6 +392,34 @@ def _aims_at(meta: dict, targets: set[str]) -> bool:
     for name in targets:
         if paths & {_stem(w) for w in _TARGET_ARTIFACTS.get(name, ())}:
             return True
+    return False
+
+
+def _delivers_into_source(meta: dict, named_here: set[str], targets: set[str]) -> bool:
+    """Навык доставляет в систему, которую человек назвал ИСТОЧНИКОМ, и сам её данных не читает.
+
+    Это не про «плохой навык», а про роль системы в задаче. Если человек назвал почту источником
+    («разбери входящие письма»), то навык, который в почту ПИШЕТ и ящик не читает, этап не делает —
+    сколько бы раз слово «письмо» ни стояло в его методике. Три условия, и каждое обязательно:
+    адресата человек не назвал (иначе доставка — просьба, а не ошибка), навык объявил доставку в эту
+    систему, и он не объявил её данные во входах (иначе он как раз про них).
+    """
+    if not named_here:
+        return False
+    systems = _delivery_systems(meta)
+    if not systems or (systems & targets):
+        return False
+    if set(_needs(meta)["entities"]) & named_here:
+        return False
+    for sysname in systems:
+        arts = _TARGET_ARTIFACTS.get(sysname, ())
+        if not arts:
+            continue
+        stems = {_stem(a) for a in arts}
+        for e in named_here:
+            el = str(e).lower()
+            if el in arts or _stem(sc.canonical(el)) in stems or _stem(el) in stems:
+                return True
     return False
 
 
@@ -539,6 +614,9 @@ def plan(task: str, catalog: dict, *, entities: set[str], slots: set[str],
     def rank_for(text: str) -> list[tuple[float, str]]:
         tw, tc = _words(text), _concepts(text)
         targets = _named_targets(text)
+        # Источники считаем ПО ЭТАПУ: в задаче «разбери письма и напиши ответ» почта названа
+        # источником только в первом этапе, и штрафовать навык-письмо во втором было бы неверно.
+        src_here = _named_sources(text, entities)
 
         def score(sid: str, m: dict) -> float:
             own = _match_score(tw, sid, m, index, tc)
@@ -553,7 +631,9 @@ def plan(task: str, catalog: dict, *, entities: set[str], slots: set[str],
             # не находит навык в принципе, а именно так люди и пишут.
             sem = semantic_bonus(semantic.get(sid))
             pref = float(prefer.get(sid) or 0.0)
-            return own + boost + aim + sem + pref + _source_bonus(sid, m)
+            # Роль системы в задаче сказана человеком прямо — она сильнее словарного совпадения.
+            pen = SOURCE_ROLE_PENALTY if _delivers_into_source(m, src_here, targets) else 0.0
+            return own + boost + aim + sem + pref + _source_bonus(sid, m) - pen
 
         r = sorted(((score(sid, m), sid) for sid, m in catalog.items() if sid != EDITOR_SKILL),
                    key=lambda x: (-x[0], x[1]))

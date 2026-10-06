@@ -51,6 +51,7 @@ def test_пороги_подбора_совпадают_с_кодом(админ
         "HINT_WEIGHT": planner.HINT_WEIGHT,
         "HINT_CAP": planner.HINT_CAP,
         "TARGET_BONUS": planner.TARGET_BONUS,
+        "SOURCE_ROLE_PENALTY": planner.SOURCE_ROLE_PENALTY,
         "MAX_CANDIDATES": planner.MAX_CANDIDATES,
         "MIN_CANDIDATE": planner.MIN_CANDIDATE,
         "PREFER_CAP": choice_store.PREFER_CAP,
