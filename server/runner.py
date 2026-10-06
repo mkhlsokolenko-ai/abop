@@ -1045,6 +1045,12 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
             if tc.get("tool"):
                 base["board"].append({"kind": "tool", "agent": f["skill"],
                                       "text": f"🔧 {tc['tool']}({json.dumps(tc.get('args') or {}, ensure_ascii=False)[:120]}) → {str(tc.get('observation') or '')[:200]}"})
+        # Навык-редактор отдаёт РАСКЛАДКУ документа — это машинерия сборки отчёта, а не находка.
+        # В карточке прогона она выглядела как результат работы: «итог: … раскладка: • part — title:
+        # …», и человек читал служебную структуру вместо того, что агент выяснил.
+        from . import report_compose
+        if str(f.get("skill") or "") == report_compose.EDITOR_SKILL:
+            continue
         base["board"].append({"kind": "finding", "agent": f["skill"], "text": f["text"][:1800]})
     base["findings"] = findings
     # Реальный биллинг (7.1): токены из ответов RouteAI + тариф pricing.cost_rub → cost в RunMetrics

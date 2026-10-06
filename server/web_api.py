@@ -5549,6 +5549,10 @@ def run_summary(result: dict, limit: int = 4) -> list[str]:
     for so in (result or {}).get("skill_outputs") or []:
         st = so.get("structured")
         sid = str(so.get("skill") or "")
+        # Редактор отчёта отдаёт раскладку документа — служебную структуру сборки. В строках «что
+        # сказал прогон» ей не место: человек спрашивал про почту, а не про порядок разделов.
+        if sid == report_compose.EDITOR_SKILL:
+            continue
         if not isinstance(st, dict) or not st:
             txt = str(so.get("text") or "").strip()
             if txt:
