@@ -15,7 +15,7 @@ DOCS = [("RUKOVODSTVO_POLZOVATELYA.html", "ABOP · Руководство пол
 
 HEADER = """<div style="font:9px 'Segoe UI',system-ui,sans-serif;color:#767C86;width:100%;
  padding:0 16mm;display:flex;justify-content:space-between;">
- <span>{title}</span><span>версия 1.1 · 30.09.2026</span></div>"""
+ <span>{title}</span><span>версия 1.2 · 06.10.2026</span></div>"""
 FOOTER = """<div style="font:9px 'Segoe UI',system-ui,sans-serif;color:#767C86;width:100%;
  padding:0 16mm;text-align:right;"><span class="pageNumber"></span> / <span class="totalPages"></span></div>"""
 
