@@ -410,6 +410,14 @@ export async function mount(root, ctx) {
   async function cancelCard(i, what) {
     const m = messages[i]; if (!m) return;
     const mt = m.meta || {};
+    // Отказ — самый ценный сигнал для подбора: его делают осознанно, в отличие от согласия, которое
+    // часто случается по инерции. Раньше он оставался только в этой вкладке.
+    if (mt.assemble) {
+      const a = mt.assemble;
+      api(M + "/plan/feedback", { method: "POST", body: JSON.stringify({
+        task: a.task || "", offered: a.offered || (a.steps || []).map((s) => s.skill).filter(Boolean),
+        taken: [], outcome: "cancelled" }) }).catch(() => { /* учёба не обязана мешать отказу */ });
+    }
     const task = (mt.chain_suggest || {}).task || (mt.decision || {}).text || (mt.assemble || {}).task
       || (mt.slot_ask || {}).task || (mt.clarify || {}).text || (mt.work_hint || {}).task || "";
     m.meta = { cancelled: { what: what || "Предложение отклонено", task } };
@@ -1339,6 +1347,9 @@ export async function mount(root, ctx) {
     await ensureThread(text.slice(0, 50));
     await note("предложена сборка из навыков", { assemble: {
       task: text, steps: pl.steps || [], missing: pl.missing || [], note: pl.note || "",
+      // Что подбор ПРЕДЛОЖИЛ изначально: по разнице с тем, что человек запустил, видно, где он
+      // правил руками. Без этого подбор не учится на правках — он их просто не видит.
+      offered: (pl.steps || []).map((s) => s.skill).filter(Boolean),
       report_template: pl.report_template || "", family: pl.family || "",
       alt_agent: pl.alt_agent || {},
       name: "Под задачу: " + text.slice(0, 40) } });
@@ -1398,7 +1409,12 @@ export async function mount(root, ctx) {
       }
     }
     let r = null;
-    try { r = await api(M + "/plan/build", { method: "POST", body: JSON.stringify({ steps: a.steps, name: a.name }) }); }
+    try {
+      r = await api(M + "/plan/build", { method: "POST", body: JSON.stringify({
+        steps: a.steps, name: a.name, task: a.task || "",
+        offered: a.offered || (a.steps || []).map((s) => s.skill).filter(Boolean),
+        manual: !!a.manual }) });
+    }
     catch (e) { setBusy(false); toast(humanError(e), "danger"); return; }
     setBusy(false);
     try { const cat = await api(M + "/abop-agents"); if (Array.isArray(cat) && cat.length) abopAgents = cat; } catch { /* имена подтянутся позже */ }

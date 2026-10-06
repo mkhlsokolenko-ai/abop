@@ -243,9 +243,22 @@ def plan_auto(task: str, slots: dict | None = None, max_steps: int = 4) -> dict:
     return r if isinstance(r, dict) else {}
 
 
-def plan_build(steps: list, name: str = "") -> dict:
-    """Собрать из плана настоящих агентов (по одному навыку) и цепочку между ними."""
-    r = _req("POST", "/api/plan/auto/build", {"steps": steps, "name": name or "Цепочка по задаче"}, timeout=180)
+def plan_feedback(task: str, offered: list, taken: list, outcome: str) -> dict:
+    """Исход предложения: отказался, принял, поправил. Без этого подбор не учится на отказах —
+    а отказ самый ценный сигнал: его делают осознанно."""
+    r = _req("POST", "/api/plan/feedback",
+             {"task": task, "offered": list(offered or []), "taken": list(taken or []),
+              "outcome": outcome}, timeout=30)
+    return r if isinstance(r, dict) else {}
+
+
+def plan_build(steps: list, name: str = "", *, task: str = "", offered: list | None = None,
+               manual: bool = False) -> dict:
+    """Собрать исполнителя по плану. Вместе с планом отдаём, что было предложено и правил ли человек
+    цепочку: на этом учится подбор."""
+    r = _req("POST", "/api/plan/auto/build",
+             {"steps": steps, "name": name or "Цепочка по задаче", "task": task,
+              "offered": list(offered or []), "manual": bool(manual)}, timeout=180)
     return r if isinstance(r, dict) else {}
 
 

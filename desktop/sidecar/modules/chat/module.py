@@ -207,6 +207,18 @@ class PlanIn(BaseModel):
 class PlanBuildIn(BaseModel):
     steps: list
     name: str = ""
+    # Что было предложено и правил ли человек цепочку — на этом учится подбор. Без этих полей
+    # сервер записывал исход с пустой задачей и никогда не видел ручной правки.
+    task: str = ""
+    offered: list = []
+    manual: bool = False
+
+
+class PlanFeedbackIn(BaseModel):
+    task: str = ""
+    offered: list = []
+    taken: list = []
+    outcome: str = "cancelled"
 
 
 @router.post("/orchestrate")
@@ -232,11 +244,21 @@ def plan(body: PlanIn) -> dict:
         return {"ok": False, "steps": [], "missing": [], "error": str(e)}
 
 
+@router.post("/plan/feedback")
+def plan_feedback(body: PlanFeedbackIn) -> dict:
+    """Человек отказался от предложения или взял своё — говорим об этом серверу."""
+    try:
+        return abop.plan_feedback(body.task, body.offered, body.taken, body.outcome)
+    except abop.AbopError as e:
+        return {"ok": False, "error": e.detail}
+
+
 @router.post("/plan/build")
 def plan_build(body: PlanBuildIn) -> dict:
     """Собрать агентов и цепочку по плану. Права проверяет ABOP: сборка — уровень manager."""
     try:
-        return abop.plan_build(body.steps, body.name)
+        return abop.plan_build(body.steps, body.name, task=body.task,
+                               offered=body.offered, manual=body.manual)
     except abop.AbopError as e:
         raise HTTPException(502, str(e)) from e
 

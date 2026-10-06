@@ -83,3 +83,25 @@ def test_предпочтение_решает_ничью_но_не_переби
     чужое = planner.plan(задача, cat, entities=set(), slots=set(), max_steps=1,
                          prefer={"сводка-чисел": choice_store.PREFER_CAP})
     assert чужое["steps"][0]["skill"] != "сводка-чисел",         "предпочтение перебило подбор по существу — так система замкнётся на привычке"
+
+
+def test_десктоп_сообщает_исход_подбора():
+    """Проверка кейса 06.10 показала разрыв: сервер учится, а десктоп ему ничего не говорит —
+    сборка уходила без задачи и без признака ручной правки, отказ не доезжал вовсе. Тогда журнал
+    решений заполняется пустыми задачами и никогда не видит правок, ради которых и затевался."""
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[1]
+    chat = (root / "desktop" / "ui" / "modules" / "chat" / "panel.js").read_text(encoding="utf-8")
+    side = (root / "desktop" / "sidecar" / "modules" / "chat" / "module.py").read_text(encoding="utf-8")
+    cli = (root / "desktop" / "sidecar" / "abop_client.py").read_text(encoding="utf-8")
+
+    build = chat.split("async function buildAndRunPlan(a)")[1][:1800]
+    assert "manual: !!a.manual" in build, "признак ручной правки не доезжает до сервера"
+    assert "offered:" in build and "task: a.task" in build, "задача и предложенное не доезжают"
+
+    cancel = chat.split("async function cancelCard(i, what)")[1][:900]
+    assert '"/plan/feedback"' in cancel and '"cancelled"' in cancel, "отказ не сообщается серверу"
+
+    assert "class PlanFeedbackIn" in side and '@router.post("/plan/feedback")' in side, \
+        "в сайдкаре нет ручки исхода"
+    assert "def plan_feedback(" in cli and "/api/plan/feedback" in cli, "клиент не умеет слать исход"
