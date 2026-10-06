@@ -107,3 +107,15 @@ def test_распознать_убрано_из_маршрута():
     assert '"ocr"' in app[i:i + 220], "«Распознать» всё ещё в маршруте"
     j = app.index("const RAIL_ORDER")
     assert '"ocr"' not in app[j:j + 160], "«Распознать» осталось в порядке маршрута"
+
+
+def test_браузерная_проверка_вынесена_и_не_блокирует_чужие_коммиты():
+    """GitHub в дни нехватки раннеров не выдавал слот самой тяжёлой задаче (playwright + chromium):
+    она висела 15 минут и падала с «job was not acquired by Runner» — красный CI на коммитах, где
+    веба не было вовсе. Теперь она в своём workflow, по изменениям веба и раз в сутки."""
+    ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    web = (ROOT / ".github" / "workflows" / "web-smoke.yml").read_text(encoding="utf-8")
+    assert "web-smoke:" not in ci, "браузерная проверка снова блокирует общий ci"
+    assert "concurrency:" in ci and "cancel-in-progress: true" in ci,         "устаревшие прогоны снова держат раннеры"
+    assert "webapp/**" in web and "schedule:" in web,         "проверка веба должна идти по изменениям веба и раз в сутки"
+    assert "python tests/smoke_web.py" in web, "сама проверка потерялась при переносе"

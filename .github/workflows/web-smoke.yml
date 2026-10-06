@@ -1,0 +1,55 @@
+name: web-smoke
+
+# Браузерная проверка веба вынесена из общего ci намеренно. Она самая тяжёлая (playwright +
+# chromium) и в дни нехватки раннеров GitHub именно она висела по 15 минут и падала с «job was not
+# acquired by Runner» — красный CI на коммитах, которые веба вообще не касались. Теперь она идёт
+# только когда менялся веб (или сама проверка), и раз в сутки — чтобы страница оставалась под
+# присмотром, даже если правок веба не было.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "webapp/**"
+      - "server/web_api.py"
+      - "tests/smoke_web.py"
+      - ".github/workflows/web-smoke.yml"
+  pull_request:
+    paths:
+      - "webapp/**"
+      - "server/web_api.py"
+      - "tests/smoke_web.py"
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: web-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web-smoke:
+    name: smoke · страница веба в браузере
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "httpx>=0.27" "psycopg[binary,pool]>=3.2" "python-dotenv>=1.0" \
+            "pydantic>=2.7" "fastapi>=0.115" "uvicorn[standard]>=0.30" "pyjwt[crypto]>=2.9" \
+            "minio>=7.2" "python-multipart>=0.0.9" openpyxl pypdf jsonschema playwright
+          python -m playwright install --with-deps chromium
+      - name: старт сервера
+        run: |
+          ABOP_DEV_AUTH=1 nohup python -m uvicorn server.web_api:app --host 127.0.0.1 --port 8091 > server.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8091/api/health && break; sleep 1; done
+      - name: страница рендерится (Обзор, навигация, без ошибок JS)
+        run: python tests/smoke_web.py
+      - name: логи сервера при падении
+        if: failure()
+        run: tail -100 server.log
