@@ -133,7 +133,7 @@ def _b_head(b: dict, result: dict, ctx: dict) -> str:
             continue
         if isinstance(v, list):
             v = len(v)
-        meta.append(f"{esc(lbl)}: <b>{esc(_flat(v))}</b>")
+        meta.append(f"<span><i>{esc(lbl)}</i>{esc(_flat(v))}</span>")
     lines = [f"<div class='line'>{esc(b['sub'])}</div>"] if b.get("sub") else []
     # Готовые строки из контекста отчёта (источник данных) — часть шапки: документ сначала говорит,
     # откуда числа, и только потом их показывает. Так сделано в согласованной форме аудита.
@@ -142,7 +142,10 @@ def _b_head(b: dict, result: dict, ctx: dict) -> str:
         if line:
             lines.append(line)
     if meta:
-        lines.append("<div class='line'>" + " · ".join(meta) + "</div>")
+        # Сеткой, а не строкой через точку: в строке длинные значения («12 мес., 2026-04…2027-03»)
+        # рвались посреди слова, и шапка документа читалась как случайный абзац. В сетке подпись
+        # стоит над значением, и реквизиты видно с одного взгляда — как в бланке.
+        lines.append("<div class='hmeta'>" + "".join(meta) + "</div>")
     if b.get("note"):
         lines.append(f"<div class='meth'>{esc(b['note'])}</div>")
     return (f"<div class='ahd'><h1>{esc(b.get('title') or '')}</h1>" + "".join(lines) + "</div>")
@@ -408,6 +411,28 @@ def render(layout, result: dict, ctx: dict | None = None) -> str:
     # Шапка, оговорка и подписи печатаются всегда — по ним не видно, есть ли в документе содержание.
     # Ни одного раздела с данными: это не документ, а бланк с подписями, и отдавать его нельзя.
     return "".join(out) if filled else ""
+
+
+def frame(layout, result: dict, ctx: dict | None = None, kinds=_FRAME) -> str:
+    """Только рамка документа: шапка, оговорка, подписи — без проверки «есть ли содержание».
+
+    `render` намеренно возвращает пустоту, когда ни один раздел не заполнен: бланк с подписями и без
+    данных отдавать нельзя. Но у запасного пути содержание своё — общие разделы прогона, — и рамку
+    к нему нужно приделать отдельно, иначе документ выходит без заголовка и без подписей.
+    """
+    ctx = ctx or {}
+    out = []
+    for b in layout if isinstance(layout, list) else []:
+        if not isinstance(b, dict) or str(b.get("t")) not in kinds:
+            continue
+        fn = _BLOCKS.get(str(b.get("t")))
+        if not fn:
+            continue
+        try:
+            out.append(fn(b, result, ctx))
+        except Exception:  # noqa: BLE001 — кривой блок рамки не должен ронять документ
+            continue
+    return "".join(out)
 
 
 def used_refs(layout) -> list[str]:

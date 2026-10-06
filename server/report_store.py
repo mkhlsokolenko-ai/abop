@@ -139,9 +139,16 @@ def render(template: dict, ctx: dict) -> str:
         data["blank"] = report_form.render(template.get("layout"), _res or {}, data)
         if not data["blank"].strip():
             # Форму поставили прогону не её навыков: графы бланка пусты. Пустой документ хуже
-            # общего — показываем то, что в результате есть, а не чистый лист с подписями.
-            data["blank"] = "".join(str(data.get(k) or "") for k in
-                                    ("summary", "skills", "findings", "investigations"))
+            # общего — показываем то, что в результате есть, а не чистый лист с подписями. Но РАМКУ
+            # сохраняем: шапку, оговорку и подписи. Без них получатель видит простыню текста и не
+            # может понять, чей это документ, на чём он стоит и кто за него отвечает.
+            рамка = [b for b in (template.get("layout") or [])
+                     if isinstance(b, dict) and str(b.get("t")) in ("head", "note", "sign")]
+            шапка = report_form.frame(рамка, _res or {}, data, kinds=("head",))
+            хвост = report_form.frame(рамка, _res or {}, data, kinds=("note", "sign"))
+            содержимое = "".join(str(data.get(k) or "") for k in
+                                 ("summary", "skills", "findings", "investigations"))
+            data["blank"] = шапка + содержимое + хвост
 
     def _sub(m):
         key = m.group(1).strip()
@@ -154,46 +161,51 @@ def render(template: dict, ctx: dict) -> str:
 # Плейсхолдеры, которые готовит web_api._report_context:
 #   title, agent, date, verdict, findings_total, investigations_total,
 #   by_class (HTML-строка бейджей A/B/C/D), findings (HTML), investigations (HTML), skills (HTML), deliveries (HTML)
-_BASE_CSS = (
-    "body{font-family:'Segoe UI',Arial,sans-serif;margin:0;padding:32px;color:#0f172a;line-height:1.5;max-width:860px}"
-    ".hd{border-bottom:3px solid #6366f1;padding-bottom:14px;margin-bottom:20px}"
-    "h1{color:#4338ca;margin:0 0 4px;font-size:24px}.sub{color:#64748b;font-size:13px}"
-    ".verdict{display:inline-block;margin-top:8px;font-size:12.5px;color:#475569;background:#eef2ff;border-radius:20px;padding:4px 12px}"
-    "h2{font-size:16px;color:#334155;margin:24px 0 10px;border-left:4px solid #6366f1;padding-left:9px}"
-    ".sum{display:flex;gap:14px;margin:18px 0}.card{flex:1;background:#f1f5f9;border-radius:12px;padding:14px;text-align:center}"
-    ".card h3{margin:0 0 6px;color:#64748b;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.03em}"
-    ".num{font-size:28px;font-weight:800;color:#4338ca}"
-    ".badges{margin:6px 0 14px}.b{display:inline-block;font-size:12px;font-weight:700;border-radius:8px;padding:3px 10px;margin-right:6px;color:#fff}"
-    ".b.A{background:#dc2626}.b.B{background:#ea580c}.b.C{background:#ca8a04}.b.D{background:#0891b2}"
-    ".fnd{border-left:3px solid #6366f1;padding:9px 13px;margin:8px 0;background:#f8fafc;border-radius:0 8px 8px 0;font-size:13px}"
-    ".fnd .cls{display:inline-block;font-weight:700;font-size:11px;color:#fff;background:#6366f1;border-radius:6px;padding:1px 7px;margin-right:6px}"
-    ".fnd .norm{color:#0a7c66;font-size:11.5px;font-style:italic;display:block;margin-top:4px}"
-    ".inv{border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin:10px 0;background:#fff}"
-    ".inv .sym{font-weight:700;font-size:13.5px}.inv .sev{font-size:11px;color:#b91c1c;font-weight:700;text-transform:uppercase}"
-    ".inv .chain{font-size:12px;color:#475569;margin:6px 0;font-family:'Cascadia Code',Consolas,monospace}"
-    ".inv .delta{font-size:12px;color:#0f172a;background:#fff7ed;border-radius:6px;padding:3px 8px;display:inline-block}"
-    ".task{border-left:3px solid #10b981;padding:8px 12px;margin:7px 0;background:#f0fdf4;border-radius:0 8px 8px 0;font-size:13px}"
-    ".sk{margin:10px 0}.sk h3{font-size:13.5px;color:#4338ca;margin:0 0 4px}.sk pre{white-space:pre-wrap;background:#f8fafc;border-radius:8px;padding:10px;font-size:12.5px;margin:0}"
-    ".dl{font-size:12px;color:#475569;margin:4px 0}"
-    ".ft{color:#94a3b8;font-size:11px;border-top:1px solid #e2e8f0;margin-top:26px;padding-top:10px}"
-    # ── карточка находки аудита: существенность, код, группа и четыре подписанных поля ──
-    ".ahd{border-bottom:2px solid #1e293b;padding-bottom:12px;margin-bottom:16px}"
-    ".ahd h1{color:#0f172a;font-size:22px;margin:0 0 6px}"
-    ".ahd .line{font-size:12.5px;color:#475569;margin:3px 0}"
-    ".ahd .line b{color:#0f172a}"
-    ".ahd .meth{font-size:11.5px;color:#64748b;margin-top:8px;line-height:1.45}"
-    ".ac{border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin:10px 0;page-break-inside:avoid}"
-    ".ac-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:5px}"
-    ".ac-h .sev{font-size:10px;font-weight:800;letter-spacing:.06em;border-radius:5px;padding:2px 7px;color:#fff}"
-    ".ac-h .sev.hi{background:#b91c1c}.ac-h .sev.mid{background:#b45309}.ac-h .sev.low{background:#0369a1}"
-    ".ac-h .code{font-family:Consolas,monospace;font-size:11.5px;color:#334155;font-weight:700}"
-    ".ac-h .grp{font-size:11px;color:#64748b}"
-    ".ac-t{font-size:14px;font-weight:700;color:#0f172a;margin:2px 0 8px}"
-    ".ac-f{width:100%;border-collapse:collapse;font-size:12.5px}"
-    ".ac-f td{padding:4px 0;vertical-align:top;color:#1e293b}"
-    ".ac-f td.k{width:140px;color:#64748b;font-weight:600;padding-right:12px}"
-    ".ac-f .pf{font-size:11.5px;color:#64748b;margin-top:3px;font-family:Consolas,monospace;word-break:break-all}"
-)
+def _packaged_css() -> str:
+    """Общий CSS отчётов. Источник правды — `reports/base.css` рядом с формами; читаем его один раз.
+
+    Запасной вариант ниже нужен ровно для одного случая: папка `reports/` не доехала в сборку. Он
+    намеренно короткий — только токены и типографика, — и это видно по документу: лучше простой, но
+    согласованный лист, чем копия большого файла, которая через месяц разойдётся с оригиналом и
+    начнёт красить отчёты по-своему.
+    """
+    try:
+        p = REPORTS_DIR / "base.css"
+        if p.is_file():
+            return p.read_text(encoding="utf-8")
+    except Exception:  # noqa: BLE001 — нет доступа к файлу: отдадим запасной
+        pass
+    return (
+        ":root{--font:'Noto Sans','Segoe UI','Liberation Sans',Arial,sans-serif;"
+        "--mono:'DejaVu Sans Mono',Consolas,monospace;--paper:#fff;--fill:#f6f7fa;--fill-2:#fafbfc;"
+        "--ink:#16191f;--ink-2:#454b58;--ink-3:#737a89;--line:#d7dbe3;--line-2:#eceef3;"
+        "--accent:#2f4b7c;--bad:#b3261e;--warn:#a2590b;--mid:#8a6d1f;--info:#1f5f8b;--ok:#1a7f4b;"
+        "--t-cap:10.5px;--t-sm:12px;--t-base:13.5px;--t-lg:16px;--t-xl:19px;--t-2xl:23px;"
+        "--s-1:4px;--s-2:8px;--s-3:12px;--s-4:16px;--s-5:24px}"
+        "@page{size:A4;margin:18mm 16mm}"
+        "body{margin:0 auto;padding:var(--s-5) var(--s-4);max-width:860px;background:var(--paper);"
+        "color:var(--ink);font:var(--t-base)/1.55 var(--font)}"
+        "h1{font-size:var(--t-2xl);margin:0 0 var(--s-2)}h2{font-size:var(--t-lg);margin:var(--s-5) 0 var(--s-2)}"
+        "h3{font-size:var(--t-base);margin:var(--s-4) 0 var(--s-1)}"
+        "table{width:100%;border-collapse:collapse;font-size:var(--t-sm);font-variant-numeric:tabular-nums}"
+        "th,td{border:1px solid var(--line);padding:var(--s-1) var(--s-2);text-align:left;vertical-align:top}"
+        "th{background:var(--fill);color:var(--ink-2);font-weight:600}"
+        ".req,.ahd,.hd{border-bottom:2px solid var(--ink);margin-bottom:var(--s-5)}"
+        ".req th,.req td,.svc th,.svc td{border:0}"
+        ".line,.meth,.cnt,.foot,.ft{font-size:var(--t-sm);color:var(--ink-2)}"
+        ".ac,.fcard,.inv,.vb{border:1px solid var(--line);border-left:3px solid var(--ink-3);"
+        "padding:var(--s-3) var(--s-4);margin:var(--s-2) 0}"
+        ".b,.cls,.sev,.vb-b{display:inline-block;font-size:var(--t-cap);font-weight:700;color:var(--paper);"
+        "background:var(--ink-3);padding:2px var(--s-2)}"
+        ".b.A,.cls.A,.sev.hi{background:var(--bad)}.b.B,.cls.B,.sev.mid{background:var(--warn)}"
+        ".b.C,.cls.C{background:var(--mid)}.b.D,.cls.D,.sev.low{background:var(--info)}"
+        "pre.code,.sk pre{white-space:pre-wrap;background:var(--fill);border:1px solid var(--line);"
+        "padding:var(--s-3);font:var(--t-sm)/1.45 var(--mono)}"
+        "@media print{thead{display:table-header-group}tr,.ac,.fcard,.inv,.vb{break-inside:avoid}}"
+    )
+
+
+_BASE_CSS = _packaged_css()
 _HEAD = ("<!DOCTYPE html><html><head><meta charset='utf-8'><style>{{css}}</style></head><body>"
          "<div class='hd'><h1>{{title}}</h1><div class='sub'>Агент: {{agent}} · {{date}}</div>"
          "<div class='verdict'>{{verdict}}</div></div>")
@@ -377,21 +389,42 @@ def kpi_html(d: dict, esc) -> str:
 
 def _wordy(items: list, cols: list) -> bool:
     """Список объектов «многословный»? Тогда таблица нечитаема: длинные пояснения схлопываются
-    в ячейки и отчёт выглядит поверхностным, хотя данные на месте."""
-    if len(cols) > 5:
-        return True
-    long_vals = 0
-    total = 0
+    в ячейки и отчёт выглядит поверхностным, хотя данные на месте.
+
+    Считаем ПО ГРАФАМ, а не по отдельным значениям. Таблицу ломает не доля длинных строк вообще, а
+    конкретная графа с абзацем текста: она растягивает строку на пол-страницы, и остальные графы
+    превращаются в узкие колонки по два слова. Зато реестр чисел — это таблица, сколько бы граф в нём
+    ни было: пока действовало правило «граф больше пяти → карточки», три периода P&L по одиннадцать
+    числовых граф печатались тремя карточками по одиннадцать строк, и сравнить периоды — то, ради
+    чего эти числа и считали, — было невозможно.
+    """
+    if not items:
+        return False
+    длина: dict = {}
+    вложенные = set()
+    числовых = всего = 0
     for it in items[:20]:
-        for v in it.values():
-            if isinstance(v, str):
-                total += 1
-                if len(v) > 110:
-                    long_vals += 1
-            elif isinstance(v, (dict, list)) and v:
-                long_vals += 1
-                total += 1
-    return bool(total) and long_vals / total > 0.25
+        for k, v in it.items():
+            if isinstance(v, (dict, list)):
+                if v:
+                    вложенные.add(k)
+                continue
+            всего += 1
+            if is_number(v):
+                числовых += 1
+            длина.setdefault(k, []).append(len(str(v if v is not None else "")))
+    if вложенные:
+        return True                                   # вложенная структура в ячейку не помещается
+    средние = [sum(v) / len(v) for v in длина.values() if v]
+    if not средние:
+        return False
+    if max(средние) > 90:
+        return True                                   # есть графа-абзац — только карточки
+    if sum(1 for a in средние if a > 55) >= 2:
+        return True                                   # две графы с пояснениями — тоже
+    if всего and числовых / всего >= 0.5:
+        return False                                  # реестр чисел — всегда таблица
+    return len(cols) > 8                              # очень широкий текстовый реестр
 
 
 def _card_html(it: dict, esc) -> str:
@@ -485,7 +518,10 @@ def struct_html(obj, depth: int = 0) -> str:
                         cols.append(k)
             if _wordy(obj, cols):
                 return "".join(_card_html(it, esc) for it in obj[:60])
-            cols = cols[:8]
+            # Отрезанная графа — потерянные данные, поэтому предел шире, а об отрезанном сказано
+            # прямо под таблицей: читатель должен знать, что видит не всё.
+            _all_cols = len(cols)
+            cols = cols[:12]
             # Числовая колонка выключается вправо: иначе столбец цифр не читается, а именно по нему
             # отчёт и просматривают — «где просрочка», «где перерасход».
             # builtins.all — в модуле есть своя all() (список шаблонов), она затеняет встроенную
@@ -500,7 +536,10 @@ def struct_html(obj, depth: int = 0) -> str:
                                  for k, v in it.items() if isinstance(v, (dict, list)) and v)
                 body.append(f"<tr>{tds}</tr>" + (f"<tr><td colspan='{len(cols)}'>{nested}</td></tr>" if nested else ""))
             more = f" · показаны первые 60 из {len(obj)}" if len(obj) > 60 else ""
-            return (f"<table class='tbl'><tr>{head}</tr>{''.join(body)}</table>"
+            more += (f" · граф {_all_cols}, показаны первые {len(cols)}" if _all_cols > len(cols) else "")
+            широкая = " wide" if len(cols) >= 7 else ""
+            return (f"<table class='tbl{широкая}'><thead><tr>{head}</tr></thead>"
+                    f"<tbody>{''.join(body)}</tbody></table>"
                     f"<div class='cnt'>строк: {len(obj)}{more}</div>")
         return "<ul>" + "".join(f"<li>{struct_html(x, depth + 1) if isinstance(x, (dict, list)) else esc(x)}</li>" for x in obj[:80]) + "</ul>"
     return esc(obj)

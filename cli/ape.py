@@ -3895,13 +3895,20 @@ REDMINE_API_KEY = os.getenv("REDMINE_API_KEY", "")     # X-Redmine-API-Key
 REDMINE_PROJECT = os.getenv("REDMINE_PROJECT", "")     # идентификатор проекта по умолчанию
 
 
-def _multipart(fields: dict, files: dict):
-    """Собирает multipart/form-data (stdlib, без requests). files: {имя_поля: (имя_файла, bytes)}."""
-    boundary = "----abop" + hashlib.md5(repr(sorted(files)).encode()).hexdigest()[:16]
+def _multipart(fields: dict, files):
+    """Собирает multipart/form-data (stdlib, без requests).
+
+    files: {имя_поля: (имя_файла, bytes)} или список [(имя_поля, имя_файла, bytes), …]. Список нужен
+    там, где под ОДНИМ именем поля идут несколько файлов: Gotenberg ждёт index.html, header.html и
+    footer.html все под именем `files`, а в словаре такой ключ может быть только один.
+    """
+    items = (list(files) if isinstance(files, (list, tuple))
+             else [(k, v[0], v[1]) for k, v in (files or {}).items()])
+    boundary = "----abop" + hashlib.md5(repr([i[:2] for i in items]).encode()).hexdigest()[:16]
     body = b""
     for k, v in (fields or {}).items():
         body += ("--%s\r\nContent-Disposition: form-data; name=\"%s\"\r\n\r\n%s\r\n" % (boundary, k, v)).encode("utf-8")
-    for field, (fname, content) in files.items():
+    for field, fname, content in items:
         if isinstance(content, str):
             content = content.encode("utf-8")
         body += ("--%s\r\nContent-Disposition: form-data; name=\"%s\"; filename=\"%s\"\r\nContent-Type: text/html\r\n\r\n"
@@ -3910,10 +3917,38 @@ def _multipart(fields: dict, files: dict):
     return body, "multipart/form-data; boundary=" + boundary
 
 
-def render_pdf_gotenberg(html: str, out_path: str) -> str:
-    """HTML → PDF через Gotenberg (Chromium). Пишет PDF в out_path, возвращает путь."""
+# Колонтитул печатает Gotenberg, а не CSS: Chromium не поддерживает `@bottom-center` и счётчики
+# страниц в @page. Классы pageNumber/totalPages подставляет сам рендерер. Гарнитура и тон — те же,
+# что у документа (reports/base.css), иначе подвал выглядит чужим.
+_PDF_FOOTER = (
+    "<html><head><meta charset='utf-8'><style>"
+    "body{margin:0;padding:0;width:100%;font:9px 'Noto Sans','Liberation Sans',Arial,sans-serif;"
+    "color:#737a89}"
+    "table{width:100%;border-collapse:collapse;margin:0 16mm;border-top:.5px solid #d7dbe3}"
+    "td{padding:3px 0 0;vertical-align:top}"
+    "td.r{text-align:right;white-space:nowrap}"
+    "</style></head><body><table><tr><td>{doc}</td>"
+    "<td class='r'>стр.&nbsp;<span class='pageNumber'></span>&nbsp;из&nbsp;<span class='totalPages'></span></td>"
+    "</tr></table></body></html>")
+# Пустой колонтитул сверху: без него Gotenberg печатает свой — с датой и адресом файла.
+_PDF_HEADER = "<html><head><meta charset='utf-8'></head><body></body></html>"
+# Поля листа в дюймах: 18 мм сверху, 16 мм по бокам, 15 мм снизу под колонтитул.
+_PDF_FIELDS = {"marginTop": "0.71", "marginBottom": "0.59", "marginLeft": "0.63", "marginRight": "0.63",
+               "printBackground": "true", "paperWidth": "8.27", "paperHeight": "11.7"}
+
+
+def render_pdf_gotenberg(html: str, out_path: str, doc_title: str = "") -> str:
+    """HTML → PDF через Gotenberg (Chromium). Пишет PDF в out_path, возвращает путь.
+
+    `printBackground` обязателен: без него заливки шапок таблиц и бейджи существенности не печатаются,
+    и белый текст бейджа оказывается на белом листе.
+    """
     url = _guard_url(GOTENBERG_URL.rstrip("/") + "/forms/chromium/convert/html")
-    body, ctype = _multipart({}, {"files": ("index.html", html)})
+    import html as _h
+    footer = _PDF_FOOTER.replace("{doc}", _h.escape(str(doc_title or "Отчёт ABOP"))[:120])
+    body, ctype = _multipart(_PDF_FIELDS, [("files", "index.html", html),
+                                           ("files", "header.html", _PDF_HEADER),
+                                           ("files", "footer.html", footer)])
     req = urllib.request.Request(url, data=body, headers={"Content-Type": ctype})
     with urllib.request.urlopen(req, timeout=60) as r:
         pdf = r.read()
@@ -3932,7 +3967,11 @@ def _t_pdf_render(a):
     if not name.endswith(".pdf"):
         name += ".pdf"
     try:
-        p = render_pdf_gotenberg(html, os.path.join("ape_work", name))
+        # Имя документа в колонтитуле — то же, что в шапке: по нему страницу находят в стопке.
+        import re as _re2
+        _m = _re2.search(r"<h1[^>]*>(.{1,160}?)</h1>", html, _re2.S)
+        _title = _re2.sub(r"<[^>]+>", "", _m.group(1)).strip() if _m else str(a.get("name") or "")
+        p = render_pdf_gotenberg(html, os.path.join("ape_work", name), doc_title=_title)
         return f"PDF готов: {p} ({os.path.getsize(p)} байт)"
     except Exception as ex:  # noqa: BLE001
         return f"Gotenberg ошибка: {type(ex).__name__} — {ex}"

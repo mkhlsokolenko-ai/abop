@@ -4222,8 +4222,16 @@ async def _template_for_run(result: dict, forced: str = "") -> dict | None:
     if _cid:
         cached = await report_store.get(_cid)
         if cached and cached.get("layout"):
-            return report_compose.with_editor(cached["layout"], title="Отчёт по задаче",
-                                              css=(base0 or {}).get("css") or "")
+            # Кэш — это раскладка, собранная для ТАКОГО ЖЕ набора навыков, но на другом прогоне.
+            # Поля в ответах могли быть другими, поэтому проверяем её так же, как свежую: иначе
+            # документ соберётся из пустых граф и свалится в запасной путь.
+            _why = report_compose.unresolved(cached["layout"], result)
+            if _why:
+                result.setdefault("report_notes", []).append("раскладка из кэша не подошла: " + _why)
+            else:
+                return _with_prose(report_compose.with_editor(cached["layout"], title="Отчёт по задаче",
+                                                              css=(base0 or {}).get("css") or ""),
+                                   result, await _skill_names())
     sids = _run_skills(result)
     forms: dict[str, str] = {}
     for sid in sids:
@@ -4456,7 +4464,11 @@ def _report_context(agent: dict, result: dict) -> dict:
         txt = f.get("проверка") or f.get("наблюдение") or ""
         desc = f.get("описание") or ""
         norm = (f.get("нормы_rag") or [""])[0]
-        frows.append("<div class='fnd'>" + (f"<span class='cls'>{esc(cls)}</span>" if cls else "")
+        # Класс уходит в CSS-класс бейджа: лестница существенности A→D красится одними и теми же
+        # токенами, что карточки находок и столбцы графика. Без этого бейджи серые, и читатель
+        # вынужден вчитываться в букву вместо того, чтобы увидеть критичное.
+        _c = str(cls).strip().upper() if str(cls).strip().upper() in ("A", "B", "C", "D") else ""
+        frows.append("<div class='fnd'>" + (f"<span class='cls {_c}'>{esc(cls)}</span>" if cls else "")
                      + f"<b>{esc(str(txt)[:300])}</b>" + (f" — {esc(str(desc)[:400])}" if desc else "")
                      + (f"<span class='norm'>§ {esc(str(norm)[:220])}</span>" if norm else "") + "</div>")
     findings_html = "".join(frows)
@@ -4605,7 +4617,19 @@ def _report_context(agent: dict, result: dict) -> dict:
              ("skill_audit1c_match_weak", "Слабые сопоставления")]
     _expl = "".join(f"<h2>{t}</h2>{per_skill[k]}" for k, t in _EXPL if (per_skill.get(k) or "").strip())
 
-    return {"summary": summary_html, "schema_notes": schema_notes_html,
+    # Счётчики плашками — только непустые. Два огромных нуля «Находок 0 · Расследований 0» наверху
+    # отчёта говорят читателю ровно противоположное тому, что было в прогоне: будто работа шла и
+    # ничего не дала. Если считать нечего, блока в документе нет.
+    _f_total = (result.get("findings_summary") or {}).get("total") or len(struct)
+    _i_total = ((result.get("investigations_summary") or {}).get("total")
+                or len(result.get("investigations") or []))
+    _cnt_cells = [(lbl, n) for lbl, n in (("Находок", _f_total), ("Расследований", _i_total)) if n]
+    counters_html = ("<div class='sum'>" + "".join(
+        f"<div class='card'><h3>{esc(lbl)}</h3><div class='num'>{esc(n)}</div></div>"
+        for lbl, n in _cnt_cells) + "</div>") if _cnt_cells else ""
+
+    return {"counters": counters_html,
+            "summary": summary_html, "schema_notes": schema_notes_html,
             "audit_cards": _audit_cards_html(result), "audit_explain": _expl,
             "audit_title": "Отчёт аудита данных 1С",
             "audit_scope": scope_html, "audit_found": found_html,
@@ -4670,7 +4694,9 @@ async def _labels_ctx(run: dict) -> dict:
     for c in marked[:60]:
         lb = c.get("label") or {}
         dec = _ru.get(str(lb.get("decision") or ""), str(lb.get("decision") or ""))
-        rows.append("<div class='fnd'>" + (f"<span class='cls'>{esc(c.get('cls'))}</span>" if c.get("cls") else "")
+        _c = str(c.get("cls") or "").strip().upper()
+        _c = _c if _c in ("A", "B", "C", "D") else ""
+        rows.append("<div class='fnd'>" + (f"<span class='cls {_c}'>{esc(c.get('cls'))}</span>" if c.get("cls") else "")
                     + f"<b>{esc(str(c.get('check') or '')[:200])}</b>"
                     + (f" — {esc(c.get('amount_text'))}" if c.get("amount_text") else "")
                     + f"<span class='norm'>{esc(dec)}"
