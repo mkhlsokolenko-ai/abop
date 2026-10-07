@@ -260,7 +260,18 @@
 | GET / POST | `/api/canvas/layout/{key}` | Раскладка узлов канвы | user |
 | POST | `/api/plan` | Превью декомпозиции цели по семьям (без LLM) | user |
 | POST | `/api/plan/auto` | **Этап 8.** Исполнимая цепочка ПО КОНТРАКТАМ на фактических данных: `steps`, `waves`, `missing`, `ask_slots`, `report_template`; короткий запрос → `need_more` и вопросы вместо догадки | user |
-| POST | `/api/plan/auto/build` | Из плана — агенты под шаги и цепочка с зависимостями | manager+ |
+| POST | `/api/plan/auto/build` | Из плана — агенты под шаги и цепочка с зависимостями. Вместе с планом принимает `task`, `offered`, `manual` — на них учится подбор | manager+ |
+| POST | `/api/orchestrate` | **Одно решение по задаче** для ВСЕХ каналов: `agent` / `build` / `ask` / `chat` + трасса `why[]` и `facts{}`. Решает, но не действует — запуск и сборка идут отдельными ручками | user |
+| POST | `/api/plan/feedback` | Исход предложения подбора: `accepted` / `edited` / `cancelled` | user |
+| GET | `/api/plan/prefer` | Что подбор выучил по текущему пользователю (первое, что смотреть, если у одного человека подбор ведёт себя иначе) | user |
+
+### 2.16 Общая доска (долгая память человека и отдела)
+| Метод | Путь | Назначение | Доступ |
+|---|---|---|---|
+| GET | `/api/board` | Факты пользователя и его отдела | user |
+| POST | `/api/board/facts` | Вынести факт (автор — человек, даже если текст готовил агент) | user |
+| DELETE | `/api/board/facts/{key}` | Снять факт с доски | user |
+| POST | `/api/runs/{run_id}/to-board` | Вынести итоги прогона на доску | user |
 
 ---
 
@@ -270,6 +281,7 @@
 
 **База/аутентификация:** `POSTGRES_DSN`, `KEYCLOAK_ISSUER`, `KEYCLOAK_JWKS_URI` (без него — 401 на всё), `KEYCLOAK_JWKS_INTERNAL`, `KEYCLOAK_AUDIENCE`, `ABOP_EXTRA_JWKS` (issuer десктопа), `ABOP_DEV_AUTH` (=1 только dev/CI), `ABOP_JWT_CACHE_TTL/MAX`.
 **LLM:** `LOCAL_LLM_BASE_URL`, `LOCAL_LLM_MODEL`, `LOCAL_LLM_API_KEY`, `ROUTEAI_BASE_URL`, `ROUTEAI_API_KEY`, `ROUTEAI_STANDARD_CASCADE` / `ROUTEAI_RESEARCH_CASCADE` / `ROUTEAI_CODE_CASCADE`, `ABOP_LOCAL_LLM_TIMEOUT` (300), `ABOP_LLM_TIMEOUT` (120), `ABOP_LLM_MAX_INFLIGHT` (12).
+**Документы по ссылке** (`server/doclink.py`): `ABOP_DOC_MAX` (4 ссылки за прогон), `ABOP_DOC_MAX_BYTES` (2 МБ), `ABOP_DOC_MAX_CHARS` (60 000 знаков до навыка), `ABOP_DOC_TIMEOUT` (20 с), `ABOP_DOC_HOSTS` (дополнительные разрешённые хосты через запятую — кроме систем из реестра открывать нечего).
 **Прогон:** `ABOP_RUN_LLM_CONCURRENCY`, `ABOP_RUN_LLM_RETRIES`, `ABOP_RUN_LLM_BACKOFF`, `ABOP_RUN_LLM_TRUNCATE`, `ABOP_RUN_MAX_TOKENS`, `ABOP_RUN_MAX_TOKENS_TEMPLATE` (3200), `ABOP_RUN_MAX_TOKENS_FREE`, `ABOP_RUN_STRUCTURED`, `ABOP_RUN_CACHE`, `ABOP_TOOL_STEPS` (2), `ABOP_ENT_SIG_TTL`.
 **Очередь прогонов:** `ABOP_RUN_WORKERS` (2; прод 4), `ABOP_USER_CONCURRENT` (1), `ABOP_RUN_TIMEOUT` (600), `ABOP_RUN_STALE_SEC` (90), `ABOP_RUN_MEM_SOFT_MB`.
 **Шина:** `ABOP_BUS` (`kafka`|`pg`), `ABOP_KAFKA_BROKERS`, `ABOP_KAFKA_SASL_USER`, `ABOP_KAFKA_SASL_PASSWORD`, `ABOP_KAFKA_TOPIC_REQUESTS`, `ABOP_KAFKA_TOPIC_RESULTS`, `ABOP_KAFKA_TOPIC_DLQ` (`abop.dlq`), `ABOP_KAFKA_GROUP` (`abop-run-workers`), `ABOP_KAFKA_EVENTS_GROUP` (`abop-triggers`), `ABOP_KAFKA_PARTITIONS` (3).
