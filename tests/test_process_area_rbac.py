@@ -270,3 +270,29 @@ def test_админ_не_подписывает_не_отправленную_р
     ap = клиент.post(f"/api/process/revision/{r.json()['revision_id']}/apply",
                      json={"base_version": r.json()["version"]}, headers=АДМИН)
     assert ap.status_code == 422 and "согласован" in ap.json()["detail"]
+
+
+def test_блок_созданный_в_этой_же_редакции_не_теряет_область(клиент):
+    """Область считалась по ПРИМЕНЁННОМУ дереву, а нового блока там ещё нет — он получал «*», и
+    обычный сценарий «добавил шаг → посадил на него агента» падал с «правки затрагивают несколько
+    областей». Поймано на стенде кнопкой «Выровнять по потоку»."""
+    import asyncio
+
+    from server import agent_store
+    asyncio.run(agent_store.save(name="Аудитор 1С", audit_id="audit-1c", version=1, graph={},
+                                 autonomy_max="A1", created_by="admin.abop", family="finance"))
+    r = _правка(клиент, БУХ_МЕНЕДЖЕР, changes=[
+        {"kind": "add_node", "target": "s21", "payload": {"kind": "task", "label": "Сверка"}}])
+    assert r.status_code == 200, r.text
+    новый = r.json()["applied"][0]["payload"]["id"]
+
+    # посадка на только что созданный блок — та же область, та же редакция
+    посадка = _правка(клиент, БУХ_МЕНЕДЖЕР, base=r.json()["version"], changes=[
+        {"kind": "add_seat", "target": новый, "payload": {"audit_id": "audit-1c"}}])
+    assert посадка.status_code == 200, посадка.text
+
+    # и пачка, где новый блок соседствует со старым, тоже в одной области
+    вместе = _правка(клиент, БУХ_МЕНЕДЖЕР, base=посадка.json()["version"], changes=[
+        {"kind": "move_node", "target": новый, "payload": {"x": 10, "y": 10}},
+        {"kind": "move_node", "target": "o213", "payload": {"x": 20, "y": 20}}])
+    assert вместе.status_code == 200, вместе.text

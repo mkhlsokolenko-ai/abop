@@ -92,6 +92,9 @@ CREATE TABLE IF NOT EXISTS process_presence (
 ВИДЫ = ("add_node", "drop_node", "rename_node", "move_node", "add_seat", "drop_seat",
         "add_edge", "drop_edge")
 ВМЕСТИЛИЩА = ("org", "process", "subprocess")
+# Типы связей те же, что на канве (EDGE_TYPES): по завершении / по условию / по таймеру /
+# эстафета. Без типа развилка из шлюза читается как две одинаковые стрелки.
+ТИПЫ_СВЯЗИ = ("seq", "cond", "timer", "handoff")
 
 _MEM: dict = {"map": {}, "seats": [], "rev": {}, "changes": {}, "presence": {}}
 _ЗАМКИ: dict = {}
@@ -221,7 +224,7 @@ def нормализовать_поток(узел: dict) -> dict:
                 c["x"], c["y"] = НАЧ_X + кол * ШАГ_X, НАЧ_Y + ряд * ШАГ_Y
             нормализовать_поток(c)
         if узел.get("edges") is None:
-            узел["edges"] = [{"from": дети[i]["id"], "to": дети[i + 1]["id"]}
+            узел["edges"] = [{"from": дети[i]["id"], "to": дети[i + 1]["id"], "kind": "seq"}
                              for i in range(len(дети) - 1)]
     return узел
 
@@ -321,6 +324,10 @@ def проверить(правка: dict, дерево: dict, посадки: l
                     "а не блоки с разных уровней зума")
         есть = any(e.get("from") == цель and e.get("to") == куда for e in (о1.get("edges") or []))
         if вид == "add_edge":
+            тип = str(груз.get("kind") or "seq")
+            if тип not in ТИПЫ_СВЯЗИ:
+                return ("неизвестный тип связи «" + тип + "»: "
+                        + ", ".join(ТИПЫ_СВЯЗИ))
             return "такая связь уже есть" if есть else None
         return None if есть else "такой связи нет"
     audit_id = str(груз.get("audit_id") or "").strip()
@@ -380,7 +387,7 @@ def наложить(правка: dict, дерево: dict, посадки: lis
         рёбра = отец.setdefault("edges", [])
         если = str(груз.get("to") or "")
         if not any(e.get("from") == цель and e.get("to") == если for e in рёбра):
-            рёбра.append({"from": цель, "to": если, "kind": груз.get("kind") or ""})
+            рёбра.append({"from": цель, "to": если, "kind": груз.get("kind") or "seq"})
     elif вид == "drop_edge":
         отец = родитель(дерево, цель)
         если = str(груз.get("to") or "")

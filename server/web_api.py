@@ -1214,18 +1214,42 @@ def can_edit_area(u: dict, area: str) -> bool:
     return area != "*" and u.get("department") == area
 
 
-def _area_of_change(tree: dict, ch: dict) -> str:
+def _area_of_change(tree: dict, ch: dict, overlays: dict | None = None) -> str:
     """Область правки берётся из САМОЙ карты по её цели: для add_node — область родителя, иначе —
-    область узла. Присланный в теле `area` не используется, иначе его достаточно было бы подменить."""
-    return process_store.area_of(tree, str((ch or {}).get("target") or ""))
+    область узла. Присланный в теле `area` не используется, иначе его достаточно было бы подменить.
+
+    Блок, созданный в ЭТОЙ ЖЕ редакции, в применённом дереве ещё не существует — по нему область
+    выходила «*», и обычный сценарий «добавил шаг → посадил на него агента» падал с «правки
+    затрагивают несколько областей». Поэтому неизвестную цель ищем в наложении открытых редакций.
+    """
+    цель = str((ch or {}).get("target") or "")
+    if process_store.найти(tree, цель) is None:
+        for area, дерево in (overlays or {}).items():
+            if process_store.найти(дерево, цель) is not None:
+                return area
+    return process_store.area_of(tree, цель)
 
 
-def _require_area(u: dict, tree: dict, changes: list[dict]) -> str:
+async def _overlays_for(u: dict, tree: dict) -> dict:
+    """Наложения открытых редакций по областям, где человек вправе править: в них живут блоки,
+    созданные в текущей редакции и ещё не попавшие в применённое дерево."""
+    области = {process_store.area_of(tree, nid) for nid in process_store.поддерево(tree)}
+    из: dict = {}
+    for area in sorted(области):
+        if not can_edit_area(u, area):
+            continue
+        черновик = await process_store.draft_of(area)
+        if черновик and черновик.get("changes"):
+            из[area] = (await process_store.projection(area, layer="to-be")).get("tree") or {}
+    return из
+
+
+def _require_area(u: dict, tree: dict, changes: list[dict], overlays: dict | None = None) -> str:
     """Одна область на пачку правок + проверка прав. Редакция живёт в одной области: иначе её
     применение затронуло бы чужой отдел."""
     по_областям: dict[str, list[str]] = {}
     for ch in changes or []:
-        по_областям.setdefault(_area_of_change(tree, ch), []).append(str((ch or {}).get("target") or ""))
+        по_областям.setdefault(_area_of_change(tree, ch, overlays), []).append(str((ch or {}).get("target") or ""))
     if not по_областям:
         raise HTTPException(422, "нечего применять")
     if len(по_областям) > 1:
@@ -1300,7 +1324,7 @@ async def process_revision_append(body: dict, u: dict = Depends(user)) -> dict:
     дерево = применено.get("tree")
     if not дерево:
         raise HTTPException(422, "карта процессов ещё не создана")
-    area = _require_area(u, дерево, changes)
+    area = _require_area(u, дерево, changes, await _overlays_for(u, дерево))
     author = u.get("name") or u.get("sub") or "dev"
     try:
         итог = await process_store.append(area, base_version=int((body or {}).get("base_version") or 0),

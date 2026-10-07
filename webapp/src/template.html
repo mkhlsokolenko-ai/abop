@@ -2553,6 +2553,7 @@ class Component extends DCLogic {
     userScenarios: {}, tree: null, procSeats: [], procRevision: 0, procVersion: 0, procDraft: null,
     procAreas: {}, procEditable: [], procEditors: [], procChanges: [], procLoaded: false, procLiveness: null,
     adminRbacReason: '', procApprovalReason: '', opsDrag: null, opsLinkFrom: null,
+    opsLinkKind: 'seq', opsDropHover: false,
     path: ['org'], mapLayer: 'AS-IS', mapLive: false, selOp: null, mapDrawer: null, renameText: '', lens: 'build', guardTo: null, fromOps: null,
     deployments: [], instances: [], findingsList: [], findingsMetrics: null, findingsRuns: [], findingsLoading: false, findingCard: null, findingsFilterRun: null, findingFrom: null, labelDecision: '', labelManual: false, labelComment: '', fleetReal: false, fleetAlertsReal: [], fleetSeries: [], fleetQueue: null, fleetHitl: 0, rollbackDiffReal: null, rollbackPrevVersion: '', deployAgentId: null,
     liveFrozen: false, fleetFilter: 'все',
@@ -3974,8 +3975,33 @@ class Component extends DCLogic {
         + ' — блок появится свободным, связь к нему тянут от нужного шага',
       blockPalette: (mapCur.kind === 'org' ? ['process'] : mapCur.kind === 'process' ? ['subprocess', 'process'] : ['task', 'gateway', 'event', 'wait', 'hitl', 'subprocess']).map(k => ({
         label: OP_KINDS[k].tag, glyph: OP_KINDS[k].glyph, bg: OP_KINDS[k].bg, border: OP_KINDS[k].border, fg: OP_KINDS[k].fg,
-        add: () => this.addBlock(k)
+        add: () => this.addBlock(k),
+        // Перетаскивание из палитры — как на канве: блок ложится туда, куда его бросили.
+        dragStart: (e) => { this.opsDragKind = k; if (e && e.dataTransfer) { e.dataTransfer.setData('text/plain', k); e.dataTransfer.effectAllowed = 'copy'; } }
       })),
+      opsDropHover: s.opsDropHover,
+      opsOnDragOver: (e) => { e.preventDefault(); if (!s.opsDropHover) this.setState({ opsDropHover: true }); },
+      opsOnDragLeave: () => { if (s.opsDropHover) this.setState({ opsDropHover: false }); },
+      opsOnDrop: (e) => {
+        e.preventDefault();
+        this.setState({ opsDropHover: false });
+        if (!this.opsDragKind) return;
+        const r = this.opsRect(), zk = s.mapZoom || 1;
+        this.addBlock(this.opsDragKind,
+                      Math.max(8, Math.round((e.clientX - r.left) / zk - 106)),
+                      Math.max(8, Math.round((e.clientY - r.top) / zk - 30)));
+        this.opsDragKind = null;
+      },
+      // Тип связи — тот же набор, что на канве: без него развилка из шлюза читается как две
+      // одинаковые стрелки.
+      opsLinkKinds: Object.keys(EDGE_TYPES).map(k => ({
+        label: EDGE_TYPES[k].label, hint: EDGE_TYPES[k].hint || '',
+        pick: () => this.setState({ opsLinkKind: k }),
+        bg: s.opsLinkKind === k ? 'rgba(99,102,241,.22)' : 'var(--w4)',
+        fg: s.opsLinkKind === k ? 'var(--ink)' : 'var(--w60)',
+        border: s.opsLinkKind === k ? 'rgba(129,140,248,.6)' : 'var(--w12)'
+      })),
+      opsAlign: () => this.alignOpsFlow(),
       // Полоса редакции. Полная панель с разбором изменений — этап 2; здесь минимум, без которого
       // черновик был бы тупиком: сколько правок, применить, отбросить.
       draftOpen: !!(s.procDraft && s.mapLayer === 'TO-BE'),
@@ -6128,6 +6154,21 @@ class Component extends DCLogic {
       .then(function(){ self.setState({ opsDrag: null }); });
   }
 
+  // «Выровнять» — та же раскладка по волнам, что на канве (layoutFlow), но результат уходит
+  // пачкой move_node: ложится в журнал редакции, сливается и откатывается как всё остальное.
+  alignOpsFlow() {
+    var s = this.state;
+    if (s.mapLayer !== 'TO-BE') { this.showToast('Раскладку меняют на слое TO-BE'); return; }
+    var узел = this.findNode(s.path[s.path.length - 1]) || {};
+    var дети = (узел.children || []).map(function(c){ return { id: c.id, x: c.x || 0, y: c.y || 0 }; });
+    if (!дети.length) return;
+    var L = this.layoutFlow(дети, (узел.edges || []).map(function(e){ return { from: e.from, to: e.to }; }));
+    var правки = L.nodes.map(function(n){
+      return { kind: 'move_node', target: n.id, payload: { x: Math.round(n.x) + 20, y: Math.round(n.y) } };
+    });
+    this.postChange(правки, 'Блоки выровнены по потоку');
+  }
+
   opsRect() {
     try { return document.getElementById('abopOpsSurface').getBoundingClientRect(); }
     catch (e) { return { left: 0, top: 0 }; }
@@ -6145,7 +6186,8 @@ class Component extends DCLogic {
     if (!from) return false;
     this.setState({ opsLinkFrom: null });
     if (from === toId) return true;
-    this.postChange([{ kind: 'add_edge', target: from, payload: { to: toId } }], 'Связь добавлена');
+    this.postChange([{ kind: 'add_edge', target: from, payload: { to: toId, kind: this.state.opsLinkKind || 'seq' } }],
+                    'Связь добавлена · ' + ((EDGE_TYPES[this.state.opsLinkKind] || {}).label || ''));
     return true;
   }
 
@@ -6204,11 +6246,13 @@ class Component extends DCLogic {
     }).catch(function(){ self.showToast('ABOP недоступен — правка не сохранена'); return null; });
   }
 
-  addBlock(kind) {
+  addBlock(kind, x, y) {
     const parentId = this.state.path[this.state.path.length - 1];
     const label = { task: 'Новая задача', gateway: 'Новое ветвление', event: 'Новое событие', wait: 'Ожидание', hitl: 'Подтверждение человека', subprocess: 'Новый подпроцесс', process: 'Новый процесс' }[kind];
     var self = this;
-    this.postChange([{ kind: 'add_node', target: parentId, payload: { kind: kind, label: label } }],
+    var груз = { kind: kind, label: label };
+    if (typeof x === 'number' && typeof y === 'number') { груз.x = x; груз.y = y; }
+    this.postChange([{ kind: 'add_node', target: parentId, payload: груз }],
                     'Добавлен блок: ' + label).then(function(res){
       var ch = res && (res.applied || [])[0];
       if (ch && ch.payload && ch.payload.id) self.setState({ selOp: ch.payload.id, renameText: label });

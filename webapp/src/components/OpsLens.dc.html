@@ -127,12 +127,19 @@
                   <button onClick="{{ ol.hidePalette }}" title="Убрать палитру влево" style="width: 26px; height: 26px; border: 1px solid var(--w12); border-radius: 8px; background: var(--w5); color: var(--acc-ink2); font-size: 13px;" style-hover="border-color: #818cf8; color: var(--ink);">‹</button>
                 </div>
                 <sc-for list="{{ ol.blockPalette }}" as="p" hint-placeholder-count="6">
-                  <div onClick="{{ p.add }}" style="display: flex; align-items: center; gap: 9px; padding: 9px 11px; border: 1px solid var(--w9); border-radius: 10px; background: var(--s45); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 11.5px; cursor: pointer;" style-hover="border-color: #818cf8; background: rgba(99,102,241,.14);">
+                  <div onClick="{{ p.add }}" draggable="true" onDragStart="{{ p.dragStart }}" style="display: flex; align-items: center; gap: 9px; padding: 9px 11px; border: 1px solid var(--w9); border-radius: 10px; background: var(--s45); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 11.5px; cursor: pointer;" style-hover="border-color: #818cf8; background: rgba(99,102,241,.14);">
                     <span style="width: 20px; height: 20px; border-radius: 6px; background: {{ p.bg }}; display: flex; align-items: center; justify-content: center; font-size: 10px; color: {{ p.fg }}; flex: none;">{{ p.glyph }}</span>
                     <span style="flex: 1;">{{ p.label }}</span>
                   </div>
                 </sc-for>
                 <div style="font-size: 11px; line-height: 1.5; color: var(--w35);">{{ ol.paletteHint }}</div>
+                <div style="display: flex; flex-direction: column; gap: 6px; padding-top: 10px; margin-top: 4px; border-top: 1px solid var(--w8);">
+                  <span style="font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 1px; text-transform: uppercase; color: var(--w40);">тип связи</span>
+                  <sc-for list="{{ ol.opsLinkKinds }}" as="lk" hint-placeholder-count="4">
+                    <button onClick="{{ lk.pick }}" title="{{ lk.hint }}" style="padding: 5px 9px; border: 1px solid {{ lk.border }}; border-radius: 8px; background: {{ lk.bg }}; color: {{ lk.fg }}; font-size: 11.5px; text-align: left;">{{ lk.label }}</button>
+                  </sc-for>
+                  <button onClick="{{ ol.opsAlign }}" title="Разложить блоки по потоку, как на канве" style="margin-top: 6px; padding: 6px 9px; border: 1px solid var(--w14); border-radius: 8px; background: var(--w4); color: var(--w65); font-size: 11.5px;">Выровнять по потоку</button>
+                </div>
               </div>
               </sc-if>
 
@@ -163,7 +170,7 @@
 
               <div style="position: absolute; inset: 56px 0 0 0; overflow: auto; background-image: radial-gradient(var(--w9) 1px, transparent 1px); background-size: {{ ol.opsGrid }};">
               <div style="position: relative; width: {{ ol.opsSizerW }}px; height: {{ ol.opsSizerH }}px;">
-              <div id="abopOpsSurface" onMouseMove="{{ ol.opsOnMove }}" onMouseUp="{{ ol.opsOnUp }}" onMouseLeave="{{ ol.opsOnUp }}" style="position: absolute; left: 0; top: 0; width: {{ ol.opsW }}px; height: {{ ol.opsH }}px; transform: scale({{ ol.mapZoomVal }}); transform-origin: 0 0;">
+              <div id="abopOpsSurface" onDragOver="{{ ol.opsOnDragOver }}" onDrop="{{ ol.opsOnDrop }}" onDragLeave="{{ ol.opsOnDragLeave }}" onMouseMove="{{ ol.opsOnMove }}" onMouseUp="{{ ol.opsOnUp }}" onMouseLeave="{{ ol.opsOnUp }}" style="position: absolute; left: 0; top: 0; width: {{ ol.opsW }}px; height: {{ ol.opsH }}px; transform: scale({{ ol.mapZoomVal }}); transform-origin: 0 0;">
                       <sc-if value="{{ ol.opsLinking }}" hint-placeholder-val="{{ false }}">
                         <button onClick="{{ ol.opsCancelLink }}" style="position: absolute; left: 50%; top: 8px; transform: translateX(-50%); z-index: 5; padding: 6px 14px; border: 1px solid rgba(245,158,11,.45); border-radius: 9999px; background: rgba(245,158,11,.16); color: var(--warn-ink); font-size: 12px;">{{ ol.opsLinkHint }}</button>
                       </sc-if>
