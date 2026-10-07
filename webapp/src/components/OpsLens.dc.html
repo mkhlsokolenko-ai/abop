@@ -71,14 +71,6 @@
               </div>
             </div>
 
-            <sc-if value="{{ ol.runOnThisPath }}" hint-placeholder-val="{{ false }}">
-              <div style="display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 12px; background: rgba(99,102,241,.1); border: 1px solid rgba(129,140,248,.3); flex-wrap: wrap;">
-                <span style="width: 8px; height: 8px; border-radius: 9999px; background: #818cf8; flex: none; animation: ab-pulse 1.6s ease-in-out infinite;"></span>
-                <span style="font-size: 13px; font-weight: 600; color: var(--acc-ink2);">{{ ol.runBarText }}</span>
-                <span style="font-size: 12.5px; color: {{ ol.runStepTone }};">{{ ol.runStepLabel }}</span>
-                <button onClick="{{ ol.runBarGo }}" style="margin-left: auto; padding: 8px 14px; border: 1px solid rgba(129,140,248,.4); border-radius: 9px; background: rgba(99,102,241,.16); color: var(--acc-ink2); font-size: 12px; font-weight: 600;" style-hover="background: rgba(99,102,241,.26);">{{ ol.runBarCta }}</button>
-              </div>
-            </sc-if>
 
             <sc-if value="{{ ol.outsideShow }}" hint-placeholder-val="{{ false }}">
               <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 11px 14px; border-radius: 12px; background: rgba(245,158,11,.1); border: 1px solid rgba(245,158,11,.34);">
@@ -106,7 +98,14 @@
                     </div>
                   </sc-for>
                 </div>
-                <button onClick="{{ ol.applyDraft }}" style="margin-left: auto; padding: 6px 14px; border: none; border-radius: 9px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; font-size: 12.5px; font-weight: 600;" style-hover="filter: brightness(1.08);">Применить редакцию</button>
+<sc-if value="{{ ol.draftOnReview }}" hint-placeholder-val="{{ false }}">
+                  <span style="margin-left: auto; padding: 5px 12px; border-radius: 9999px; background: rgba(245,158,11,.14); border: 1px solid rgba(245,158,11,.35); color: var(--warn-ink); font-family: 'JetBrains Mono', monospace; font-size: 11px;">{{ ol.draftReviewText }}</span>
+                </sc-if>
+                <sc-if value="{{ ol.draftNeedsApproval }}" hint-placeholder-val="{{ false }}">
+                  <span style="flex-basis: 100%; font-size: 12px; color: var(--warn-ink);">{{ ol.draftApprovalText }}</span>
+                  <button onClick="{{ ol.submitDraft }}" style="margin-left: auto; padding: 6px 14px; border: none; border-radius: 9px; background: linear-gradient(135deg,#f59e0b,#f97316); color: #fff; font-size: 12.5px; font-weight: 600;" style-hover="filter: brightness(1.08);">Отправить на согласование</button>
+                </sc-if>
+                                <button onClick="{{ ol.applyDraft }}" style="margin-left: auto; padding: 6px 14px; border: none; border-radius: 9px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; font-size: 12.5px; font-weight: 600;" style-hover="filter: brightness(1.08);">Применить редакцию</button>
                 <button onClick="{{ ol.dropDraft }}" style="padding: 6px 12px; border: 1px solid var(--w14); border-radius: 9px; background: transparent; color: var(--w60); font-size: 12.5px;" style-hover="color: var(--err-ink); border-color: rgba(239,68,68,.4);">Отбросить</button>
               </div>
             </sc-if>
@@ -182,10 +181,7 @@
                               <span style="width: 7px; height: 7px; border-radius: 9999px; background: {{ t.runRing }}; flex: none;"></span>
                               <span style="flex: 1; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; font-weight: 600; color: {{ t.runFg }};">{{ t.runLabel }}</span>
                             </div>
-                            <div style="display: flex; gap: 6px;">
-                              <button onClick="{{ t.openStepInGraph }}" style="flex: 1; padding: 5px 8px; border: 1px solid rgba(129,140,248,.4); border-radius: 7px; background: rgba(99,102,241,.16); color: var(--acc-ink2); font-size: 10.5px; font-weight: 600;" style-hover="background: rgba(99,102,241,.26);">в граф ▸</button>
-                              <button onClick="{{ t.openStepInPult }}" style="flex: 1; padding: 5px 8px; border: 1px solid var(--w14); border-radius: 7px; background: var(--w5); color: var(--ink); font-size: 10.5px; font-weight: 600;" style-hover="background: var(--w10);">в пульт ▸</button>
-                            </div>
+                            
                           </sc-if>
                           <div style="display: flex; align-items: center; gap: 9px;">
                             <span style="width: 26px; height: 26px; border-radius: 8px; background: var(--w6); display: flex; align-items: center; justify-content: center; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: {{ t.kindFg }}; flex: none;">{{ t.glyph }}</span>

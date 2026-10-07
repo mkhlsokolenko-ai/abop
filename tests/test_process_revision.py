@@ -143,3 +143,52 @@ def test_правки_отдаются_с_подписью_цели(карта):
     подписи = {c["kind"]: c["target_label"] for c in правки}
     assert подписи["drop_node"] == "Проверки A · B · C"
     assert подписи["rename_node"] == "Связи документов"
+
+
+def _нужен_подписант(причины):
+    async def хук(новые):
+        return list(причины)
+    return хук
+
+
+def test_редакция_с_подписью_не_применяется_сразу(карта):
+    """Префлайт потребовал человека — применить молча нельзя: редакция идёт на согласование
+    (ADR-042, часть 2; ADR-013/014)."""
+    итог = asyncio.run(ps.append(карта, base_version=0, author="@pm",
+                                 changes=[_правка("add_seat", "o213", audit_id="audit-1c", pin_version=2)]))
+    with pytest.raises(ps.НуженПодписант) as ex:
+        asyncio.run(ps.apply(карта, base_version=итог["version"], actor="@pm",
+                             needs_approval=_нужен_подписант(["версия закреплена: нужна ре-аттестация"])))
+    assert "ре-аттестация" in str(ex.value)
+    assert asyncio.run(ps.seats_of(карта)) == [], "посадка не должна появиться без подписи"
+
+
+def test_на_согласовании_редакция_не_правится(карта):
+    """Пока редакцию смотрит подписант, дописывать в неё нельзя — он подпишет не то, что прочёл."""
+    итог = asyncio.run(ps.append(карта, base_version=0, author="@pm",
+                                 changes=[_правка("add_seat", "o213", audit_id="audit-1c")]))
+    asyncio.run(ps.submit(карта, base_version=итог["version"], actor="@pm"))
+    assert asyncio.run(ps.draft_of(карта))["status"] == "на согласовании"
+    with pytest.raises(ps.Отказ) as ex:
+        asyncio.run(ps.append(карта, base_version=1, author="@pm",
+                              changes=[_правка("rename_node", "o212", label="Поздно")]))
+    assert "согласован" in str(ex.value).lower()
+
+
+def test_подписант_применяет_согласованную_редакцию(карта):
+    итог = asyncio.run(ps.append(карта, base_version=0, author="@pm",
+                                 changes=[_правка("add_seat", "o213", audit_id="audit-1c", pin_version=2)]))
+    asyncio.run(ps.submit(карта, base_version=итог["version"], actor="@pm"))
+    готово = asyncio.run(ps.apply(карта, base_version=итог["version"], actor="@security",
+                                  needs_approval=_нужен_подписант(["версия закреплена"]), approved=True))
+    assert готово["seats_added"] == 1
+    assert asyncio.run(ps.seats_of(карта))[0]["pin_version"] == 2
+
+
+def test_обычная_редакция_подписи_не_требует(карта):
+    """Если префлайт ничего не потребовал — применяет тот, кто правил, без лишнего круга."""
+    итог = asyncio.run(ps.append(карта, base_version=0, author="@pm",
+                                 changes=[_правка("add_seat", "o213", audit_id="audit-1c")]))
+    готово = asyncio.run(ps.apply(карта, base_version=итог["version"], actor="@pm",
+                                  needs_approval=_нужен_подписант([])))
+    assert готово["seats_added"] == 1

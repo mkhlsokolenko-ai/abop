@@ -493,6 +493,9 @@
                 <div style="display: flex; flex-direction: column; gap: 14px;">
                   <div style="font-size: 12.5px; line-height: 1.55; color: var(--w55);">Ваша роль определяет, что разрешено делать в среде: сборку, подтверждение действий наружу, вывод в прод. Смена роли сразу меняет доступные кнопки — так видно ограничения на себе.</div>
                   <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <sc-if value="{{ adm.roleOptionsNote }}" hint-placeholder-val="{{ false }}">
+                      <span style="font-size: 12.5px; line-height: 1.5; color: var(--w55);">{{ adm.roleOptionsNote }}</span>
+                    </sc-if>
                     <sc-for list="{{ adm.roleOptions }}" as="r" hint-placeholder-count="4">
                       <button onClick="{{ r.pick }}" title="{{ r.hint }}" style="display: flex; flex-direction: column; gap: 4px; align-items: flex-start; padding: 12px 14px; border: 1px solid {{ r.border }}; border-radius: 12px; background: {{ r.bg }}; text-align: left; min-width: 190px;" style-hover="border-color: #818cf8;">
                         <span style="font-size: 13px; font-weight: 700; color: {{ r.fg }};">{{ r.label }}</span>

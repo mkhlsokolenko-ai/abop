@@ -101,6 +101,14 @@ class Отказ(Exception):
     """Правка невозможна по состоянию карты: цель не существует, не лист, уже занята."""
 
 
+class НуженПодписант(Отказ):
+    """Префлайт потребовал человека: редакция идёт на согласование, а не применяется молча."""
+
+    def __init__(self, сообщение: str, *, причины: list[str]):
+        super().__init__(сообщение)
+        self.причины = причины
+
+
 class Конфликт(Exception):
     """Кто-то изменил то же самое, пока вы правили. Несёт номер версии и чужие правки."""
 
@@ -588,12 +596,15 @@ async def append(area: str, *, base_version: int, changes: list[dict], author: s
 
 
 async def _подготовить(area: str, base: int, правки: list[dict], журнал: list[dict],
-                       версия: int) -> list[dict]:
+                       версия: int, статус: str = "черновик") -> list[dict]:
     """Общая часть: конфликты против пропущенного, затем причинная проверка по состоянию.
 
     Порядок важен. Сначала конфликты: если кто-то уже тронул ту же цель, человеку полезнее узнать
     «@petrova сняла этого агента», чем «агент уже посажен» — второе правда, но не объясняет, почему.
     """
+    if статус == "на согласовании":
+        raise Отказ("редакция отправлена на согласование — дописывать в неё нельзя, "
+                    "иначе подписант подпишет не то, что прочёл. Отзовите её или дождитесь решения")
     применено = await map_of(КАРТА)
     дерево_факт = применено.get("tree")
     if not дерево_факт:
@@ -624,7 +635,7 @@ async def _append_mem(area: str, base: int, правки: list[dict], author: st
     if not ред or ред["status"] not in ОТКРЫТЫЕ:
         ред = await _открыть_черновик(area, author)
     журнал = _MEM["changes"].setdefault(ред["id"], [])
-    пропущено = await _подготовить(area, base, правки, журнал, ред["version"])
+    пропущено = await _подготовить(area, base, правки, журнал, ред["version"], ред.get("status", "черновик"))
     for p in правки:
         ред["version"] += 1
         журнал.append(dict(p, seq=ред["version"], at=_now().isoformat()))
@@ -636,20 +647,20 @@ async def _append_mem(area: str, base: int, правки: list[dict], author: st
 
 async def _append_pg(conn, area: str, base: int, правки: list[dict], author: str) -> dict:
     cur = await conn.execute(
-        "SELECT id, version FROM process_revisions WHERE area = %s AND status = ANY(%s) "
+        "SELECT id, version, status FROM process_revisions WHERE area = %s AND status = ANY(%s) "
         "FOR UPDATE", (area, list(ОТКРЫТЫЕ)))
     r = await cur.fetchone()
     if not r:
         ред = await _открыть_черновик(area, author, conn=conn)
-        rid, версия = ред["id"], 0
+        rid, версия, статус = ред["id"], 0, "черновик"
     else:
-        rid, версия = r[0], int(r[1])
+        rid, версия, статус = r[0], int(r[1]), r[2]
     cur = await conn.execute(
         "SELECT seq, kind, target, payload, author FROM process_changes WHERE rev_id = %s ORDER BY seq",
         (rid,))
     журнал = [{"seq": c[0], "kind": c[1], "target": c[2], "payload": c[3], "author": c[4]}
               for c in await cur.fetchall()]
-    пропущено = await _подготовить(area, base, правки, журнал, версия)
+    пропущено = await _подготовить(area, base, правки, журнал, версия, статус)
     for p in правки:
         версия += 1
         await conn.execute(
@@ -682,7 +693,31 @@ async def drop_draft(area: str, *, actor: str) -> bool:
     return True
 
 
-async def apply(area: str, *, base_version: int, actor: str, preflight=None) -> dict:
+async def submit(area: str, *, base_version: int, actor: str) -> dict:
+    """Отправить редакцию на согласование. С этого момента она не правится: подписант должен
+    подписать ровно то, что прочёл (ADR-042, часть 2)."""
+    черновик = await draft_of(area)
+    if not черновик:
+        raise Отказ("нет открытой редакции")
+    if черновик["status"] != "черновик":
+        raise Отказ("редакция уже на согласовании")
+    if int(черновик["version"]) != int(base_version):
+        raise Конфликт("в редакцию дописали правки — перечитайте её перед отправкой",
+                       версия=int(черновик["version"]), соперники=[])
+    if not _has_pg():
+        _MEM["rev"][area]["status"] = "на согласовании"
+        _MEM["rev"][area]["updated_at"] = _now().isoformat()
+    else:
+        from .db import _conn
+        async with _conn() as conn:
+            await conn.execute("UPDATE process_revisions SET status = 'на согласовании', "
+                               "updated_at = now() WHERE id = %s", (черновик["id"],))
+    await _оповестить(area, {"type": "submitted", "author": actor})
+    return {"revision_id": черновик["id"], "area": area, "status": "на согласовании"}
+
+
+async def apply(area: str, *, base_version: int, actor: str, preflight=None,
+                needs_approval=None, approved: bool = False) -> dict:
     """Применить редакцию: одна транзакция на дерево и посадки, либо ничего.
 
     `base_version` обязателен и строгий: применять редакцию, в которую после вашего просмотра
@@ -710,6 +745,14 @@ async def apply(area: str, *, base_version: int, actor: str, preflight=None) -> 
         причины = await preflight(новые)
         if причины:
             raise Отказ("префлайт не пройден: " + "; ".join(причины))
+    # Когда префлайт требует человека (ADR-013/014), применить молча нельзя: редакция идёт на
+    # согласование, и применяет её подписант, прочитав ровно то, что отправили.
+    if needs_approval is not None and not approved:
+        нужно = await needs_approval(новые)
+        if нужно:
+            raise НуженПодписант(
+                "редакция требует согласования: " + "; ".join(нужно)
+                + ". Отправьте её на согласование — применит подписант", причины=нужно)
 
     номер = int(применено.get("revision") or 0) + 1
     if not _has_pg():

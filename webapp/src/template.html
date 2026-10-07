@@ -2552,11 +2552,12 @@ class Component extends DCLogic {
     fleetTab: 'Карта процессов', canvasMode: 'build', zoom: 1, mapZoom: 1, mapFull: false, navOpen: true, paletteOpen: true, showRunOverlay: true,
     userScenarios: {}, tree: null, procSeats: [], procRevision: 0, procVersion: 0, procDraft: null,
     procAreas: {}, procEditable: [], procEditors: [], procChanges: [], procLoaded: false, procLiveness: null,
+    adminRbacReason: '', procApprovalReason: '',
     path: ['org'], mapLayer: 'AS-IS', mapLive: false, selOp: null, mapDrawer: null, renameText: '', lens: 'build', guardTo: null, fromOps: null,
     deployments: [], instances: [], findingsList: [], findingsMetrics: null, findingsRuns: [], findingsLoading: false, findingCard: null, findingsFilterRun: null, findingFrom: null, labelDecision: '', labelManual: false, labelComment: '', fleetReal: false, fleetAlertsReal: [], fleetSeries: [], fleetQueue: null, fleetHitl: 0, rollbackDiffReal: null, rollbackPrevVersion: '', deployAgentId: null,
     liveFrozen: false, fleetFilter: 'все',
     deployTarget: null, deployVersion: 'v3', deployArea: 'оценка заявок', deployTrigger: 'событие Data Plane', deployLimit: 3, deployAutonomy: 2,
-    rollbackId: null, reviseOf: null, drainId: null, drainPct: 0, healthWindow: '24ч',
+    rollbackId: null, reviseOf: null, drainId: null, drainPct: 0, healthWindow: '7д',   // неделя: при суточном окне еженедельный агент выглядит «тихим»
     model: 'deepseek-v3', toast: null, toastLeft: 5, remediated: false, contracts: [], ingestBusy: false, ingestResult: null, contract: null, agentPassport: null, envSkillDraft: {}, lastRun: null
   };
 
@@ -2587,7 +2588,8 @@ class Component extends DCLogic {
   loadRbac() {
     var self = this;
     fetch('/api/admin/rbac').then(function(r){ return r.ok ? r.json() : null; }).then(function(d){
-      if (d && d.rows) self.setState({ adminRbac: d.rows });
+      if (d) self.setState({ adminRbac: d.rows || [],
+                             adminRbacReason: d.configured === false ? (d.reason || '') : '' });
     }).catch(function(){});
   }
   // Отказ сервера должен доходить до человека. Пустой catch прятал 403 от require_level('manager'):
@@ -3992,6 +3994,11 @@ class Component extends DCLogic {
         ? ('здесь ещё: ' + (s.procEditors || []).filter(x => x !== ((s.me || {}).name)).join(', ')) : '',
       applyDraft: () => this.applyMapRevision(),
       dropDraft: () => this.dropMapRevision(),
+      submitDraft: () => this.submitMapRevision(),
+      draftOnReview: !!(s.procDraft && s.procDraft.status === 'на согласовании'),
+      draftNeedsApproval: !!s.procApprovalReason && !(s.procDraft && s.procDraft.status === 'на согласовании'),
+      draftApprovalText: s.procApprovalReason || '',
+      draftReviewText: 'на согласовании · правки закрыты, применяет администратор',
       // Агенты работают по триггерам, но ни на одной операции не сидят: карта отстала от жизни.
       outsideShow: ((s.procLiveness || {}).outside || []).length > 0 && s.mapLayer === 'AS-IS',
       outsideText: (() => {
@@ -4012,15 +4019,13 @@ class Component extends DCLogic {
       opsTabTop: s.mapFull ? 120 : 300,
       opsViewH: Math.max(320, Math.round(opsLayout.h * s.mapZoom) + 8),
       opsEdges: opsLayout.edges,
-      runOnThisPath: s.startedOnce,
-      runHere: runOnThisPath,
-      runBarText: runOnThisPath ? 'Здесь идёт прогон демо' : 'Прогон демо идёт в: ' + RUN_TRACE.pathLabel,
-      runBarCta: runOnThisPath ? 'Открыть пульт ▸' : 'Перейти к участку ▸',
-      runBarGo: () => {
-        if (runOnThisPath) { this.openRunLens(); return; }
-        this.setState({ path: RUN_TRACE.path.slice(), selOp: RUN_TRACE.steps[currentStepIdx].op, mapLayer: 'AS-IS', mapLive: true });
-        this.showToast('Карта · ' + RUN_TRACE.pathLabel);
-      },
+      // Плашка демо-прогона убрана: линза показывает то, что есть на самом деле, а идущее прямо
+      // сейчас показывает тумблер «живое» по заданиям очереди. Симуляция рядом с настоящими
+      // данными сбивает: непонятно, где факт, а где показ.
+      runOnThisPath: false,
+      runHere: false,
+      runBarText: '', runBarCta: '',
+      runBarGo: () => {},
       runPathLabel: RUN_TRACE.pathLabel,
       runStepLabel: 'шаг ' + (currentStepIdx + 1) + ' из ' + RUN_TRACE.steps.length + ' · ' + RUN_TRACE.steps[currentStepIdx].label,
       runStepTone: traceTone[traceStatus(currentStepIdx)].fg,
@@ -4043,11 +4048,12 @@ class Component extends DCLogic {
           autonomy: asg.length ? asg[0].autonomy : '',
           remove: () => this.removeBlock(c.id),
           label: c.label, tag: planned ? k.tag + ' · план' : k.tag, glyph: k.glyph,
-          runActive: !!tone && живое && trace !== 'idle',
-          runRing: tone && trace !== 'idle' ? tone.ring : 'transparent',
-          runLabel: tone ? (tone.label + ' · шаг ' + (traceStep + 1)) : '',
-          runFg: tone ? tone.fg : 'var(--w50)',
-          runPulse: trace === 'thinking' ? 'ab-pulse 1.8s ease-in-out infinite' : 'none',
+          // «Идёт сейчас» — настоящие задания очереди по агентам участка, а не демо-трасса.
+          runActive: живое && live > 0,
+          runRing: живое && live > 0 ? '#818cf8' : 'transparent',
+          runLabel: live > 0 ? ('идёт сейчас · ' + live + ' ' + this.plural(live, 'экземпляр', 'экземпляра', 'экземпляров')) : '',
+          runFg: 'var(--acc-ink2)',
+          runPulse: живое && live > 0 ? 'ab-pulse 1.8s ease-in-out infinite' : 'none',
           openStepInGraph: () => {
             const st3 = RUN_TRACE.steps[traceStep];
             if (!st3 || !st3.node) { this.showToast('На этом шаге агента нет — это событие процесса'); return; }
@@ -5525,11 +5531,15 @@ class Component extends DCLogic {
         if (ms[0]) rows.push({ label: 'Дороже всех', value: ms[0].m + ' · ' + ms[0].rub.toFixed(2) + ' ₽ (' + ms[0].calls + ' выз.)', actLabel: 'Навыки ▸', act: () => { this.setState({ screen: 'skills' }); this.route('skills'); } });
         return rows;
       })(),
+      roleOptionsNote: (s.adminRbac && s.adminRbac.length) ? ''
+        : (s.adminRbacReason || 'Роли не загружены: нужен доступ уровня «поддержка» и настроенный Keycloak.'),
       roleOptions: (() => {
-        // Роли из РЕАЛЬНОГО Keycloak (/api/admin/rbac), фолбэк на каталог только если API недоступен
+        // Роли из РЕАЛЬНОГО Keycloak (/api/admin/rbac). Фолбэка на каталог больше нет: он
+        // подставлял выдуманные роли и людей вместо «источник недоступен» — та же болезнь, что
+        // «ре-аттестован 03.09» на карте. Нет данных — говорим это словами, см. roleOptionsNote.
         const rows = (s.adminRbac && s.adminRbac.length)
           ? s.adminRbac.map(r => ({ role: r.role, people: r.people, rights: (r.allow || '').split(', ').filter(Boolean), deny: (r.deny || '').split(', ').filter(Boolean) }))
-          : RBAC;
+          : [];
         return rows.map(r => ({
           label: r.role, people: r.people, hint: (r.rights || []).slice(0, 2).join(' · '),
           pick: () => { this.setState({ role: r.role }); this.showToast('Роль: ' + r.role + ' — доступные действия'); },
@@ -6039,13 +6049,37 @@ class Component extends DCLogic {
       .then(function(res){
         if (!res.ok) {
           var d = res.j.detail;
-          self.showToast('Не применено: ' + String((d && (d.error || d)) || '').slice(0, 170));
+          var текст = String((d && (d.error || d)) || '');
+          // Префлайт потребовал человека — это не ошибка, а развилка: редакцию надо отправить
+          // подписанту. Без этой ветки менеджер упирался в тупик без кнопки (ADR-042).
+          if (/согласован/i.test(текст)) {
+            self.setState({ procApprovalReason: текст });
+            self.showToast('Эта редакция требует подписи — отправьте её на согласование');
+            self.loadProcessMap(true); return;
+          }
+          self.showToast('Не применено: ' + текст.slice(0, 170));
           self.loadProcessMap(true); return;
         }
         self.showToast('Редакция ' + res.j.revision + ' применена · участков добавлено: '
                        + res.j.seats_added + ', снято: ' + res.j.seats_closed, true);
         self.loadProcessMap(true); self.loadFleet();
       }).catch(function(){ self.showToast('ABOP недоступен — редакция не применена'); });
+  }
+
+  // Отправить редакцию подписанту. После этого она не правится: он подпишет ровно то, что прочёл.
+  submitMapRevision() {
+    var self = this, s = this.state;
+    if (!s.procDraft) return;
+    fetch('/api/process/revision/' + encodeURIComponent(s.procDraft.id) + '/submit', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ base_version: s.procVersion || 0 })
+    }).then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ return { ok: r.ok, j: j || {} }; }); })
+      .then(function(res){
+        if (!res.ok) { self.showToast('Не отправлено: ' + String((res.j.detail && (res.j.detail.error || res.j.detail)) || '').slice(0, 160)); return; }
+        self.setState({ procApprovalReason: '' });
+        self.showToast('Редакция отправлена на согласование — применит администратор', true);
+        self.loadProcessMap(true);
+      }).catch(function(){ self.showToast('ABOP недоступен — редакция не отправлена'); });
   }
 
   dropMapRevision() {

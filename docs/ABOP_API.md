@@ -120,6 +120,7 @@ SSE-события (по мере исполнения):
 | `GET /api/process/revision/{rev_id}/changes?since=` | разница по номеру |
 | `DELETE /api/process/revision/{rev_id}` | отбросить черновик целиком |
 | `POST /api/process/revision/{rev_id}/apply` `{base_version}` | применить: строгая проверка `base_version`, префлайт посадок, одна транзакция на дерево и посадки |
+| `POST /api/process/revision/{rev_id}/submit` `{base_version}` | на согласование. Нужна, когда префлайт требует человека: закреплена версия агента на участке (ре-аттестация) или агент действует наружу (ADR-013/014). После отправки редакция не правится — подписант подпишет ровно то, что прочёл; применяет её `admin` |
 | `GET /api/process/stream?area=` | SSE: `hello` с номером версии и списком `editors`, затем `change`/`applied`/`poke`/`ping`. Heartbeat пишет присутствие |
 | `GET /api/process/liveness?window=24h\|7d\|30d` | подтверждение AS-IS прогонами: `{window_days, ops:{op_id:{runs,ok,last_at,silent_days,state}}, outside:[{audit_id,agent,runs,last_at}]}`. `state` — `подтверждён` / `тихо` / `осиротел`; `outside` — агенты, которые работают, но ни на одной операции не сидят |
 | `POST /api/process/map` `{tree, note}` | записать карту целиком новой применённой редакцией — вход для сида и миграции, **только admin** |
@@ -131,11 +132,7 @@ SSE-события (по мере исполнения):
 Мутации — `manager+` **и** область узла ∈ области пользователя (`can_edit_area`). Область правки
 берётся из самой карты по цели правки, присланный в теле `area` не используется.
 
-Решено, не реализовано:
 
-| Метод · Путь | Что делает |
-|---|---|
-| `POST /api/process/revision/{rev_id}/submit` | на согласование — когда префлайт требует человека (ADR-013/014) |
 
 ---
 

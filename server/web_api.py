@@ -574,6 +574,17 @@ def _kc_base() -> str:
     return iss.split("/realms/")[0].rstrip("/")
 
 
+_KC_НЕ_НАСТРОЕН = ("админ-API Keycloak не настроено: не задан KC_ADMIN_PASS. "
+                   "Пользователи, роли и штат ведутся в Keycloak — без доступа к нему читать нечего.")
+
+
+def _kc_configured() -> bool:
+    """Настроено ли админ-API Keycloak. READ-ручки при `false` отвечают 200 с пустым телом и
+    причиной: 501 «не реализовано» было неправдой — ручка реализована, просто не настроена, и
+    браузер писал ошибку в консоль на каждой загрузке."""
+    return bool(os.getenv("KC_ADMIN_PASS", ""))
+
+
 async def _kc_admin_token(client) -> str:
     """Токен админа Keycloak (realm master, client admin-cli) по KC_ADMIN_USER/KC_ADMIN_PASS."""
     usr = os.getenv("KC_ADMIN_USER", "admin")
@@ -592,6 +603,8 @@ async def _kc_admin_token(client) -> str:
 async def admin_users(u: dict = Depends(user)) -> dict:
     """Реальные пользователи Keycloak realm abop: роли (уровень) + отдел (ABAC). Только admin/support."""
     require_level(u, "support")
+    if not _kc_configured():
+        return {"users": [], "configured": False, "reason": _KC_НЕ_НАСТРОЕН}
     import httpx
     realm = (os.getenv("KEYCLOAK_ISSUER") or "/realms/abop").split("/realms/")[-1].strip("/") or "abop"
     async with httpx.AsyncClient(timeout=20) as c:
@@ -736,6 +749,8 @@ async def admin_audit(limit: int = 100, u: dict = Depends(user)) -> dict:
 async def admin_rbac(u: dict = Depends(user)) -> dict:
     """RBAC-матрица из РЕАЛЬНЫХ ролей Keycloak: роль → люди + разрешения/запреты (не хардкод-константа)."""
     require_level(u, "support")
+    if not _kc_configured():
+        return {"rows": [], "configured": False, "reason": _KC_НЕ_НАСТРОЕН}
     try:
         data = await admin_users(u)  # переиспользуем живой список Keycloak
     except HTTPException:
@@ -1321,6 +1336,26 @@ async def process_revision_drop(rev_id: str, u: dict = Depends(user)) -> dict:
     return {"revision_id": rev_id, "area": area, "dropped": снято}
 
 
+@app.post("/api/process/revision/{rev_id}/submit")
+async def process_revision_submit(rev_id: str, body: dict | None = None,
+                                  u: dict = Depends(user)) -> dict:
+    """Отправить редакцию на согласование. Нужна, когда префлайт требует человека: закреплена
+    версия агента на участке или агент ходит наружу (ADR-013/014). После отправки редакция не
+    правится — подписант должен подписать ровно то, что прочёл."""
+    require_level(u, "manager")
+    area = await _area_of_revision(rev_id)
+    if not can_edit_area(u, area):
+        raise HTTPException(403, f"область «{area}» вам не принадлежит")
+    actor = u.get("name") or u.get("sub") or "dev"
+    try:
+        итог = await process_store.submit(
+            area, base_version=int(((body or {}).get("base_version")) or 0), actor=actor)
+    except (process_store.Отказ, process_store.Конфликт) as ex:
+        raise _process_http(ex) from ex
+    await audit_store.record(actor, "process.revision.submit", rev_id, {"area": area})
+    return итог
+
+
 @app.post("/api/process/revision/{rev_id}/apply")
 async def process_revision_apply(rev_id: str, body: dict, u: dict = Depends(user)) -> dict:
     """Применить редакцию: одна транзакция на дерево и посадки, либо ничего. `base_version` строгий —
@@ -1331,9 +1366,14 @@ async def process_revision_apply(rev_id: str, body: dict, u: dict = Depends(user
     if not can_edit_area(u, area):
         raise HTTPException(403, f"область «{area}» вам не принадлежит")
     actor = u.get("name") or u.get("sub") or "dev"
+    черновик = await process_store.draft_of(area) or {}
+    # Подписант — admin, и только по редакции, которую ему отправили: применять «за себя» то, что
+    # требует согласования, нельзя даже администратору (ADR-042).
+    подписано = (черновик.get("status") == "на согласовании" and u.get("level") == "admin")
     try:
         итог = await process_store.apply(area, base_version=int((body or {}).get("base_version") or 0),
-                                         actor=actor, preflight=_seat_preflight)
+                                         actor=actor, preflight=_seat_preflight,
+                                         needs_approval=_seat_needs_approval, approved=подписано)
     except (process_store.Отказ, process_store.Конфликт) as ex:
         raise _process_http(ex) from ex
     # «Принять план» — это префлайт И деплой. Иначе карта утверждает, что агент работает участок,
@@ -1449,6 +1489,28 @@ async def _deploy_seated(посадки: list[dict], *, actor: str) -> list[str]
                                  {"status": "deployed", "reason": "посадка на участок " + str(s.get("op_id"))})
         развёрнуты.append(свежая["id"])
     return развёрнуты
+
+
+async def _seat_needs_approval(новые: list[dict]) -> list[str]:
+    """Когда посадка требует подписи человека, а не только зелёного префлайта (ADR-013/014):
+    закреплена версия (регулируемый участок — смена версии должна быть событием) или агент ходит
+    наружу (внешнее действие под подтверждением)."""
+    причины: list[str] = []
+    for s in новые:
+        audit_id = str(s.get("audit_id") or "")
+        if s.get("pin_version"):
+            причины.append(f"«{audit_id}»: версия закреплена v{s['pin_version']} — нужна ре-аттестация")
+            continue
+        версии = await agent_store.list_for(audit_id, limit=50)
+        if not версии:
+            continue
+        свежая = max(версии, key=lambda a: a.get("version") or 0)
+        узлы = ((свежая.get("graph") or {}).get("nodes") or [])
+        наружу = [n for n in узлы if n.get("kind") == "out"
+                  or ((n.get("safety") or {}).get("egress") == "external")]
+        if наружу:
+            причины.append(f"«{audit_id}»: агент действует наружу — посадка под подтверждением")
+    return причины
 
 
 async def _seat_preflight(новые: list[dict]) -> list[str]:

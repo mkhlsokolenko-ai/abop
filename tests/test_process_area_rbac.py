@@ -224,3 +224,49 @@ def test_карта_не_кэшируется(клиент):
     карты экран продолжал показывать «карта не создана», хотя на сервере она уже была."""
     r = клиент.get("/api/process/map", headers=БУХ_АНАЛИТИК)
     assert r.headers.get("cache-control") == "no-store", r.headers
+
+
+def test_посадка_с_пином_уходит_на_согласование(клиент):
+    """Закреплённая версия — регулируемый участок: смена версии должна быть событием, а не
+    побочным эффектом. Менеджер отправляет редакцию, применяет подписант-admin (ADR-042)."""
+    import asyncio
+
+    from server import agent_store
+    asyncio.run(agent_store.save(name="Аудитор 1С", audit_id="audit-1c", version=1, graph={},
+                                 autonomy_max="A1", created_by="admin.abop", family="finance"))
+    r = _правка(клиент, БУХ_МЕНЕДЖЕР, changes=[
+        {"kind": "add_seat", "target": "o213", "payload": {"audit_id": "audit-1c", "pin_version": 1}}])
+    rid, версия = r.json()["revision_id"], r.json()["version"]
+
+    сразу = клиент.post(f"/api/process/revision/{rid}/apply", json={"base_version": версия},
+                        headers=БУХ_МЕНЕДЖЕР)
+    assert сразу.status_code == 422 and "согласован" in сразу.json()["detail"]
+
+    assert клиент.post(f"/api/process/revision/{rid}/submit", json={"base_version": версия},
+                       headers=БУХ_МЕНЕДЖЕР).status_code == 200
+    # после отправки редакция не правится
+    поздно = _правка(клиент, БУХ_МЕНЕДЖЕР, base=версия,
+                     changes=[{"kind": "rename_node", "target": "o213", "payload": {"label": "Поздно"}}])
+    assert поздно.status_code == 422 and "согласован" in поздно.json()["detail"]
+
+    свой = клиент.post(f"/api/process/revision/{rid}/apply", json={"base_version": версия},
+                       headers=БУХ_МЕНЕДЖЕР)
+    assert свой.status_code == 422, "менеджер не может подписать сам себе"
+    админ = клиент.post(f"/api/process/revision/{rid}/apply", json={"base_version": версия},
+                        headers=АДМИН)
+    assert админ.status_code == 200, админ.text
+    assert админ.json()["seats_added"] == 1
+
+
+def test_админ_не_подписывает_не_отправленную_редакцию(клиент):
+    """Применять «за себя» то, что требует согласования, нельзя даже администратору."""
+    import asyncio
+
+    from server import agent_store
+    asyncio.run(agent_store.save(name="Аудитор 1С", audit_id="audit-1c", version=1, graph={},
+                                 autonomy_max="A1", created_by="admin.abop", family="finance"))
+    r = _правка(клиент, АДМИН, changes=[
+        {"kind": "add_seat", "target": "o213", "payload": {"audit_id": "audit-1c", "pin_version": 1}}])
+    ap = клиент.post(f"/api/process/revision/{r.json()['revision_id']}/apply",
+                     json={"base_version": r.json()["version"]}, headers=АДМИН)
+    assert ap.status_code == 422 and "согласован" in ap.json()["detail"]
