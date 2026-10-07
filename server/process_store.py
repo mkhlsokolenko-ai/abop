@@ -89,7 +89,8 @@ CREATE TABLE IF NOT EXISTS process_presence (
 
 КАРТА = "*"      # карта организации одна и читается всеми; по областям живут только ЧЕРНОВИКИ
 ОТКРЫТЫЕ = ("черновик", "на согласовании")
-ВИДЫ = ("add_node", "drop_node", "rename_node", "move_node", "add_seat", "drop_seat")
+ВИДЫ = ("add_node", "drop_node", "rename_node", "move_node", "add_seat", "drop_seat",
+        "add_edge", "drop_edge")
 ВМЕСТИЛИЩА = ("org", "process", "subprocess")
 
 _MEM: dict = {"map": {}, "seats": [], "rev": {}, "changes": {}, "presence": {}}
@@ -204,6 +205,31 @@ def area_of(дерево: dict, nid: str) -> str:
     return спуск(дерево, "*") or "*"
 
 
+ШАГ_X, ШАГ_Y, В_РЯД, НАЧ_X, НАЧ_Y = 262, 218, 3, 26, 26
+
+
+def нормализовать_поток(узел: dict) -> dict:
+    """Дать контейнерам явный поток, а блокам — место. Раньше связь выводилась из порядка детей
+    (`kids[i] → kids[i+1]`), и из этого следовало всё: ни ветвления, ни возврата, ни «положи сюда».
+    Перевод не меняет картинку — нынешний порядок становится той же цепочкой (ADR-047)."""
+    дети = узел.get("children") or []
+    if дети:
+        for i, c in enumerate(дети):
+            if not isinstance(c.get("x"), int) or not isinstance(c.get("y"), int):
+                ряд, место = divmod(i, В_РЯД)
+                кол = место if ряд % 2 == 0 else (В_РЯД - 1 - место)
+                c["x"], c["y"] = НАЧ_X + кол * ШАГ_X, НАЧ_Y + ряд * ШАГ_Y
+            нормализовать_поток(c)
+        if узел.get("edges") is None:
+            узел["edges"] = [{"from": дети[i]["id"], "to": дети[i + 1]["id"]}
+                             for i in range(len(дети) - 1)]
+    return узел
+
+
+def _ключ_ребра(a: str, b: str) -> str:
+    return "edge:" + a + ">" + b
+
+
 def _ключ_посадки(op_id: str, audit_id: str) -> str:
     return "seat:" + op_id + ":" + audit_id
 
@@ -223,8 +249,11 @@ def зоны(правка: dict, дерево: dict) -> tuple[set, set, set]:
     if вид == "rename_node":
         return {цель}, {цель}, set()
     if вид == "move_node":
-        отец = родитель(дерево, цель)
-        return {цель, (отец or {}).get("id")}, {цель}, set()
+        # Перемещение больше не меняет порядок, а значит и поток: двигать можно независимо.
+        return {цель}, {цель}, set()
+    if вид in ("add_edge", "drop_edge"):
+        ключ = _ключ_ребра(цель, str(груз.get("to") or ""))
+        return {ключ}, {цель, str(груз.get("to") or "")}, ({ключ} if вид == "drop_edge" else set())
     if вид in ("add_seat", "drop_seat"):
         ключ = _ключ_посадки(цель, str(груз.get("audit_id") or ""))
         рушит = {ключ} if вид == "drop_seat" else set()
@@ -276,7 +305,24 @@ def проверить(правка: dict, дерево: dict, посадки: l
     if вид == "rename_node":
         return None if str(груз.get("label") or "").strip() else "пустое название"
     if вид == "move_node":
-        return None if родитель(дерево, цель) else "корень карты не двигается"
+        if not родитель(дерево, цель):
+            return "корень карты не двигается"
+        return None if (isinstance(груз.get("x"), int) and isinstance(груз.get("y"), int))             else "у перемещения нет координат"
+    if вид in ("add_edge", "drop_edge"):
+        куда = str(груз.get("to") or "")
+        если_нет = найти(дерево, куда)
+        if not если_нет:
+            return f"«{куда}» не найден в карте"
+        if куда == цель:
+            return "связь блока с самим собой"
+        о1, о2 = родитель(дерево, цель), родитель(дерево, куда)
+        if not о1 or not о2 or о1.get("id") != о2.get("id"):
+            return ("связи живут внутри одного уровня: соседи по подпроцессу, "
+                    "а не блоки с разных уровней зума")
+        есть = any(e.get("from") == цель and e.get("to") == куда for e in (о1.get("edges") or []))
+        if вид == "add_edge":
+            return "такая связь уже есть" if есть else None
+        return None if есть else "такой связи нет"
     audit_id = str(груз.get("audit_id") or "").strip()
     if not audit_id:
         return "не указан агент"
@@ -306,23 +352,40 @@ def наложить(правка: dict, дерево: dict, посадки: lis
     груз = правка.get("payload") or {}
     if вид == "add_node":
         отец = найти(дерево, цель)
-        отец.setdefault("children", []).append({
-            "id": груз["id"], "kind": груз.get("kind") or "task",
-            "label": груз.get("label") or "Новый блок",
-        })
+        дети = отец.setdefault("children", [])
+        новый = {"id": груз["id"], "kind": груз.get("kind") or "task",
+                 "label": груз.get("label") or "Новый блок"}
+        if isinstance(груз.get("x"), int) and isinstance(груз.get("y"), int):
+            новый["x"], новый["y"] = груз["x"], груз["y"]
+        else:   # места не дали — кладём следующим в сетке, как делала автораскладка
+            ряд, место = divmod(len(дети), В_РЯД)
+            кол = место if ряд % 2 == 0 else (В_РЯД - 1 - место)
+            новый["x"], новый["y"] = НАЧ_X + кол * ШАГ_X, НАЧ_Y + ряд * ШАГ_Y
+        дети.append(новый)
     elif вид == "drop_node":
         отец = родитель(дерево, цель)
         if отец:
             отец["children"] = [c for c in отец.get("children") or [] if c.get("id") != цель]
+            # Связи удалённого блока уходят вместе с ним: иначе остаётся стрелка в никуда.
+            отец["edges"] = [e for e in (отец.get("edges") or [])
+                             if e.get("from") != цель and e.get("to") != цель]
     elif вид == "rename_node":
         найти(дерево, цель)["label"] = груз["label"]
     elif вид == "move_node":
+        узел = найти(дерево, цель)
+        if узел:
+            узел["x"], узел["y"] = int(груз.get("x") or 0), int(груз.get("y") or 0)
+    elif вид == "add_edge":
         отец = родитель(дерево, цель)
-        дети = отец.get("children") or []
-        i = next((k for k, c in enumerate(дети) if c.get("id") == цель), -1)
-        j = i + (1 if int(груз.get("dir") or 1) > 0 else -1)
-        if 0 <= i < len(дети) and 0 <= j < len(дети):
-            дети[i], дети[j] = дети[j], дети[i]
+        рёбра = отец.setdefault("edges", [])
+        если = str(груз.get("to") or "")
+        if not any(e.get("from") == цель and e.get("to") == если for e in рёбра):
+            рёбра.append({"from": цель, "to": если, "kind": груз.get("kind") or ""})
+    elif вид == "drop_edge":
+        отец = родитель(дерево, цель)
+        если = str(груз.get("to") or "")
+        отец["edges"] = [e for e in (отец.get("edges") or [])
+                         if not (e.get("from") == цель and e.get("to") == если)]
     elif вид == "add_seat":
         посадки.append({"op_id": цель, "audit_id": груз["audit_id"],
                         "pin_version": груз.get("pin_version"), "state": "planned",
@@ -339,7 +402,9 @@ def наложить(правка: dict, дерево: dict, посадки: lis
 
 def наложение(дерево: dict, посадки: list[dict], журнал: list[dict]) -> tuple[dict, list[dict]]:
     """TO-BE: применённое дерево с наложенным журналом. Посадки на исчезнувших узлах отбрасываются."""
-    д = copy.deepcopy(дерево)
+    # Карта могла быть записана до перехода на явный поток — даём ей рёбра и места при чтении,
+    # иначе правка связи не найдёт, к чему прицепиться.
+    д = нормализовать_поток(copy.deepcopy(дерево))
     п = [dict(s) for s in посадки]
     for ch in журнал:
         try:
@@ -532,6 +597,7 @@ async def projection(area: str, *, layer: str = "as-is") -> dict:
 async def save_map(area: str, tree: dict, *, editor: str, note: str = "") -> dict:
     """Новая ПРИМЕНЁННАЯ редакция структуры: правка схемы версионируется сразу, с автором и
     причиной (ADR-042, часть 3). Черновик при этом не создаётся."""
+    tree = нормализовать_поток(copy.deepcopy(tree))
     текущее = await map_of(area)
     номер = int(текущее.get("revision") or 0) + 1
     запись = {"area": area, "revision": номер, "tree": tree, "note": note,
@@ -735,6 +801,7 @@ async def apply(area: str, *, base_version: int, actor: str, preflight=None,
     применено = await map_of(КАРТА)
     дерево_факт, посадки_факт = применено.get("tree"), await seats_of()
     дерево, посадки = наложение(дерево_факт, посадки_факт, черновик["changes"])
+    дерево = нормализовать_поток(дерево)
     новые = [s for s in посадки if s.get("state") == "planned"]
     # Снимаются и те посадки, чья операция исчезла из дерева: наложение убирает их из проекции, но
     # живая строка осталась бы в базе — посадка на несуществующем узле, невидимая и бессмертная.

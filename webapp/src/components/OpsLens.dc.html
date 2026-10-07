@@ -132,7 +132,7 @@
                     <span style="flex: 1;">{{ p.label }}</span>
                   </div>
                 </sc-for>
-                <div style="font-size: 11px; line-height: 1.5; color: var(--w35);">{{ ol.paletteHint }} — блок встраивается в поток текущего уровня по порядку.</div>
+                <div style="font-size: 11px; line-height: 1.5; color: var(--w35);">{{ ol.paletteHint }}</div>
               </div>
               </sc-if>
 
@@ -163,7 +163,10 @@
 
               <div style="position: absolute; inset: 56px 0 0 0; overflow: auto; background-image: radial-gradient(var(--w9) 1px, transparent 1px); background-size: {{ ol.opsGrid }};">
               <div style="position: relative; width: {{ ol.opsSizerW }}px; height: {{ ol.opsSizerH }}px;">
-              <div style="position: absolute; left: 0; top: 0; width: {{ ol.opsW }}px; height: {{ ol.opsH }}px; transform: scale({{ ol.mapZoomVal }}); transform-origin: 0 0;">
+              <div id="abopOpsSurface" onMouseMove="{{ ol.opsOnMove }}" onMouseUp="{{ ol.opsOnUp }}" onMouseLeave="{{ ol.opsOnUp }}" style="position: absolute; left: 0; top: 0; width: {{ ol.opsW }}px; height: {{ ol.opsH }}px; transform: scale({{ ol.mapZoomVal }}); transform-origin: 0 0;">
+                      <sc-if value="{{ ol.opsLinking }}" hint-placeholder-val="{{ false }}">
+                        <button onClick="{{ ol.opsCancelLink }}" style="position: absolute; left: 50%; top: 8px; transform: translateX(-50%); z-index: 5; padding: 6px 14px; border: 1px solid rgba(245,158,11,.45); border-radius: 9999px; background: rgba(245,158,11,.16); color: var(--warn-ink); font-size: 12px;">{{ ol.opsLinkHint }}</button>
+                      </sc-if>
                       <svg width="100%" height="100%" style="position: absolute; inset: 0; pointer-events: none;">
                         <sc-for list="{{ ol.opsEdges }}" as="e" hint-placeholder-count="3">
                           <g>
@@ -175,13 +178,16 @@
                       </svg>
 
                       <sc-for list="{{ ol.opsNodes }}" as="t" hint-placeholder-count="4">
-                        <div onClick="{{ t.select }}" style="position: absolute; left: {{ t.left }}px; top: {{ t.top }}px; width: 212px; min-height: {{ ol.opsCardH }}px; padding: 14px; border: 1px {{ t.dash }} {{ t.border }}; border-radius: 14px; background: {{ t.bg }}; box-shadow: {{ t.shadow }}; outline: 2px solid {{ t.runRing }}; outline-offset: 2px; animation: {{ t.runPulse }}; display: flex; flex-direction: column; gap: 9px; cursor: pointer;" style-hover="border-color: #818cf8;">
+                        <div onClick="{{ t.select }}" onMouseDown="{{ t.down }}" style="cursor: {{ t.grab }}; position: absolute; left: {{ t.left }}px; top: {{ t.top }}px; width: 212px; min-height: {{ ol.opsCardH }}px; padding: 14px; border: 1px {{ t.dash }} {{ t.border }}; border-radius: 14px; background: {{ t.bg }}; box-shadow: {{ t.shadow }}; outline: 2px solid {{ t.runRing }}; outline-offset: 2px; animation: {{ t.runPulse }}; display: flex; flex-direction: column; gap: 9px; cursor: pointer;" style-hover="border-color: #818cf8;">
                           <sc-if value="{{ t.runActive }}" hint-placeholder-val="{{ false }}">
                             <div style="display: flex; align-items: center; gap: 7px; padding: 5px 8px; border-radius: 8px; background: var(--s60); border: 1px solid {{ t.runRing }};">
                               <span style="width: 7px; height: 7px; border-radius: 9999px; background: {{ t.runRing }}; flex: none;"></span>
                               <span style="flex: 1; font-family: 'JetBrains Mono', monospace; font-size: 9.5px; font-weight: 600; color: {{ t.runFg }};">{{ t.runLabel }}</span>
                             </div>
                             
+                          </sc-if>
+                          <sc-if value="{{ ol.mapEditable }}" hint-placeholder-val="{{ false }}">
+                            <button onClick="{{ t.startLink }}" title="Протянуть связь от этого блока" style="position: absolute; right: -9px; top: 50%; width: 18px; height: 18px; margin-top: -9px; border: 1px solid {{ t.portFg }}; border-radius: 9999px; background: var(--bg2); color: {{ t.portFg }}; font-size: 10px; line-height: 1; padding: 0;" style-hover="background: rgba(99,102,241,.2);">→</button>
                           </sc-if>
                           <div style="display: flex; align-items: center; gap: 9px;">
                             <span style="width: 26px; height: 26px; border-radius: 8px; background: var(--w6); display: flex; align-items: center; justify-content: center; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: {{ t.kindFg }}; flex: none;">{{ t.glyph }}</span>

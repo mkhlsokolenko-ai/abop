@@ -2552,7 +2552,7 @@ class Component extends DCLogic {
     fleetTab: 'Карта процессов', canvasMode: 'build', zoom: 1, mapZoom: 1, mapFull: false, navOpen: true, paletteOpen: true, showRunOverlay: true,
     userScenarios: {}, tree: null, procSeats: [], procRevision: 0, procVersion: 0, procDraft: null,
     procAreas: {}, procEditable: [], procEditors: [], procChanges: [], procLoaded: false, procLiveness: null,
-    adminRbacReason: '', procApprovalReason: '',
+    adminRbacReason: '', procApprovalReason: '', opsDrag: null, opsLinkFrom: null,
     path: ['org'], mapLayer: 'AS-IS', mapLive: false, selOp: null, mapDrawer: null, renameText: '', lens: 'build', guardTo: null, fromOps: null,
     deployments: [], instances: [], findingsList: [], findingsMetrics: null, findingsRuns: [], findingsLoading: false, findingCard: null, findingsFilterRun: null, findingFrom: null, labelDecision: '', labelManual: false, labelComment: '', fleetReal: false, fleetAlertsReal: [], fleetSeries: [], fleetQueue: null, fleetHitl: 0, rollbackDiffReal: null, rollbackPrevVersion: '', deployAgentId: null,
     liveFrozen: false, fleetFilter: 'все',
@@ -3466,47 +3466,60 @@ class Component extends DCLogic {
     const mapOpInstances = (живое && s.selOp && !(mapCtx.children || []).length)
       ? s.instances.filter(i => i.phase !== 'out' && mapCtxAssigns.some(a => a.dep === i.dep))
       : [];
+    // Раскладка карты из ДАННЫХ: место блока — его x/y, поток — явные рёбра контейнера. Раньше
+    // и то и другое выводилось из порядка детей, поэтому ветвление и возврат нарисовать было
+    // нечем, а блок нельзя было положить куда хочешь (ADR-047).
     const opsLayout = (() => {
       const kids = mapCur.children || [];
       const cardH = (живое && s.startedOnce) ? 232 : 156;
-      const perRow = 3, colW = 262, rowH = cardH + 62, x0 = 26, y0 = 26, nodeW = 212;
+      const nodeW = 212;
       const pos = {};
       kids.forEach((c, i) => {
-        const row = Math.floor(i / perRow);
-        const col = row % 2 === 0 ? (i % perRow) : (perRow - 1 - (i % perRow));
-        pos[c.id] = { x: x0 + col * colW, y: y0 + row * rowH };
+        const место = (s.opsDrag && s.opsDrag.id === c.id) ? s.opsDrag : c;
+        pos[c.id] = { x: Math.round(место.x || (26 + (i % 3) * 262)),
+                      y: Math.round(место.y || (26 + Math.floor(i / 3) * 218)) };
       });
-      const rows = Math.max(1, Math.ceil(kids.length / perRow));
+      const поКлючу = {};
+      kids.forEach(c => { поКлючу[c.id] = c; });
       const edgeKind = (from, to) => {
         if (from.kind === 'gateway') return { stroke: 'var(--warn-ink)', dash: '6 5', glyph: '?' };
         if (to.kind === 'hitl' || from.kind === 'hitl') return { stroke: '#f59e0b', dash: '0', glyph: '☝' };
         if (from.kind === 'wait' || to.kind === 'wait') return { stroke: 'var(--acc-ink)', dash: '4 4', glyph: '⏱' };
         return { stroke: 'rgba(129,140,248,.65)', dash: '0', glyph: '→' };
       };
-      const edges = kids.slice(0, -1).map((c, i) => {
-        const n2 = kids[i + 1];
+      const edges = (mapCur.edges || []).map(e => {
+        const c = поКлючу[e.from], n2 = поКлючу[e.to];
+        if (!c || !n2) return null;
         const p1 = pos[c.id], p2 = pos[n2.id];
-        const sameRow = p1.y === p2.y;
-        const sx = p2.x >= p1.x ? p1.x + nodeW : p1.x;
-        const ex = p2.x >= p1.x ? p2.x : p2.x + nodeW;
-        const sy = p1.y + Math.round(cardH / 3), ey = p2.y + Math.round(cardH / 3);
+        const вбок = Math.abs(p1.y - p2.y) < cardH * 0.6;
+        const sx = вбок ? (p2.x >= p1.x ? p1.x + nodeW : p1.x) : p1.x + nodeW / 2;
+        const ex = вбок ? (p2.x >= p1.x ? p2.x : p2.x + nodeW) : p2.x + nodeW / 2;
+        const sy = вбок ? p1.y + Math.round(cardH / 3) : p1.y + cardH;
+        const ey = вбок ? p2.y + Math.round(cardH / 3) : p2.y;
         const k = edgeKind(c, n2);
-        const d = sameRow
+        const d = вбок
           ? 'M ' + sx + ' ' + sy + ' C ' + (sx + 30) + ' ' + sy + ', ' + (ex - 30) + ' ' + ey + ', ' + ex + ' ' + ey
-          : 'M ' + (p1.x + nodeW / 2) + ' ' + (p1.y + cardH) + ' C ' + (p1.x + nodeW / 2) + ' ' + (p1.y + cardH + 26) + ', ' + (p2.x + nodeW / 2) + ' ' + (p2.y - 34) + ', ' + (p2.x + nodeW / 2) + ' ' + p2.y,
-        mx = sameRow ? Math.round((sx + ex) / 2) : Math.round((p1.x + p2.x) / 2 + nodeW / 2),
-        my = sameRow ? Math.round((sy + ey) / 2) : Math.round((p1.y + cardH + p2.y) / 2);
+          : 'M ' + sx + ' ' + sy + ' C ' + sx + ' ' + (sy + 30) + ', ' + ex + ' ' + (ey - 30) + ', ' + ex + ' ' + ey;
+        const mx = Math.round((sx + ex) / 2), my = Math.round((sy + ey) / 2);
         return {
           d: d, mx: mx, my: my, ty: my + 3, stroke: k.stroke, dash: k.dash, glyph: k.glyph,
-          pick: () => this.showToast('Связь «' + c.label + ' → ' + n2.label + '» · тип: ' + (k.glyph === '?' ? 'условие' : k.glyph === '☝' ? 'подтверждение человека' : k.glyph === '⏱' ? 'по таймеру' : 'последовательность'))
+          title: c.label + ' → ' + n2.label + (s.mapLayer === 'TO-BE' ? ' · клик удаляет связь' : ''),
+          pick: () => {
+            if (s.mapLayer !== 'TO-BE') {
+              this.showToast('Связь «' + c.label + ' → ' + n2.label + '». Менять поток — на слое TO-BE');
+              return;
+            }
+            this.postChange([{ kind: 'drop_edge', target: c.id, payload: { to: n2.id } }],
+                            'Связь «' + c.label + ' → ' + n2.label + '» убрана');
+          }
         };
-      });
-      const maxX = kids.length ? Math.max.apply(null, kids.map(c => pos[c.id].x)) : x0;
-      const maxY = kids.length ? Math.max.apply(null, kids.map(c => pos[c.id].y)) : y0;
+      }).filter(Boolean);
+      const maxX = kids.length ? Math.max.apply(null, kids.map(c => pos[c.id].x)) : 26;
+      const maxY = kids.length ? Math.max.apply(null, kids.map(c => pos[c.id].y)) : 26;
       return {
         pos: pos, edges: edges,
-        w: Math.max(880, maxX + nodeW + 300, x0 + Math.min(perRow, Math.max(1, kids.length)) * colW + 260),
-        h: Math.max(560, maxY + cardH + 220, y0 + rows * rowH + 160)
+        w: Math.max(880, maxX + nodeW + 300),
+        h: Math.max(560, maxY + cardH + 220)
       };
     })();
 
@@ -3955,9 +3968,10 @@ class Component extends DCLogic {
         bg: s.mapLayer === l.id ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : 'transparent',
         fg: s.mapLayer === l.id ? '#fff' : 'var(--w45)'
       })),
-      paletteHint: mapCur.kind === 'org'
+      paletteHint: (mapCur.kind === 'org'
         ? 'добавить процесс в цепочку ценности'
-        : mapCur.kind === 'process' ? 'добавить подпроцесс' : 'добавить операцию',
+        : mapCur.kind === 'process' ? 'добавить подпроцесс' : 'добавить операцию')
+        + ' — блок появится свободным, связь к нему тянут от нужного шага',
       blockPalette: (mapCur.kind === 'org' ? ['process'] : mapCur.kind === 'process' ? ['subprocess', 'process'] : ['task', 'gateway', 'event', 'wait', 'hitl', 'subprocess']).map(k => ({
         label: OP_KINDS[k].tag, glyph: OP_KINDS[k].glyph, bg: OP_KINDS[k].bg, border: OP_KINDS[k].border, fg: OP_KINDS[k].fg,
         add: () => this.addBlock(k)
@@ -3970,6 +3984,7 @@ class Component extends DCLogic {
       draftChanges: ((s.procDraft ? (s.procChanges || []) : []).map(c => {
         const груз = c.payload || {};
         const имя = c.target_label || c.target;   // подпись цели пришла с сервера
+        const куда = (id) => { const n = this.findNode(id); return (n && n.label) || id; };
         const агент = (() => {
           const a = (s.agentsList || []).find(x =>
             (x.contract_audit_id || String(x.id || '').split('.v')[0]) === груз.audit_id);
@@ -3981,7 +3996,9 @@ class Component extends DCLogic {
           add_node:    { sign: '+', text: 'блок «' + (груз.label || '') + '» в «' + имя + '»', fg: 'var(--ok-ink)' },
           drop_node:   { sign: '−', text: 'блок «' + имя + '» удалён', fg: 'var(--err-ink)' },
           rename_node: { sign: '·', text: '«' + имя + '» → «' + (груз.label || '') + '»', fg: 'var(--acc-ink)' },
-          move_node:   { sign: '·', text: '«' + имя + '» сдвинут', fg: 'var(--acc-ink)' }
+          move_node:   { sign: '·', text: '«' + имя + '» переставлен', fg: 'var(--acc-ink)' },
+          add_edge:    { sign: '+', text: 'связь «' + имя + '» → «' + (куда(груз.to)) + '»', fg: 'var(--ok-ink)' },
+          drop_edge:   { sign: '−', text: 'связь «' + имя + '» → «' + (куда(груз.to)) + '» убрана', fg: 'var(--err-ink)' }
         };
         const в = по_видам[c.kind] || { sign: '·', text: c.kind + ' ' + c.target, fg: 'var(--w60)' };
         return { sign: в.sign, text: в.text, fg: в.fg, author: c.author || '', seq: String(c.seq) };
@@ -4019,6 +4036,11 @@ class Component extends DCLogic {
       opsTabTop: s.mapFull ? 120 : 300,
       opsViewH: Math.max(320, Math.round(opsLayout.h * s.mapZoom) + 8),
       opsEdges: opsLayout.edges,
+      opsOnMove: (e) => this.onOpDragMove(e),
+      opsOnUp: () => this.endOpDrag(),
+      opsLinking: !!s.opsLinkFrom,
+      opsLinkHint: s.opsLinkFrom ? 'Выберите блок, куда ведёт связь · Esc отменит' : '',
+      opsCancelLink: () => this.setState({ opsLinkFrom: null }),
       // Плашка демо-прогона убрана: линза показывает то, что есть на самом деле, а идущее прямо
       // сейчас показывает тумблер «живое» по заданиям очереди. Симуляция рядом с настоящими
       // данными сбивает: непонятно, где факт, а где показ.
@@ -4083,9 +4105,18 @@ class Component extends DCLogic {
           // Разметка раньше вызывала details, который выбирал процесс как операцию; инспектор после
           // этого предлагал посадить агента на процесс, а такое назначение не отображается никогда,
           // потому что совпадение считается по листьям (разбор, Р5).
-          select: () => ((c.children && c.children.length) || c.kind === 'process' || c.kind === 'subprocess')
-            ? this.setState({ path: ((s.path && s.path.length) ? s.path : ['org']).concat([c.id]), selOp: null })
-            : this.setState({ selOp: c.id, renameText: c.label }),
+          select: () => {
+            if (this.finishOpLink(c.id)) return;      // идёт связывание — клик означает «сюда»
+            if (this.opsDragging && this.opsDragging.moved) return;
+            return ((c.children && c.children.length) || c.kind === 'process' || c.kind === 'subprocess')
+              ? this.setState({ path: ((s.path && s.path.length) ? s.path : ['org']).concat([c.id]), selOp: null })
+              : this.setState({ selOp: c.id, renameText: c.label });
+          },
+          down: (e) => this.startOpDrag(c.id, e),
+          startLink: (e) => { if (e && e.stopPropagation) e.stopPropagation(); this.startOpLink(c.id); },
+          linking: s.opsLinkFrom === c.id,
+          portFg: s.opsLinkFrom === c.id ? 'var(--warn-ink)' : 'rgba(129,140,248,.7)',
+          grab: s.mapLayer === 'TO-BE' ? 'grab' : 'pointer',
           zoom: () => this.setState({ path: ((s.path && s.path.length) ? s.path : ['org']).concat([c.id]), selOp: null }),
           openGraph: () => this.guardedGo({
             kind: 'graph', scenario: (asg[0] && asg[0].agent === 'Аудитор 1С') ? 'audit1c' : 'fin',
@@ -6064,6 +6095,58 @@ class Component extends DCLogic {
                        + res.j.seats_added + ', снято: ' + res.j.seats_closed, true);
         self.loadProcessMap(true); self.loadFleet();
       }).catch(function(){ self.showToast('ABOP недоступен — редакция не применена'); });
+  }
+
+  // Перетаскивание блока карты. Во время движения двигаем локально (иначе журнал заполнился бы
+  // сотней записей на один жест), а по отпусканию дописываем ОДНУ правку move_node — так же, как
+  // канва делает отложенное сохранение.
+  startOpDrag(id, e) {
+    if (this.state.mapLayer !== 'TO-BE') return;
+    if (e && e.target && e.target.tagName === 'BUTTON') return;
+    var узел = (this.findNode(id) || {});
+    var r = this.opsRect(), zk = this.state.mapZoom || 1;
+    this.opsDragging = { id: id, dx: (e.clientX - r.left) / zk - (узел.x || 0),
+                         dy: (e.clientY - r.top) / zk - (узел.y || 0), moved: false };
+    this.setState({ selOp: id, renameText: узел.label || '' });
+  }
+
+  onOpDragMove(e) {
+    if (!this.opsDragging) return;
+    var r = this.opsRect(), zk = this.state.mapZoom || 1;
+    var x = Math.max(8, Math.round((e.clientX - r.left) / zk - this.opsDragging.dx));
+    var y = Math.max(8, Math.round((e.clientY - r.top) / zk - this.opsDragging.dy));
+    this.opsDragging.moved = true;
+    this.setState({ opsDrag: { id: this.opsDragging.id, x: x, y: y } });
+  }
+
+  endOpDrag() {
+    var g = this.opsDragging, d = this.state.opsDrag;
+    this.opsDragging = null;
+    if (!g || !g.moved || !d) { this.setState({ opsDrag: null }); return; }
+    var self = this;
+    this.postChange([{ kind: 'move_node', target: d.id, payload: { x: d.x, y: d.y } }])
+      .then(function(){ self.setState({ opsDrag: null }); });
+  }
+
+  opsRect() {
+    try { return document.getElementById('abopOpsSurface').getBoundingClientRect(); }
+    catch (e) { return { left: 0, top: 0 }; }
+  }
+
+  // Связывание: клик по порту блока, затем клик по второму блоку. Ровно как на канве (linkFrom).
+  startOpLink(id) {
+    if (this.state.mapLayer !== 'TO-BE') { this.showToast('Менять поток — на слое TO-BE'); return; }
+    this.setState({ opsLinkFrom: id });
+    this.showToast('Выберите, куда ведёт связь');
+  }
+
+  finishOpLink(toId) {
+    var from = this.state.opsLinkFrom;
+    if (!from) return false;
+    this.setState({ opsLinkFrom: null });
+    if (from === toId) return true;
+    this.postChange([{ kind: 'add_edge', target: from, payload: { to: toId } }], 'Связь добавлена');
+    return true;
   }
 
   // Отправить редакцию подписанту. После этого она не правится: он подпишет ровно то, что прочёл.
