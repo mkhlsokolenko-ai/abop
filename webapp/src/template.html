@@ -3513,7 +3513,11 @@ class Component extends DCLogic {
           ? 'Карта процессов ещё не создана. Её создаёт администратор — после этого отделы правят свои ветки редакциями.'
           : 'Загружаю карту процессов…')
       : mapCur.kind === 'org'
-      ? 'Цепочка создания ценности: звенья процессов и сколько агентов в каждом. Клик «Внутрь» — зум к подпроцессам. Схема — демонстрационная; развёртывания, живые экземпляры и здоровье — из реальных данных.'
+      // Подпись говорила «схема — демонстрационная»: правда, пока дерево лежало константой в
+      // браузере. Теперь карта версионируется на сервере — подпись называет редакцию.
+      ? ('Цепочка создания ценности: звенья процессов и сколько агентов в каждом. Клик «Внутрь» — зум к подпроцессам. '
+         + 'Редакция ' + (s.procRevision || 1) + (s.procAppliedBy ? ' · применил ' + s.procAppliedBy : '')
+         + '; развёртывания, живые экземпляры и подтверждение — из журнала прогонов.')
       : mapCur.kind === 'process'
         ? 'Подпроцессы этого звена. Слои AS-IS и TO-BE редактируются, LIVE показывает живую работу.'
         : mapCur.kind === 'subprocess'
@@ -5963,7 +5967,7 @@ class Component extends DCLogic {
       tree: d.tree, procSeats: d.seats || [], procRevision: d.revision || 0,
       procVersion: d.version || 0, procDraft: d.draft || null, procAreas: d.areas || {},
       procEditable: d.editable_areas || [], procEditors: d.editors || [],
-      procChanges: d.changes || [], procLoaded: true
+      procChanges: d.changes || [], procAppliedBy: d.applied_by || '', procLoaded: true
     }, function(){ try { self.sanitize(); } catch (e) {} });
   }
 
