@@ -481,9 +481,11 @@ def liveness(*, seats: list[dict], runs: list[dict], retired: set,
             зап["last_at"] = зап["last_at"].isoformat()
     for v in вне.values():
         v["last_at"] = v["last_at"].isoformat() if v["last_at"] else None
+    # Свежие сверху: список «вне карты» читают, чтобы понять, что отстало от жизни последним.
+    вне_список = sorted(вне.values(), key=lambda v: v["last_at"] or "", reverse=True)
 
     return {"window_days": int(window_days), "ops": по_операциям,
-            "outside": sorted(вне.values(), key=lambda x: x["audit_id"])}
+            "outside": вне_список}
 
 
 # ── чтение ────────────────────────────────────────────────────────────────────────────────────────

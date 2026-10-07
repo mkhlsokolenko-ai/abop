@@ -4107,22 +4107,37 @@ class Component extends DCLogic {
       draftReviewText: 'на согласовании · правки закрыты, применяет администратор',
       // Агенты работают по триггерам, но ни на одной операции не сидят: карта отстала от жизни.
       outsideShow: ((s.procLiveness || {}).outside || []).length > 0 && s.mapLayer === 'AS-IS',
+      // Полоса — одна строка: «Вне карты: 11 агентов». Длинная формулировка целиком висит в
+      // подсказке и в шапке выпадающего списка, иначе строка занимает всю ширину над картой.
       outsideText: (() => {
-        const o = (s.procLiveness || {}).outside || [];
-        return 'Вне карты: ' + o.length + ' ' + this.plural(o.length,
+        const n = ((s.procLiveness || {}).outside || []).length;
+        return 'Вне карты: ' + n + ' ' + this.plural(n, 'агент', 'агента', 'агентов');
+      })(),
+      outsideHint: (() => {
+        const n = ((s.procLiveness || {}).outside || []).length;
+        return this.plural(n,
           'агент работает по триггерам, но не посажен ни на одну операцию',
           'агента работают по триггерам, но не посажены ни на одну операцию',
           'агентов работают по триггерам, но не посажены ни на одну операцию');
       })(),
       // Свёрнута по умолчанию: на живом стенде «вне карты» легко оказывается десяток агентов, и
-      // развёрнутый список заслоняет саму карту. Разворачивается кликом по полосе.
+      // развёрнутый список заслоняет саму карту. Раскрывается выпадающим списком ПОВЕРХ карты —
+      // полоса при этом остаётся одной строкой и ничего не сдвигает.
       outsideOpen: !!s.outsideOpen,
       outsideToggle: () => this.setState({ outsideOpen: !s.outsideOpen }),
+      outsideClose: () => this.setState({ outsideOpen: false }),
       outsideGlyph: s.outsideOpen ? '▴' : '▾',
       outsideMore: s.outsideOpen ? 'свернуть' : 'показать кто',
       outsideWho: (s.outsideOpen ? ((s.procLiveness || {}).outside || []) : []).map(x => ({
-        label: (x.agent || x.audit_id) + ' · ' + x.runs + ' ' + this.plural(x.runs, 'прогон', 'прогона', 'прогонов'),
-        open: () => { this.setState({ screen: 'agents' }); this.route('agents'); }
+        label: x.agent || x.audit_id,
+        runs: x.runs + ' ' + this.plural(x.runs, 'прогон', 'прогона', 'прогонов')
+          + (x.last_at ? ' · последний ' + String(x.last_at).slice(0, 16).replace('T', ' ') : ''),
+        open: () => {
+          const ag = (s.agentsList || []).find(a => (a.contract_audit_id || a.audit_id) === x.audit_id);
+          this.setState({ outsideOpen: false });
+          if (ag) { this.openAgent(ag); return; }
+          this.setState({ screen: 'agents' }); this.route('agents');
+        }
       })),
       mapEmpty: (mapCur.children || []).length === 0,
       opsW: opsLayout.w, opsH: opsLayout.h, opsCardH: (живое && s.startedOnce) ? 212 : 138,

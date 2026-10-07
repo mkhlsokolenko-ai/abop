@@ -143,3 +143,17 @@ def test_сводка_прогонов_несёт_операции():
         return [r for r in строки if r["id"] == "пробный"][0]
     сводка = asyncio.run(сценарий())
     assert сводка["op_ids"] == ["o212", "o213"], "сводка прогона потеряла операции участка"
+
+
+def test_вне_карты_свежие_сверху():
+    """Список «вне карты» читают, чтобы понять, что отстало от жизни последним, — порядок по
+    времени последнего прогона, а не по идентификатору агента."""
+    сейчас = dt.datetime(2026, 10, 7, 12, 0, tzinfo=dt.timezone.utc)
+    прогоны = [
+        {"agent_id": "zzz-старый.v1", "created_at": (сейчас - dt.timedelta(days=5)).isoformat(),
+         "verdict_ok": True, "started_by": "trigger"},
+        {"agent_id": "aaa-свежий.v1", "created_at": (сейчас - dt.timedelta(hours=2)).isoformat(),
+         "verdict_ok": True, "started_by": "trigger"},
+    ]
+    итог = ps.liveness(seats=[], runs=прогоны, retired=set(), window_days=7, now=сейчас)
+    assert [x["audit_id"] for x in итог["outside"]] == ["aaa-свежий", "zzz-старый"]
