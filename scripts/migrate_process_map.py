@@ -33,6 +33,7 @@ from pathlib import Path
 sys.path.insert(0, str(КОРЕНЬ))
 
 from server import admin_store, agent_store, families_store, process_store as ps  # noqa: E402
+from server.process_deploy import deploy_seated  # noqa: E402
 
 # Область процесса — решение владельца, а не догадка кода. Эти три процесса есть в сиде карты;
 # для всего остального область остаётся «*» (правит только admin), и скрипт об этом говорит.
@@ -131,8 +132,12 @@ async def главное(писать: bool, карта_областей: dict[s
             if слой == "AS-IS":
                 # Префлайт миграции не применяем: переносим то, что уже работало на стенде.
                 готово = await ps.apply(область, base_version=итог["version"], actor="migration")
+                # Тем же хуком, что и обычное применение: иначе карта утверждает, что агент
+                # работает участок, пока агент стоит черновиком и триггеров не принимает.
+                развёрнуты = await deploy_seated(готово.get("seats") or [], actor="migration")
                 print(f"  область «{область}»: {готово['seats_added']} посадок в факт "
-                      f"(редакция {готово['revision']})")
+                      f"(редакция {готово['revision']})"
+                      + (f", развёрнуто агентов: {len(развёрнуты)}" if развёрнуты else ""))
             else:
                 print(f"  область «{область}»: {итог['version']} правок оставлены черновиком "
                       f"{итог['revision_id']}")

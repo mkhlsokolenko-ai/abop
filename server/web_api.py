@@ -30,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, arbiter, assembly, audit_store, blackboard, planner, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, process_store, reglament_store, chat_store, orchestrator, report_compose, report_store, choice_store, doclink, run_cache_store, run_parts_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, arbiter, assembly, audit_store, blackboard, planner, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, process_deploy, process_store, reglament_store, chat_store, orchestrator, report_compose, report_store, choice_store, doclink, run_cache_store, run_parts_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
@@ -1498,21 +1498,8 @@ async def _seat_ops(agent: dict) -> list[str]:
 
 
 async def _deploy_seated(посадки: list[dict], *, actor: str) -> list[str]:
-    """Развернуть агентов, которых редакция посадила на участки. Уже развёрнутые и приостановленные
-    не трогаем: пауза — осознанное решение человека, и применение чужой редакции её не отменяет."""
-    развёрнуты: list[str] = []
-    for s in посадки:
-        версии = await agent_store.list_for(str(s.get("audit_id") or ""), limit=50)
-        if not версии:
-            continue
-        свежая = max(версии, key=lambda a: a.get("version") or 0)
-        if свежая.get("status") != "draft":
-            continue
-        await agent_store.set_status(свежая["id"], "deployed")
-        await audit_store.record(actor, "agent.status", свежая["id"],
-                                 {"status": "deployed", "reason": "посадка на участок " + str(s.get("op_id"))})
-        развёрнуты.append(свежая["id"])
-    return развёрнуты
+    """Тот же хук, что у переноса со старого стенда, — см. server/process_deploy.py."""
+    return await process_deploy.deploy_seated(посадки, actor=actor)
 
 
 async def _seat_needs_approval(новые: list[dict]) -> list[str]:
