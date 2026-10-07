@@ -111,20 +111,31 @@ SSE-события (по мере исполнения):
 | `GET /api/process/graph` | `reglament_store` | `{tenant, nodes:[{nsi_key,op,process,subprocess}], edges, summary}` | карта · трассировка последствий |
 | `POST /api/process/conformance` | `reglament_store` + эмбеддинги либо sLAVA | `{report:[{nsi_key,label,status,sim}], summary}` | сверка собранного процесса с регламентом |
 
-Решено, не реализовано — редакции карты и посадки агентов (ADR-042/043/045, этапы 1–2 плана):
+Редакции карты и посадки агентов (ADR-042/043/045/046) — реализовано этапом 1:
 
 | Метод · Путь | Что делает |
 |---|---|
-| `GET /api/process/map?layer=as-is\|to-be` | `{tree, seats, revision, draft}`; на `to-be` дерево уже с наложенным черновиком |
-| `POST /api/process/map` `{tree, note}` | правка структуры: новая применённая редакция с автором и причиной |
-| `POST /api/process/revision` `{changes[]}` | дописать изменение в черновик области (создаёт его, если нет) |
-| `DELETE /api/process/revision/{id}` | отбросить черновик |
-| `POST /api/process/revision/{id}/submit` | на согласование — когда префлайт требует человека (ADR-013/014) |
-| `POST /api/process/revision/{id}/apply` | применить: валидация + префлайт + одна транзакция, затем деплой затронутых агентов |
-| `GET /api/process/liveness?window=7d` | подтверждение AS-IS прогонами: `{op_id:{runs,last_at,verdict_ok,orphan}}` (ADR-044, этап 3) |
+| `GET /api/process/map?layer=as-is\|to-be&area=` | `{tree, seats, revision, version, draft, changes, areas, editable_areas, editors}`; на `to-be` дерево уже с наложенным черновиком области |
+| `POST /api/process/revision` `{base_version, changes[]}` | дописать правки в черновик своей области. Сливает с чужими, если зоны не пересеклись, и возвращает `missed` — клиент догоняет без перезагрузки |
+| `GET /api/process/revision/{rev_id}/changes?since=` | разница по номеру |
+| `DELETE /api/process/revision/{rev_id}` | отбросить черновик целиком |
+| `POST /api/process/revision/{rev_id}/apply` `{base_version}` | применить: строгая проверка `base_version`, префлайт посадок, одна транзакция на дерево и посадки |
+| `GET /api/process/stream?area=` | SSE: `hello` с номером версии и списком `editors`, затем `change`/`applied`/`poke`/`ping`. Heartbeat пишет присутствие |
+| `POST /api/process/map` `{tree, note}` | записать карту целиком новой применённой редакцией — вход для сида и миграции, **только admin** |
 
-Мутации — `manager+` **и** область узла ∈ области пользователя (`can_edit_area`). Отказ приходит с
-причиной в теле 403: интерфейс её показывает, а не глотает.
+Коды: `409` — конфликт правок, тело `{error, version, rivals:[{target,kind,author,seq}]}`; `422` —
+отказ по состоянию карты с причиной текстом; `403` — чужая область с перечислением узлов. Причина
+всегда в теле: интерфейс её показывает, а не глотает.
+
+Мутации — `manager+` **и** область узла ∈ области пользователя (`can_edit_area`). Область правки
+берётся из самой карты по цели правки, присланный в теле `area` не используется.
+
+Решено, не реализовано:
+
+| Метод · Путь | Что делает |
+|---|---|
+| `POST /api/process/revision/{rev_id}/submit` | на согласование — когда префлайт требует человека (ADR-013/014) |
+| `GET /api/process/liveness?window=7d` | подтверждение AS-IS прогонами: `{op_id:{runs,last_at,verdict_ok,orphan}}` (ADR-044, этап 3) |
 
 ---
 

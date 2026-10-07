@@ -2288,14 +2288,10 @@ const TREE = {
   ]
 };
 
-const ASSIGNMENTS = [
-  { id: 'as1', agent: 'Аудитор 1С', version: 'v2', autonomy: 'L1', dep: 'd4', layer: 'AS-IS', ops: ['o212', 'o213', 'o214'] },
-  { id: 'as2', agent: 'Почта-дайджест', version: 'v1', autonomy: 'L1', dep: 'd2', layer: 'AS-IS', ops: ['o216'] },
-  { id: 'as3', agent: 'Финаналитик', version: 'v3', autonomy: 'L2', dep: 'd1', layer: 'AS-IS', ops: ['o312', 'o313', 'o314'] },
-  { id: 'as4', agent: 'Тикет-роутер', version: 'v2', autonomy: 'L2', dep: 'd3', layer: 'TO-BE', ops: ['o112', 'o113'] },
-  { id: 'as5', agent: 'Сверщик расчётов', version: 'v1', autonomy: 'L1', dep: null, layer: 'TO-BE', ops: ['o221', 'o222'] }
-];
-
+// Назначения агентов больше не живут в шаблоне: посадка — строка в process_seats, одна на операцию,
+// со ссылкой на агента без версии (ADR-043). Раньше здесь лежали пять записей с полем dep: 'd1'..'d4',
+// которое не совпадало ни с одним agent_id из /api/fleet — поэтому слой LIVE был пуст всегда.
+// TREE выше остаётся СИДОМ: если на стенде карты ещё нет, администратор создаёт её из него один раз.
 
 const ADAPTERS = [
   { id: 'csv',      label: 'csv',      srcLabel: 'путь к файлу',       value: '/mnt/data/transactions_2026.csv', note: 'Файл читается из периметра, без egress.', noteColor: 'var(--w45)' },
@@ -2554,7 +2550,8 @@ class Component extends DCLogic {
     checkState: 'idle', checkSteps: [], checkOk: false, checkFails: 0,
     selectedNode: 'c3', rights: 2, drafting: false,
     fleetTab: 'Карта процессов', canvasMode: 'build', zoom: 1, mapZoom: 1, mapFull: false, navOpen: true, paletteOpen: true, showRunOverlay: true,
-    userScenarios: {}, tree: TREE, assignments: ASSIGNMENTS.map(a => Object.assign({}, a, { ops: a.ops.slice() })),
+    userScenarios: {}, tree: null, procSeats: [], procRevision: 0, procVersion: 0, procDraft: null,
+    procAreas: {}, procEditable: [], procEditors: [], procLoaded: false,
     path: ['org'], mapLayer: 'LIVE', selOp: null, mapDrawer: null, renameText: '', lens: 'build', guardTo: null, fromOps: null,
     deployments: [], instances: [], findingsList: [], findingsMetrics: null, findingsRuns: [], findingsLoading: false, findingCard: null, findingsFilterRun: null, findingFrom: null, labelDecision: '', labelManual: false, labelComment: '', fleetReal: false, fleetAlertsReal: [], fleetSeries: [], fleetQueue: null, fleetHitl: 0, rollbackDiffReal: null, rollbackPrevVersion: '', deployAgentId: null,
     liveFrozen: false, fleetFilter: 'все',
@@ -2575,13 +2572,13 @@ class Component extends DCLogic {
         self.setState({catalogCoverage: by, coverageTotals: cv.totals||null});
       }).catch(function(){});
     }).catch(function(){});
-    this.refreshContracts(); this.loadData(); this.loadConfig(); this.loadBilling(); this.loadRbac(); this.loadUserData(); this.loadFleet(); this.loadFindings(); this.loadRuns(); this.loadSystems();
+    this.loadProcessMap(); this.refreshContracts(); this.loadData(); this.loadConfig(); this.loadBilling(); this.loadRbac(); this.loadUserData(); this.loadFleet(); this.loadFindings(); this.loadRuns(); this.loadSystems();
   }
   loadConfig() {
     var self = this;
     fetch('/api/admin/config').then(function(r){ return r.ok ? r.json() : {config:{}}; }).then(function(d){
       var cfg = (d && d.config) || {}; var patch = {};
-      ['modelCfg','defaultProfile','tenantMode','quotaLimit','quotaPolicy','escThresholds','tree','assignments'].forEach(function(k){
+      ['modelCfg','defaultProfile','tenantMode','quotaLimit','quotaPolicy','escThresholds'].forEach(function(k){
         if (cfg[k] !== undefined && cfg[k] !== null) patch[k] = cfg[k];
       });
       if (Object.keys(patch).length) self.setState(patch, function(){ try { self.sanitize(); } catch(e){} });
@@ -2996,6 +2993,7 @@ class Component extends DCLogic {
   componentWillUnmount() {
     [this.snapTimer, this.fleetTimer, this.timer, this.toastTimer, this.hitlTimer].forEach(t => clearInterval(t));
     [this.persistTimer, this.autoSaveTimer, this.planTimer, this.pendingDelTimer].forEach(t => clearTimeout(t));
+    clearInterval(this.procWatchTimer); this.unwatchProcess();
     try { document.removeEventListener('keydown', this.onKey); document.removeEventListener('mousedown', this.onDocClick); window.removeEventListener('hashchange', this.onHash); } catch (e) {}
     if (window.__abopLive === this) window.__abopLive = null;
   }
@@ -3047,23 +3045,29 @@ class Component extends DCLogic {
       }
     };
     document.addEventListener('keydown', this.onKey);
+    this.procWatchTimer = setInterval(() => {
+      if (!this.isCurrent()) { clearInterval(this.procWatchTimer); return; }
+      const надо = this.state.screen === 'canvas' && this.state.lens === 'ops';
+      if (надо && !this._procES) this.watchProcess();
+      if (!надо && this._procES) this.unwatchProcess();
+    }, 2000);
   }
 
   sanitize() {
     try {
       const t = this.state.tree;
-      const okTree = t && t.id && Array.isArray(t.children) && t.children.length;
-      if (!okTree) this.setState({ tree: TREE, path: ['org'], selOp: null });
-      else {
+      // Карта приходит с сервера (ADR-042). Локального запасного дерева нет намеренно: именно
+      // «своя копия в браузере» и расходилась с базой. Путь чистим, если узлы исчезли из редакции.
+      if (t && t.id) {
         const p = Array.isArray(this.state.path) && this.state.path.length ? this.state.path : ['org'];
         if (!p.every(id => !!this.findNode(id))) this.setState({ path: ['org'], selOp: null });
       }
-      if (!Array.isArray(this.state.assignments)) this.setState({ assignments: ASSIGNMENTS.map(a => Object.assign({}, a, { ops: a.ops.slice() })) });
+      if (!Array.isArray(this.state.procSeats)) this.setState({ procSeats: [] });
       if (!Array.isArray(this.state.instances)) this.setState({ instances: [] });
       if (['AS-IS', 'TO-BE', 'LIVE'].indexOf(this.state.mapLayer) < 0) this.setState({ mapLayer: 'LIVE' });
       if (['build', 'run', 'ops', 'envelope'].indexOf(this.state.lens) < 0) this.setState({ lens: 'build' });
       if (!this.allScenarios()[this.state.scenario]) this.setState({ scenario: 'fin' });
-    } catch (e) { this.setState({ tree: TREE, path: ['org'], selOp: null }); }
+    } catch (e) { this.setState({ path: ['org'], selOp: null }); }
   }
 
   isCurrent() { return this.gen === window.__abopGen; }
@@ -3397,8 +3401,29 @@ class Component extends DCLogic {
       : Object.assign({ label: 'флот здоров' }, SEM.ok);
     const alertTone = { crit: SEM.err, warn: SEM.warn, soft: SEM.idle };
     const mapPath = (s.path && s.path.length) ? s.path : ['org'];
-    const mapCur = this.findNode(mapPath[mapPath.length - 1]) || s.tree;
-    const mapVisAssigns = s.assignments.filter(a => s.mapLayer === 'TO-BE' ? true : a.layer === 'AS-IS');
+    // Карта приходит с сервера, и на свежем стенде её может ещё не быть. Пустая рамка — только для
+    // отрисовки: в состоянии дерева нет, чтобы «своя копия в браузере» снова не разошлась с базой.
+    const ПУСТАЯ_КАРТА = { id: 'org', kind: 'org', label: 'Карта процессов', children: [] };
+    const mapCur = this.findNode(mapPath[mapPath.length - 1]) || s.tree || ПУСТАЯ_КАРТА;
+    // Назначения для отрисовки ВЫВОДЯТСЯ из посадок: одна посадка = одна операция (ADR-043), а имя,
+    // версия и автономия берутся у действующей версии агента из реестра. Слой выбирает состояния:
+    // AS-IS и LIVE — факт (включая снимаемые: они ещё работают), TO-BE — факт вместе с планом.
+    const agentByAudit = (audit) => (s.agentsList || []).find(a =>
+      (a.contract_audit_id || String(a.id || '').split('.v')[0]) === audit) || null;
+    const seatToAssign = (seat) => {
+      const ag = agentByAudit(seat.audit_id);
+      return {
+        id: seat.id || (seat.op_id + ':' + seat.audit_id), ops: [seat.op_id],
+        agent: (ag && ag.name) || seat.audit_id,
+        version: 'v' + ((seat.pin_version || (ag && ag.version)) || 1),
+        autonomy: (ag && ag.autonomy_max) || '—',
+        dep: (ag && ag.id) || seat.audit_id,
+        audit_id: seat.audit_id, state: seat.state || 'actual',
+        layer: seat.state === 'planned' ? 'TO-BE' : 'AS-IS'
+      };
+    };
+    const seatVisible = (seat) => s.mapLayer === 'TO-BE' ? true : (seat.state || 'actual') !== 'planned';
+    const mapVisAssigns = (s.procSeats || []).filter(seatVisible).map(seatToAssign);
     const mapAssignsOf = (node) => {
       const leaves = this.leafIds(node);
       return mapVisAssigns.filter(a => a.ops.some(o => leaves.indexOf(o) >= 0));
@@ -3452,7 +3477,11 @@ class Component extends DCLogic {
       };
     })();
 
-    const mapLevelNote = mapCur.kind === 'org'
+    const mapLevelNote = !s.tree
+      ? (s.procLoaded
+          ? 'Карта процессов ещё не создана. Её создаёт администратор — после этого отделы правят свои ветки редакциями.'
+          : 'Загружаю карту процессов…')
+      : mapCur.kind === 'org'
       ? 'Цепочка создания ценности: звенья процессов и сколько агентов в каждом. Клик «Внутрь» — зум к подпроцессам. Схема — демонстрационная; развёртывания, живые экземпляры и здоровье — из реальных данных.'
       : mapCur.kind === 'process'
         ? 'Подпроцессы этого звена. Слои AS-IS и TO-BE редактируются, LIVE показывает живую работу.'
@@ -3646,7 +3675,7 @@ class Component extends DCLogic {
       ],
       goFleet: () => { this.setState({ screen: 'canvas', lens: 'ops' }); this.route('canvas'); },
       goFleetLive: () => { this.setState({ screen: 'canvas', lens: 'ops', mapDrawer: 'live' }); this.route('canvas'); },
-      openDeploy: () => this.openSeat(mapCtx.label),
+      openDeploy: () => this.openSeat(mapCtx.label, s.selOp),
       preflightFail: preflightNeedsExternal && s.rights < 3,
       preflightText: preflightNeedsExternal && s.rights < 3
         ? ('Префлайт LUDA не пройден: участок «' + (mapCtx.label || '') + '» требует действия наружу (L3), а конверт агента — L' + s.rights + '. Поднимите права узла в линзе «Строю» или выберите другого агента.')
@@ -3717,9 +3746,15 @@ class Component extends DCLogic {
               .then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); });
           })
           .then(function(){
-            self.setState({ modal: null, screen: 'canvas', lens: 'ops', mapDrawer: 'reg', reviseOf: null, deployAgentId: null });
-            self.route('fleet'); self.loadFleet(); self.reloadAgents();
+            self.setState({ modal: null, screen: 'canvas', lens: 'ops', reviseOf: null, deployAgentId: null });
+            self.loadFleet(); self.reloadAgents();
             self.showToast('Развёрнуто: ' + ag.name + ' на участке «' + s.deployArea + '»' + (sched ? ' · расписание ' + sched[1] : ' · запуск вручную'), true);
+            // Связь участок↔агент. Раньше развёртывание её не создавало: участок уходил строкой в
+            // заголовок триггера, и плитка после «успешной» посадки оставалась «агента нет» (Р2).
+            if (!s.deployOp) { self.showToast('Операция не выбрана — агент развёрнут, но на карту не посажен'); return null; }
+            var audit = ag.contract_audit_id || String(ag.id || '').split('.v')[0];
+            return self.postChange([{ kind: 'add_seat', target: s.deployOp, payload: { audit_id: audit } }],
+                                   'Участок «' + s.deployArea + '» — в редакции карты, применить её на слое TO-BE');
           })
           .catch(function(e){ self.showToast('Развернуть не удалось: ' + e.message); });
       },
@@ -3822,7 +3857,8 @@ class Component extends DCLogic {
         { id: 'TO-BE', hint: 'как будет: плановые агенты видны' },
         { id: 'LIVE', hint: 'живое наложение: кто работает прямо сейчас' }
       ].map(l => ({
-        label: l.id, hint: l.hint, pick: () => this.setState({ mapLayer: l.id, selOp: null }),
+        label: l.id, hint: l.hint,
+        pick: () => this.setState({ mapLayer: l.id, selOp: null }, () => this.loadProcessMap(true)),
         bg: s.mapLayer === l.id ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : 'transparent',
         fg: s.mapLayer === l.id ? '#fff' : 'var(--w45)'
       })),
@@ -3909,7 +3945,7 @@ class Component extends DCLogic {
             kind: 'graph', scenario: (asg[0] && asg[0].agent === 'Аудитор 1С') ? 'audit1c' : 'fin',
             fromOps: { path: mapPath.slice(), tileId: c.id, crumb: mapCur.label + ' / ' + c.label, agent: asg[0] ? asg[0].agent + ' ' + asg[0].version : 'без агента' }
           }),
-          seat: () => this.openSeat(c.label)
+          seat: () => this.openSeat(c.label, c.id)
         };
       }),
       showInstances: mapOpInstances.length > 0,
@@ -3962,21 +3998,21 @@ class Component extends DCLogic {
       moveLeft: () => s.selOp && this.moveBlock(s.selOp, -1),
       moveRight: () => s.selOp && this.moveBlock(s.selOp, 1),
       deleteBlock: () => s.selOp && this.removeBlock(s.selOp),
-      assignToggles: s.assignments.map(a => {
-        const on = s.selOp ? a.ops.indexOf(s.selOp) >= 0 : false;
+      assignToggles: (s.agentsList || []).slice(0, 24).map(a => {
+        const audit = a.contract_audit_id || String(a.id || '').split('.v')[0];
+        const свои = (s.procSeats || []).filter(x => x.audit_id === audit && x.state !== 'dropping');
+        const on = s.selOp ? свои.some(x => x.op_id === s.selOp) : false;
         return {
-          label: a.agent + ' ' + a.version, opsCount: a.ops.length + ' оп.',
+          label: a.name + ' v' + (a.version || 1), opsCount: свои.length + ' оп.',
           mark: on ? '✓' : '', markBg: on ? 'rgba(16,185,129,.25)' : 'var(--w8)', markFg: 'var(--ok-ink)',
           bg: on ? 'rgba(99,102,241,.14)' : 'var(--s45)',
           border: on ? 'rgba(129,140,248,.4)' : 'var(--w8)',
           toggle: () => {
             if (!s.selOp) { this.showToast('Сначала выберите операцию на карте'); return; }
-            this.setState({
-              assignments: s.assignments.map(x => x.id !== a.id ? x : Object.assign({}, x, {
-                ops: on ? x.ops.filter(o => o !== s.selOp) : x.ops.concat([s.selOp])
-              }))
-            });
-            this.showToast(on ? 'Операция убрана из группы ' + a.agent : 'Операция добавлена в группу ' + a.agent);
+            this.postChange([{ kind: on ? 'drop_seat' : 'add_seat', target: s.selOp,
+                               payload: { audit_id: audit } }],
+                            on ? 'Агент снят с участка — попадёт в факт при применении редакции'
+                               : 'Агент посажен на участок — попадёт в факт при применении редакции');
           }
         };
       }),
@@ -5654,9 +5690,10 @@ class Component extends DCLogic {
   // правилами: инспектор смотрел s.role (а он принимает только admin|analyst, поэтому менеджеру и
   // поддержке отказывали всегда), кнопка на плитке не проверяла ничего, а само развёртывание —
   // _canMutate(). Правило теперь одно и совпадает с серверным require_level (разбор, Р11).
-  openSeat(label) {
+  openSeat(label, opId) {
     if (!this._canMutate()) { this.showToast('Посадить агента может менеджер и выше — у вас только чтение'); return; }
-    this.setState({ modal: 'deploy', deployArea: label || this.state.deployArea, deployAgentId: null });
+    this.setState({ modal: 'deploy', deployArea: label || this.state.deployArea,
+                    deployOp: opId || null, deployAgentId: null });
   }
 
   guardedGo(desc) {
@@ -5696,59 +5733,139 @@ class Component extends DCLogic {
 
   assignsIn(node, layer) {
     const leaves = this.leafIds(node);
-    return this.state.assignments.filter(a => (layer === 'TO-BE' ? true : a.layer === 'AS-IS') && a.ops.some(o => leaves.indexOf(o) >= 0));
+    return (this.state.procSeats || []).filter(s =>
+      (layer === 'TO-BE' ? true : (s.state || 'actual') !== 'planned') && leaves.indexOf(s.op_id) >= 0);
   }
 
-  liveOf(dep) { return this.state.instances.filter(i => i.dep === dep && i.phase !== 'out').length; }
+  // Живых экземпляров на участке. Посадка ссылается на агента БЕЗ версии (audit_id), а флот отдаёт
+  // agent_id вида «audit-1c.v2», поэтому сопоставляем по префиксу. Раньше здесь сравнивался
+  // выдуманный ключ dep: 'd1'..'d4', который не совпадал ни с чем — слой LIVE был пуст всегда
+  // (разбор, Р1).
+  liveOf(dep) {
+    if (!dep) return 0;
+    var base = String(dep).split('.v')[0];
+    return this.state.instances.filter(function(i){
+      return i.phase !== 'out' && String(i.dep || '').split('.v')[0] === base;
+    }).length;
+  }
 
-  mutateTree(fn) {
-    const clone = JSON.parse(JSON.stringify(this.state.tree));
-    fn(clone, (id) => this.findNode(id, clone));
-    this.setState({ tree: clone, canvasDirty: true });
-    this.saveConfig('tree', clone);   // карта процессов (области) → Postgres, общая для всех
+  // Область правки: берём у процесса текущей ветки, иначе — свой отдел. Сервер всё равно считает
+  // область сам по цели правки, это только для чтения нужного среза TO-BE.
+  procArea() {
+    var s = this.state, areas = s.procAreas || {};
+    var path = (s.path && s.path.length) ? s.path : ['org'];
+    for (var i = path.length - 1; i >= 0; i--) if (areas[path[i]] && areas[path[i]] !== '*') return areas[path[i]];
+    return (s.me && s.me.department) || '*';
+  }
+
+  // Карта процессов с сервера. AS-IS — применённая редакция (факт), TO-BE — она же с наложенным
+  // черновиком области. Дерево и посадки больше не живут в браузере и не пишутся в app_config.
+  loadProcessMap(silent) {
+    var self = this, s = this.state;
+    var layer = s.mapLayer === 'TO-BE' ? 'to-be' : 'as-is';
+    var url = '/api/process/map?layer=' + layer + '&area=' + encodeURIComponent(this.procArea());
+    return fetch(url).then(function(r){ return r.ok ? r.json() : null; }).then(function(d){
+      if (!d || !d.tree) {
+        // Карты на стенде ещё нет. Админу создаём её из сида TREE один раз (запись идёт в аудит),
+        // остальным честно показываем пустое состояние: выдумывать карту в браузере нельзя.
+        if (!self._procSeeded && s.me && s.me.level === 'admin') {
+          self._procSeeded = true;
+          return fetch('/api/process/map', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                             body: JSON.stringify({ tree: TREE, note: 'первичный сид карты' }) })
+            .then(function(r){ return r.ok ? self.loadProcessMap(true) : null; })
+            .catch(function(){ return null; });
+        }
+        self.setState({ procLoaded: true });
+        return null;
+      }
+      self.setState({
+        tree: d.tree, procSeats: d.seats || [], procRevision: d.revision || 0,
+        procVersion: d.version || 0, procDraft: d.draft || null, procAreas: d.areas || {},
+        procEditable: d.editable_areas || [], procEditors: d.editors || [], procLoaded: true
+      }, function(){ try { self.sanitize(); } catch (e) {} });
+      return d;
+    }).catch(function(){ if (!silent) self.setState({ procLoaded: true }); return null; });
+  }
+
+  // Подписка на поток правок: карта шевелится сама, когда рядом правит коллега. Содержимое события
+  // не разбираем — берём карту заново: правка редкая, а срез маленький (ADR-046, часть 4).
+  watchProcess() {
+    var self = this;
+    if (this._procES) { try { this._procES.close(); } catch (e) {} this._procES = null; }
+    if (typeof EventSource === 'undefined') return;
+    try {
+      var es = new EventSource('/api/process/stream?area=' + encodeURIComponent(this.procArea()));
+      this._procES = es;
+      es.onmessage = function(ev){
+        var d = {};
+        try { d = JSON.parse(ev.data || '{}'); } catch (e) { return; }
+        if (d.type === 'ping' || d.type === 'hello') { self.setState({ procEditors: d.editors || [] }); return; }
+        self.loadProcessMap(true);
+        if (d.type === 'applied') self.showToast('Редакция карты применена' + (d.author ? ' · ' + d.author : ''));
+      };
+      es.onerror = function(){ /* браузер переподключится сам; состояние догонится при загрузке карты */ };
+    } catch (e) {}
+  }
+
+  unwatchProcess() {
+    if (this._procES) { try { this._procES.close(); } catch (e) {} this._procES = null; }
+  }
+
+  // Одна правка карты = одна строка журнала редакции. base_version — номер, который мы последним
+  // видели: по нему сервер решает, слить правку с чужими или отбить конфликтом (ADR-046).
+  postChange(changes, note) {
+    var self = this, s = this.state;
+    if (!this._canMutate()) { this.showToast('Правка карты — для менеджера и выше, у вас только чтение'); return Promise.resolve(null); }
+    return fetch('/api/process/revision', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ base_version: s.procVersion || 0, changes: changes })
+    }).then(function(r){
+      return r.json().catch(function(){ return {}; }).then(function(j){ return { ok: r.ok, status: r.status, j: j || {} }; });
+    }).then(function(res){
+      if (res.status === 409) {
+        var d = res.j.detail || {};
+        var кто = ((d.rivals || [])[0] || {}).author || 'кто-то';
+        self.showToast('Эту часть карты уже изменил ' + кто + ' — обновляю, повторите правку');
+        return self.loadProcessMap(true).then(function(){ return null; });
+      }
+      if (!res.ok) {
+        var d2 = res.j.detail;
+        self.showToast('Правка не принята: ' + String((d2 && d2.error) || d2 || res.status).slice(0, 160));
+        return null;
+      }
+      var missed = res.j.missed || [];
+      if (missed.length) self.showToast('Пока вы правили, рядом изменили блоков: ' + missed.length + ' — показываю вместе');
+      return self.loadProcessMap(true).then(function(){
+        if (note) self.showToast(note);
+        return res.j;
+      });
+    }).catch(function(){ self.showToast('ABOP недоступен — правка не сохранена'); return null; });
   }
 
   addBlock(kind) {
     const parentId = this.state.path[this.state.path.length - 1];
     const label = { task: 'Новая задача', gateway: 'Новое ветвление', event: 'Новое событие', wait: 'Ожидание', hitl: 'Подтверждение человека', subprocess: 'Новый подпроцесс', process: 'Новый процесс' }[kind];
-    const id = 'n' + Date.now();
-    this.mutateTree((clone, find) => {
-      const p = find(parentId);
-      if (!p) return;
-      p.children = (p.children || []).concat([{ id, kind, label }]);
+    var self = this;
+    this.postChange([{ kind: 'add_node', target: parentId, payload: { kind: kind, label: label } }],
+                    'Добавлен блок: ' + label).then(function(res){
+      var ch = res && (res.applied || [])[0];
+      if (ch && ch.payload && ch.payload.id) self.setState({ selOp: ch.payload.id, renameText: label });
     });
-    this.setState({ selOp: id, renameText: label });
-    this.showToast('Добавлен блок: ' + label);
   }
 
   removeBlock(id) {
-    const parentId = this.state.path[this.state.path.length - 1];
-    this.mutateTree((clone, find) => {
-      const p = find(parentId);
-      if (p) p.children = (p.children || []).filter(c => c.id !== id);
-    });
-    const nextAssigns = this.state.assignments.map(a => Object.assign({}, a, { ops: a.ops.filter(o => o !== id) }));
-    this.setState({ selOp: null, assignments: nextAssigns });
-    this.saveConfig('assignments', nextAssigns);   // области ответственности → Postgres
-    this.showToast('Блок удалён из схемы');
+    // Посадки на удалённом узле закрываются сервером вместе с применением редакции: вычищать их
+    // руками по всем назначениям, как раньше, больше не нужно — и соседние участки не страдают.
+    this.postChange([{ kind: 'drop_node', target: id, payload: {} }], 'Блок удалён из схемы');
+    this.setState({ selOp: null });
   }
 
   moveBlock(id, dir) {
-    const parentId = this.state.path[this.state.path.length - 1];
-    this.mutateTree((clone, find) => {
-      const p = find(parentId);
-      if (!p || !p.children) return;
-      const i = p.children.findIndex(c => c.id === id);
-      const j = i + dir;
-      if (i < 0 || j < 0 || j >= p.children.length) return;
-      const arr = p.children.slice();
-      const tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
-      p.children = arr;
-    });
+    this.postChange([{ kind: 'move_node', target: id, payload: { dir: dir } }]);
   }
 
   renameBlock(id, label) {
-    this.mutateTree((clone, find) => { const n = find(id); if (n) n.label = label; });
+    this.postChange([{ kind: 'rename_node', target: id, payload: { label: label } }]);
   }
 
   fleetTick() {

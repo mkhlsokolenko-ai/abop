@@ -30,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, arbiter, assembly, audit_store, blackboard, planner, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, reglament_store, chat_store, orchestrator, report_compose, report_store, choice_store, doclink, run_cache_store, run_parts_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, arbiter, assembly, audit_store, blackboard, planner, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, process_store, reglament_store, chat_store, orchestrator, report_compose, report_store, choice_store, doclink, run_cache_store, run_parts_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
@@ -1183,6 +1183,221 @@ async def reglament_graph_build(body: dict, u: dict = Depends(user)) -> dict:
     await audit_store.record(u.get("name") or u.get("sub") or "dev", "reglament.graph", tenant,
                              {"hierarchy": hier, "xcite": xcite})
     return {"tenant": tenant, "nodes": len(chunks), "hierarchy_edges": hier, "xcite_edges": xcite, "markup_model": model}
+
+
+# ── Карта процессов: редакции, посадки, синхронизация правок (ADR-042/043/045/046) ───────────────
+
+def can_edit_area(u: dict, area: str) -> bool:
+    """Правка карты: admin — везде; менеджер — только своя объявленная область. Аналитик читает,
+    поддержка читает сквозь области, но процессы отдела не правит (ADR-045). Область «*» — верхняя
+    рамка карты (организация и состав процессов первого уровня), её переставляет только admin."""
+    level = u.get("level")
+    if level == "admin":
+        return True
+    if level != "manager":
+        return False
+    return area != "*" and u.get("department") == area
+
+
+def _area_of_change(tree: dict, ch: dict) -> str:
+    """Область правки берётся из САМОЙ карты по её цели: для add_node — область родителя, иначе —
+    область узла. Присланный в теле `area` не используется, иначе его достаточно было бы подменить."""
+    return process_store.area_of(tree, str((ch or {}).get("target") or ""))
+
+
+def _require_area(u: dict, tree: dict, changes: list[dict]) -> str:
+    """Одна область на пачку правок + проверка прав. Редакция живёт в одной области: иначе её
+    применение затронуло бы чужой отдел."""
+    по_областям: dict[str, list[str]] = {}
+    for ch in changes or []:
+        по_областям.setdefault(_area_of_change(tree, ch), []).append(str((ch or {}).get("target") or ""))
+    if not по_областям:
+        raise HTTPException(422, "нечего применять")
+    if len(по_областям) > 1:
+        описание = "; ".join(f"{a}: {', '.join(t)}" for a, t in sorted(по_областям.items()))
+        raise HTTPException(422, "правки затрагивают несколько областей, редакция живёт в одной — " + описание)
+    area = next(iter(по_областям))
+    if not can_edit_area(u, area):
+        чужие = ", ".join(по_областям[area])
+        raise HTTPException(403, f"область «{area}» вам не принадлежит (вы {u.get('level')}"
+                                 f"/{u.get('department')}): узлы {чужие}")
+    return area
+
+
+def _process_http(ex: Exception):
+    """Отказ стора → HTTP с ПРИЧИНОЙ в теле: интерфейс её показывает, а не глотает (разбор, Р4)."""
+    if isinstance(ex, process_store.Конфликт):
+        return HTTPException(409, {"error": str(ex), "version": ex.версия, "rivals": ex.соперники})
+    return HTTPException(422, str(ex))
+
+
+@app.get("/api/process/map")
+async def process_map(layer: str = "as-is", area: str | None = None, u: dict = Depends(user)) -> dict:
+    """Карта процессов для отрисовки. `as-is` — применённая редакция (факт, только чтение),
+    `to-be` — она же с наложенным черновиком области. Читать может любой вошедший: карта — про
+    цепочку создания ценности, и свой процесс человек должен видеть между чужими (ADR-045)."""
+    layer = "to-be" if str(layer).lower() == "to-be" else "as-is"
+    область = (area or u.get("department") or "*")
+    срез = await process_store.projection(область, layer=layer)
+    дерево = срез.get("tree")
+    области = {nid: process_store.area_of(дерево, nid)
+               for nid in process_store.поддерево(дерево)} if дерево else {}
+    редактируемые = sorted({a for a in области.values() if can_edit_area(u, a)})
+    return dict(срез, areas=области, editable_areas=редактируемые,
+                editors=await process_store.presence_of(область))
+
+
+@app.post("/api/process/map")
+async def process_map_seed(body: dict, u: dict = Depends(user)) -> dict:
+    """Записать карту целиком новой применённой редакцией. Это вход для сида и миграции, а не для
+    обычной правки: пользовательские изменения идут через редакцию (ADR-042), где они проверяются на
+    конфликты и права по областям. Поэтому — только admin."""
+    require_level(u, "admin")
+    tree = (body or {}).get("tree")
+    if not isinstance(tree, dict) or not tree.get("id"):
+        raise HTTPException(422, "нужно дерево карты: {id, kind, label, children[]}")
+    editor = u.get("name") or u.get("sub") or "dev"
+    итог = await process_store.save_map(process_store.КАРТА, tree, editor=editor,
+                                        note=str((body or {}).get("note") or ""))
+    await audit_store.record(editor, "process.map.save", str(итог["revision"]),
+                             {"note": итог.get("note")})
+    return итог
+
+
+@app.post("/api/process/revision")
+async def process_revision_append(body: dict, u: dict = Depends(user)) -> dict:
+    """Дописать правки в черновик редакции своей области. Сливает с чужими правками, если зоны не
+    пересеклись, и возвращает пропущенные — клиент догоняет без перезагрузки. Пересеклись — 409 с
+    указанием, кто опередил (ADR-046)."""
+    require_level(u, "manager")
+    changes = (body or {}).get("changes") or []
+    применено = await process_store.map_of(process_store.КАРТА)
+    дерево = применено.get("tree")
+    if not дерево:
+        raise HTTPException(422, "карта процессов ещё не создана")
+    area = _require_area(u, дерево, changes)
+    author = u.get("name") or u.get("sub") or "dev"
+    try:
+        итог = await process_store.append(area, base_version=int((body or {}).get("base_version") or 0),
+                                          changes=changes, author=author)
+    except (process_store.Отказ, process_store.Конфликт) as ex:
+        raise _process_http(ex) from ex
+    await audit_store.record(author, "process.revision.append", итог["revision_id"],
+                             {"area": area, "version": итог["version"],
+                              "kinds": [c.get("kind") for c in changes]})
+    return dict(итог, area=area)
+
+
+@app.get("/api/process/revision/{rev_id}/changes")
+async def process_revision_changes(rev_id: str, since: int = 0, u: dict = Depends(user)) -> dict:
+    """Разница по номеру: клиент берёт только то, чего не видел. Читать может любой вошедший."""
+    area = await _area_of_revision(rev_id)
+    return {"revision_id": rev_id, "area": area, "since": since,
+            "changes": await process_store.changes_since(area, since)}
+
+
+@app.delete("/api/process/revision/{rev_id}")
+async def process_revision_drop(rev_id: str, u: dict = Depends(user)) -> dict:
+    """Отбросить черновик целиком: применённая карта не менялась, значит терять нечего."""
+    require_level(u, "manager")
+    area = await _area_of_revision(rev_id)
+    if not can_edit_area(u, area):
+        raise HTTPException(403, f"область «{area}» вам не принадлежит")
+    actor = u.get("name") or u.get("sub") or "dev"
+    снято = await process_store.drop_draft(area, actor=actor)
+    await audit_store.record(actor, "process.revision.drop", rev_id, {"area": area})
+    return {"revision_id": rev_id, "area": area, "dropped": снято}
+
+
+@app.post("/api/process/revision/{rev_id}/apply")
+async def process_revision_apply(rev_id: str, body: dict, u: dict = Depends(user)) -> dict:
+    """Применить редакцию: одна транзакция на дерево и посадки, либо ничего. `base_version` строгий —
+    применять редакцию, в которую после вашего просмотра дописали, нельзя. Перед записью — префлайт
+    посадок: агент существует и его автономия ≤ потолка контракта LUDA (ADR-013)."""
+    require_level(u, "manager")
+    area = await _area_of_revision(rev_id)
+    if not can_edit_area(u, area):
+        raise HTTPException(403, f"область «{area}» вам не принадлежит")
+    actor = u.get("name") or u.get("sub") or "dev"
+    try:
+        итог = await process_store.apply(area, base_version=int((body or {}).get("base_version") or 0),
+                                         actor=actor, preflight=_seat_preflight)
+    except (process_store.Отказ, process_store.Конфликт) as ex:
+        raise _process_http(ex) from ex
+    await audit_store.record(actor, "process.revision.apply", rev_id,
+                             {"area": area, "revision": итог["revision"],
+                              "seats_added": итог["seats_added"], "seats_closed": итог["seats_closed"]})
+    return dict(итог, revision_id=rev_id)
+
+
+@app.get("/api/process/stream")
+async def process_stream(area: str | None = None, u: dict = Depends(user)):
+    """Живое догоняние (SSE): при подключении — номер версии, дальше «появилось новое». Разницу клиент
+    берёт через `/changes?since=`. Между репликами оповещение идёт существующим cachebus (ADR-046)."""
+    import asyncio as _asyncio
+    import json as _json
+    from fastapi.responses import StreamingResponse
+    область = (area or u.get("department") or "*")
+    actor = u.get("name") or u.get("sub") or "dev"
+    очередь = process_store.subscribe(область)
+
+    async def gen():
+        try:
+            await process_store.presence_touch(область, actor)
+            черновик = await process_store.draft_of(область)
+            привет = {"type": "hello", "area": область,
+                      "version": (черновик or {}).get("version") or 0,
+                      "revision_id": (черновик or {}).get("id"),
+                      "editors": await process_store.presence_of(область)}
+            yield "data: " + _json.dumps(привет, ensure_ascii=False) + "\n\n"
+            while True:
+                try:
+                    ев = await _asyncio.wait_for(очередь.get(), timeout=25)
+                except _asyncio.TimeoutError:
+                    await process_store.presence_touch(область, actor)
+                    ев = {"type": "ping", "area": область,
+                          "editors": await process_store.presence_of(область)}
+                yield "data: " + _json.dumps(ев, ensure_ascii=False) + "\n\n"
+        finally:
+            process_store.unsubscribe(область, очередь)
+
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+async def _area_of_revision(rev_id: str) -> str:
+    """Область редакции по её идентификатору: открытый черновик есть ровно один на область."""
+    применено = await process_store.map_of(process_store.КАРТА)
+    дерево = применено.get("tree") or {}
+    области = {process_store.area_of(дерево, nid) for nid in process_store.поддерево(дерево)} | {"*"}
+    for area in sorted(области):
+        черновик = await process_store.draft_of(area)
+        if черновик and черновик["id"] == rev_id:
+            return area
+    raise HTTPException(404, "нет открытой редакции с таким идентификатором")
+
+
+async def _seat_preflight(новые: list[dict]) -> list[str]:
+    """Префлайт посадок перед применением: агент есть в реестре и его автономия ≤ потолка контракта
+    LUDA (ADR-013). Отказ приходит причинами, а не словом «нельзя»."""
+    причины: list[str] = []
+    порядок = ["A1", "A2", "A3", "A4"]
+    for s in новые:
+        audit_id = str(s.get("audit_id") or "")
+        версии = [a for a in await agent_store.list_for(audit_id, limit=50)]
+        if not версии:
+            причины.append(f"агента «{audit_id}» нет в реестре")
+            continue
+        свежая = max(версии, key=lambda a: a.get("version") or 0)
+        if s.get("pin_version") and not any(a.get("version") == s["pin_version"] for a in версии):
+            причины.append(f"у «{audit_id}» нет версии v{s['pin_version']} для пина")
+            continue
+        contract = await contract_store.get(audit_id) or {}
+        потолок = ((contract.get("intake") or {}).get("autonomy_ceiling")) or ""
+        хочет = str(свежая.get("autonomy_max") or "A1")
+        if потолок in порядок and хочет in порядок and порядок.index(хочет) > порядок.index(потолок):
+            причины.append(f"автономия «{audit_id}» {хочет} выше потолка контракта {потолок}")
+    return причины
 
 
 @app.get("/api/process/graph")
@@ -2886,6 +3101,7 @@ async def _startup() -> None:
     except Exception as _ex:  # noqa: BLE001
         obs.log_event("warning", "skill_templates.seed_failed", error=str(_ex)[:200])
     await pipeline_store.init()          # цепочки агентов (линейный конвейер, выход→контекст)
+    await process_store.init()           # карта процессов: редакции, посадки, журнал правок
     await trigger_store.init()
     await reglament_store.init()
     await run_cache_store.init()
@@ -2938,6 +3154,7 @@ async def _startup() -> None:
     cachebus.register("skills", _refresh_skill_ds_cache)
     cachebus.register("dataplane", _refresh_dataplane_cache)
     cachebus.register("llm", _refresh_llm_override)
+    cachebus.register("process", lambda: process_store.poke())   # правка карты с другой реплики → толкнуть своих SSE-подписчиков
     _asyncio.create_task(cachebus.listen_loop())
 
 
