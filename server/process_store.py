@@ -342,6 +342,70 @@ def наложение(дерево: dict, посадки: list[dict], журн�
     return д, [s for s in п if s["op_id"] in живые]
 
 
+def liveness(*, seats: list[dict], runs: list[dict], retired: set,
+             window_days: int = 7, now: _dt.datetime | None = None) -> dict:
+    """Подтверждение AS-IS прогонами (ADR-044). Чистая функция: вход — посадки, прогоны и агенты из
+    Лимба, выход — состояние каждого участка и список расхождений.
+
+    Признак выводится, а не хранится — по образцу `_dep_status_ru`, где статус развёртывания тоже
+    считается из статуса и триггеров, а не лежит в базе. Два источника истины — декларация (посадка
+    есть) и факт (прогоны были) — остаются разными полями: расхождение между ними показывается, а не
+    сглаживается.
+    """
+    сейчас = now or _now()
+    порог = сейчас - _dt.timedelta(days=max(1, int(window_days)))
+
+    def _когда(r: dict):
+        try:
+            d = _dt.datetime.fromisoformat(str(r.get("created_at") or "").replace("Z", "+00:00"))
+            return d if d.tzinfo else d.replace(tzinfo=_dt.timezone.utc)
+        except Exception:  # noqa: BLE001 — прогон без даты в окно не попадает
+            return None
+
+    по_операциям: dict = {}
+    for s in seats:
+        по_операциям.setdefault(s["op_id"], {"runs": 0, "ok": 0, "last_at": None,
+                                             "audit_ids": [], "state": "тихо", "silent_days": None})
+        по_операциям[s["op_id"]]["audit_ids"].append(s["audit_id"])
+
+    посажены = {s["audit_id"] for s in seats}
+    вне: dict = {}
+    for r in runs:
+        когда = _когда(r)
+        audit_id = str(r.get("agent_id") or "").split(".v")[0]
+        ops = [o for o in (r.get("op_ids") or []) if o in по_операциям]
+        for op in ops:
+            зап = по_операциям[op]
+            if когда and когда >= порог:
+                зап["runs"] += 1
+                зап["ok"] += 1 if r.get("verdict_ok") else 0
+            if когда and (зап["last_at"] is None or когда > зап["last_at"]):
+                зап["last_at"] = когда
+        # агент работает, но ни на одной операции не сидит — карта отстала от жизни
+        if audit_id and audit_id not in посажены and когда and когда >= порог:
+            вне.setdefault(audit_id, {"audit_id": audit_id, "runs": 0, "last_at": None})
+            вне[audit_id]["runs"] += 1
+            если = вне[audit_id]["last_at"]
+            if если is None or когда > если:
+                вне[audit_id]["last_at"] = когда
+
+    for op, зап in по_операциям.items():
+        if any(a in retired for a in зап["audit_ids"]):
+            зап["state"] = "осиротел"
+        elif зап["runs"] > 0:
+            зап["state"] = "подтверждён"
+        else:
+            зап["state"] = "тихо"
+        if зап["last_at"] is not None:
+            зап["silent_days"] = max(0, (сейчас - зап["last_at"]).days)
+            зап["last_at"] = зап["last_at"].isoformat()
+    for v in вне.values():
+        v["last_at"] = v["last_at"].isoformat() if v["last_at"] else None
+
+    return {"window_days": int(window_days), "ops": по_операциям,
+            "outside": sorted(вне.values(), key=lambda x: x["audit_id"])}
+
+
 # ── чтение ────────────────────────────────────────────────────────────────────────────────────────
 
 async def map_of(area: str) -> dict:

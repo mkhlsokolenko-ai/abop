@@ -119,11 +119,14 @@ async def list_runs(agent_id: str | None = None, limit: int = 100) -> list[dict]
                         "verdict_ok": bool(v.get("ok")), "autonomy_used": v.get("autonomy_used"),
                         "hitl_count": int(g.get("hitl_count") or 0), "created_at": r.get("created_at"),
                         "started_by": r.get("started_by"),
+                        "op_ids": r.get("op_ids") or [],
                         "cost": (r.get("run_metrics") or {}).get("cost") or {}})
         return out
     from .db import _conn
+    # op_ids в сводке: по ним считается подтверждение участка прогонами (ADR-044). Список коротких
+    # идентификаторов — сводка остаётся лёгкой, тянуть payload целиком ради этого не нужно.
     cols = ("id,agent_id,contract_audit_id,verdict_ok,autonomy_used,hitl_count,created_at,"
-            "payload->>'started_by',payload->'run_metrics'->'cost'")
+            "payload->>'started_by',payload->'run_metrics'->'cost',payload->'op_ids'")
     async with _conn() as conn:
         if agent_id:
             cur = await conn.execute(
@@ -135,7 +138,7 @@ async def list_runs(agent_id: str | None = None, limit: int = 100) -> list[dict]
     return [{"id": r[0], "agent_id": r[1], "contract_audit_id": r[2], "verdict_ok": r[3],
              "autonomy_used": r[4], "hitl_count": r[5],
              "created_at": r[6].isoformat() if r[6] else None, "started_by": r[7],
-             "cost": r[8] or {}} for r in rows]
+             "cost": r[8] or {}, "op_ids": r[9] or []} for r in rows]
 
 
 async def get(run_id: str) -> dict | None:

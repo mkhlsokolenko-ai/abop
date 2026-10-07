@@ -1346,6 +1346,32 @@ async def process_revision_apply(rev_id: str, body: dict, u: dict = Depends(user
     return dict(итог, revision_id=rev_id, deployed=развёрнуты)
 
 
+@app.get("/api/process/liveness")
+async def process_liveness(response: Response, window: str = "7d", u: dict = Depends(user)) -> dict:
+    """Подтверждение AS-IS прогонами: по каждому участку — сколько прогонов за окно, когда последний
+    и в каком он состоянии (подтверждён / тихо / осиротел), плюс агенты, которые работают, но ни на
+    одной операции не сидят. Отдельно от /api/fleet: у них разная частота — флот тикает раз в десять
+    секунд, подтверждение достаточно считать раз в минуту (ADR-044)."""
+    response.headers["Cache-Control"] = "no-store"
+    дней = {"24h": 1, "24ч": 1, "7d": 7, "7д": 7, "30d": 30, "30д": 30}.get(str(window).lower(), 7)
+    посадки = await process_store.seats_of()
+    прогоны = [{"agent_id": r.get("agent_id"), "created_at": r.get("created_at"),
+                "verdict_ok": r.get("verdict_ok"), "op_ids": r.get("op_ids") or []}
+               for r in await run_store.list_runs(limit=500)]
+    в_лимбе = {str(a.get("contract_audit_id") or a["id"]).split(".v")[0]
+               for a in await agent_store.list_for(None, limit=500, archived=True)}
+    живые = {str(a.get("contract_audit_id") or a["id"]).split(".v")[0]
+             for a in await agent_store.list_for(None, limit=500)}
+    итог = process_store.liveness(seats=посадки, runs=прогоны, retired=(в_лимбе - живые),
+                                  window_days=дней)
+    имена = {str(a.get("contract_audit_id") or a["id"]).split(".v")[0]: a.get("name")
+             for a in await agent_store.list_for(None, limit=500, archived=True)
+             + await agent_store.list_for(None, limit=500)}
+    for x in итог["outside"]:
+        x["agent"] = имена.get(x["audit_id"]) or x["audit_id"]
+    return итог
+
+
 @app.get("/api/process/stream")
 async def process_stream(area: str | None = None, u: dict = Depends(user)):
     """Живое догоняние (SSE): при подключении — номер версии, дальше «появилось новое». Разницу клиент
@@ -1391,6 +1417,20 @@ async def _area_of_revision(rev_id: str) -> str:
         if черновик and черновик["id"] == rev_id:
             return area
     raise HTTPException(404, "нет открытой редакции с таким идентификатором")
+
+
+async def _seat_ops(agent: dict) -> list[str]:
+    """Операции, которые закрывает агент: его действующие посадки. Прогон запоминает их, иначе
+    подтвердить AS-IS нечем — ни одна таблица прогонов операции не знала (ADR-044)."""
+    audit_id = str(agent.get("contract_audit_id") or str(agent.get("id") or "").split(".v")[0])
+    if not audit_id:
+        return []
+    try:
+        return sorted({s["op_id"] for s in await process_store.seats_by_agent(audit_id)})
+    except Exception as ex:  # noqa: BLE001 — прогон из-за карты падать не должен
+        obs.log_event("warn", "process.seat_ops_fail", agent=agent.get("id"),
+                      error=f"{type(ex).__name__}: {ex}")
+        return []
 
 
 async def _deploy_seated(посадки: list[dict], *, actor: str) -> list[str]:
@@ -5963,6 +6003,10 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, sta
         _prog["skills"][sid] = {**cur, "state": state, **{k: v for k, v in kw.items() if v is not None}}
         await _push_progress()
     await _push_progress("данные")
+    # Какие операции карты закрывает этот прогон. Берём их у посадок агента и только когда запуск
+    # пришёл от триггера: ручной запуск с холста идёт без операций, и это честный признак «вне
+    # карты» — для черновиков так и должно быть (ADR-044).
+    _ops_прогона = await _seat_ops(agent) if trigger else []
     blocked, data_denied = await _gate_agent_data(agent, fam_key, started_by)  # ABAC на данных
     # КЭШ результатов (multi-user): тот же агент+данные+конфиг → отдаём сохранённый вывод без LLM/доставки.
     _cache_key = None
@@ -5990,6 +6034,7 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, sta
             # только счётчики находок.
             result["summary_lines"] = run_summary(result)
 
+            result["op_ids"] = _ops_прогона
             saved = await run_store.save(result)
             _dt = time.perf_counter() - _t0
             obs.inc("abop_run_cache_total", hit="true")
@@ -6315,6 +6360,7 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, sta
     # том, что именно нашли, хотя каждый навык отдал по 3–6 тысяч знаков. Найдено стресс-тестом 05.10.
     result["summary_lines"] = run_summary(result)
     _entries = result.pop("board_entries", None) or []
+    result["op_ids"] = _ops_прогона
     saved = await run_store.save(result)
     if _entries:
         try:

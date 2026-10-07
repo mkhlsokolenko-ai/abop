@@ -2551,7 +2551,7 @@ class Component extends DCLogic {
     selectedNode: 'c3', rights: 2, drafting: false,
     fleetTab: 'Карта процессов', canvasMode: 'build', zoom: 1, mapZoom: 1, mapFull: false, navOpen: true, paletteOpen: true, showRunOverlay: true,
     userScenarios: {}, tree: null, procSeats: [], procRevision: 0, procVersion: 0, procDraft: null,
-    procAreas: {}, procEditable: [], procEditors: [], procChanges: [], procLoaded: false,
+    procAreas: {}, procEditable: [], procEditors: [], procChanges: [], procLoaded: false, procLiveness: null,
     path: ['org'], mapLayer: 'AS-IS', mapLive: false, selOp: null, mapDrawer: null, renameText: '', lens: 'build', guardTo: null, fromOps: null,
     deployments: [], instances: [], findingsList: [], findingsMetrics: null, findingsRuns: [], findingsLoading: false, findingCard: null, findingsFilterRun: null, findingFrom: null, labelDecision: '', labelManual: false, labelComment: '', fleetReal: false, fleetAlertsReal: [], fleetSeries: [], fleetQueue: null, fleetHitl: 0, rollbackDiffReal: null, rollbackPrevVersion: '', deployAgentId: null,
     liveFrozen: false, fleetFilter: 'все',
@@ -2572,7 +2572,7 @@ class Component extends DCLogic {
         self.setState({catalogCoverage: by, coverageTotals: cv.totals||null});
       }).catch(function(){});
     }).catch(function(){});
-    this.loadProcessMap(); this.refreshContracts(); this.loadData(); this.loadConfig(); this.loadBilling(); this.loadRbac(); this.loadUserData(); this.loadFleet(); this.loadFindings(); this.loadRuns(); this.loadSystems();
+    this.loadProcessMap(); this.loadLiveness(); this.refreshContracts(); this.loadData(); this.loadConfig(); this.loadBilling(); this.loadRbac(); this.loadUserData(); this.loadFleet(); this.loadFindings(); this.loadRuns(); this.loadSystems();
   }
   loadConfig() {
     var self = this;
@@ -2993,7 +2993,7 @@ class Component extends DCLogic {
   componentWillUnmount() {
     [this.snapTimer, this.fleetTimer, this.timer, this.toastTimer, this.hitlTimer].forEach(t => clearInterval(t));
     [this.persistTimer, this.autoSaveTimer, this.planTimer, this.pendingDelTimer].forEach(t => clearTimeout(t));
-    clearInterval(this.procWatchTimer); this.unwatchProcess();
+    clearInterval(this.procWatchTimer); clearInterval(this.livenessTimer); this.unwatchProcess();
     try { document.removeEventListener('keydown', this.onKey); document.removeEventListener('mousedown', this.onDocClick); window.removeEventListener('hashchange', this.onHash); } catch (e) {}
     if (window.__abopLive === this) window.__abopLive = null;
   }
@@ -3045,6 +3045,11 @@ class Component extends DCLogic {
       }
     };
     document.addEventListener('keydown', this.onKey);
+    // Подтверждение считаем раз в минуту и только когда линза открыта: это не живой флот.
+    this.livenessTimer = setInterval(() => {
+      if (!this.isCurrent()) { clearInterval(this.livenessTimer); return; }
+      if (this.state.screen === 'canvas' && this.state.lens === 'ops') this.loadLiveness();
+    }, 60000);
     this.procWatchTimer = setInterval(() => {
       if (!this.isCurrent()) { clearInterval(this.procWatchTimer); return; }
       const надо = this.state.screen === 'canvas' && this.state.lens === 'ops';
@@ -3425,7 +3430,28 @@ class Component extends DCLogic {
         layer: seat.state === 'planned' ? 'TO-BE' : 'AS-IS'
       };
     };
+    // Экземпляры считаем по РАЗНЫМ агентам: группа — это N посадок одного агента, и суммировать
+    // его экземпляры по каждой посадке значит множить одно и то же число (видно на подпроцессе).
+    const liveOfAssigns = (asg) => {
+      const агенты = [];
+      asg.forEach(a => { if (агенты.indexOf(a.audit_id || a.dep) < 0) агенты.push(a.audit_id || a.dep); });
+      return agentsLiveSum(агенты);
+    };
+    const agentsLiveSum = (ids) => ids.reduce((n, id) => n + this.liveOf(id), 0);
     const seatVisible = (seat) => s.mapLayer === 'TO-BE' ? true : (seat.state || 'actual') !== 'planned';
+    // Подтверждение участка: признак выводится из прогонов, а не лежит рядом с посадкой.
+    const живость = (s.procLiveness || {}).ops || {};
+    const окноДней = (s.procLiveness || {}).window_days || 7;
+    const подтверждение = (opId) => {
+      const z = живость[opId];
+      if (!z) return null;
+      if (z.state === 'осиротел') return { label: 'осиротел — агент в Лимбе', fg: 'var(--err-ink)', dot: '#ef4444' };
+      if (z.state === 'подтверждён') return {
+        label: 'подтверждён · ' + z.runs + ' ' + this.plural(z.runs, 'прогон', 'прогона', 'прогонов') + ' за ' + окноДней + 'д',
+        fg: 'var(--ok-ink)', dot: '#10b981' };
+      return { label: z.silent_days === null ? 'тихо — прогонов не было' : ('тихо ' + z.silent_days + ' ' + this.plural(z.silent_days, 'день', 'дня', 'дней')),
+               fg: 'var(--warn-ink)', dot: '#f59e0b' };
+    };
     // Живое доступно только поверх факта: наложение на план ничего не значит.
     const живое = !!s.mapLive && s.mapLayer === 'AS-IS';
     const mapVisAssigns = (s.procSeats || []).filter(seatVisible).map(seatToAssign);
@@ -3649,7 +3675,7 @@ class Component extends DCLogic {
         };
       }),
       healthWindows: ['24ч', '7д', '30д'].map(w => ({
-        label: w, pick: () => this.setState({ healthWindow: w }),
+        label: w, pick: () => this.setState({ healthWindow: w }, () => this.loadLiveness()),
         bg: s.healthWindow === w ? 'var(--w12)' : 'transparent',
         fg: s.healthWindow === w ? 'var(--ink)' : 'var(--w45)'
       })),
@@ -3685,9 +3711,20 @@ class Component extends DCLogic {
       preflightText: preflightNeedsExternal && s.rights < 3
         ? ('Префлайт LUDA не пройден: участок «' + (mapCtx.label || '') + '» требует действия наружу (L3), а конверт агента — L' + s.rights + '. Поднимите права узла в линзе «Строю» или выберите другого агента.')
         : ('Префлайт LUDA пройден: периметр участка ⊆ права создателя, автономия L' + s.rights + ' ≤ контракт L3.'),
-      ctxEnvText: mapCtxAssigns.length
-        ? ('ре-аттестован 03.09 · периметр: 2 системы · автономия ' + mapCtxAssigns[0].autonomy + ' ≤ контракт LUDA')
-        : 'агента нет — конверт участка не задан. Периметр проверится при посадке агента.',
+      // Конверт участка — из развёртывания агента, который на нём сидит. Раньше здесь стояла
+      // строка-константа «ре-аттестован 03.09 · периметр: 2 системы» (разбор, Р10).
+      ctxEnvText: (() => {
+        if (!mapCtxAssigns.length) return 'агента нет — конверт участка не задан. Периметр проверится при посадке агента.';
+        const a = mapCtxAssigns[0];
+        const d = (s.deployments || []).find(x => String(x.id || '').split('.v')[0] === a.audit_id) || {};
+        const проверка = { ok: 'проверка пройдена', fail: 'проверка не пройдена',
+                           draft: 'не проверен', contract: 'по контракту LUDA' }[d.verify] || 'проверка не проводилась';
+        const части = ['автономия ' + (d.autonomy || a.autonomy || '—') + ' ≤ контракт', проверка];
+        if (d.status) части.push('развёртывание: ' + d.status);
+        if (d.since) части.push('с ' + d.since);
+        if (a.pin_version) части.push('версия закреплена v' + a.pin_version);
+        return части.join(' · ');
+      })(),
       ctxEnvFg: mapCtxAssigns.length ? 'var(--w65)' : 'var(--w45)',
       ctxAudit: () => { this.setState({ screen: 'security', secTab: 'Аудит ИБ', mapDrawer: null }); this.route('security'); },
       prodStrip: {
@@ -3920,6 +3957,19 @@ class Component extends DCLogic {
         ? ('здесь ещё: ' + (s.procEditors || []).filter(x => x !== ((s.me || {}).name)).join(', ')) : '',
       applyDraft: () => this.applyMapRevision(),
       dropDraft: () => this.dropMapRevision(),
+      // Агенты работают по триггерам, но ни на одной операции не сидят: карта отстала от жизни.
+      outsideShow: ((s.procLiveness || {}).outside || []).length > 0 && s.mapLayer === 'AS-IS',
+      outsideText: (() => {
+        const o = (s.procLiveness || {}).outside || [];
+        return 'Вне карты: ' + o.length + ' ' + this.plural(o.length,
+          'агент работает по триггерам, но не посажен ни на одну операцию',
+          'агента работают по триггерам, но не посажены ни на одну операцию',
+          'агентов работают по триггерам, но не посажены ни на одну операцию');
+      })(),
+      outsideWho: ((s.procLiveness || {}).outside || []).map(x => ({
+        label: (x.agent || x.audit_id) + ' · ' + x.runs + ' ' + this.plural(x.runs, 'прогон', 'прогона', 'прогонов'),
+        open: () => { this.setState({ screen: 'agents' }); this.route('agents'); }
+      })),
       mapEmpty: (mapCur.children || []).length === 0,
       opsW: opsLayout.w, opsH: opsLayout.h, opsCardH: (живое && s.startedOnce) ? 212 : 138,
       opsSizerW: Math.round(opsLayout.w * s.mapZoom), opsSizerH: Math.round(opsLayout.h * s.mapZoom),
@@ -3947,7 +3997,7 @@ class Component extends DCLogic {
         const trace = runOpState[c.id];
         const tone = trace ? traceTone[trace] : null;
         const traceStep = RUN_TRACE.steps.findIndex(x => x.op === c.id);
-        const live = asg.reduce((n, a) => n + this.liveOf(a.dep), 0);
+        const live = liveOfAssigns(asg);
         const hitl = s.instances.filter(i => i.status === 'HITL' && asg.some(a => a.dep === i.dep)).length;
         const err = asg.some(a => (s.deployments.find(d => d.id === a.dep) || {}).status === 'отозван');
         const planned = asg.length > 0 && asg.every(a => a.layer === 'TO-BE');
@@ -3976,6 +4026,10 @@ class Component extends DCLogic {
           shadow: s.selOp === c.id ? '0 0 0 2px rgba(129,140,248,.5)' : 'none',
           kindFg: k.fg, dot: err ? SEM.err.dot : hitl ? SEM.warn.dot : asg.length ? SEM.ok.dot : SEM.idle.dot,
           hasAgents: asg.length > 0,
+          confirmShow: !!(подтверждение(c.id) && asg.length && s.mapLayer === 'AS-IS'),
+          confirmLabel: (подтверждение(c.id) || {}).label || '',
+          confirmFg: (подтверждение(c.id) || {}).fg || 'var(--w50)',
+          confirmDot: (подтверждение(c.id) || {}).dot || 'var(--w30)',
           apeDot: err ? '#ef4444' : hitl ? '#f59e0b' : live ? '#818cf8' : 'var(--w30)',
           agentText: asg.length + (planned ? ' по плану' : (' · ' + live + ' экз.')),
           meta: (c.kind === 'process' || c.kind === 'subprocess')
@@ -4013,7 +4067,7 @@ class Component extends DCLogic {
       ctxTitle: mapCtx.label,
       ctxKpis: (() => {
         const asg = mapAssignsOf(mapCtx);
-        const live = asg.reduce((n, a) => n + this.liveOf(a.dep), 0);
+        const live = liveOfAssigns(asg);
         const hitl = s.instances.filter(i => i.status === 'HITL' && asg.some(a => a.dep === i.dep)).length;
         const err = asg.filter(a => (s.deployments.find(d => d.id === a.dep) || {}).status === 'отозван').length;
         return [
@@ -4032,7 +4086,7 @@ class Component extends DCLogic {
       ctxChildrenLabel: mapCtx.kind === 'org' ? 'звенья цепочки' : mapCtx.kind === 'process' ? 'подпроцессы' : 'операции',
       ctxChildRows: (mapCtx.children || []).map(c => {
         const asg = mapAssignsOf(c);
-        const live = asg.reduce((n, a) => n + this.liveOf(a.dep), 0);
+        const live = liveOfAssigns(asg);
         const hitl = s.instances.filter(i => i.status === 'HITL' && asg.some(a => a.dep === i.dep)).length;
         return {
           label: c.label, badge: asg.length ? (asg.length + ' аг · ' + live + ' экз') : '—',
@@ -5861,6 +5915,16 @@ class Component extends DCLogic {
       self.showToast('Карта не создана: ' + String((e && e.message) || e).slice(0, 120));
       return null;
     });
+  }
+
+  // Подтверждение AS-IS прогонами. Отдельно от флота: тот тикает раз в десять секунд, а
+  // подтверждение достаточно считать раз в минуту (ADR-044).
+  loadLiveness() {
+    var self = this, окно = { '24ч': '24h', '7д': '7d', '30д': '30d' }[this.state.healthWindow] || '7d';
+    return fetch('/api/process/liveness?window=' + окно)
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(d){ if (d) self.setState({ procLiveness: d }); return d; })
+      .catch(function(){ return null; });
   }
 
   // Подписка на поток правок: карта шевелится сама, когда рядом правит коллега. Содержимое события

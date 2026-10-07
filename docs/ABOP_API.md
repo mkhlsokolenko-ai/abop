@@ -121,6 +121,7 @@ SSE-события (по мере исполнения):
 | `DELETE /api/process/revision/{rev_id}` | отбросить черновик целиком |
 | `POST /api/process/revision/{rev_id}/apply` `{base_version}` | применить: строгая проверка `base_version`, префлайт посадок, одна транзакция на дерево и посадки |
 | `GET /api/process/stream?area=` | SSE: `hello` с номером версии и списком `editors`, затем `change`/`applied`/`poke`/`ping`. Heartbeat пишет присутствие |
+| `GET /api/process/liveness?window=24h\|7d\|30d` | подтверждение AS-IS прогонами: `{window_days, ops:{op_id:{runs,ok,last_at,silent_days,state}}, outside:[{audit_id,agent,runs,last_at}]}`. `state` — `подтверждён` / `тихо` / `осиротел`; `outside` — агенты, которые работают, но ни на одной операции не сидят |
 | `POST /api/process/map` `{tree, note}` | записать карту целиком новой применённой редакцией — вход для сида и миграции, **только admin** |
 
 Коды: `409` — конфликт правок, тело `{error, version, rivals:[{target,kind,author,seq}]}`; `422` —
@@ -135,7 +136,6 @@ SSE-события (по мере исполнения):
 | Метод · Путь | Что делает |
 |---|---|
 | `POST /api/process/revision/{rev_id}/submit` | на согласование — когда префлайт требует человека (ADR-013/014) |
-| `GET /api/process/liveness?window=7d` | подтверждение AS-IS прогонами: `{op_id:{runs,last_at,verdict_ok,orphan}}` (ADR-044, этап 3) |
 
 ---
 
