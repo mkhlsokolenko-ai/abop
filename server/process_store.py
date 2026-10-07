@@ -442,10 +442,16 @@ async def projection(area: str, *, layer: str = "as-is") -> dict:
     черновик = await draft_of(area) if layer == "to-be" else None
     if layer == "to-be" and дерево:
         дерево, посадки = наложение(дерево, посадки, (черновик or {}).get("changes") or [])
+    # Правки отдаём вместе с подписью цели из ПРИМЕНЁННОГО дерева: удалённый блок в наложении уже
+    # не найти, а в разборе редакции человек должен прочитать «блок «Скоринг» удалён», а не «o213».
+    правки = []
+    for c in (черновик or {}).get("changes") or []:
+        узел = найти(применено.get("tree") or {}, c.get("target"))
+        правки.append(dict(c, target_label=(узел or {}).get("label") or c.get("target")))
     return {"area": area, "layer": layer, "revision": применено.get("revision") or 0,
             "version": (черновик or {}).get("version") or 0, "tree": дерево, "seats": посадки,
             "draft": ({k: v for k, v in черновик.items() if k != "changes"} if черновик else None),
-            "changes": (черновик or {}).get("changes") or [],
+            "changes": правки,
             "applied_by": применено.get("applied_by"), "applied_at": применено.get("applied_at")}
 
 
@@ -686,7 +692,12 @@ async def apply(area: str, *, base_version: int, actor: str, preflight=None) -> 
                     "updated_at = now() WHERE id = %s", (actor, черновик["id"]))
     await _оповестить(area, {"type": "applied", "revision": номер, "author": actor})
     return {"area": area, "revision": номер, "seats_added": len(новые),
-            "seats_closed": len(снимаемые), "tree": дерево}
+            "seats_closed": len(снимаемые), "tree": дерево,
+            # сами посадки, а не только счётчик: вызывающей стороне надо знать, каких агентов
+            # разворачивать — «Принять план» это префлайт И деплой (ADR-042)
+            "seats": [{"op_id": s["op_id"], "audit_id": s["audit_id"],
+                       "pin_version": s.get("pin_version")} for s in новые],
+            "closed": [{"op_id": s["op_id"], "audit_id": s["audit_id"]} for s in снимаемые]}
 
 
 # ── присутствие ───────────────────────────────────────────────────────────────────────────────────

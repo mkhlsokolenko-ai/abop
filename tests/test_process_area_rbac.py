@@ -195,3 +195,32 @@ def test_разница_и_присутствие_читаются(клиент)
     assert d.status_code == 200 and [c["seq"] for c in d.json()["changes"]] == [1]
     assert клиент.get(f"/api/process/revision/{rid}/changes?since=1",
                       headers=БУХ_АНАЛИТИК).json()["changes"] == []
+
+
+def test_применение_разворачивает_посаженных_агентов(клиент, monkeypatch):
+    """«Принять план» — это префлайт И деплой: иначе карта утверждает, что агент работает участок,
+    а сам агент лежит черновиком и ни одного триггера не принимает (ADR-042)."""
+    import asyncio
+
+    from server import agent_store
+
+    asyncio.run(agent_store.save(name="Аудитор 1С", audit_id="audit-1c", version=1, graph={},
+                                 autonomy_max="A1", created_by="admin.abop", family="finance"))
+    assert asyncio.run(agent_store.get("audit-1c.v1"))["status"] == "draft"
+
+    r = _правка(клиент, БУХ_МЕНЕДЖЕР,
+                changes=[{"kind": "add_seat", "target": "o213", "payload": {"audit_id": "audit-1c"}}])
+    assert r.status_code == 200, r.text
+    rid, версия = r.json()["revision_id"], r.json()["version"]
+    ap = клиент.post(f"/api/process/revision/{rid}/apply", json={"base_version": версия},
+                     headers=БУХ_МЕНЕДЖЕР)
+    assert ap.status_code == 200, ap.text
+    assert ap.json()["deployed"] == ["audit-1c.v1"], ap.json()
+    assert asyncio.run(agent_store.get("audit-1c.v1"))["status"] == "deployed"
+
+
+def test_карта_не_кэшируется(клиент):
+    """Карта — живые данные. Браузер отдавал повторный одинаковый GET из кэша, и после создания
+    карты экран продолжал показывать «карта не создана», хотя на сервере она уже была."""
+    r = клиент.get("/api/process/map", headers=БУХ_АНАЛИТИК)
+    assert r.headers.get("cache-control") == "no-store", r.headers

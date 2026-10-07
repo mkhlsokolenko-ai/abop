@@ -152,3 +152,15 @@ def test_агент_садится_только_на_задачу(карта, у
         asyncio.run(ps.append(карта, base_version=0, author="@pm",
                               changes=[_правка("add_seat", узел, audit_id="audit-1c")]))
     assert вид in str(ex.value).lower() or "задач" in str(ex.value).lower()
+
+
+def test_применение_отдаёт_новые_посадки(карта):
+    """Применение возвращает сами посадки, а не только счётчик: вызывающей стороне надо знать,
+    каких агентов разворачивать (ADR-042: «Принять план» = префлайт + деплой)."""
+    итог = asyncio.run(ps.append(карта, base_version=0, author="@pm",
+                                 changes=[_правка("add_seat", "o213", audit_id="audit-1c"),
+                                          _правка("add_seat", "o214", audit_id="mailtasks")]))
+    готово = asyncio.run(ps.apply(карта, base_version=итог["version"], actor="@pm"))
+    assert готово["seats_added"] == 2
+    assert sorted(s["audit_id"] for s in готово["seats"]) == ["audit-1c", "mailtasks"]
+    assert sorted(s["op_id"] for s in готово["seats"]) == ["o213", "o214"]

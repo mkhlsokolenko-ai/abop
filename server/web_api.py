@@ -21,7 +21,7 @@ import time
 from pathlib import Path
 
 import re as _re
-from fastapi import Query, Depends, FastAPI, HTTPException, Request
+from fastapi import Query, Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
@@ -1232,10 +1232,14 @@ def _process_http(ex: Exception):
 
 
 @app.get("/api/process/map")
-async def process_map(layer: str = "as-is", area: str | None = None, u: dict = Depends(user)) -> dict:
+async def process_map(response: Response, layer: str = "as-is", area: str | None = None,
+                      u: dict = Depends(user)) -> dict:
     """Карта процессов для отрисовки. `as-is` — применённая редакция (факт, только чтение),
     `to-be` — она же с наложенным черновиком области. Читать может любой вошедший: карта — про
     цепочку создания ценности, и свой процесс человек должен видеть между чужими (ADR-045)."""
+    # Карта — живые данные: браузер отдавал повторный одинаковый GET из кэша, и после создания
+    # карты экран продолжал показывать «карта не создана», хотя на сервере она уже была.
+    response.headers["Cache-Control"] = "no-store"
     layer = "to-be" if str(layer).lower() == "to-be" else "as-is"
     область = (area or u.get("department") or "*")
     срез = await process_store.projection(область, layer=layer)
@@ -1261,7 +1265,13 @@ async def process_map_seed(body: dict, u: dict = Depends(user)) -> dict:
                                         note=str((body or {}).get("note") or ""))
     await audit_store.record(editor, "process.map.save", str(итог["revision"]),
                              {"note": итог.get("note")})
-    return итог
+    # Отдаём сразу готовый срез: клиенту не нужен второй запрос за только что записанной картой.
+    срез = await process_store.projection(process_store.КАРТА, layer="as-is")
+    дерево = срез.get("tree") or {}
+    области = {nid: process_store.area_of(дерево, nid) for nid in process_store.поддерево(дерево)}
+    return dict(срез, areas=области,
+                editable_areas=sorted({a for a in области.values() if can_edit_area(u, a)}),
+                editors=[], note=итог.get("note"))
 
 
 @app.post("/api/process/revision")
@@ -1289,8 +1299,10 @@ async def process_revision_append(body: dict, u: dict = Depends(user)) -> dict:
 
 
 @app.get("/api/process/revision/{rev_id}/changes")
-async def process_revision_changes(rev_id: str, since: int = 0, u: dict = Depends(user)) -> dict:
+async def process_revision_changes(response: Response, rev_id: str, since: int = 0,
+                                   u: dict = Depends(user)) -> dict:
     """Разница по номеру: клиент берёт только то, чего не видел. Читать может любой вошедший."""
+    response.headers["Cache-Control"] = "no-store"
     area = await _area_of_revision(rev_id)
     return {"revision_id": rev_id, "area": area, "since": since,
             "changes": await process_store.changes_since(area, since)}
@@ -1324,10 +1336,14 @@ async def process_revision_apply(rev_id: str, body: dict, u: dict = Depends(user
                                          actor=actor, preflight=_seat_preflight)
     except (process_store.Отказ, process_store.Конфликт) as ex:
         raise _process_http(ex) from ex
+    # «Принять план» — это префлайт И деплой. Иначе карта утверждает, что агент работает участок,
+    # а сам агент лежит черновиком и не принимает ни одного триггера (ADR-042).
+    развёрнуты = await _deploy_seated(итог.get("seats") or [], actor=actor)
     await audit_store.record(actor, "process.revision.apply", rev_id,
                              {"area": area, "revision": итог["revision"],
-                              "seats_added": итог["seats_added"], "seats_closed": итог["seats_closed"]})
-    return dict(итог, revision_id=rev_id)
+                              "seats_added": итог["seats_added"], "seats_closed": итог["seats_closed"],
+                              "deployed": развёрнуты})
+    return dict(итог, revision_id=rev_id, deployed=развёрнуты)
 
 
 @app.get("/api/process/stream")
@@ -1375,6 +1391,24 @@ async def _area_of_revision(rev_id: str) -> str:
         if черновик and черновик["id"] == rev_id:
             return area
     raise HTTPException(404, "нет открытой редакции с таким идентификатором")
+
+
+async def _deploy_seated(посадки: list[dict], *, actor: str) -> list[str]:
+    """Развернуть агентов, которых редакция посадила на участки. Уже развёрнутые и приостановленные
+    не трогаем: пауза — осознанное решение человека, и применение чужой редакции её не отменяет."""
+    развёрнуты: list[str] = []
+    for s in посадки:
+        версии = await agent_store.list_for(str(s.get("audit_id") or ""), limit=50)
+        if not версии:
+            continue
+        свежая = max(версии, key=lambda a: a.get("version") or 0)
+        if свежая.get("status") != "draft":
+            continue
+        await agent_store.set_status(свежая["id"], "deployed")
+        await audit_store.record(actor, "agent.status", свежая["id"],
+                                 {"status": "deployed", "reason": "посадка на участок " + str(s.get("op_id"))})
+        развёрнуты.append(свежая["id"])
+    return развёрнуты
 
 
 async def _seat_preflight(новые: list[dict]) -> list[str]:

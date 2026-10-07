@@ -855,7 +855,7 @@
                   </button>
                 </sc-for>
               </div>
-              <sc-if value="{{ isFleet }}" hint-placeholder-val="{{ false }}"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .9px; text-transform: uppercase; color: var(--w38);">слои</span><div style="display: flex; gap: 4px; padding: 4px; border-radius: 11px; background: var(--s55); border: 1px solid var(--w10);"><sc-for list="{{ mapLayers }}" as="lay" hint-placeholder-count="3"><button sc-camel-on-click="{{ lay.pick }}" title="{{ lay.hint }}" style="padding: 6px 12px; border: none; border-radius: 8px; background: {{ lay.bg }}; color: {{ lay.fg }}; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600;">{{ lay.label }}</button></sc-for></div><span style="font-size: 12px; color: var(--w66);">{{ mapLayerHint }}</span><sc-if value="{{ fleetDemo }}" hint-placeholder-val="{{ false }}"><span title="Экземпляры и развёртывания — демонстрационные, пока нет реальных прогонов" style="padding: 4px 10px; border-radius: 9999px; background: rgba(245,158,11,.14); border: 1px solid rgba(245,158,11,.35); color: var(--warn-ink); font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700;">демо-данные</span></sc-if></sc-if>
+              <sc-if value="{{ isFleet }}" hint-placeholder-val="{{ false }}"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .9px; text-transform: uppercase; color: var(--w38);">слои</span><div style="display: flex; gap: 4px; padding: 4px; border-radius: 11px; background: var(--s55); border: 1px solid var(--w10);"><sc-for list="{{ mapLayers }}" as="lay" hint-placeholder-count="3"><button sc-camel-on-click="{{ lay.pick }}" title="{{ lay.hint }}" style="padding: 6px 12px; border: none; border-radius: 8px; background: {{ lay.bg }}; color: {{ lay.fg }}; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600;">{{ lay.label }}</button></sc-for></div><button sc-camel-on-click="{{ toggleLive }}" title="{{ liveHint }}" style="display: flex; align-items: center; gap: 7px; padding: 5px 12px; border-radius: 9999px; background: {{ liveBg }}; border: 1px solid {{ liveBorder }}; color: {{ liveFg }}; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600;"><span style="width: 7px; height: 7px; border-radius: 9999px; background: {{ liveDot }};"></span>{{ liveLabel }}</button><span style="font-size: 12px; color: var(--w66);">{{ mapLayerHint }}</span><sc-if value="{{ fleetDemo }}" hint-placeholder-val="{{ false }}"><span title="Экземпляры и развёртывания — демонстрационные, пока нет реальных прогонов" style="padding: 4px 10px; border-radius: 9999px; background: rgba(245,158,11,.14); border: 1px solid rgba(245,158,11,.35); color: var(--warn-ink); font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700;">демо-данные</span></sc-if></sc-if>
             </div>
 
             
@@ -2433,7 +2433,7 @@ const SEED_MEMORY = {
     { id: 'i4', text: 'Существенные заключения — только под подтверждение главбуха (HITL)', cls: 'crit', ttl: 'без TTL' }
   ]
 };
-const PERSIST_KEYS = ['screen','settingsTab','dataTab','secTab','fleetTab','canvasMode','lens','navOpen','paletteOpen','path','mapLayer','reviseOf','scenario','canvasNodes','edges','agentStatus','savedAt','modeFilter','familyFilter','inspectorOpen','selOp'];
+const PERSIST_KEYS = ['screen','settingsTab','dataTab','secTab','fleetTab','canvasMode','lens','navOpen','paletteOpen','path','mapLayer','mapLive','reviseOf','scenario','canvasNodes','edges','agentStatus','savedAt','modeFilter','familyFilter','inspectorOpen','selOp'];
 
 const SCENARIOS = {
   fin: {
@@ -2551,8 +2551,8 @@ class Component extends DCLogic {
     selectedNode: 'c3', rights: 2, drafting: false,
     fleetTab: 'Карта процессов', canvasMode: 'build', zoom: 1, mapZoom: 1, mapFull: false, navOpen: true, paletteOpen: true, showRunOverlay: true,
     userScenarios: {}, tree: null, procSeats: [], procRevision: 0, procVersion: 0, procDraft: null,
-    procAreas: {}, procEditable: [], procEditors: [], procLoaded: false,
-    path: ['org'], mapLayer: 'LIVE', selOp: null, mapDrawer: null, renameText: '', lens: 'build', guardTo: null, fromOps: null,
+    procAreas: {}, procEditable: [], procEditors: [], procChanges: [], procLoaded: false,
+    path: ['org'], mapLayer: 'AS-IS', mapLive: false, selOp: null, mapDrawer: null, renameText: '', lens: 'build', guardTo: null, fromOps: null,
     deployments: [], instances: [], findingsList: [], findingsMetrics: null, findingsRuns: [], findingsLoading: false, findingCard: null, findingsFilterRun: null, findingFrom: null, labelDecision: '', labelManual: false, labelComment: '', fleetReal: false, fleetAlertsReal: [], fleetSeries: [], fleetQueue: null, fleetHitl: 0, rollbackDiffReal: null, rollbackPrevVersion: '', deployAgentId: null,
     liveFrozen: false, fleetFilter: 'все',
     deployTarget: null, deployVersion: 'v3', deployArea: 'оценка заявок', deployTrigger: 'событие Data Plane', deployLimit: 3, deployAutonomy: 2,
@@ -3064,7 +3064,10 @@ class Component extends DCLogic {
       }
       if (!Array.isArray(this.state.procSeats)) this.setState({ procSeats: [] });
       if (!Array.isArray(this.state.instances)) this.setState({ instances: [] });
-      if (['AS-IS', 'TO-BE', 'LIVE'].indexOf(this.state.mapLayer) < 0) this.setState({ mapLayer: 'LIVE' });
+      // Слоёв два: это проекции одной карты. Живое — независимый тумблер поверх факта, а не
+      // третий вариант чертежа (ADR-042, часть 4). Сохранённое 'LIVE' переводим в AS-IS + живое.
+      if (this.state.mapLayer === 'LIVE') this.setState({ mapLayer: 'AS-IS', mapLive: true });
+      if (['AS-IS', 'TO-BE'].indexOf(this.state.mapLayer) < 0) this.setState({ mapLayer: 'AS-IS' });
       if (['build', 'run', 'ops', 'envelope'].indexOf(this.state.lens) < 0) this.setState({ lens: 'build' });
       if (!this.allScenarios()[this.state.scenario]) this.setState({ scenario: 'fin' });
     } catch (e) { this.setState({ path: ['org'], selOp: null }); }
@@ -3256,7 +3259,7 @@ class Component extends DCLogic {
           open: () => this.setState({ modal: 'node', popNodeId: x.id }),
           onMap: () => {
             const step = RUN_TRACE.steps.find(t => t.node === x.id);
-            this.setState({ lens: 'ops', path: RUN_TRACE.path.slice(), mapLayer: 'LIVE', selOp: step ? step.op : null });
+            this.setState({ lens: 'ops', path: RUN_TRACE.path.slice(), mapLayer: 'AS-IS', mapLive: true, selOp: step ? step.op : null });
             this.showToast(step ? ('Карта · операция «' + step.label + '»') : 'Карта процесса');
           },
           inGraph: () => { this.setState({ lens: 'build', showRunOverlay: true, selectedNode: x.id }); this.showToast('Граф · узел ' + x.skill); }
@@ -3423,6 +3426,8 @@ class Component extends DCLogic {
       };
     };
     const seatVisible = (seat) => s.mapLayer === 'TO-BE' ? true : (seat.state || 'actual') !== 'planned';
+    // Живое доступно только поверх факта: наложение на план ничего не значит.
+    const живое = !!s.mapLive && s.mapLayer === 'AS-IS';
     const mapVisAssigns = (s.procSeats || []).filter(seatVisible).map(seatToAssign);
     const mapAssignsOf = (node) => {
       const leaves = this.leafIds(node);
@@ -3430,12 +3435,12 @@ class Component extends DCLogic {
     };
     const mapCtx = (s.selOp ? this.findNode(s.selOp) : null) || mapCur;
     const mapCtxAssigns = mapAssignsOf(mapCtx);
-    const mapOpInstances = (s.mapLayer === 'LIVE' && s.selOp && !(mapCtx.children || []).length)
+    const mapOpInstances = (живое && s.selOp && !(mapCtx.children || []).length)
       ? s.instances.filter(i => i.phase !== 'out' && mapCtxAssigns.some(a => a.dep === i.dep))
       : [];
     const opsLayout = (() => {
       const kids = mapCur.children || [];
-      const cardH = (s.mapLayer === 'LIVE' && s.startedOnce) ? 232 : 156;
+      const cardH = (живое && s.startedOnce) ? 232 : 156;
       const perRow = 3, colW = 262, rowH = cardH + 62, x0 = 26, y0 = 26, nodeW = 212;
       const pos = {};
       kids.forEach((c, i) => {
@@ -3826,13 +3831,28 @@ class Component extends DCLogic {
       })(),
       mapTitle: mapCur.label,
       mapSubtitle: mapLevelNote,
-      mapEditable: s.mapLayer !== 'LIVE',
-      mapLive: s.mapLayer === 'LIVE',
+      mapEditable: s.mapLayer === 'TO-BE',      // факт не правят: правка живёт в редакции
+      mapLive: живое,
       canLevelUp: mapPath.length > 1,
       levelUp: () => this.setState({ path: mapPath.slice(0, -1), selOp: null }),
       mapZoomPct: Math.round(s.mapZoom * 100) + '%', mapZoomVal: s.mapZoom,
       mapZoomW: Math.round(100 / s.mapZoom) + '%',
-      mapLayerHint: { 'AS-IS': 'как процесс работает сейчас — схема редактируется', 'TO-BE': 'плановое размещение агентов — схема редактируется', 'LIVE': 'живое наложение — только наблюдение' }[s.mapLayer] || '',
+      mapLayerHint: s.mapLayer === 'TO-BE'
+        ? 'факт с наложенной редакцией — здесь правят схему и сажают агентов'
+        : 'факт: как процесс работает сейчас. Чтобы менять — перейдите в TO-BE',
+      // Живое — не слой, а наложение поверх факта: оно ничего не рисует своего.
+      liveOn: живое, liveAvailable: s.mapLayer === 'AS-IS',
+      liveLabel: живое ? 'живое включено' : 'живое',
+      liveBg: живое ? 'rgba(52,211,153,.16)' : 'var(--w4)',
+      liveBorder: живое ? 'rgba(52,211,153,.42)' : 'var(--w10)',
+      liveFg: живое ? 'var(--ok-ink)' : (s.mapLayer === 'AS-IS' ? 'var(--w55)' : 'var(--w30)'),
+      liveDot: живое ? '#34d399' : 'var(--w20)',
+      liveHint: s.mapLayer === 'AS-IS' ? 'подсветить тех, кто работает прямо сейчас'
+        : 'живое показывается поверх факта — переключитесь на AS-IS',
+      toggleLive: () => {
+        if (s.mapLayer !== 'AS-IS') { this.showToast('Живое наложение показывается поверх факта — перейдите на AS-IS'); return; }
+        this.setState({ mapLive: !s.mapLive });
+      },
       fleetPanels: [
         { id: 'reg', label: 'Реестр', hint: 'развёртывания и жизненный цикл версий', badge: '' },
         { id: 'live', label: 'Живые', hint: 'экземпляры, работающие прямо сейчас', badge: String(s.instances.filter(i => i.phase === 'live').length) },
@@ -3853,9 +3873,8 @@ class Component extends DCLogic {
       mapZoneZ: s.mapFull ? 90 : 'auto', mapZonePad: s.mapFull ? '20px 24px' : '0',
       mapZoneBg: s.mapFull ? 'var(--bg)' : 'transparent', mapZoneOverflow: s.mapFull ? 'auto' : 'visible',
       mapLayers: [
-        { id: 'AS-IS', hint: 'как процесс работает сейчас' },
-        { id: 'TO-BE', hint: 'как будет: плановые агенты видны' },
-        { id: 'LIVE', hint: 'живое наложение: кто работает прямо сейчас' }
+        { id: 'AS-IS', hint: 'факт: как процесс работает сейчас. Только чтение' },
+        { id: 'TO-BE', hint: 'редакция: факт с наложенным черновиком. Здесь правят' }
       ].map(l => ({
         label: l.id, hint: l.hint,
         pick: () => this.setState({ mapLayer: l.id, selOp: null }, () => this.loadProcessMap(true)),
@@ -3872,6 +3891,27 @@ class Component extends DCLogic {
       // Полоса редакции. Полная панель с разбором изменений — этап 2; здесь минимум, без которого
       // черновик был бы тупиком: сколько правок, применить, отбросить.
       draftOpen: !!(s.procDraft && s.mapLayer === 'TO-BE'),
+      // Редакцию подписывают, значит человек должен видеть, ЧТО именно он применяет. Список правок
+      // и есть diff: считать разницу двух деревьев не нужно, она прямо лежит в журнале (ADR-046).
+      draftChanges: ((s.procDraft ? (s.procChanges || []) : []).map(c => {
+        const груз = c.payload || {};
+        const имя = c.target_label || c.target;   // подпись цели пришла с сервера
+        const агент = (() => {
+          const a = (s.agentsList || []).find(x =>
+            (x.contract_audit_id || String(x.id || '').split('.v')[0]) === груз.audit_id);
+          return (a && a.name) || груз.audit_id || 'агент';
+        })();
+        const по_видам = {
+          add_seat:    { sign: '+', text: агент + ' → «' + имя + '»', fg: 'var(--ok-ink)' },
+          drop_seat:   { sign: '−', text: агент + ' снят с «' + имя + '»', fg: 'var(--err-ink)' },
+          add_node:    { sign: '+', text: 'блок «' + (груз.label || '') + '» в «' + имя + '»', fg: 'var(--ok-ink)' },
+          drop_node:   { sign: '−', text: 'блок «' + имя + '» удалён', fg: 'var(--err-ink)' },
+          rename_node: { sign: '·', text: '«' + имя + '» → «' + (груз.label || '') + '»', fg: 'var(--acc-ink)' },
+          move_node:   { sign: '·', text: '«' + имя + '» сдвинут', fg: 'var(--acc-ink)' }
+        };
+        const в = по_видам[c.kind] || { sign: '·', text: c.kind + ' ' + c.target, fg: 'var(--w60)' };
+        return { sign: в.sign, text: в.text, fg: в.fg, author: c.author || '', seq: String(c.seq) };
+      })),
       draftText: s.procDraft
         ? ('Редакция · ' + s.procVersion + ' ' + this.plural(s.procVersion, 'правка', 'правки', 'правок')
            + (s.procDraft.author ? ' · ' + s.procDraft.author : ''))
@@ -3881,7 +3921,7 @@ class Component extends DCLogic {
       applyDraft: () => this.applyMapRevision(),
       dropDraft: () => this.dropMapRevision(),
       mapEmpty: (mapCur.children || []).length === 0,
-      opsW: opsLayout.w, opsH: opsLayout.h, opsCardH: (s.mapLayer === 'LIVE' && s.startedOnce) ? 212 : 138,
+      opsW: opsLayout.w, opsH: opsLayout.h, opsCardH: (живое && s.startedOnce) ? 212 : 138,
       opsSizerW: Math.round(opsLayout.w * s.mapZoom), opsSizerH: Math.round(opsLayout.h * s.mapZoom),
       opsGrid: Math.round(22 * s.mapZoom) + 'px ' + Math.round(22 * s.mapZoom) + 'px',
       opsTabTop: s.mapFull ? 120 : 300,
@@ -3893,13 +3933,13 @@ class Component extends DCLogic {
       runBarCta: runOnThisPath ? 'Открыть пульт ▸' : 'Перейти к участку ▸',
       runBarGo: () => {
         if (runOnThisPath) { this.openRunLens(); return; }
-        this.setState({ path: RUN_TRACE.path.slice(), selOp: RUN_TRACE.steps[currentStepIdx].op, mapLayer: 'LIVE' });
+        this.setState({ path: RUN_TRACE.path.slice(), selOp: RUN_TRACE.steps[currentStepIdx].op, mapLayer: 'AS-IS', mapLive: true });
         this.showToast('Карта · ' + RUN_TRACE.pathLabel);
       },
       runPathLabel: RUN_TRACE.pathLabel,
       runStepLabel: 'шаг ' + (currentStepIdx + 1) + ' из ' + RUN_TRACE.steps.length + ' · ' + RUN_TRACE.steps[currentStepIdx].label,
       runStepTone: traceTone[traceStatus(currentStepIdx)].fg,
-      goRunPath: () => { this.setState({ path: RUN_TRACE.path.slice(), selOp: RUN_TRACE.steps[currentStepIdx].op, mapLayer: 'LIVE', lens: 'ops' }); this.showToast('Карта · ' + RUN_TRACE.pathLabel); },
+      goRunPath: () => { this.setState({ path: RUN_TRACE.path.slice(), selOp: RUN_TRACE.steps[currentStepIdx].op, mapLayer: 'AS-IS', mapLive: true, lens: 'ops' }); this.showToast('Карта · ' + RUN_TRACE.pathLabel); },
       goRunPult: () => this.openRunLens(),
       opsNodes: (mapCur.children || []).map((c, idx, arr) => {
         const k = OP_KINDS[c.kind] || OP_KINDS.task;
@@ -3918,7 +3958,7 @@ class Component extends DCLogic {
           autonomy: asg.length ? asg[0].autonomy : '',
           remove: () => this.removeBlock(c.id),
           label: c.label, tag: planned ? k.tag + ' · план' : k.tag, glyph: k.glyph,
-          runActive: !!tone && s.mapLayer === 'LIVE' && trace !== 'idle',
+          runActive: !!tone && живое && trace !== 'idle',
           runRing: tone && trace !== 'idle' ? tone.ring : 'transparent',
           runLabel: tone ? (tone.label + ' · шаг ' + (traceStep + 1)) : '',
           runFg: tone ? tone.fg : 'var(--w50)',
@@ -4002,7 +4042,7 @@ class Component extends DCLogic {
             : this.setState({ selOp: c.id, renameText: c.label })
         };
       }),
-      ctxEditable: s.mapLayer !== 'LIVE' && !!s.selOp,
+      ctxEditable: s.mapLayer === 'TO-BE' && !!s.selOp,
       renameText: s.renameText,
       setRename: (e) => this.setState({ renameText: e.target.value }),
       applyRename: () => { if (s.selOp && s.renameText.trim()) { this.renameBlock(s.selOp, s.renameText.trim()); this.showToast('Блок переименован'); } },
@@ -4074,8 +4114,8 @@ class Component extends DCLogic {
       regDrawer: s.mapDrawer === 'reg', liveDrawer: s.mapDrawer === 'live', healthDrawer: s.mapDrawer === 'health',
       paletteOpen: s.paletteOpen !== false,
       paletteHidden: s.paletteOpen === false,
-      opsPaletteOpen: s.mapLayer !== 'LIVE' && s.paletteOpen !== false,
-      opsPaletteHidden: s.mapLayer !== 'LIVE' && s.paletteOpen === false,
+      opsPaletteOpen: s.mapLayer === 'TO-BE' && s.paletteOpen !== false,
+      opsPaletteHidden: s.mapLayer === 'TO-BE' && s.paletteOpen === false,
       hidePalette: () => this.setState({ paletteOpen: false }),
       showPalette: () => this.setState({ paletteOpen: true }),
       navOpen: s.navOpen !== false,
@@ -4787,7 +4827,7 @@ class Component extends DCLogic {
         this.setState({ lens: 'build', showRunOverlay: true, selectedNode: st4.node || s.selectedNode });
         this.showToast('Граф · шаг «' + st4.label + '»');
       },
-      goTraceOnMap: () => { this.setState({ lens: 'ops', path: RUN_TRACE.path.slice(), mapLayer: 'LIVE', selOp: RUN_TRACE.steps[currentStepIdx].op }); this.showToast('Карта · ' + RUN_TRACE.pathLabel); },
+      goTraceOnMap: () => { this.setState({ lens: 'ops', path: RUN_TRACE.path.slice(), mapLayer: 'AS-IS', mapLive: true, selOp: RUN_TRACE.steps[currentStepIdx].op }); this.showToast('Карта · ' + RUN_TRACE.pathLabel); },
       zonePos: s.canvasFull ? 'fixed' : 'relative', zoneInset: s.canvasFull ? '0' : 'auto',
       zoneZ: s.canvasFull ? 90 : 'auto', zonePad: s.canvasFull ? '16px' : '0',
       zoneBg: s.canvasFull ? 'var(--bg)' : 'transparent', zoneOverflow: s.canvasFull ? 'auto' : 'visible',
@@ -5777,25 +5817,50 @@ class Component extends DCLogic {
     var url = '/api/process/map?layer=' + layer + '&area=' + encodeURIComponent(this.procArea());
     return fetch(url).then(function(r){ return r.ok ? r.json() : null; }).then(function(d){
       if (!d || !d.tree) {
-        // Карты на стенде ещё нет. Админу создаём её из сида TREE один раз (запись идёт в аудит),
-        // остальным честно показываем пустое состояние: выдумывать карту в браузере нельзя.
-        if (!self._procSeeded) {
-          self._procSeeded = true;
-          return fetch('/api/process/map', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-                                             body: JSON.stringify({ tree: TREE, note: 'первичный сид карты' }) })
-            .then(function(r){ if (r.ok) return self.loadProcessMap(true); self.setState({ procLoaded: true }); return null; })
-            .catch(function(){ self.setState({ procLoaded: true }); return null; });
-        }
+        // Карты на стенде ещё нет: создаём её из сида TREE один раз. Право на это проверяет сервер
+        // (ручка только для admin) — остальным честно показываем пустое состояние, выдумывать карту
+        // в браузере нельзя. Сид вынесен в отдельный метод: рекурсия внутри .then молча срывалась,
+        // а глухой catch это прятал (та же болезнь, что в разборе под Р4).
         self.setState({ procLoaded: true });
+        if (!self._procSeeded) { self._procSeeded = true; self.seedProcessMap(); }
         return null;
       }
-      self.setState({
-        tree: d.tree, procSeats: d.seats || [], procRevision: d.revision || 0,
-        procVersion: d.version || 0, procDraft: d.draft || null, procAreas: d.areas || {},
-        procEditable: d.editable_areas || [], procEditors: d.editors || [], procLoaded: true
-      }, function(){ try { self.sanitize(); } catch (e) {} });
+      self._applyMap(d);
       return d;
     }).catch(function(){ if (!silent) self.setState({ procLoaded: true }); return null; });
+  }
+
+  // Один вход для состояния карты: и обычная загрузка, и ответ на сид кладут срез одинаково.
+  _applyMap(d) {
+    var self = this;
+    this.setState({
+      tree: d.tree, procSeats: d.seats || [], procRevision: d.revision || 0,
+      procVersion: d.version || 0, procDraft: d.draft || null, procAreas: d.areas || {},
+      procEditable: d.editable_areas || [], procEditors: d.editors || [],
+      procChanges: d.changes || [], procLoaded: true
+    }, function(){ try { self.sanitize(); } catch (e) {} });
+  }
+
+  // Первичный сид карты. Ответ уже содержит готовый срез — второй запрос за только что записанной
+  // картой не нужен, а значит нечему и срываться между запросами.
+  seedProcessMap() {
+    var self = this;
+    return fetch('/api/process/map', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tree: TREE, note: 'первичный сид карты' })
+    }).then(function(r){
+      if (!r.ok) {
+        if (r.status !== 403) self.showToast('Карта не создана: сервер ответил ' + r.status);
+        return null;
+      }
+      return r.json();
+    }).then(function(d){
+      if (d && d.tree) self._applyMap(d);
+      return d;
+    }).catch(function(e){
+      self.showToast('Карта не создана: ' + String((e && e.message) || e).slice(0, 120));
+      return null;
+    });
   }
 
   // Подписка на поток правок: карта шевелится сама, когда рядом правит коллега. Содержимое события
