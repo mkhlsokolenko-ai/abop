@@ -2552,7 +2552,7 @@ class Component extends DCLogic {
     fleetTab: 'Карта процессов', canvasMode: 'build', zoom: 1, mapZoom: 1, mapFull: false, navOpen: true, paletteOpen: true, showRunOverlay: true,
     userScenarios: {}, tree: null, procSeats: [], procRevision: 0, procVersion: 0, procDraft: null,
     procAreas: {}, procEditable: [], procEditors: [], procChanges: [], procLoaded: false, procLiveness: null,
-    adminRbacReason: '', procApprovalReason: '', opsDrag: null, opsLinkFrom: null,
+    adminRbacReason: '', procApprovalReason: '', opsDrag: null, opsLinkFrom: null, outsideOpen: false,
     opsLinkKind: 'seq', opsDropHover: false,
     path: ['org'], mapLayer: 'AS-IS', mapLive: false, selOp: null, mapDrawer: null, renameText: '', lens: 'build', guardTo: null, fromOps: null,
     deployments: [], instances: [], findingsList: [], findingsMetrics: null, findingsRuns: [], findingsLoading: false, findingCard: null, findingsFilterRun: null, findingFrom: null, labelDecision: '', labelManual: false, labelComment: '', fleetReal: false, fleetAlertsReal: [], fleetSeries: [], fleetQueue: null, fleetHitl: 0, rollbackDiffReal: null, rollbackPrevVersion: '', deployAgentId: null,
@@ -4051,7 +4051,13 @@ class Component extends DCLogic {
           'агента работают по триггерам, но не посажены ни на одну операцию',
           'агентов работают по триггерам, но не посажены ни на одну операцию');
       })(),
-      outsideWho: ((s.procLiveness || {}).outside || []).map(x => ({
+      // Свёрнута по умолчанию: на живом стенде «вне карты» легко оказывается десяток агентов, и
+      // развёрнутый список заслоняет саму карту. Разворачивается кликом по полосе.
+      outsideOpen: !!s.outsideOpen,
+      outsideToggle: () => this.setState({ outsideOpen: !s.outsideOpen }),
+      outsideGlyph: s.outsideOpen ? '▴' : '▾',
+      outsideMore: s.outsideOpen ? 'свернуть' : 'показать кто',
+      outsideWho: (s.outsideOpen ? ((s.procLiveness || {}).outside || []) : []).map(x => ({
         label: (x.agent || x.audit_id) + ' · ' + x.runs + ' ' + this.plural(x.runs, 'прогон', 'прогона', 'прогонов'),
         open: () => { this.setState({ screen: 'agents' }); this.route('agents'); }
       })),
