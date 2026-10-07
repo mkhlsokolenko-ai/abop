@@ -829,7 +829,7 @@
 
     <header style="position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 18px; padding: 14px 32px; background: var(--s78); border-bottom: 1px solid var(--w8); backdrop-filter: blur(18px);">
       <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--w66);">
-        <span>ABOP</span><span style="opacity: .4;">/</span><span style="color: var(--ink); font-weight: 600;">{{ crumb }}</span>
+        <span>ABOP</span><span style="opacity: .4;">/</span><span style="color: var(--ink); font-weight: 600;">{{ crumb }}</span><sc-if value="{{ backToMapShow }}" hint-placeholder-val="{{ false }}"><button sc-camel-on-click="{{ backToMap }}" title="Вернуться туда, откуда вы ушли на карте" style="margin-left: 10px; padding: 4px 11px; border: 1px solid rgba(129,140,248,.4); border-radius: 9999px; background: rgba(99,102,241,.12); color: var(--acc-ink2); font-size: 11.5px;">{{ backToMapText }}</button></sc-if>
       </div>
       <button sc-camel-on-click="{{ openCmdk }}" aria-label="Поиск по среде, Ctrl+K" aria-keyshortcuts="Control+K Meta+K" style="display: flex; align-items: center; gap: 10px; margin-left: auto; padding: 8px 14px; border: 1px solid var(--w10); border-radius: 10px; background: var(--w4); color: var(--w50); font-size: 12.5px;" style-hover="background: var(--w8); color: var(--ink);">
         <span>Поиск по среде</span>
@@ -3726,7 +3726,18 @@ class Component extends DCLogic {
         return части.join(' · ');
       })(),
       ctxEnvFg: mapCtxAssigns.length ? 'var(--w65)' : 'var(--w45)',
-      ctxAudit: () => { this.setState({ screen: 'security', secTab: 'Аудит ИБ', mapDrawer: null }); this.route('security'); },
+      ctxAudit: () => {
+        // Уход на другой экран запоминает место на карте: раньше путь и выбранная операция
+        // терялись, и возвращаться приходилось руками через зум (разбор, Р12).
+        // Админ-панель переключается по adminTab, а не по secTab: кнопка обещала аудит ИБ, а
+        // открывала вкладку «Пользователи».
+        this.loadAdmin();
+        this.setState({ screen: 'security', secTab: 'Аудит ИБ', adminTab: 'audit', mapDrawer: null,
+                        fromOps: { path: mapPath.slice(), tileId: s.selOp,
+                                   crumb: mapCur.label + (mapCtx.label !== mapCur.label ? ' / ' + mapCtx.label : ''),
+                                   agent: '' } });
+        this.route('security');
+      },
       prodStrip: {
         deployed: activeDeps, live: liveN, hitl: hitlN, errors: errN
       },
@@ -3896,7 +3907,7 @@ class Component extends DCLogic {
         { id: 'health', label: 'Здоровье', hint: 'KPI флота, дрейф DoD, алерты', badge: '' }
       ].map(p => ({
         label: p.label, hint: p.hint, badge: p.badge, selected: s.mapDrawer === p.id ? 'true' : 'false',
-        go: () => this.setState({ mapDrawer: s.mapDrawer === p.id ? null : p.id, inspectorOpen: true }),
+        go: () => this.setState({ mapDrawer: s.mapDrawer === p.id ? null : p.id }),
         bg: s.mapDrawer === p.id ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : 'transparent',
         fg: s.mapDrawer === p.id ? '#fff' : 'var(--w60)'
       })),
@@ -4096,6 +4107,33 @@ class Component extends DCLogic {
             : this.setState({ selOp: c.id, renameText: c.label })
         };
       }),
+      // Здоровье ветки — здесь, по её участкам. Кнопка внизу ведёт в здоровье всего ФЛОТА, и
+      // называется теперь так: раньше она обещала ветку, а показывала флот целиком (разбор, Р12).
+      ctxBranch: (() => {
+        const листья = this.leafIds(mapCtx);
+        const свои = (s.procSeats || []).filter(x => листья.indexOf(x.op_id) >= 0 && x.state !== 'planned');
+        if (!свои.length) return null;
+        const по = { 'подтверждён': 0, 'тихо': 0, 'осиротел': 0 };
+        const учтено = [];
+        свои.forEach(x => {
+          if (учтено.indexOf(x.op_id) >= 0) return;
+          учтено.push(x.op_id);
+          const z = живость[x.op_id];
+          по[(z && z.state) || 'тихо'] += 1;
+        });
+        return { total: учтено.length, ok: по['подтверждён'], quiet: по['тихо'], orphan: по['осиротел'] };
+      })(),
+      ctxBranchText: (() => {
+        const листья = this.leafIds(mapCtx);
+        const свои = (s.procSeats || []).filter(x => листья.indexOf(x.op_id) >= 0 && x.state !== 'planned');
+        if (!свои.length) return '';
+        const учтено = [], по = { 'подтверждён': 0, 'тихо': 0, 'осиротел': 0 };
+        свои.forEach(x => { if (учтено.indexOf(x.op_id) < 0) { учтено.push(x.op_id); по[(живость[x.op_id] || {}).state || 'тихо'] += 1; } });
+        const части = ['участков с агентом: ' + учтено.length, 'подтверждено ' + по['подтверждён']];
+        if (по['тихо']) части.push('тихо ' + по['тихо']);
+        if (по['осиротел']) части.push('осиротело ' + по['осиротел']);
+        return части.join(' · ');
+      })(),
       ctxEditable: s.mapLayer === 'TO-BE' && !!s.selOp,
       renameText: s.renameText,
       setRename: (e) => this.setState({ renameText: e.target.value }),
@@ -4150,10 +4188,16 @@ class Component extends DCLogic {
       lineageFleet: () => this.setState({ modal: 'lineage', lineageId: 'fleetRate' }),
       lineageOpenRecipe: () => { this.setState({ modal: null, screen: 'data', dataTab: 'recipes' }); this.route('data'); this.showToast('Открыт раздел Данные — Рецепты'); },
       lineageOpenNode: () => { this.setState({ modal: null, screen: 'canvas', lens: 'build', selectedNode: 'c3', showRunOverlay: true }); this.route('canvas'); this.showToast('Граф · узел, который считал число'); },
-      noDrawer: !s.mapDrawer,
-      opsColumnOpen: s.inspectorOpen || !!s.mapDrawer,
-      opsColumnHidden: !s.inspectorOpen && !s.mapDrawer, opsWide: !!s.opsWide, toggleOpsWide: () => this.setState({ opsWide: !s.opsWide }), opsColFlex: s.opsWide ? '1 1 60%' : '1 1 320px', opsColW: s.opsWide ? '60%' : '320px', opsColMin: s.opsWide ? '440px' : '300px', opsColMax: s.opsWide ? '62%' : '320px', opsWideGlyph: s.opsWide ? '⤡' : '⤢', opsWideLabel: s.opsWide ? 'Сузить' : 'Развернуть', opsWideTitle: s.opsWide ? 'Сузить шторку' : 'Развернуть в широкое окно (метрики и дашборды)',
-      hideInspectorOps: () => this.setState({ inspectorOpen: false, mapDrawer: null }),
+      // Инспектор участка и панели флота больше не делят одно место: инспектор — контекст
+      // выбранного узла, панели — таблицы по всему флоту, и живут они в нижнем доке (разбор, Р12).
+      noDrawer: !s.mapDrawer, ctxShow: true,
+      drawerTitle: { reg: 'Реестр развёртываний', live: 'Живые экземпляры', health: 'Здоровье флота' }[s.mapDrawer] || '',
+      drawerHint: { reg: 'версии агентов, триггеры и жизненный цикл',
+                    live: 'кто работает прямо сейчас',
+                    health: 'KPI, дрейф DoD и алерты по всему флоту, а не по этой ветке' }[s.mapDrawer] || '',
+      opsColumnOpen: s.inspectorOpen,
+      opsColumnHidden: !s.inspectorOpen, opsWide: !!s.opsWide, toggleOpsWide: () => this.setState({ opsWide: !s.opsWide }), opsColFlex: s.opsWide ? '1 1 60%' : '1 1 320px', opsColW: s.opsWide ? '60%' : '320px', opsColMin: s.opsWide ? '440px' : '300px', opsColMax: s.opsWide ? '62%' : '320px', opsWideGlyph: s.opsWide ? '⤡' : '⤢', opsWideLabel: s.opsWide ? 'Сузить' : 'Развернуть', opsWideTitle: s.opsWide ? 'Сузить шторку' : 'Развернуть в широкое окно (метрики и дашборды)',
+      hideInspectorOps: () => this.setState({ inspectorOpen: false }),
       opsMini: (mapCur.children || []).map(c => {
         const p = opsLayout.pos[c.id] || { x: 0, y: 0 };
         const asg = mapAssignsOf(c);
@@ -4179,6 +4223,14 @@ class Component extends DCLogic {
       navToggleTitle: s.navOpen === false ? 'Развернуть меню' : 'Свернуть меню до символов',
       navToggleGap: s.navOpen === false ? '0' : 'auto',
       toggleNav: () => this.setState({ navOpen: s.navOpen === false }),
+      backToMapShow: !!s.fromOps && s.screen !== 'canvas',
+      backToMapText: '↩ к карте' + (s.fromOps && s.fromOps.crumb ? ' · ' + s.fromOps.crumb : ''),
+      backToMap: () => {
+        const f = s.fromOps || {};
+        this.setState({ screen: 'canvas', lens: 'ops', path: f.path || ['org'],
+                        selOp: f.tileId || null, fromOps: null });
+        this.route('canvas');
+      },
       nav, obsLinks, openRunTrace: () => this.openRunTrace(), crumb: s.screen === 'canvas' ? ('Граф · ' + ({ build: 'Строю', run: 'Прогон', ops: 'Эксплуатирую', envelope: 'Конверт' }[s.lens] || '')) : crumbs[s.screen],
       meName: (s.me && s.me.name) || 'Гость', meRole: s.me ? ({admin:'администратор',support:'поддержка',manager:'менеджер',analyst:'аналитик'}[s.me.level] || s.me.level) : 'вход не выполнен', meDept: s.me ? (s.me.department === '*' ? 'все области' : s.me.department) : '—', meInitials: (((s.me && s.me.name) || 'МС').replace('@','')).substr(0,2).toUpperCase(), meRing: s.me ? 'rgba(129,140,248,.5)' : 'var(--w10)', meAvatarBg: s.me ? (s.me.level==='admin' ? 'linear-gradient(135deg,#8b5cf6,#6366f1)' : (s.me.department==='finance' ? 'linear-gradient(135deg,#34d399,#059669)' : 'linear-gradient(135deg,#f59e0b,#d97706)')) : 'linear-gradient(135deg, #6366f1, #8b5cf6)', canMutate: !!s.me && ['manager','support','admin'].indexOf(s.me.level) > -1, notAuthed: !s.me, authed: !!s.me, userMenu: !!s.userMenu, toggleUserMenu: () => this.setState({ userMenu: !s.userMenu }), doLogout: () => this.logout(), demoUsers: this.demoAccounts().map(u => ({ username: u.username, label: u.label, deptLabel: u.deptLabel, tone: u.tone, pick: () => this.setState({ loginEmail: u.username }), bg: (s.me && s.me.department === u.deptId) ? 'rgba(129,140,248,.16)' : 'var(--w3)', ring: (s.me && s.me.department === u.deptId) ? 'rgba(129,140,248,.5)' : 'var(--w8)' })), loginEmail: s.loginEmail || '', setLoginEmail: (e) => this.setState({ loginEmail: e.target.value }), loginPass: (s.loginPass || ''), setLoginPass: (e) => this.setState({ loginPass: e.target.value }), loginJwt: s.loginJwt || '', setLoginJwt: (e) => this.setState({ loginJwt: e.target.value }), doLoginForm: () => { if (!s.loginEmail || !s.loginPass) { this.showToast('Введите логин и пароль'); return; } this.doLogin(s.loginEmail, s.loginPass); }, applyJwt: () => this.applyJwt(s.loginJwt), quickUsers: ['admin.abop','buh.analyst','pm.manager'].map(n => ({ name: n, fill: () => this.setState({ loginEmail: n }) })), readOnly: !!(s.me && s.me.level === 'analyst'), goLk: () => { this.setState({ userMenu: false }); this.go('lk'); }, goSettings: () => { this.setState({ userMenu: false }); this.go('settings'); }, goAdmin: () => { this.setState({ userMenu: false }); this.go('security'); this.loadAdmin(); }, isAdmin: !!s.me && (s.me.level === 'admin' || s.me.level === 'support'), isLkScreen: s.screen === 'lk', isSettingsScreen: s.screen === 'settings', isSecScreen: s.screen === 'security', adminTab: s.adminTab || 'users', adminTabs: [['users','Пользователи'],['roles','Роли и области'],['staff','Штат'],['audit','Аудит ИБ']].map(t => ({ label: t[1], pick: () => this.setState({ adminTab: t[0] }), bg: (s.adminTab||'users')===t[0] ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : 'transparent', fg: (s.adminTab||'users')===t[0] ? 'var(--ink)' : 'var(--w55)' })), isAU: (s.adminTab||'users')==='users', isAR: (s.adminTab||'users')==='roles', isAS: (s.adminTab||'users')==='staff', isAA: (s.adminTab||'users')==='audit', adminUsers: (s.adminUsers||[]).map(x => { var c={admin:['rgba(139,92,246,.16)','var(--vio-ink)'],support:['rgba(59,130,246,.16)','#93c5fd'],manager:['rgba(245,158,11,.16)','var(--warn-ink)'],analyst:['rgba(52,211,153,.16)','var(--ok-ink)']}[x.level] || ['var(--w8)','var(--ink)']; return { username: x.username, email: x.email || '—', department: x.department || '—', levelLabel: {admin:'администратор',support:'поддержка',manager:'менеджер',analyst:'аналитик'}[x.level] || x.level, roleBg: c[0], roleFg: c[1], statusDot: x.enabled ? '#34d399' : '#6b7280' }; }), adminStaff: (s.adminStaff||[]).map(p => ({ login: p.login, name: p.name || '—', mail: p.mail || '—' })), adminEmpty: !(s.adminUsers||[]).length, adminNote: s.adminLoading ? 'Загрузка…' : (s.adminErr || 'Нет данных (нужны права admin/support)'), rolesMatrix: ['admin','support','manager','analyst'].map(lv => { var us=(s.adminUsers||[]).filter(x => x.level===lv); var ar=[]; us.forEach(x => { if(x.department && ar.indexOf(x.department)<0) ar.push(x.department); }); var c={admin:['rgba(139,92,246,.16)','var(--vio-ink)'],support:['rgba(59,130,246,.16)','#93c5fd'],manager:['rgba(245,158,11,.16)','var(--warn-ink)'],analyst:['rgba(52,211,153,.16)','var(--ok-ink)']}[lv]; return { label: {admin:'администратор',support:'поддержка',manager:'менеджер',analyst:'аналитик'}[lv], count: us.length, rights: {admin:'полный доступ · роли и области · governance',support:'сквозной доступ (чтение) · поддержка',manager:'сборка и публикация агентов в своём отделе · прогоны',analyst:'только чтение · агенты и данные своей области'}[lv], areas: (ar.join(', ') || '—'), roleBg: c[0], roleFg: c[1], bg: 'var(--w3)', border: 'var(--w9)' }; }), reloadAdmin: () => this.loadAdmin(), runsJournal: (function(){ var mapRow = (r) => ({ agent: r.agent_name || r.agent_id, ver: r.version ? ('v'+r.version) : '—', startedBy: r.started_by || '—', vLabel: r.verdict_ok ? 'пройден' : 'замечания', vBg: r.verdict_ok ? 'rgba(16,185,129,.14)' : 'rgba(239,68,68,.14)', vFg: r.verdict_ok ? 'var(--ok-ink)' : 'var(--err-ink)', autonomy: r.autonomy_used || '—', hitl: String(r.hitl_count || 0), when: (r.created_at || '').replace('T', ' ').slice(0, 16) }); return (s.runsList||[]).map(mapRow); })(),
       runsQuery: s.runsQuery || '',
