@@ -809,31 +809,34 @@
 
   <sc-if value="{{ ov.healthDrawer }}" hint-placeholder-val="{{ false }}">
     <div style="display: flex; justify-content: flex-end; width: 100%;">
-      <div style="position: relative; width: 100%; max-height: 640px; overflow-y: auto; padding: 20px; border-radius: 16px; background: var(--bg3); border: 1px solid var(--w12); display: flex; flex-direction: column; gap: 16px;">
+      <div style="position: relative; width: 100%; max-height: 640px; overflow-y: auto; padding: 18px; border-radius: 16px; background: var(--bg3); border: 1px solid var(--w12); display: flex; flex-direction: column; gap: 14px;">
         <div style="display: flex; align-items: center; gap: 12px;">
-          <div style="flex: 1; font-size: 16px; font-weight: 700;">Здоровье флота</div>
+          <div style="flex: 1; font-size: 15px; font-weight: 700;">Здоровье флота</div>
           <button onClick="{{ ov.closeDrawer }}" title="Убрать шторку вправо" style="width: 30px; height: 30px; border: 1px solid var(--w12); border-radius: 9px; background: var(--w5); color: var(--acc-ink2); font-size: 15px;" style-hover="border-color: #818cf8; color: var(--ink);">→</button>
         </div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px;">
           <sc-for list="{{ ov.fleetKpis }}" as="k" hint-placeholder-count="4">
-            <div style="padding: 15px; border-radius: 12px; background: var(--w4); border: 1px solid var(--w10); display: flex; flex-direction: column; gap: 6px;">
-              <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w38);">{{ k.label }}</span>
-              <span style="font-size: 24px; font-weight: 800; color: {{ k.fg }};">{{ k.value }}</span>
-              <span style="font-size: 11px; line-height: 1.4; color: var(--w66);">{{ k.note }}</span>
+            <div style="padding: 13px; border-radius: 12px; background: var(--w4); border: 1px solid var(--w10); display: flex; flex-direction: column; gap: 5px;">
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--w38);">{{ k.label }}</span>
+              <span style="font-size: 20px; font-weight: 800; line-height: 1.15; color: {{ k.fg }};">{{ k.value }}</span>
+              <span style="font-size: 11.5px; line-height: 1.45; color: var(--w66); text-wrap: pretty;">{{ k.note }}</span>
               <sc-if value="{{ k.hasLineage }}" hint-placeholder-val="{{ false }}">
-                <button onClick="{{ k.lineage }}" title="Откуда взялось число" style="align-self: flex-start; margin-top: 4px; padding: 4px 9px; border: 1px solid rgba(129,140,248,.3); border-radius: 7px; background: rgba(99,102,241,.12); color: var(--acc-ink2); font-size: 11px; font-weight: 600;" style-hover="background: rgba(99,102,241,.22);">откуда ▸</button>
+                <button onClick="{{ k.lineage }}" title="Откуда взялось число" style="align-self: flex-start; margin-top: 3px; padding: 4px 9px; border: 1px solid rgba(129,140,248,.3); border-radius: 7px; background: rgba(99,102,241,.12); color: var(--acc-ink2); font-size: 10.5px; font-weight: 600;" style-hover="background: rgba(99,102,241,.22);">откуда ▸</button>
               </sc-if>
             </div>
           </sc-for>
         </div>
-        <div style="padding: 15px; border-radius: 12px; background: rgba(245,158,11,.08); border: 1px solid rgba(245,158,11,.24); display: flex; flex-direction: column; gap: 10px;">
-          <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 10px;">
-            <span title="Дрейф DoD — падение доли прогонов, закрывших Definition of Done." style="font-size: 13px; font-weight: 600; color: var(--warn-ink2);">Дрейф DoD</span>
-            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--warn-ink);">{{ ov.dodDrift }}</span>
+        <div onClick="{{ ov.dodWhyOpen }}" title="Разобрать дрейф: почему, где и что это значит" style="padding: 13px; border-radius: 12px; background: rgba(245,158,11,.08); border: 1px solid rgba(245,158,11,.24); display: flex; flex-direction: column; gap: 9px; cursor: pointer;" style-hover="border-color: var(--warn-ink); background: rgba(245,158,11,.14);">
+          <div style="display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;">
+            <span style="font-size: 12.5px; font-weight: 600; color: var(--warn-ink2);">Дрейф DoD</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: {{ ov.dodDriftFg }};">{{ ov.dodDrift }}</span>
+            <span style="flex: 1;"></span>
+            <span style="font-size: 11px; font-weight: 600; color: var(--acc-ink2);">разобрать ▸</span>
           </div>
           <div style="position: relative; height: 7px; border-radius: 9999px; background: var(--w8);">
             <div style="position: absolute; inset: 0 auto 0 0; width: {{ ov.dodFill }}%; border-radius: 9999px; background: linear-gradient(90deg, #f59e0b, var(--warn-ink));"></div>
           </div>
+          <span style="font-size: 11.5px; line-height: 1.45; color: var(--w55);">сейчас {{ ov.dodNowText }} · норма по предыдущим дням {{ ov.dodWhyBase }}</span>
         </div>
         <sc-for list="{{ ov.fleetAlerts }}" as="a" hint-placeholder-count="3">
           <div style="padding: 14px 16px; border-radius: 11px; background: {{ a.bg }}; border: 1px solid {{ a.border }}; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
@@ -845,10 +848,10 @@
             <button onClick="{{ a.go }}" style="padding: 8px 12px; border: 1px solid var(--w16); border-radius: 9px; background: var(--w6); color: var(--ink); font-size: 11.5px; font-weight: 600;">{{ a.action }} ▸</button>
           </div>
         </sc-for>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(176px, 1fr)); gap: 10px;">
           <sc-for list="{{ ov.sparks }}" as="sp" hint-placeholder-count="3">
-            <div style="padding: 14px; border-radius: 11px; background: var(--w3); border: 1px solid var(--w8); display: flex; flex-direction: column; gap: 10px;">
-              <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w60);">{{ sp.label }}</span>
+            <div style="padding: 13px; border-radius: 11px; background: var(--w3); border: 1px solid var(--w8); display: flex; flex-direction: column; gap: 9px;">
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--w60);">{{ sp.label }}</span>
               <div style="display: flex; align-items: flex-end; gap: 4px; height: 46px;">
                 <sc-for list="{{ sp.bars }}" as="b" hint-placeholder-count="8">
                   <span title="{{ b.title }}" style="flex: 1; height: {{ b.h }}px; border-radius: 3px 3px 0 0; background: {{ b.bg }}; opacity: {{ b.op }};"></span>
@@ -858,6 +861,69 @@
           </sc-for>
         </div>
         <span style="font-size: 11.5px; color: var(--w50);">{{ ov.sparksNote }}</span>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ ov.dodWhyModal }}" hint-placeholder-val="{{ false }}">
+    <div role="dialog" aria-modal="true" aria-label="Разбор дрейфа DoD" style="position: fixed; inset: 0; z-index: 84; display: flex; align-items: center; justify-content: center; padding: 24px;">
+      <div onClick="{{ ov.closeModal }}" style="position: absolute; inset: 0; background: var(--scrim); backdrop-filter: blur(5px);"></div>
+      <div style="position: relative; width: 620px; max-width: 94vw; max-height: 88vh; overflow-y: auto; padding: 24px; border-radius: 18px; background: var(--bg2); border: 1px solid rgba(245,158,11,.3); box-shadow: 0 24px 70px var(--sh50); display: flex; flex-direction: column; gap: 16px; animation: ab-drop .3s ease-out;">
+
+        <div style="display: flex; align-items: flex-start; gap: 12px;">
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 6px;">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .9px; text-transform: uppercase; color: var(--w40);">разбор дрейфа</span>
+            <span style="font-size: 19px; font-weight: 700; line-height: 1.25;">Дрейф DoD · {{ ov.dodDrift }}</span>
+            <span style="font-size: 11.5px; color: var(--w50);">{{ ov.dodWhyScope }}</span>
+          </div>
+          <button onClick="{{ ov.closeModal }}" title="Закрыть" style="width: 30px; height: 30px; flex: none; border: 1px solid var(--w12); border-radius: 9px; background: var(--w5); color: var(--ink); font-size: 13px;" style-hover="border-color: #818cf8;">✕</button>
+        </div>
+
+        <div style="padding: 14px 16px; border-radius: 12px; background: rgba(245,158,11,.08); border: 1px solid rgba(245,158,11,.22); display: flex; flex-direction: column; gap: 6px;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--w45);">почему дрейф</span>
+          <span style="font-size: 13px; line-height: 1.55; color: var(--w80); text-wrap: pretty;">{{ ov.dodWhyVerdict }}</span>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 9px;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--w45);">где именно · по дням</span>
+          <sc-for list="{{ ov.dodWhyDays }}" as="d" hint-placeholder-count="8">
+            <div style="display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 9px; background: var(--w3); border: 1px solid var(--w7);">
+              <span style="flex: none; width: 42px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w50);">{{ d.day }}</span>
+              <span style="flex: none; width: 108px; display: flex; align-items: center;"><span style="height: 6px; width: {{ d.bar }}px; border-radius: 9999px; background: {{ d.barBg }};"></span></span>
+              <span style="flex: 1; font-size: 12px; color: {{ d.fg }};">{{ d.dod }}</span>
+              <span style="flex: none; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--w40);">{{ d.runs }} пр.</span>
+            </div>
+          </sc-for>
+          <span style="font-size: 11.5px; line-height: 1.45; color: var(--w50);">Последний день с прогонами — {{ ov.dodWhyLastDay }}; норма по предыдущим таким дням — {{ ov.dodWhyBase }}.</span>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 9px;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--w45);">что уронило · прогоны с незакрытым DoD</span>
+          <sc-for list="{{ ov.dodWhyFailed }}" as="f" hint-placeholder-count="3">
+            <button onClick="{{ f.go }}" style="display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: 10px; background: rgba(239,68,68,.07); border: 1px solid rgba(239,68,68,.2); text-align: left;" style-hover="border-color: var(--err-ink);">
+              <span style="width: 7px; height: 7px; flex: none; margin-top: 5px; border-radius: 9999px; background: var(--err-ink);"></span>
+              <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px;">
+                <span style="font-size: 12.5px; font-weight: 600; color: var(--ink);">{{ f.agent }}</span>
+                <span style="font-size: 11.5px; line-height: 1.45; color: var(--w55);">{{ f.why }}</span>
+              </span>
+              <span style="flex: none; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--w40);">{{ f.at }}</span>
+            </button>
+          </sc-for>
+          <span style="font-size: 11.5px; line-height: 1.45; color: var(--w50);">{{ ov.dodWhyFailedNote }}</span>
+        </div>
+
+        <div style="padding: 14px 16px; border-radius: 12px; background: var(--s55); border: 1px solid var(--w9); display: flex; flex-direction: column; gap: 6px;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--w45);">что это значит</span>
+          <span style="font-size: 12.5px; line-height: 1.55; color: var(--w70); text-wrap: pretty;">{{ ov.dodWhyMeans }}</span>
+        </div>
+
+        <div style="padding: 13px 16px; border-radius: 12px; background: var(--s55); border: 1px solid var(--w9); display: flex; flex-direction: column; gap: 6px;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--w45);">как считано</span>
+          <sc-for list="{{ ov.dodWhyFormulaLines }}" as="fl" hint-placeholder-count="3">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; line-height: 1.6; color: var(--w70);">{{ fl.text }}</span>
+          </sc-for>
+        </div>
+
       </div>
     </div>
   </sc-if>

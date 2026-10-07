@@ -3776,7 +3776,51 @@ async def fleet(u: dict = Depends(user)) -> dict:
             except Exception:  # noqa: BLE001
                 pass
     series = [{"day": d.isoformat(), "err": hist[d]["err"], "cost": round(hist[d]["cost"], 2),
+               "n": hist[d]["n"], "ok": hist[d]["ok"],
                "dod": (round(100 * hist[d]["ok"] / hist[d]["n"]) if hist[d]["n"] else None)} for d in days]
+
+    # Дрейф DoD: число в панели здоровья, которое само по себе ничего не объясняет. Отдаём разбор —
+    # из чего сложено, на каких днях и какие прогоны его уронили, — чтобы интерфейс не пересказывал
+    # график, а показывал причину. День без прогонов в расчёт не входит: это пробел, не ноль.
+    _падения: list[dict] = []
+    for r in runs:
+        if r.get("verdict_ok"):
+            continue
+        try:
+            d = _dt.datetime.fromisoformat(str(r.get("created_at")).replace("Z", "+00:00")).date()
+        except Exception:  # noqa: BLE001
+            continue
+        if d not in hist:
+            continue
+        _падения.append({"at": str(r.get("created_at"))[:16].replace("T", " "),
+                         "agent_id": r.get("agent_id"),
+                         "agent": names.get(r.get("agent_id")) or r.get("agent_id") or "—",
+                         "run_id": r.get("id"), "why": "вердикт прогона не закрыт"})
+    for j in jobs:
+        if j.get("status") != "failed":
+            continue
+        try:
+            d = _dt.datetime.fromisoformat(str(j.get("created_at")).replace("Z", "+00:00")).date()
+        except Exception:  # noqa: BLE001
+            continue
+        if d not in hist:
+            continue
+        _падения.append({"at": str(j.get("created_at"))[:16].replace("T", " "),
+                         "agent_id": j.get("agent_id"),
+                         "agent": names.get(j.get("agent_id")) or j.get("agent_id") or "—",
+                         "run_id": j.get("run_id") or j.get("id"),
+                         "why": str(j.get("error") or "")[:140] or "задание упало без текста ошибки"})
+    _падения.sort(key=lambda x: x["at"], reverse=True)
+    _живые_дни = [x for x in series if x["n"]]
+    _ранее = _живые_дни[:-1]
+    _сейчас = _живые_дни[-1]["dod"] if _живые_дни else None
+    _база = round(sum(x["dod"] for x in _ранее) / len(_ранее)) if _ранее else None
+    dod = {"now": _сейчас, "base": _база,
+           "drift": (_сейчас - _база) if (_сейчас is not None and _база is not None) else None,
+           "last_day": _живые_дни[-1]["day"] if _живые_дни else None,
+           "days_total": len(days), "days_with_runs": len(_живые_дни),
+           "runs": sum(x["n"] for x in series), "ok": sum(x["ok"] for x in series),
+           "failed": _падения[:14], "failed_total": len(_падения)}
 
     # алерты — только реальные события
     alerts = []
@@ -3802,7 +3846,7 @@ async def fleet(u: dict = Depends(user)) -> dict:
         alerts.append({"level": "crit", "kind": "memory", "title": "Память процесса выше мягкого лимита",
                        "note": "RSS " + str(qstats.get("rss_mb")) + " МБ при лимите " + str(qstats.get("mem_soft_mb")) + " МБ — воркеры не берут новые задания до снижения.", "action": "очередь"})
     obs.inc("abop_http_fleet_total")
-    return {"deployments": deployments, "live": live, "alerts": alerts, "series": series,
+    return {"deployments": deployments, "live": live, "alerts": alerts, "series": series, "dod": dod,
             "queue": {"by_status": qstats.get("by_status") or {}, "workers": qstats.get("workers"),
                       "rss_mb": qstats.get("rss_mb"), "memory_pressure": bool(qstats.get("memory_pressure"))},
             "hitl_pending": len(pending), "generated_at": now.isoformat(timespec="seconds")}

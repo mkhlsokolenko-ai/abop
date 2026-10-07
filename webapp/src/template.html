@@ -2555,7 +2555,7 @@ class Component extends DCLogic {
     adminRbacReason: '', procApprovalReason: '', opsDrag: null, opsLinkFrom: null, outsideOpen: false,
     opsLinkKind: 'seq', opsDropHover: false,
     path: ['org'], mapLayer: 'AS-IS', mapLive: false, selOp: null, mapDrawer: null, renameText: '', lens: 'build', guardTo: null, fromOps: null,
-    deployments: [], instances: [], findingsList: [], findingsMetrics: null, findingsRuns: [], findingsLoading: false, findingCard: null, findingsFilterRun: null, findingFrom: null, labelDecision: '', labelManual: false, labelComment: '', fleetReal: false, fleetAlertsReal: [], fleetSeries: [], fleetQueue: null, fleetHitl: 0, rollbackDiffReal: null, rollbackPrevVersion: '', deployAgentId: null,
+    deployments: [], instances: [], findingsList: [], findingsMetrics: null, findingsRuns: [], findingsLoading: false, findingCard: null, findingsFilterRun: null, findingFrom: null, labelDecision: '', labelManual: false, labelComment: '', fleetReal: false, fleetAlertsReal: [], fleetSeries: [], fleetDod: null, fleetQueue: null, fleetHitl: 0, rollbackDiffReal: null, rollbackPrevVersion: '', deployAgentId: null,
     liveFrozen: false, fleetFilter: 'все',
     deployTarget: null, deployVersion: 'v3', deployArea: 'оценка заявок', deployTrigger: 'событие Data Plane', deployLimit: 3, deployAutonomy: 2,
     rollbackId: null, reviseOf: null, drainId: null, drainPct: 0, healthWindow: '7д',   // неделя: при суточном окне еженедельный агент выглядит «тихим»
@@ -3161,7 +3161,8 @@ class Component extends DCLogic {
     v.adminScreen = this.state.screen === 'settings' || this.state.screen === 'security';
     v.hasDrawer = !!this.state.mapDrawer;
     v.mModal = Object.assign({}, v, { regDrawer: false, liveDrawer: false, healthDrawer: false });
-    v.mDrawer = v;
+    // Шторка рисует те же оверлеи, что и корень, — модалку, открытую из неё, иначе покажет дважды.
+    v.mDrawer = Object.assign({}, v, { dodWhyModal: false });
     return v;
   }
 
@@ -3545,9 +3546,16 @@ class Component extends DCLogic {
     const winTotal = { '24ч': 24, '7д': 168, '30д': 720 }[s.healthWindow] || 24;
     const fleetCostWin = Math.round(_win.reduce((n, x) => n + (x.cost || 0), 0) * 100) / 100;
     const fleetCostHour = Math.round((fleetCostWin / Math.min(winTotal, Math.max(1, _winDays * 24))) * 100) / 100;
+    // Разбор дрейфа считает сервер (/api/fleet → dod): там же лежат упавшие прогоны. Клиент не
+    // пересчитывает — иначе два места считали бы одно число по-разному. Нет прогонов — нет числа:
+    // раньше здесь стояло 100, и пустой стенд показывал «DoD 100%, дрейф +0%» на ровном месте.
+    const _dodSrv = s.fleetDod || null;
     const _dodVals = _ser.map(x => x.dod).filter(v => typeof v === 'number');
-    const dodNow = _dodVals.length ? _dodVals[_dodVals.length - 1] : 100;
-    const dodBase = _dodVals.length > 1 ? Math.round(_dodVals.slice(0, -1).reduce((n, v) => n + v, 0) / (_dodVals.length - 1)) : dodNow;
+    const dodNow = _dodSrv ? _dodSrv.now : (_dodVals.length ? _dodVals[_dodVals.length - 1] : null);
+    const dodBase = _dodSrv ? _dodSrv.base
+      : (_dodVals.length > 1 ? Math.round(_dodVals.slice(0, -1).reduce((n, v) => n + v, 0) / (_dodVals.length - 1)) : null);
+    const dodHasData = typeof dodNow === 'number';
+    const dodDriftVal = (typeof dodNow === 'number' && typeof dodBase === 'number') ? dodNow - dodBase : null;
     // День без прогонов — это пробел, а не ноль и не выдуманное значение. Раньше DoD подставлял 55
     // для таких дней, и график читался как «в этот день DoD был 55%», хотя прогонов не было вовсе.
     const _pad8 = (arr) => { const a = arr.slice(-8); while (a.length < 8) a.unshift(null); return a; };
@@ -3711,7 +3719,62 @@ class Component extends DCLogic {
         { label: 'В HITL', value: String(s.fleetReal ? s.fleetHitl : hitlN), note: (s.fleetReal ? s.fleetHitl : hitlN) ? 'ждут подтверждения оператора в отделе' : 'очередь отдела пуста', fg: (s.fleetReal ? s.fleetHitl : hitlN) ? 'var(--warn-ink)' : 'var(--ok-ink)' },
         { label: 'Темп расхода', value: fleetCostHour + ' ₽/ч', note: fleetCostWin + ' ₽ за окно ' + s.healthWindow + ' · из usage RouteAI по прогонам', fg: 'var(--acc-ink)', lineage: () => this.setState({ modal: 'lineage', lineageId: 'fleetRate' }), hasLineage: true }
       ],
-      dodDrift: (dodNow >= dodBase ? '+' : '−') + Math.abs(dodNow - dodBase) + '%', dodFill: dodNow,
+      dodHasData, dodFill: dodHasData ? dodNow : 0,
+      dodDrift: dodDriftVal === null ? (dodHasData ? 'нет базы для сравнения' : 'нет прогонов за 8 дней')
+        : (dodDriftVal > 0 ? '+' : dodDriftVal < 0 ? '−' : '±') + Math.abs(dodDriftVal) + ' п.п.',
+      dodDriftFg: dodDriftVal === null ? 'var(--w45)' : dodDriftVal < 0 ? 'var(--err-ink)'
+        : dodDriftVal > 0 ? 'var(--ok-ink)' : 'var(--w60)',
+      dodNowText: dodHasData ? dodNow + '%' : '—',
+      dodWhyOpen: () => this.setState({ modal: 'dodWhy' }),
+      dodWhyModal: s.modal === 'dodWhy',
+      // Модалка отвечает на три вопроса владельца: почему дрейф, где именно и что это значит.
+      dodWhyVerdict: !dodHasData
+        ? 'За восемь дней не было ни одного прогона — доле закрытых DoD не из чего сложиться. Это не падение качества, а отсутствие работы.'
+        : dodDriftVal === null
+          ? 'Прогоны были только в один день из восьми. Сравнивать не с чем: дрейф появится, когда наберётся второй день с прогонами.'
+          : dodDriftVal < 0
+            ? 'DoD просел на ' + Math.abs(dodDriftVal) + ' п.п. против среднего по предыдущим дням. Ниже перечислены прогоны, которые не закрыли вердикт, — именно они и дали просадку.'
+            : dodDriftVal > 0
+              ? 'DoD выше среднего по предыдущим дням на ' + dodDriftVal + ' п.п. Дрейф положительный — качество прогонов растёт.'
+              : 'DoD держится на уровне среднего по предыдущим дням. Дрейфа нет.',
+      dodWhyFormulaLines: dodHasData
+        ? ['DoD дня = прогоны с закрытым вердиктом ÷ все прогоны дня × 100',
+           'дрейф = DoD последнего дня с прогонами − среднее DoD предыдущих таких дней',
+           'день без прогонов в расчёт не входит: это пробел, а не ноль'].map(x => ({ text: x }))
+        : ['DoD дня = прогоны с закрытым вердиктом ÷ все прогоны дня × 100',
+           'прогонов нет — числитель и знаменатель пусты, значение не определено'].map(x => ({ text: x })),
+      dodWhyMeans: 'DoD (Definition of Done) — условие готовности результата: вердикт прогона закрыт, когда агент выполнил всё, что обещал навык. Дрейф показывает, расходится ли сегодняшнее качество со сложившейся нормой. Падение означает, что агент стал отдавать незакрытые результаты, — обычно из-за смены версии, изменения данных на входе или внешнего сбоя.',
+      dodWhyScope: _dodSrv
+        ? 'окно 8 дней · дней с прогонами ' + _dodSrv.days_with_runs + ' из ' + _dodSrv.days_total
+          + ' · прогонов ' + _dodSrv.runs + ', из них закрыли DoD ' + _dodSrv.ok
+        : 'окно 8 дней · данные /api/fleet ещё не получены',
+      dodWhyBase: typeof dodBase === 'number' ? dodBase + '%' : '—',
+      dodWhyLastDay: (_dodSrv && _dodSrv.last_day) ? String(_dodSrv.last_day) : '—',
+      dodWhyDays: _ser.map(x => ({
+        day: String(x.day || '').slice(5),
+        runs: (x.n === undefined || x.n === null) ? '—' : String(x.n),
+        dod: (typeof x.dod === 'number') ? x.dod + '%' : 'прогонов не было',
+        fg: (typeof x.dod !== 'number') ? 'var(--w35)'
+          : (typeof dodBase === 'number' && x.dod < dodBase) ? 'var(--err-ink)' : 'var(--ok-ink)',
+        bar: (typeof x.dod === 'number') ? Math.max(2, Math.round(x.dod * 0.46)) : 2,
+        barBg: (typeof x.dod !== 'number') ? 'var(--w14)'
+          : (typeof dodBase === 'number' && x.dod < dodBase) ? 'var(--err-ink)' : '#34d399'
+      })),
+      dodWhyFailed: ((_dodSrv && _dodSrv.failed) || []).map(f => ({
+        agent: f.agent, at: f.at, why: f.why,
+        go: () => {
+          const _ag = f.agent_id ? (s.agentsList || []).find(x => x.id === f.agent_id) : null;
+          this.setState({ modal: null });
+          if (_ag) { this.openAgent(_ag); return; }
+          this.setState({ screen: 'canvas', lens: 'run' }); this.route('canvas'); this.loadRuns();
+        }
+      })),
+      dodWhyFailedNote: !_dodSrv ? 'Разбор придёт вместе с ответом /api/fleet.'
+        : _dodSrv.failed_total === 0
+          ? 'Ни один прогон за восемь дней не завершился с незакрытым вердиктом — просадке неоткуда взяться.'
+          : _dodSrv.failed_total > _dodSrv.failed.length
+            ? 'Показаны ' + _dodSrv.failed.length + ' из ' + _dodSrv.failed_total + ' — остальные в журнале прогонов.'
+            : 'Всего таких прогонов: ' + _dodSrv.failed_total + '.',
       fleetAlerts: ((s.fleetAlertsReal && s.fleetAlertsReal.length) ? s.fleetAlertsReal : [{ level: 'soft', kind: 'none', title: s.fleetReal ? 'Инцидентов нет' : 'Флот ещё не загружен', note: s.fleetReal ? 'За сутки нет сбоев прогонов, очередь HITL пуста, память в норме.' : 'Ожидаю ответ /api/fleet — если не появится, проверьте вход.', action: 'журнал' }]).map(a => {
         const t = alertTone[a.level] || SEM.idle;
         return {
@@ -4261,7 +4324,9 @@ class Component extends DCLogic {
       },
       openReg: () => this.setState({ mapDrawer: 'reg', inspectorOpen: true }),
       openLive: () => this.setState({ mapDrawer: 'live', inspectorOpen: true }),
-      openHealth: () => this.setState({ mapDrawer: 'health', inspectorOpen: true }),
+      // Шторка здоровья — дашборд, а не подпись к плитке: открываем сразу в широкой колонке,
+      // иначе 24-пиксельные KPI и спарклайны ужимаются в 320 px и теряют масштаб.
+      openHealth: () => this.setState({ mapDrawer: 'health', inspectorOpen: true, opsWide: true }),
       closeDrawer: () => this.setState({ mapDrawer: null }),
       lineageModal: s.modal === 'lineage',
       lineageTitle: linGet(s.lineageId).label,
@@ -4289,7 +4354,7 @@ class Component extends DCLogic {
                     live: 'кто работает прямо сейчас',
                     health: 'KPI, дрейф DoD и алерты по всему флоту, а не по этой ветке' }[s.mapDrawer] || '',
       opsColumnOpen: s.inspectorOpen,
-      opsColumnHidden: !s.inspectorOpen, opsWide: !!s.opsWide, toggleOpsWide: () => this.setState({ opsWide: !s.opsWide }), opsColFlex: s.opsWide ? '1 1 60%' : '1 1 320px', opsColW: s.opsWide ? '60%' : '320px', opsColMin: s.opsWide ? '440px' : '300px', opsColMax: s.opsWide ? '62%' : '320px', opsWideGlyph: s.opsWide ? '⤡' : '⤢', opsWideLabel: s.opsWide ? 'Сузить' : 'Развернуть', opsWideTitle: s.opsWide ? 'Сузить шторку' : 'Развернуть в широкое окно (метрики и дашборды)',
+      opsColumnHidden: !s.inspectorOpen, opsWide: !!s.opsWide, toggleOpsWide: () => this.setState({ opsWide: !s.opsWide }), opsColFlex: s.opsWide ? '1 1 400px' : '0 0 320px', opsColW: 'auto', opsColMin: s.opsWide ? '380px' : '320px', opsColMax: s.opsWide ? '620px' : '320px', opsWideGlyph: s.opsWide ? '⤡' : '⤢', opsWideLabel: s.opsWide ? 'Сузить' : 'Развернуть', opsWideTitle: s.opsWide ? 'Сузить шторку' : 'Развернуть в широкое окно (метрики и дашборды)',
       hideInspectorOps: () => this.setState({ inspectorOpen: false }),
       opsMini: (mapCur.children || []).map(c => {
         const p = opsLayout.pos[c.id] || { x: 0, y: 0 };
@@ -7031,7 +7096,7 @@ class Component extends DCLogic {
         return Object.assign({}, x, { since: ca ? (ca.slice(8, 10) + '.' + ca.slice(5, 7)) : '—', limit: '—' });
       });
       var inst = (d.live || []).map(function(x){ return Object.assign({}, x, { phase: x.phase === 'live' ? 'live' : 'done' }); });
-      self.setState({ deployments: deps, instances: inst, fleetReal: true, fleetAlertsReal: d.alerts || [], fleetSeries: d.series || [], fleetQueue: d.queue || null, fleetHitl: d.hitl_pending || 0 });
+      self.setState({ deployments: deps, instances: inst, fleetReal: true, fleetAlertsReal: d.alerts || [], fleetSeries: d.series || [], fleetDod: d.dod || null, fleetQueue: d.queue || null, fleetHitl: d.hitl_pending || 0 });
     }).catch(function(){ self.setState({ fleetReal: false }); });
   }
 
