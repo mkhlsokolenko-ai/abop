@@ -102,6 +102,32 @@ SSE-события (по мере исполнения):
 
 ---
 
+## 5а. Карта процессов (линза «Эксплуатирую»)
+
+Реализовано сегодня — граф-слой регламента и сверка с ним:
+
+| Метод · Путь | Ядро | Ответ | Экран |
+|---|---|---|---|
+| `GET /api/process/graph` | `reglament_store` | `{tenant, nodes:[{nsi_key,op,process,subprocess}], edges, summary}` | карта · трассировка последствий |
+| `POST /api/process/conformance` | `reglament_store` + эмбеддинги либо sLAVA | `{report:[{nsi_key,label,status,sim}], summary}` | сверка собранного процесса с регламентом |
+
+Решено, не реализовано — редакции карты и посадки агентов (ADR-042/043/045, этапы 1–2 плана):
+
+| Метод · Путь | Что делает |
+|---|---|
+| `GET /api/process/map?layer=as-is\|to-be` | `{tree, seats, revision, draft}`; на `to-be` дерево уже с наложенным черновиком |
+| `POST /api/process/map` `{tree, note}` | правка структуры: новая применённая редакция с автором и причиной |
+| `POST /api/process/revision` `{changes[]}` | дописать изменение в черновик области (создаёт его, если нет) |
+| `DELETE /api/process/revision/{id}` | отбросить черновик |
+| `POST /api/process/revision/{id}/submit` | на согласование — когда префлайт требует человека (ADR-013/014) |
+| `POST /api/process/revision/{id}/apply` | применить: валидация + префлайт + одна транзакция, затем деплой затронутых агентов |
+| `GET /api/process/liveness?window=7d` | подтверждение AS-IS прогонами: `{op_id:{runs,last_at,verdict_ok,orphan}}` (ADR-044, этап 3) |
+
+Мутации — `manager+` **и** область узла ∈ области пользователя (`can_edit_area`). Отказ приходит с
+причиной в теле 403: интерфейс её показывает, а не глотает.
+
+---
+
 ## 6. Инкременты реализации
 
 1. **✅ READ** (families/skills/dataplane/plan) — готово, реальные вызовы ядра.

@@ -2126,15 +2126,18 @@ const SKILLS = [
 ];
 
 // связь уровней: активный прогон живёт на конкретном участке процесса
+// Трасса демо-прогона: операции берутся из того подпроцесса, на который указывает path, а узлы —
+// из NODES. Раньше путь вёл в «Клиентские заявки / Оценка заявки», подпись обещала аудит 1С, шаги
+// были названы по аудиту, а последний ссылался на узел n5, которого в графе нет (разбор, Р8).
 const RUN_TRACE = {
-  path: ['org', 'p3', 's31'],
-  pathLabel: 'Учёт и отчётность / Аудит данных 1С',
+  path: ['org', 'p2', 's21'],
+  pathLabel: 'Учёт и отчётность / Аудит данных в 1С',
   steps: [
-    { op: 'o311', node: null,  wave: 1, label: 'Снимок базы 1С' },
-    { op: 'o312', node: 'n1',  wave: 1, label: 'Извлечение + граф связей' },
-    { op: 'o313', node: 'n2',  wave: 2, label: 'Проверки A · B · C · D' },
-    { op: 'o314', node: 'n3',  wave: 2, label: 'Первопричины и ранжирование' },
-    { op: 'o315', node: 'n5',  wave: 3, label: 'Объяснение + отчёт (HITL главбух)' }
+    { op: 'o211', node: null,  wave: 1, label: 'Ночная выгрузка копии базы' },
+    { op: 'o212', node: 'n1',  wave: 1, label: 'Связи документов' },
+    { op: 'o213', node: 'n2',  wave: 2, label: 'Проверки A · B · C' },
+    { op: 'o214', node: 'n4',  wave: 3, label: 'Привязка к норме' },
+    { op: 'o215', node: 'n4',  wave: 3, label: 'Подтверждение главбуха' }
   ]
 };
 
@@ -2220,22 +2223,10 @@ const DOD = [
   { at: 999, text: 'Гипотеза второго канала трафика проверена', gap: true }
 ];
 
-const PROCESS_MAP = {
-  'Аудит данных в 1С': [
-    { id: 'p1', label: 'Выгрузка копии базы', kind: 'system', meta: 'ночной read-only снимок' },
-    { id: 'p2', label: 'Связи и проверки A · B · C', kind: 'agent', agent: 'Аудитор 1С', version: 'v2', autonomy: 'L1', dep: 'd4', health: 'ok' },
-    { id: 'p3', label: 'Подтверждение главбуха', kind: 'human', meta: 'HITL-точка · dry_run' },
-    { id: 'p4', label: 'Расследование причин', kind: 'empty', meta: 'участок без агента' },
-    { id: 'p5', label: 'Отчёт находок', kind: 'agent', agent: 'Почта-дайджест', version: 'v1', autonomy: 'L1', dep: 'd2', health: 'warn' }
-  ],
-  'Кредитный конвейер': [
-    { id: 'q1', label: 'Входящая заявка', kind: 'system', meta: 'почта · 14 новых' },
-    { id: 'q2', label: 'Скоринг заявки', kind: 'agent', agent: 'Финаналитик', version: 'v3', autonomy: 'L2', dep: 'd1', health: 'ok' },
-    { id: 'q3', label: 'Решение', kind: 'human', meta: 'кредитный комитет' },
-    { id: 'q4', label: 'Уведомление клиента', kind: 'agent', agent: 'Почта-дайджест', version: 'v1', autonomy: 'L1', dep: 'd2', health: 'warn' }
-  ]
-};
-
+// PROCESS_MAP убран 07.10: это была третья копия одного и того же процесса (после TREE/ASSIGNMENTS и
+// RUN_TRACE), не связанная с ними ни одним идентификатором. Вью-модель procStages/procModes/procNames
+// считалась на каждый рендер, а в разметке не встречалась нигде; тумблер AS-IS|TO-BE над ней ни на
+// что не влиял. Карта процессов живёт в TREE + ASSIGNMENTS (разбор, §2).
 
 const SEM = {
   ok:   { dot: '#10b981', fg: 'var(--ok-ink)', bg: 'rgba(16,185,129,.13)', border: 'rgba(16,185,129,.3)' },
@@ -2446,7 +2437,7 @@ const SEED_MEMORY = {
     { id: 'i4', text: 'Существенные заключения — только под подтверждение главбуха (HITL)', cls: 'crit', ttl: 'без TTL' }
   ]
 };
-const PERSIST_KEYS = ['screen','settingsTab','dataTab','secTab','fleetTab','canvasMode','lens','navOpen','paletteOpen','path','mapLayer','procName','procMode','reviseOf','scenario','canvasNodes','edges','agentStatus','savedAt','modeFilter','familyFilter','inspectorOpen','selOp'];
+const PERSIST_KEYS = ['screen','settingsTab','dataTab','secTab','fleetTab','canvasMode','lens','navOpen','paletteOpen','path','mapLayer','reviseOf','scenario','canvasNodes','edges','agentStatus','savedAt','modeFilter','familyFilter','inspectorOpen','selOp'];
 
 const SCENARIOS = {
   fin: {
@@ -2566,7 +2557,7 @@ class Component extends DCLogic {
     userScenarios: {}, tree: TREE, assignments: ASSIGNMENTS.map(a => Object.assign({}, a, { ops: a.ops.slice() })),
     path: ['org'], mapLayer: 'LIVE', selOp: null, mapDrawer: null, renameText: '', lens: 'build', guardTo: null, fromOps: null,
     deployments: [], instances: [], findingsList: [], findingsMetrics: null, findingsRuns: [], findingsLoading: false, findingCard: null, findingsFilterRun: null, findingFrom: null, labelDecision: '', labelManual: false, labelComment: '', fleetReal: false, fleetAlertsReal: [], fleetSeries: [], fleetQueue: null, fleetHitl: 0, rollbackDiffReal: null, rollbackPrevVersion: '', deployAgentId: null,
-    liveFrozen: false, fleetFilter: 'все', procName: 'Аудит данных в 1С', procMode: 'TO-BE',
+    liveFrozen: false, fleetFilter: 'все',
     deployTarget: null, deployVersion: 'v3', deployArea: 'оценка заявок', deployTrigger: 'событие Data Plane', deployLimit: 3, deployAutonomy: 2,
     rollbackId: null, reviseOf: null, drainId: null, drainPct: 0, healthWindow: '24ч',
     model: 'deepseek-v3', toast: null, toastLeft: 5, remediated: false, contracts: [], ingestBusy: false, ingestResult: null, contract: null, agentPassport: null, envSkillDraft: {}, lastRun: null
@@ -2602,8 +2593,18 @@ class Component extends DCLogic {
       if (d && d.rows) self.setState({ adminRbac: d.rows });
     }).catch(function(){});
   }
+  // Отказ сервера должен доходить до человека. Пустой catch прятал 403 от require_level('manager'):
+  // аналитик правил карту, видел тост «Добавлен блок», на сервер не уходило ничего (разбор, Р4).
   saveConfig(key, value) {
-    fetch('/api/admin/config', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ key:key, value:value }) }).catch(function(){});
+    var self = this;
+    fetch('/api/admin/config', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ key:key, value:value }) })
+      .then(function(r){
+        if (r.ok) return null;
+        return r.json().catch(function(){ return {}; }).then(function(j){
+          throw new Error((j && (j.detail || j.error)) || ('сервер ответил ' + r.status));
+        });
+      })
+      .catch(function(e){ self.showToast('Не сохранено: ' + String((e && e.message) || e).slice(0, 160)); });
   }
   loadBilling() {
     var self = this;
@@ -3218,13 +3219,14 @@ class Component extends DCLogic {
     };
     const runOpState = {};
     RUN_TRACE.steps.forEach((st2, i) => { runOpState[st2.op] = traceStatus(i); });
-    const runNodeState = {};
-    RUN_TRACE.steps.forEach((st2, i) => { if (st2.node) runNodeState[st2.node] = traceStatus(i); });
     const currentStepIdx = (() => {
       for (let i = 0; i < RUN_TRACE.steps.length; i++) { const t = traceStatus(i); if (t === 'thinking' || t === 'hitl' || t === 'stop') return i; }
       return finished ? RUN_TRACE.steps.length - 1 : 0;
     })();
-    const runOnThisPath = s.startedOnce && s.path && s.path[s.path.length - 1] === 's31';
+    // «здесь идёт прогон» считаем из самой трассы: литерал подпроцесса был вторым местом,
+    // где жил её путь, и починить путь в одном месте было нельзя.
+    const runOnThisPath = s.startedOnce && s.path
+      && s.path[s.path.length - 1] === RUN_TRACE.path[RUN_TRACE.path.length - 1];
     const traceTone = {
       idle:     { ring: 'var(--w12)', fg: 'var(--w66)', label: 'в плане' },
       thinking: { ring: '#818cf8', fg: 'var(--acc-ink2)', label: 'идёт сейчас' },
@@ -3394,14 +3396,6 @@ class Component extends DCLogic {
       : hitlN > 0 ? Object.assign({ label: 'флот работает · есть HITL' }, SEM.warn)
       : Object.assign({ label: 'флот здоров' }, SEM.ok);
     const alertTone = { crit: SEM.err, warn: SEM.warn, soft: SEM.idle };
-    const procStages = PROCESS_MAP[s.procName] || [];
-    const procKind = {
-      system: { bg: 'var(--w5)', border: 'var(--w12)', tag: 'система', tagFg: 'var(--w50)' },
-      agent:  { bg: 'rgba(99,102,241,.13)', border: 'rgba(129,140,248,.34)', tag: 'агент', tagFg: 'var(--acc-ink)' },
-      human:  { bg: 'rgba(245,158,11,.11)', border: 'rgba(245,158,11,.3)', tag: 'человек', tagFg: 'var(--warn-ink)' },
-      empty:  { bg: 'transparent', border: 'var(--w18)', tag: 'свободно', tagFg: 'var(--w62)' }
-    };
-
     const mapPath = (s.path && s.path.length) ? s.path : ['org'];
     const mapCur = this.findNode(mapPath[mapPath.length - 1]) || s.tree;
     const mapVisAssigns = s.assignments.filter(a => s.mapLayer === 'TO-BE' ? true : a.layer === 'AS-IS');
@@ -3620,38 +3614,6 @@ class Component extends DCLogic {
           open: () => { if (i.run_id) this.openRun(i.run_id); else { this.setState({ screen: 'canvas', lens: 'run' }); this.route('canvas'); this.loadRuns(); } }
         };
       }),
-      procNames: Object.keys(PROCESS_MAP).map(p => ({
-        label: p, pick: () => this.setState({ procName: p }),
-        bg: s.procName === p ? 'rgba(99,102,241,.2)' : 'var(--w4)',
-        fg: s.procName === p ? 'var(--ink)' : 'var(--w55)',
-        border: s.procName === p ? 'rgba(129,140,248,.45)' : 'var(--w10)'
-      })),
-      procModes: ['AS-IS', 'TO-BE'].map(m => ({
-        label: m, pick: () => this.setState({ procMode: m }),
-        bg: s.procMode === m ? 'var(--w12)' : 'transparent',
-        fg: s.procMode === m ? 'var(--ink)' : 'var(--w45)'
-      })),
-      procStages: procStages.map((p, idx) => {
-        const k = procKind[p.kind];
-        const liveHere = p.dep ? s.instances.filter(i => i.dep === p.dep && i.phase !== 'out').length : 0;
-        return {
-          label: p.label, bg: k.bg, border: k.border, tag: k.tag, tagFg: k.tagFg,
-          isAgent: p.kind === 'agent', isEmpty: p.kind === 'empty',
-          meta: p.kind === 'agent' ? (p.agent + ' ' + p.version + ' · автономия ' + p.autonomy) : (p.meta || ''),
-          liveText: liveHere + ' экз. живо',
-          liveFg: p.health === 'warn' ? 'var(--warn-ink)' : 'var(--ok-ink)',
-          dashed: p.kind === 'empty' ? 'dashed' : 'solid',
-          arrow: idx < procStages.length - 1,
-          open: () => {
-            if (p.kind !== 'agent') return;
-            this.loadScenario(p.agent === 'Аудитор 1С' ? 'audit1c' : 'fin');
-            this.setState({ screen: 'canvas', canvasMode: 'prod' });
-            this.route('canvas');
-            this.showToast('Канва · режим Прод · ' + p.agent + ' ' + p.version);
-          },
-          seat: () => this.setState({ modal: 'deploy', deployArea: p.label })
-        };
-      }),
       healthWindows: ['24ч', '7д', '30д'].map(w => ({
         label: w, pick: () => this.setState({ healthWindow: w }),
         bg: s.healthWindow === w ? 'var(--w12)' : 'transparent',
@@ -3684,10 +3646,7 @@ class Component extends DCLogic {
       ],
       goFleet: () => { this.setState({ screen: 'canvas', lens: 'ops' }); this.route('canvas'); },
       goFleetLive: () => { this.setState({ screen: 'canvas', lens: 'ops', mapDrawer: 'live' }); this.route('canvas'); },
-      openDeploy: () => {
-        if (!(s.role === 'admin' || s.role === 'developer')) { this.showToast('Роль ' + s.role + ' не может сажать агентов — нужен developer или admin'); return; }
-        this.setState({ modal: 'deploy', deployArea: mapCtx.label || s.deployArea });
-      },
+      openDeploy: () => this.openSeat(mapCtx.label),
       preflightFail: preflightNeedsExternal && s.rights < 3,
       preflightText: preflightNeedsExternal && s.rights < 3
         ? ('Префлайт LUDA не пройден: участок «' + (mapCtx.label || '') + '» требует действия наружу (L3), а конверт агента — L' + s.rights + '. Поднимите права узла в линзе «Строю» или выберите другого агента.')
@@ -3744,9 +3703,19 @@ class Component extends DCLogic {
         if (!ag) { this.showToast('Выберите агента для развёртывания'); return; }
         const self = this;
         const sched = /расписание (\d{1,2}:\d{2})/.exec(s.deployTrigger || '');
-        fetch('/api/agents/' + encodeURIComponent(ag.id) + '/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'deployed' }) })
-          .then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); })
-          .then(function(){ if (!sched) return null; return fetch('/api/agents/' + encodeURIComponent(ag.id) + '/triggers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cron: sched[1], title: 'Участок «' + s.deployArea + '»', enabled: true }) }).then(function(r){ if (!r.ok) throw new Error('расписание: HTTP ' + r.status); }); })
+        // Расписание — первым: добавление триггера сохраняет агента НОВОЙ версией (next_version,
+        // статус «черновик»). Раньше deployed ставили прежней версии, а затем создавали поверх неё
+        // черновик: во флоте latest оказывался черновиком, и «актив» он был лишь потому, что у него
+        // включён триггер. Теперь deployed получает ту версию, которую вернул триггер (разбор, Р2).
+        (sched
+          ? fetch('/api/agents/' + encodeURIComponent(ag.id) + '/triggers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cron: sched[1], title: 'Участок «' + s.deployArea + '»', enabled: true }) })
+              .then(function(r){ if (!r.ok) throw new Error('расписание: HTTP ' + r.status); return r.json(); })
+              .then(function(j){ return (j && j.agent_id) || ag.id; })
+          : Promise.resolve(ag.id))
+          .then(function(id){
+            return fetch('/api/agents/' + encodeURIComponent(id) + '/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'deployed' }) })
+              .then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); });
+          })
           .then(function(){
             self.setState({ modal: null, screen: 'canvas', lens: 'ops', mapDrawer: 'reg', reviseOf: null, deployAgentId: null });
             self.route('fleet'); self.loadFleet(); self.reloadAgents();
@@ -3928,16 +3897,19 @@ class Component extends DCLogic {
           canZoom: !isLeaf || c.kind === 'process' || c.kind === 'subprocess',
           canOpenGraph: isLeaf && asg.length > 0, isFree: isLeaf && !asg.length && c.kind === 'task',
           arrow: idx < arr.length - 1,
+          // Клик по карточке: процесс и подпроцесс ведут внутрь, лист — выбирается в инспектор.
+          // Разметка раньше вызывала details, который выбирал процесс как операцию; инспектор после
+          // этого предлагал посадить агента на процесс, а такое назначение не отображается никогда,
+          // потому что совпадение считается по листьям (разбор, Р5).
           select: () => ((c.children && c.children.length) || c.kind === 'process' || c.kind === 'subprocess')
             ? this.setState({ path: ((s.path && s.path.length) ? s.path : ['org']).concat([c.id]), selOp: null })
             : this.setState({ selOp: c.id, renameText: c.label }),
-          details: () => this.setState({ selOp: c.id, renameText: c.label }),
           zoom: () => this.setState({ path: ((s.path && s.path.length) ? s.path : ['org']).concat([c.id]), selOp: null }),
           openGraph: () => this.guardedGo({
             kind: 'graph', scenario: (asg[0] && asg[0].agent === 'Аудитор 1С') ? 'audit1c' : 'fin',
             fromOps: { path: mapPath.slice(), tileId: c.id, crumb: mapCur.label + ' / ' + c.label, agent: asg[0] ? asg[0].agent + ' ' + asg[0].version : 'без агента' }
           }),
-          seat: () => this.setState({ modal: 'deploy', deployArea: c.label })
+          seat: () => this.openSeat(c.label)
         };
       }),
       showInstances: mapOpInstances.length > 0,
@@ -5676,6 +5648,15 @@ class Component extends DCLogic {
     }
     this.setState({ canvasDirty: false, savedAt: at, savedLocalAt: null }); if(c&&c.audit_id){ var self=this; var _edges=(this.state.edges||[]), _nodes=(this.state.canvasNodes||[]); var _hitlIds=_nodes.filter(function(n){return n.kind==='hitl';}).map(function(n){return n.id;}); var _to=function(e){return Array.isArray(e)?e[1]:(e.to!==undefined?e.to:e.b);}; var _from=function(e){return Array.isArray(e)?e[0]:(e.from!==undefined?e.from:e.a);}; var g={nodes:_nodes.map(function(n){ var base={id:n.id,kind:n.kind,title:n.title||n.label||''}; if(n.kind==='skill'){ base.skill=n.title; base.autonomy=n.autonomy||c.autonomy||'A0'; base.hitl=!!n.hitl||_edges.some(function(e){return _from(e)===n.id&&_hitlIds.indexOf(_to(e))>-1;}); } if(n.trig) base.trig=n.trig; if(n.out) base.out=n.out; if(n.entity) base.entity=n.entity; if(n.recipe) base.recipe=n.recipe; if(n.kind==='hitl') base.hitl=true; return base; }),edges:_edges}; fetch('/api/agents',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'Агент · '+(c.family||c.audit_id),contract_audit_id:c.audit_id,graph:g})}).then(function(r){return r.json();}).then(function(j){ if(!j.saved) self.showToast('Не сохранено — governance: '+((j.errors||[])[0]||'ошибка')); else { self.setState({ savedVersion: j.id, savedStatus: j.status }); self.showToast('Граф сохранён: '+j.id); } }).catch(function(){ self.showToast('Черновик не сохранён на сервере: ABOP недоступен'); }); }
     this.persist();
+  }
+
+  // Один гейт на посадку агента на участок. Раньше в этот модал вели три двери с тремя разными
+  // правилами: инспектор смотрел s.role (а он принимает только admin|analyst, поэтому менеджеру и
+  // поддержке отказывали всегда), кнопка на плитке не проверяла ничего, а само развёртывание —
+  // _canMutate(). Правило теперь одно и совпадает с серверным require_level (разбор, Р11).
+  openSeat(label) {
+    if (!this._canMutate()) { this.showToast('Посадить агента может менеджер и выше — у вас только чтение'); return; }
+    this.setState({ modal: 'deploy', deployArea: label || this.state.deployArea, deployAgentId: null });
   }
 
   guardedGo(desc) {

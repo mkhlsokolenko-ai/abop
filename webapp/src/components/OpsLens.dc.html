@@ -145,7 +145,7 @@
                       </svg>
 
                       <sc-for list="{{ ol.opsNodes }}" as="t" hint-placeholder-count="4">
-                        <div onClick="{{ t.details }}" style="position: absolute; left: {{ t.left }}px; top: {{ t.top }}px; width: 212px; min-height: {{ ol.opsCardH }}px; padding: 14px; border: 1px {{ t.dash }} {{ t.border }}; border-radius: 14px; background: {{ t.bg }}; box-shadow: {{ t.shadow }}; outline: 2px solid {{ t.runRing }}; outline-offset: 2px; animation: {{ t.runPulse }}; display: flex; flex-direction: column; gap: 9px; cursor: pointer;" style-hover="border-color: #818cf8;">
+                        <div onClick="{{ t.select }}" style="position: absolute; left: {{ t.left }}px; top: {{ t.top }}px; width: 212px; min-height: {{ ol.opsCardH }}px; padding: 14px; border: 1px {{ t.dash }} {{ t.border }}; border-radius: 14px; background: {{ t.bg }}; box-shadow: {{ t.shadow }}; outline: 2px solid {{ t.runRing }}; outline-offset: 2px; animation: {{ t.runPulse }}; display: flex; flex-direction: column; gap: 9px; cursor: pointer;" style-hover="border-color: #818cf8;">
                           <sc-if value="{{ t.runActive }}" hint-placeholder-val="{{ false }}">
                             <div style="display: flex; align-items: center; gap: 7px; padding: 5px 8px; border-radius: 8px; background: var(--s60); border: 1px solid {{ t.runRing }};">
                               <span style="width: 7px; height: 7px; border-radius: 9999px; background: {{ t.runRing }}; flex: none;"></span>
