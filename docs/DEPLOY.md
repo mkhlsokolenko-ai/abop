@@ -276,6 +276,7 @@ curl -s -XPOST 'http://127.0.0.1:8091/api/runs?async=1' -H "Authorization: Beare
 | «нет доступа к семье» | ABAC: у пользователя нет прав на семью — войти админом |
 | OUT не отправился реально | у OUT-узла нет `✓ Реальная отправка` / стоит `Под HITL` / нет токенов в env |
 | Фронт не обновился после деплоя | hard refresh (Ctrl+F5); бандл должен быть собран из `webapp/src` (`build.py check`) |
+| Деплой «прошёл», но контейнер старый | смотрите `/tmp/deploy.log`: `set: pipefail: invalid option name` = скрипт приехал с CRLF. Лечится `sed -i 's/$//' ops/*.sh`; в репозитории закрыто `.gitattributes` (`*.sh text eol=lf`) и тестом `tests/test_release_eol.py` |
 | Шаблон навыка в UI не тот, что в репо | ручная правка (`builtin=false`) имеет приоритет: `POST /api/schema-templates/{id}/reset` или `push_templates.py --force` |
 | Двойной запуск триггера | планировщик фаерит только лидер (advisory lock); проверить `pg_locks objid=1094864720` |
 

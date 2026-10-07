@@ -6,3 +6,11 @@ webapp/src/fonts/** binary
 webapp/index.html text eol=lf
 webapp/build.py text eol=lf
 tests/** text eol=lf
+
+# Скрипты и Dockerfile исполняются на Linux: CRLF ломает их молча. `git archive` применяет
+# core.autocrlf, поэтому без этой строки релизный архив с Windows приезжает на сервер с \r, и
+# `set -euo pipefail` падает как «invalid option name» — деплой не стартует, контейнер остаётся
+# старый. Ровно это и случилось 07.10.
+*.sh text eol=lf
+Dockerfile* text eol=lf
+ops/** text eol=lf
