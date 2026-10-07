@@ -80,6 +80,17 @@
               </div>
             </sc-if>
 
+            <sc-if value="{{ ol.draftOpen }}" hint-placeholder-val="{{ false }}">
+              <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 11px 14px; border-radius: 12px; background: rgba(99,102,241,.1); border: 1px dashed rgba(129,140,248,.45);">
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .9px; text-transform: uppercase; color: var(--acc-ink);">черновик</span>
+                <span style="font-size: 12.5px; color: var(--ink);">{{ ol.draftText }}</span>
+                <span style="font-size: 12px; color: var(--w55);">{{ ol.draftEditors }}</span>
+                <span style="font-size: 12px; color: var(--w50);">на AS-IS этих правок не видно, пока редакция не применена</span>
+                <button onClick="{{ ol.applyDraft }}" style="margin-left: auto; padding: 6px 14px; border: none; border-radius: 9px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; font-size: 12.5px; font-weight: 600;" style-hover="filter: brightness(1.08);">Применить редакцию</button>
+                <button onClick="{{ ol.dropDraft }}" style="padding: 6px 12px; border: 1px solid var(--w14); border-radius: 9px; background: transparent; color: var(--w60); font-size: 12.5px;" style-hover="color: var(--err-ink); border-color: rgba(239,68,68,.4);">Отбросить</button>
+              </div>
+            </sc-if>
+
             <sc-if value="{{ ol.mapLive }}" hint-placeholder-val="{{ true }}">
               <div style="display: flex; align-items: center; gap: 10px; padding: 11px 14px; border-radius: 12px; background: rgba(52,211,153,.07); border: 1px solid rgba(52,211,153,.22);">
                 <span style="width: 8px; height: 8px; border-radius: 9999px; background: #34d399; flex: none;"></span>
@@ -263,7 +274,8 @@
                       <button onClick="{{ ol.moveRight }}" title="Сдвинуть позже" style="padding: 8px 11px; border: 1px solid var(--w14); border-radius: 9px; background: var(--w5); color: var(--ink); font-size: 11.5px;">→</button>
                       <button onClick="{{ ol.deleteBlock }}" style="padding: 8px 12px; border: 1px solid rgba(239,68,68,.28); border-radius: 9px; background: rgba(239,68,68,.1); color: var(--err-ink); font-size: 11.5px; font-weight: 600;">Удалить</button>
                     </div>
-                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--w35);">группа агента</span>
+                    <sc-if value="{{ ol.ctxSeatable }}" hint-placeholder-val="{{ true }}">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--w35);">группа агента</span>
                     <sc-for list="{{ ol.assignToggles }}" as="a" hint-placeholder-count="3">
                       <button onClick="{{ a.toggle }}" style="display: flex; align-items: center; gap: 9px; padding: 9px 11px; border: 1px solid {{ a.border }}; border-radius: 9px; background: {{ a.bg }}; text-align: left;" style-hover="border-color: #818cf8;">
                         <span style="width: 15px; height: 15px; flex: none; border-radius: 5px; background: {{ a.markBg }}; color: {{ a.markFg }}; font-size: 9px; font-weight: 700; display: flex; align-items: center; justify-content: center;">{{ a.mark }}</span>
@@ -271,6 +283,7 @@
                         <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: var(--w40);">{{ a.opsCount }}</span>
                       </button>
                     </sc-for>
+                </sc-if>
                   </div>
                 </sc-if>
 

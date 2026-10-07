@@ -34,6 +34,8 @@ from server import process_store as ps  # noqa: E402
                 {"id": "o212", "kind": "task", "label": "Связи документов"},
                 {"id": "o213", "kind": "task", "label": "Проверки A · B · C"},
                 {"id": "o214", "kind": "task", "label": "Привязка к норме"},
+            {"id": "o211", "kind": "event", "label": "Ночная выгрузка копии базы"},
+            {"id": "o215", "kind": "hitl", "label": "Подтверждение главбуха"},
             ]},
         ]},
     ],
@@ -136,3 +138,17 @@ def test_область_наследуется_от_процесса(карта)
     assert ps.area_of(ДЕРЕВО, "s21") == "finance"
     assert ps.area_of(ДЕРЕВО, "p2") == "finance"
     assert ps.area_of(ДЕРЕВО, "org") == "*"
+
+
+@pytest.mark.parametrize("узел,вид", [("o211", "событие"), ("o215", "человек")])
+def test_агент_садится_только_на_задачу(карта, узел, вид):
+    """Работу делает задача. Событие — триггер процесса, HITL — человек: сажать туда агента нельзя.
+
+    Поймано на живом стенде: агент сел на «Заявка от поставщика» (event), и карточка участка
+    показала агента там, где его быть не может. Интерфейс это уже знал — кнопка «＋ агент» рисуется
+    только на задачах, — а сервер пускал любой лист.
+    """
+    with pytest.raises(ps.Отказ) as ex:
+        asyncio.run(ps.append(карта, base_version=0, author="@pm",
+                              changes=[_правка("add_seat", узел, audit_id="audit-1c")]))
+    assert вид in str(ex.value).lower() or "задач" in str(ex.value).lower()

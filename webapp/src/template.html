@@ -3811,7 +3811,7 @@ class Component extends DCLogic {
         const full = (s.path && s.path.length) ? s.path : ['org'];
         const path = full;
         return path.map((id, i) => {
-          const n = this.findNode(id) || s.tree;
+          const n = this.findNode(id) || s.tree || ПУСТАЯ_КАРТА;
           const last = i === path.length - 1;
           const realIdx = full.indexOf(id);
           const lvlName = { org: 'организация', process: 'процесс', subprocess: 'подпроцесс', task: 'операция', hitl: 'операция', gateway: 'операция', event: 'операция', wait: 'операция' }[n.kind] || 'уровень';
@@ -3869,6 +3869,17 @@ class Component extends DCLogic {
         label: OP_KINDS[k].tag, glyph: OP_KINDS[k].glyph, bg: OP_KINDS[k].bg, border: OP_KINDS[k].border, fg: OP_KINDS[k].fg,
         add: () => this.addBlock(k)
       })),
+      // Полоса редакции. Полная панель с разбором изменений — этап 2; здесь минимум, без которого
+      // черновик был бы тупиком: сколько правок, применить, отбросить.
+      draftOpen: !!(s.procDraft && s.mapLayer === 'TO-BE'),
+      draftText: s.procDraft
+        ? ('Редакция · ' + s.procVersion + ' ' + this.plural(s.procVersion, 'правка', 'правки', 'правок')
+           + (s.procDraft.author ? ' · ' + s.procDraft.author : ''))
+        : '',
+      draftEditors: (s.procEditors || []).length > 1
+        ? ('здесь ещё: ' + (s.procEditors || []).filter(x => x !== ((s.me || {}).name)).join(', ')) : '',
+      applyDraft: () => this.applyMapRevision(),
+      dropDraft: () => this.dropMapRevision(),
       mapEmpty: (mapCur.children || []).length === 0,
       opsW: opsLayout.w, opsH: opsLayout.h, opsCardH: (s.mapLayer === 'LIVE' && s.startedOnce) ? 212 : 138,
       opsSizerW: Math.round(opsLayout.w * s.mapZoom), opsSizerH: Math.round(opsLayout.h * s.mapZoom),
@@ -3973,7 +3984,7 @@ class Component extends DCLogic {
         ];
       })(),
       ctxHasAssign: mapCtxAssigns.length > 0,
-      ctxSeatable: !(mapCtx.children || []).length && mapCtx.kind !== 'org',
+      ctxSeatable: mapCtx.kind === 'task',   // работу делает задача: событие — триггер, HITL — человек
       ctxAgent: mapCtxAssigns.length ? (mapCtxAssigns[0].agent + ' ' + mapCtxAssigns[0].version) : '',
       ctxAgentOps: mapCtxAssigns.length ? ('закрывает операций: ' + mapCtxAssigns[0].ops.length + (mapCtxAssigns[0].layer === 'TO-BE' ? ' · плановое размещение' : '')) : '',
       ctxAgentAutonomy: mapCtxAssigns.length ? mapCtxAssigns[0].autonomy : '',
@@ -3998,7 +4009,7 @@ class Component extends DCLogic {
       moveLeft: () => s.selOp && this.moveBlock(s.selOp, -1),
       moveRight: () => s.selOp && this.moveBlock(s.selOp, 1),
       deleteBlock: () => s.selOp && this.removeBlock(s.selOp),
-      assignToggles: (s.agentsList || []).slice(0, 24).map(a => {
+      assignToggles: (mapCtx.kind === 'task' ? (s.agentsList || []).slice(0, 24) : []).map(a => {
         const audit = a.contract_audit_id || String(a.id || '').split('.v')[0];
         const свои = (s.procSeats || []).filter(x => x.audit_id === audit && x.state !== 'dropping');
         const on = s.selOp ? свои.some(x => x.op_id === s.selOp) : false;
@@ -5768,12 +5779,12 @@ class Component extends DCLogic {
       if (!d || !d.tree) {
         // Карты на стенде ещё нет. Админу создаём её из сида TREE один раз (запись идёт в аудит),
         // остальным честно показываем пустое состояние: выдумывать карту в браузере нельзя.
-        if (!self._procSeeded && s.me && s.me.level === 'admin') {
+        if (!self._procSeeded) {
           self._procSeeded = true;
           return fetch('/api/process/map', { method: 'POST', headers: { 'Content-Type': 'application/json' },
                                              body: JSON.stringify({ tree: TREE, note: 'первичный сид карты' }) })
-            .then(function(r){ return r.ok ? self.loadProcessMap(true) : null; })
-            .catch(function(){ return null; });
+            .then(function(r){ if (r.ok) return self.loadProcessMap(true); self.setState({ procLoaded: true }); return null; })
+            .catch(function(){ self.setState({ procLoaded: true }); return null; });
         }
         self.setState({ procLoaded: true });
         return null;
@@ -5809,6 +5820,35 @@ class Component extends DCLogic {
 
   unwatchProcess() {
     if (this._procES) { try { this._procES.close(); } catch (e) {} this._procES = null; }
+  }
+
+  // Применить редакцию: план становится фактом одной транзакцией, с префлайтом конверта (ADR-013).
+  // base_version строгий — применять то, во что дописали после вашего просмотра, нельзя.
+  applyMapRevision() {
+    var self = this, s = this.state;
+    if (!s.procDraft) { this.showToast('Нечего применять — черновика нет'); return; }
+    fetch('/api/process/revision/' + encodeURIComponent(s.procDraft.id) + '/apply', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ base_version: s.procVersion || 0 })
+    }).then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){ return { ok: r.ok, j: j || {} }; }); })
+      .then(function(res){
+        if (!res.ok) {
+          var d = res.j.detail;
+          self.showToast('Не применено: ' + String((d && (d.error || d)) || '').slice(0, 170));
+          self.loadProcessMap(true); return;
+        }
+        self.showToast('Редакция ' + res.j.revision + ' применена · участков добавлено: '
+                       + res.j.seats_added + ', снято: ' + res.j.seats_closed, true);
+        self.loadProcessMap(true); self.loadFleet();
+      }).catch(function(){ self.showToast('ABOP недоступен — редакция не применена'); });
+  }
+
+  dropMapRevision() {
+    var self = this, s = this.state;
+    if (!s.procDraft) return;
+    fetch('/api/process/revision/' + encodeURIComponent(s.procDraft.id), { method: 'DELETE' })
+      .then(function(r){ if (!r.ok) throw new Error(r.status); self.showToast('Редакция отброшена — карта осталась прежней'); self.loadProcessMap(true); })
+      .catch(function(){ self.showToast('Не удалось отбросить редакцию'); });
   }
 
   // Одна правка карты = одна строка журнала редакции. base_version — номер, который мы последним
