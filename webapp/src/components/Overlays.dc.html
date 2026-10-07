@@ -851,12 +851,13 @@
               <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w60);">{{ sp.label }}</span>
               <div style="display: flex; align-items: flex-end; gap: 4px; height: 46px;">
                 <sc-for list="{{ sp.bars }}" as="b" hint-placeholder-count="8">
-                  <span style="flex: 1; height: {{ b.h }}px; border-radius: 3px 3px 0 0; background: {{ sp.color }}; opacity: .65;"></span>
+                  <span title="{{ b.title }}" style="flex: 1; height: {{ b.h }}px; border-radius: 3px 3px 0 0; background: {{ b.bg }}; opacity: {{ b.op }};"></span>
                 </sc-for>
               </div>
             </div>
           </sc-for>
         </div>
+        <span style="font-size: 11.5px; color: var(--w50);">{{ ov.sparksNote }}</span>
       </div>
     </div>
   </sc-if>

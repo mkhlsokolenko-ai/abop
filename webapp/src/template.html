@@ -3528,11 +3528,17 @@ class Component extends DCLogic {
     const _dodVals = _ser.map(x => x.dod).filter(v => typeof v === 'number');
     const dodNow = _dodVals.length ? _dodVals[_dodVals.length - 1] : 100;
     const dodBase = _dodVals.length > 1 ? Math.round(_dodVals.slice(0, -1).reduce((n, v) => n + v, 0) / (_dodVals.length - 1)) : dodNow;
+    // День без прогонов — это пробел, а не ноль и не выдуманное значение. Раньше DoD подставлял 55
+    // для таких дней, и график читался как «в этот день DoD был 55%», хотя прогонов не было вовсе.
     const _pad8 = (arr) => { const a = arr.slice(-8); while (a.length < 8) a.unshift(null); return a; };
-    const histErr = _pad8(_ser.map(x => x.err || 0)).map(v => v || 0);
+    const _ранБыли = _pad8(_ser.map(x => (x.n !== undefined ? x.n > 0 : (x.dod !== null && x.dod !== undefined))));
+    const histErr = _pad8(_ser.map(x => x.err || 0));
     const _costMax = Math.max(0.01, ..._ser.map(x => x.cost || 0));
-    const histCost = _pad8(_ser.map(x => (x.cost || 0) / _costMax)).map(v => v || 0);
-    const histDod = _pad8(_ser.map(x => x.dod)).map(v => (typeof v === 'number' ? v : 55));
+    const histCost = _pad8(_ser.map(x => (x.cost || 0) / _costMax));
+    const histDod = _pad8(_ser.map(x => x.dod));
+    const _столбик = (v, высота, цвет, подпись) => (v === null || v === undefined)
+      ? { h: 2, empty: true, bg: 'var(--w14)', op: 1, title: 'прогонов в этот день не было' }
+      : { h: высота(v), empty: false, bg: цвет, op: 0.65, title: подпись(v) };
 
     const nodeMaxX = s.canvasNodes.length ? Math.max.apply(null, s.canvasNodes.map(n => n.x)) : 0;
     const nodeMaxY = s.canvasNodes.length ? Math.max.apply(null, s.canvasNodes.map(n => n.y)) : 0;
@@ -3700,10 +3706,21 @@ class Component extends DCLogic {
         };
       }),
       sparks: [
-        { label: 'ошибки', color: '#ef4444', bars: histErr.map(v => ({ h: 6 + Math.min(4, v) * 10 })) },
-        { label: 'стоимость, ₽', color: '#8b5cf6', bars: histCost.map(v => ({ h: 6 + Math.round(v * 40) })) },
-        { label: 'прохождение DoD', color: '#34d399', bars: histDod.map(v => ({ h: 6 + Math.round((v - 55) * 0.9) })) }
+        { label: 'ошибки · 8 дней', color: '#ef4444',
+          bars: histErr.map(v => _столбик(v, x => 6 + Math.min(4, x) * 10, '#ef4444',
+                                          x => x + ' ' + this.plural(x, 'ошибка', 'ошибки', 'ошибок'))) },
+        { label: 'стоимость · макс ' + _costMax.toFixed(2) + ' ₽ в день', color: '#8b5cf6',
+          bars: histCost.map(v => _столбик(v, x => 6 + Math.round(x * 40), '#8b5cf6',
+                                           x => (x * _costMax).toFixed(2) + ' ₽')) },
+        { label: 'прохождение DoD', color: '#34d399',
+          bars: histDod.map(v => _столбик(v, x => 6 + Math.round(x * 0.4), '#34d399',
+                                          x => 'DoD ' + x + '%')) }
       ],
+      costMaxLabel: _costMax.toFixed(2) + ' ₽',
+      sparksEmpty: _ранБыли.every(v => !v),
+      sparksNote: _ранБыли.every(v => !v)
+        ? 'за восемь дней прогонов не было — графику нечего показать'
+        : 'пустой столбик — день без прогонов, а не нулевой результат',
       goFleet: () => { this.setState({ screen: 'canvas', lens: 'ops' }); this.route('canvas'); },
       goFleetLive: () => { this.setState({ screen: 'canvas', lens: 'ops', mapDrawer: 'live' }); this.route('canvas'); },
       openDeploy: () => this.openSeat(mapCtx.label, s.selOp),
@@ -3907,7 +3924,10 @@ class Component extends DCLogic {
         { id: 'health', label: 'Здоровье', hint: 'KPI флота, дрейф DoD, алерты', badge: '' }
       ].map(p => ({
         label: p.label, hint: p.hint, badge: p.badge, selected: s.mapDrawer === p.id ? 'true' : 'false',
-        go: () => this.setState({ mapDrawer: s.mapDrawer === p.id ? null : p.id }),
+        // Панель флота — таблицы, им нужна ширина: открываем сразу широко (колонка едет влево),
+        // закрываем — колонка возвращается к инспектору. Инспектор при этом не исчезает.
+        go: () => { const открыть = s.mapDrawer !== p.id;
+                    this.setState({ mapDrawer: открыть ? p.id : null, opsWide: открыть, inspectorOpen: true }); },
         bg: s.mapDrawer === p.id ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : 'transparent',
         fg: s.mapDrawer === p.id ? '#fff' : 'var(--w60)'
       })),
