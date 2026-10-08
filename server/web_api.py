@@ -30,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, arbiter, assembly, audit_store, blackboard, planner, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, dataplane_records, mcp_server, pipeline_store, process_deploy, process_store, rbac_map, reglament_store, chat_store, orchestrator, report_compose, report_store, choice_store, doclink, run_cache_store, run_parts_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, arbiter, assembly, audit_store, blackboard, planner, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, bpmn_import, dataplane_records, mcp_server, pipeline_store, process_deploy, process_store, rbac_map, reglament_store, chat_store, orchestrator, report_compose, report_store, choice_store, doclink, run_cache_store, run_parts_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
@@ -1480,6 +1480,103 @@ async def process_liveness(response: Response, window: str = "7d", u: dict = Dep
     for x in итог["outside"]:
         x["agent"] = имена.get(x["audit_id"]) or x["audit_id"]
     return итог
+
+
+@app.get("/api/process/history")
+async def process_history(response: Response, limit: int = 50, u: dict = Depends(user)) -> dict:
+    """Как менялся процесс: применённые редакции сверху вниз — кто, когда, сколько узлов стало.
+
+    Карта отвечала «как сейчас» и не отвечала «когда это стало так и кто решил». Для процессной
+    карты это половина смысла: решение принимают один раз, живут с ним годами, а спрашивают про
+    него через полгода.
+    """
+    response.headers["Cache-Control"] = "no-store"
+    return {"area": process_store.КАРТА,
+            "revisions": await process_store.history(process_store.КАРТА, limit=limit)}
+
+
+@app.get("/api/process/diff")
+async def process_diff(response: Response, base: int = 0, target: int = 0,
+                       u: dict = Depends(user)) -> dict:
+    """Что изменилось между двумя применёнными редакциями — по сущностям, не построчно.
+
+    `base=0` — предыдущая по отношению к `target`; `target=0` — текущая.
+    """
+    response.headers["Cache-Control"] = "no-store"
+    история = await process_store.history(process_store.КАРТА, limit=500)
+    if not история:
+        return {"base": None, "target": None, "diff": process_store.разница({}, {})}
+    номера = [r["revision"] for r in история]
+    цель = int(target) or номера[0]
+    если = [n for n in номера if n < цель]
+    основа = int(base) or (если[0] if если else цель)
+    a = await process_store.map_at(process_store.КАРТА, основа)
+    b = await process_store.map_at(process_store.КАРТА, цель)
+    if b is None:
+        raise HTTPException(404, f"редакции {цель} нет")
+    return {"base": основа, "target": цель,
+            "applied_by": b.get("applied_by"), "applied_at": b.get("applied_at"),
+            "diff": process_store.разница((a or {}).get("tree") or {}, b.get("tree") or {})}
+
+
+@app.get("/api/process/coverage")
+async def process_coverage(response: Response, window: str = "7d",
+                           u: dict = Depends(user)) -> dict:
+    """Где агенты и где дыры — главный отчёт процессной карты.
+
+    Карта говорит, как устроен процесс. Этот отчёт отвечает на следующий вопрос, ради которого
+    её и ведут: какая часть процесса закрыта агентами, какая держится на людях и где агент
+    посажен, но на самом деле не работает. Связка «посадка + подтверждение прогонами» и
+    отличает ABOP от схемы без факта и от реестра агентов без схемы.
+    """
+    response.headers["Cache-Control"] = "no-store"
+    карта = await process_store.map_of(process_store.КАРТА)
+    живое = await process_liveness(Response(), window, u)
+    отчёт = process_store.покрытие(tree=карта.get("tree") or {},
+                                   seats=await process_store.seats_of(), live=живое)
+    имена = {str(a.get("contract_audit_id") or a["id"]).split(".v")[0]: a.get("name")
+             for a in await agent_store.list_for(None, limit=500)}
+    for строка in отчёт["rows"]:
+        строка["agent_names"] = [имена.get(x) or x for x in строка["agents"]]
+    return {"revision": карта.get("revision"), "window": window, **отчёт}
+
+
+@app.post("/api/process/import/bpmn")
+async def process_import_bpmn(payload: dict, u: dict = Depends(user)) -> dict:
+    """Импорт BPMN 2.0 в редакцию карты. `{"xml": "...", "preview": true|false, "area": "..."}`.
+
+    Организации, которым адресован продукт, рисуют процессы не у нас — в Camunda, Signavio, ARIS.
+    Импорт превращает «нарисуйте свою организацию заново» в «покажите, что есть, и посадим
+    агентов». Пишется он ОБЫЧНОЙ редакцией: иначе появился бы второй путь записи мимо
+    согласования и мимо прав на область, а подписываемая редакция (ADR-042) и есть то, чем карта
+    отличается от схемы в рисовалке.
+    """
+    xml = str(payload.get("xml") or "")
+    if not xml.strip():
+        raise HTTPException(422, "xml: пусто")
+    try:
+        разбор = bpmn_import.разобрать(xml)
+    except bpmn_import.НеBPMN as ex:
+        raise HTTPException(422, str(ex)) from ex
+    if payload.get("preview", True):
+        return {"preview": True, **разбор}
+
+    область = str(payload.get("area") or u.get("department") or "")
+    if not can_edit_area(u, область):
+        raise HTTPException(403, f"область «{область}» вам не принадлежит")
+    правки = bpmn_import.правки_импорта(разбор["tree"])
+    черновик = await process_store.draft_of(область)
+    база = (черновик or {}).get("version") or 0
+    try:
+        итог = await process_store.append(область, base_version=база, changes=правки,
+                                          author=u.get("name") or u.get("sub") or "dev")
+    except (process_store.Отказ, process_store.Конфликт) as ex:
+        return _process_http(ex)
+    await audit_store.record(u.get("name") or u.get("sub") or "dev", "process.import.bpmn",
+                             область, {"nodes": разбор["stats"], "skipped": разбор["skipped"]})
+    return {"preview": False, "area": область, "applied_to_draft": len(правки),
+            "revision_id": итог.get("revision_id"), "version": итог.get("version"),
+            "stats": разбор["stats"], "skipped": разбор["skipped"]}
 
 
 @app.get("/api/process/stream")

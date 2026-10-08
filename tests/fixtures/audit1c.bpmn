@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" id="defs" targetNamespace="http://abop">
+  <process id="Audit" name="Аудит данных в 1С" isExecutable="true">
+    <startEvent id="s1" name="Ночная выгрузка"/>
+    <serviceTask id="t1" name="Связи документов"/>
+    <serviceTask id="t2" name="Проверки A B C"/>
+    <exclusiveGateway id="g1" name="Существенные находки?"/>
+    <userTask id="u1" name="Подтверждение главбуха"/>
+    <intermediateCatchEvent id="w1" name="Пауза сутки">
+      <timerEventDefinition id="td1"/>
+    </intermediateCatchEvent>
+    <endEvent id="e1"/>
+    <subProcess id="sub1" name="Эскалация">
+      <serviceTask id="t3" name="Письмо руководителю"/>
+      <endEvent id="e2"/>
+      <sequenceFlow id="fs1" sourceRef="t3" targetRef="e2"/>
+    </subProcess>
+    <sequenceFlow id="f1" sourceRef="s1" targetRef="t1"/>
+    <sequenceFlow id="f2" sourceRef="t1" targetRef="t2"/>
+    <sequenceFlow id="f3" sourceRef="t2" targetRef="g1"/>
+    <sequenceFlow id="f4" sourceRef="g1" targetRef="u1">
+      <conditionExpression xsi:type="tFormalExpression" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">${severe}</conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="f5" sourceRef="g1" targetRef="e1"/>
+    <sequenceFlow id="f6" sourceRef="u1" targetRef="w1"/>
+    <sequenceFlow id="f7" sourceRef="t2" targetRef="t3"/>
+    <laneSet id="ls"><lane id="l1" name="Бухгалтерия"/></laneSet>
+  </process>
+</definitions>

@@ -509,6 +509,164 @@ async def map_of(area: str) -> dict:
             "applied_at": r[5].isoformat() if r[5] else None}
 
 
+async def history(area: str, *, limit: int = 50) -> list[dict]:
+    """Как менялся процесс: применённые редакции сверху вниз.
+
+    Хранить историю ничего не стоило — `process_map` и так пишет строку на каждое применение,
+    ключ `(area, revision)`. Не хватало только чтения: карта показывала «как сейчас» и не
+    отвечала на вопрос «когда это стало так и кто решил». Для процессной карты это половина
+    смысла: решение о процессе принимают один раз, а живут с ним годами.
+    """
+    if not _has_pg():
+        строки = list(_MEM["map"].get(area) or [])
+        строки.sort(key=lambda r: r.get("revision") or 0, reverse=True)
+        return [{"revision": r.get("revision"), "note": r.get("note"),
+                 "applied_by": r.get("applied_by"),
+                 "applied_at": r.get("applied_at"),
+                 "nodes": len(поддерево(r.get("tree") or {})) if r.get("tree") else 0}
+                for r in строки[:limit]]
+    from .db import _conn
+    async with _conn() as conn:
+        cur = await conn.execute(
+            "SELECT revision, note, applied_by, applied_at, tree FROM process_map "
+            "WHERE area = %s ORDER BY revision DESC LIMIT %s", (area, max(1, min(500, limit))))
+        строки = await cur.fetchall()
+    return [{"revision": r[0], "note": r[1], "applied_by": r[2],
+             "applied_at": r[3].isoformat() if r[3] else None,
+             "nodes": len(поддерево(r[4] or {})) if r[4] else 0} for r in строки]
+
+
+async def map_at(area: str, revision: int) -> dict | None:
+    """Дерево на конкретной редакции — вход для сравнения «что изменилось между N и M»."""
+    if not _has_pg():
+        for r in (_MEM["map"].get(area) or []):
+            if int(r.get("revision") or 0) == int(revision):
+                return dict(r)
+        return None
+    from .db import _conn
+    async with _conn() as conn:
+        cur = await conn.execute(
+            "SELECT area, revision, tree, note, applied_by, applied_at FROM process_map "
+            "WHERE area = %s AND revision = %s", (area, revision))
+        r = await cur.fetchone()
+    if not r:
+        return None
+    return {"area": r[0], "revision": r[1], "tree": r[2], "note": r[3], "applied_by": r[4],
+            "applied_at": r[5].isoformat() if r[5] else None}
+
+
+def _узлы(дерево: dict) -> dict:
+    """id → {label, kind, parent} по всему дереву."""
+    out: dict = {}
+
+    def обойти(узел: dict, родитель_id: str | None) -> None:
+        if not isinstance(узел, dict) or not узел.get("id"):
+            return
+        out[узел["id"]] = {"label": узел.get("label"), "kind": узел.get("kind"),
+                           "parent": родитель_id}
+        for ребёнок in (узел.get("children") or []):
+            обойти(ребёнок, узел["id"])
+
+    обойти(дерево or {}, None)
+    return out
+
+
+def _рёбра(дерево: dict) -> set:
+    out = set()
+
+    def обойти(узел: dict) -> None:
+        if not isinstance(узел, dict):
+            return
+        for e in (узел.get("edges") or []):
+            out.add((узел.get("id"), e.get("from"), e.get("to")))
+        for ребёнок in (узел.get("children") or []):
+            обойти(ребёнок)
+
+    обойти(дерево or {})
+    return out
+
+
+def разница(было: dict, стало: dict) -> dict:
+    """Что изменилось между двумя деревьями — по сущностям, а не построчным текстом.
+
+    Текстовый diff двух JSON отвечает «поменялись такие-то строки», а человеку нужно «появилась
+    операция», «переименовали шаг», «исчезла связь». Сравнение по узлам и рёбрам даёт ровно это
+    и переживает переформатирование.
+    """
+    a, b = _узлы(было), _узлы(стало)
+    добавлены = [{"id": k, **b[k]} for k in b.keys() - a.keys()]
+    удалены = [{"id": k, **a[k]} for k in a.keys() - b.keys()]
+    переименованы, перемещены = [], []
+    for k in a.keys() & b.keys():
+        if (a[k].get("label") or "") != (b[k].get("label") or ""):
+            переименованы.append({"id": k, "from": a[k].get("label"), "to": b[k].get("label")})
+        if a[k].get("parent") != b[k].get("parent"):
+            перемещены.append({"id": k, "label": b[k].get("label"),
+                               "from": a[k].get("parent"), "to": b[k].get("parent")})
+    ра, рб = _рёбра(было), _рёбра(стало)
+    св_доб = [{"in": c, "from": f, "to": t} for c, f, t in рб - ра]
+    св_уд = [{"in": c, "from": f, "to": t} for c, f, t in ра - рб]
+    for список in (добавлены, удалены, переименованы, перемещены, св_доб, св_уд):
+        список.sort(key=lambda x: str(x.get("id") or x.get("from")))
+    return {"added": добавлены, "removed": удалены, "renamed": переименованы,
+            "moved": перемещены, "edges_added": св_доб, "edges_removed": св_уд,
+            "total": (len(добавлены) + len(удалены) + len(переименованы) + len(перемещены)
+                      + len(св_доб) + len(св_уд))}
+
+
+def покрытие(*, tree: dict, seats: list[dict], live: dict | None = None) -> dict:
+    """Где агенты и где дыры — главный отчёт процессной карты.
+
+    Карта отвечает на вопрос «как устроен процесс». Этот отчёт отвечает на следующий, ради
+    которого её и ведут: какая часть процесса закрыта агентами, какая держится на людях и где
+    агент посажен, но на самом деле не работает. Именно связка «посадка + подтверждение
+    прогонами» (ADR-043/044) отличает ABOP от BPM-инструментов, у которых есть схема без факта,
+    и от реестров агентов, у которых есть факт без схемы.
+
+    Считается из тех же данных, что показывает карта: дерево, действующие посадки и liveness.
+    """
+    узлы = _узлы(tree)
+    операции = {k: v for k, v in узлы.items() if v.get("kind") == "task"}
+    прочие_листья = {k: v for k, v in узлы.items()
+                     if v.get("kind") in ("event", "gateway", "hitl", "wait")}
+    по_операциям = (live or {}).get("ops") or {}
+    посажено: dict = {}
+    for s in seats:
+        посажено.setdefault(s["op_id"], []).append(s["audit_id"])
+
+    строки, дыры = [], []
+    состояния = {"подтверждён": 0, "тихо": 0, "осиротел": 0, "без агента": 0}
+    for op, инфо in sorted(операции.items()):
+        агенты = посажено.get(op) or []
+        if not агенты:
+            состояние = "без агента"
+            дыры.append({"op_id": op, "label": инфо.get("label"),
+                         "why": "операция без агента: шаг держится на человеке"})
+        else:
+            состояние = (по_операциям.get(op) or {}).get("state") or "тихо"
+            if состояние == "осиротел":
+                дыры.append({"op_id": op, "label": инфо.get("label"),
+                             "why": "агент выведен в Лимб, шаг не закрывает никто"})
+            elif состояние == "тихо":
+                дней = (по_операциям.get(op) or {}).get("silent_days")
+                дыры.append({"op_id": op, "label": инфо.get("label"),
+                             "why": "агент посажен, но не работает"
+                                    + (f" {дней} дн." if дней is not None else "")})
+        состояния[состояние] = состояния.get(состояние, 0) + 1
+        строки.append({"op_id": op, "label": инфо.get("label"), "agents": агенты,
+                       "state": состояние,
+                       "runs": (по_операциям.get(op) or {}).get("runs") or 0})
+
+    всего = len(операции)
+    закрыто = состояния.get("подтверждён", 0)
+    return {"operations": всего, "confirmed": закрыто,
+            "coverage_pct": round(100 * закрыто / всего) if всего else 0,
+            "by_state": состояния,
+            "non_task_leaves": len(прочие_листья),
+            "rows": строки, "gaps": дыры,
+            "outside": (live or {}).get("outside") or []}
+
+
 async def seats_of(area: str | None = None, *, include_closed: bool = False) -> list[dict]:
     """Посадки. `area=None` — все: карта организации одна, и видно её целиком (ADR-045).
     По умолчанию только действующие (`until IS NULL`)."""

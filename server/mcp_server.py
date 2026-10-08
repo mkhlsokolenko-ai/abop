@@ -34,7 +34,7 @@ import os
 # выбор «что отдаём наружу», а не второе определение инструментов: тела и описания общие.
 ЧТЕНИЕ_ИЗ_НАБОРА_АГЕНТА = ("data_query", "data_get", "data_schema",
                            "audit1c_graph", "audit1c_checks")
-СВОИ = ("process_map", "process_liveness", "agents_list")
+СВОИ = ("process_map", "process_liveness", "process_coverage", "agents_list")
 ПРЕДЕЛ_ОТВЕТА = 20000
 
 
@@ -118,6 +118,18 @@ def собрать():
         окно = str((args or {}).get("window") or "7d")
         данные = await web_api.process_liveness(Response(), окно, u)
         _лог("mcp.tool", tool="process_liveness", actor=u.get("name") or u.get("sub"), window=окно)
+        return _ответ(данные)
+
+    @mcp.tool(name="process_coverage",
+              description='где агенты и где дыры: по каждой операции агент и состояние, '
+                          'доля подтверждённых прогонами, перечень пробелов — '
+                          'args: {"window": "24h|7d|30d"}')
+    async def process_coverage(args: dict | None = None) -> str:
+        from fastapi import Response
+        u = _кто()
+        окно = str((args or {}).get("window") or "7d")
+        данные = await web_api.process_coverage(Response(), окно, u)
+        _лог("mcp.tool", tool="process_coverage", actor=u.get("name") or u.get("sub"))
         return _ответ(данные)
 
     @mcp.tool(name="agents_list",
