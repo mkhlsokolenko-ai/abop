@@ -7,10 +7,10 @@
 Запуск (dev): uvicorn server.web_api:app --reload --port 8091
 Прод: за Caddy (TLS), рядом с FastMCP-шлюзом. Контракт — docs/ABOP_API.md.
 
-Статус эндпоинтов:
-- READ (families/skills/dataplane/plan) — реальные вызовы ядра, готовы.
-- RUN/STREAM/HITL — контракт зафиксирован; исполнение прогона через API требует выноса
-  cmd_agents в фон + SSE (следующий инкремент), сейчас отдают 501 с формой ответа.
+Статус эндпоинтов: заглушек не осталось. READ, RUN, HITL и STREAM реализованы — прогон идёт
+заданием очереди (202 + job_id), подтверждения человека возвращают задание с чекпоинта, живой ход
+прогона отдаётся по SSE `/api/runs/{id}/stream`. Шапка держала обратное до 08.10, хотя RUN и HITL
+работали давно: описание пережило реализацию на три недели.
 """
 from __future__ import annotations
 
@@ -4556,10 +4556,9 @@ async def agent_del_trigger(agent_id: str, trigger_id: str, u: dict = Depends(us
     return {"ok": True, "agent_id": saved["id"], "version": saved.get("version")}
 
 
-# ═══════════════ RUN / STREAM / HITL: контракт (исполнение — следующий инкремент) ═══════════════
-
-_NOT_IMPL = ("Прогон через API требует выноса cmd_agents в фон + SSE-стрим (следующий инкремент). "
-             "Форма ответа зафиксирована в docs/ABOP_API.md; сейчас — 501.")
+# ═════════════════════════════════ RUN / STREAM / HITL ═════════════════════════════════════════
+# Осиротевший _NOT_IMPL убран 08.10 вместе с последним 501: прогон идёт заданием очереди, HITL
+# возвращает задание с чекпоинта, ход прогона отдаётся по SSE.
 
 
 async def _gate_agent_data(agent: dict, fam_key: str, actor: str) -> tuple[set, list]:
@@ -8150,14 +8149,135 @@ async def billing(u: dict = Depends(user)) -> dict:
             "by_model": by_model, "by_run": by_run[:12], "source": "run_metrics"}
 
 
-@app.get("/api/runs/{run_id}/stream", status_code=501)
-def run_stream(run_id: str, u: dict = Depends(user)) -> JSONResponse:
-    """SSE-стрим прогона. Контракт-события: wave_start/agent_step/board_event/handoff/
-    audit_verdict/hitl_request/run_done. Сейчас 501."""
-    return JSONResponse({"detail": _NOT_IMPL,
-                         "sse_events": ["wave_start", "agent_step", "board_event", "handoff",
-                                        "audit_verdict", "hitl_request", "run_done"]},
-                        status_code=501)
+async def _job_by_ref(ref: str) -> dict | None:
+    """Задание по его id ИЛИ по id прогона: клиент знает то одно, то другое."""
+    j = await run_queue.get(ref)
+    if j:
+        return j
+    for x in await run_queue.list_jobs(actor=None, limit=200):
+        if x.get("run_id") == ref:
+            return x
+    return None
+
+
+@app.get("/api/runs/{run_id}/stream")
+async def run_stream(run_id: str, u: dict = Depends(user)):
+    """Живой ход прогона (SSE). Единственная заглушка API, закрытая 08.10 (п.14 исследования).
+
+    Событий ровно столько, сколько рантайм действительно наблюдает, — выдумывать недостающие
+    тут нельзя, это тот же класс ошибки, что демо-данные в интерфейсе:
+
+    * `hello` — задание найдено: статус, позиция в очереди, число навыков;
+    * `queue` — позиция меняется, пока задание ждёт воркера;
+    * `wave_start` — сменилась фаза прогона (данные → навыки → сборка отчёта → доставка);
+    * `agent_step` — навык сменил состояние (running / done / error) с таймингом: это и есть
+      ответ на «что сейчас делает агент», которого не хватало по разбору 05.10;
+    * `board_event` — на доске прогона появился новый вывод с авторством;
+    * `hitl_request` — задание встало на подтверждение человека;
+    * `run_done` — финал с вердиктом и стоимостью; дальше поток закрывается;
+    * `ping` — каждые 20 с, чтобы прокси не рвал соединение.
+
+    `handoff` и `audit_verdict` отдельными событиями не шлём: передача между навыками видна
+    парой `agent_step`, а вердикт аудитора приходит внутри `run_done`. Обещать событие, которого
+    рантайм не порождает, — значит снова описать контракт, которому ничего не соответствует.
+    """
+    import asyncio as _asyncio
+    import json as _json
+
+    from fastapi.responses import StreamingResponse
+
+    задание = await _job_by_ref(run_id)
+    if задание is None:
+        raise HTTPException(404, "прогон или задание не найдено: " + run_id)
+    if задание.get("agent_id"):
+        агент = await agent_store.get(задание["agent_id"])
+        if агент and not can_see_family(u, агент.get("family")):
+            raise HTTPException(403, "прогон чужого отдела")
+    jid = задание["id"]
+    scope = "run:" + str(задание.get("run_id") or jid)
+
+    def _пакет(тип: str, **поля) -> str:
+        return "data: " + _json.dumps({"type": тип, "job_id": jid, **поля}, ensure_ascii=False) + "\n\n"
+
+    async def gen():
+        прошлый_статус = ""
+        прошлая_фаза = ""
+        прошлые_навыки: dict = {}
+        прошлая_позиция = -1
+        видели_доску: set = set()
+        молчим = 0.0
+        j = задание
+        поз = await run_queue.position(jid)
+        прог = ((j.get("checkpoint") or {}).get("run") or {})
+        yield _пакет("hello", run_id=j.get("run_id"), status=j.get("status"), position=поз,
+                     total=прог.get("total") or 0, agent_id=j.get("agent_id"))
+        while True:
+            await _asyncio.sleep(1.0)
+            молчим += 1.0
+            j = await run_queue.get(jid)
+            if j is None:
+                yield _пакет("run_done", status="unknown",
+                             note="задание исчезло из очереди (очистка журнала)")
+                return
+            статус = str(j.get("status") or "")
+            прог = ((j.get("checkpoint") or {}).get("run") or {})
+
+            if статус == "queued":
+                поз = await run_queue.position(jid)
+                if поз != прошлая_позиция:
+                    прошлая_позиция = поз
+                    молчим = 0.0
+                    yield _пакет("queue", position=поз)
+
+            фаза = str(прог.get("phase") or "")
+            if фаза and фаза != прошлая_фаза:
+                прошлая_фаза = фаза
+                молчим = 0.0
+                yield _пакет("wave_start", phase=фаза, total=прог.get("total") or 0)
+
+            for sid, сост in (прог.get("skills") or {}).items():
+                if прошлые_навыки.get(sid) != сост:
+                    прошлые_навыки[sid] = dict(сост) if isinstance(сост, dict) else сост
+                    молчим = 0.0
+                    yield _пакет("agent_step", skill=sid, **(сост if isinstance(сост, dict) else {"state": сост}))
+
+            try:
+                for e in await blackboard.load(scope):
+                    ключ = str(e.get("key")) + ":" + str(e.get("author"))
+                    if ключ not in видели_доску:
+                        видели_доску.add(ключ)
+                        молчим = 0.0
+                        yield _пакет("board_event", key=e.get("key"), author=e.get("author"),
+                                     note=e.get("note"))
+            except Exception:  # noqa: BLE001 — доска не обязана существовать у каждого прогона
+                pass
+
+            if статус != прошлый_статус:
+                прошлый_статус = статус
+                молчим = 0.0
+                if статус == "awaiting_hitl":
+                    заявки = [h for h in await hitl_store.list_pending()
+                              if str(h.get("run_id") or "") in (j.get("run_id"), jid)]
+                    yield _пакет("hitl_request", pending=len(заявки),
+                                 title=(заявки[0].get("title") if заявки else None))
+                elif статус in ("done", "failed", "cancelled"):
+                    итог = None
+                    if j.get("run_id"):
+                        итог = await run_store.get(j["run_id"])
+                    в = (итог or {}).get("verdict") or {}
+                    yield _пакет("run_done", status=статус, run_id=j.get("run_id"),
+                                 verdict_ok=bool(в.get("ok")),
+                                 autonomy_used=в.get("autonomy_used"),
+                                 error=j.get("error"),
+                                 cost=((итог or {}).get("run_metrics") or {}).get("cost") or {})
+                    return
+
+            if молчим >= 20.0:
+                молчим = 0.0
+                yield _пакет("ping", status=статус)
+
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
 
 @app.get("/api/hitl/queue")

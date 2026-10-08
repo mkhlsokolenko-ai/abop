@@ -118,7 +118,7 @@
                   <div style="height: 1px; background: var(--w8); margin-top: 12px;"></div>
                 </div>
                 <div style="display: flex; align-items: center; gap: 8px;">
-                  <span style="flex: 1; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--w40);">Палитра · тяни на холст</span>
+                  <span id="glPaletteTitle" style="flex: 1; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--w40);">Палитра · тяни на холст</span>
                   <button onClick="{{ gl.hidePalette }}" title="Убрать палитру влево" style="width: 26px; height: 26px; border: 1px solid var(--w12); border-radius: 8px; background: var(--w5); color: var(--acc-ink2); font-size: 13px;" style-hover="border-color: #818cf8; color: var(--ink);">‹</button>
                 </div>
                 <sc-for list="{{ gl.palette }}" as="g" hint-placeholder-count="4">
@@ -142,7 +142,7 @@
                 <button onClick="{{ gl.showPalette }}" title="Открыть палитру" style="flex: none; align-self: flex-start; display: flex; align-items: center; gap: 8px; padding: 12px 10px; border: 1px solid var(--w16); border-left: none; border-radius: 0 12px 12px 0; background: var(--p95); color: var(--acc-ink2); font-size: 12px; font-weight: 600; writing-mode: vertical-rl;" style-hover="border-color: #818cf8; color: var(--ink);">Палитра ›</button>
               </sc-if>
 
-              <div style="position: relative; flex: 1 1 300px; min-width: 300px; height: {{ gl.canvasH }}px; border-radius: 16px; overflow: hidden; background: var(--s45); border: 1px solid {{ gl.canvasBorder }};">
+              <div role="application" aria-label="Холст агента: узлы и связи. Перетаскивание мышью, связи через порты узлов." tabindex="0" style="position: relative; flex: 1 1 300px; min-width: 300px; height: {{ gl.canvasH }}px; border-radius: 16px; overflow: hidden; background: var(--s45); border: 1px solid {{ gl.canvasBorder }};">
               <div style="position: absolute; right: 12px; top: 12px; z-index: 5; display: flex; align-items: center; gap: 6px;">
                 <div style="display: flex; align-items: center; gap: 2px; padding: 3px; border-radius: 10px; background: var(--p90); border: 1px solid var(--w16);">
                   <button onClick="{{ gl.zoomOut }}" title="Уменьшить" style="width: 26px; height: 26px; border: none; border-radius: 7px; background: transparent; color: var(--acc-ink2); font-size: 15px; line-height: 1;" style-hover="background: var(--w9); color: var(--ink);">−</button>

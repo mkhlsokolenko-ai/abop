@@ -57,7 +57,7 @@ web_api НЕ дублирует логику — только выставляе
 Прогон = LLM-оркестрация волнами (долгий) → фоновая задача + SSE. Требует выноса `cmd_agents` в фон с эмиссией событий.
 
 ### `POST /api/runs` → `202 {run_id, plan}`
-Тело: `{goal: str, agent_id?: str}`. Запускает прогон, возвращает id. *(сейчас 501 + контракт)*
+Тело: `{goal: str, agent_id?: str}`. Ставит прогон заданием в очередь, возвращает `202 + job_id`; ход — по SSE `GET /api/runs/{id}/stream` (события `hello/queue/wave_start/agent_step/board_event/hitl_request/run_done/ping`).
 
 ### `GET /api/runs/{run_id}/stream` → `text/event-stream`
 SSE-события (по мере исполнения):
@@ -82,7 +82,7 @@ SSE-события (по мере исполнения):
 | Метод · Путь | Ответ |
 |---|---|
 | `GET /api/hitl/queue` | `{queue:[{item_id,run_id,skill,preview,ts}]}` — action-навыки в dry_run |
-| `POST /api/hitl/{item_id}/approve` `{decision:approve\|reject, reason?}` | `{applied}` — исполнить/отклонить действие *(501 сейчас)* |
+| `POST /api/hitl/{item_id}/approve` `{decision:approve\|reject, reason?}` | `{applied}` — исполнить/отклонить действие; approve делает РЕАЛЬНУЮ доставку и возвращает задание в очередь с чекпоинта |
 
 Инвариант: ничего `action`/`external` не уходит наружу без `approve` (ADR-014).
 
