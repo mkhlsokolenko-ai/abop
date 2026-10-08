@@ -62,6 +62,19 @@ docker run -d --name abop-webapi --network host --restart unless-stopped --memor
 curl -sf http://127.0.0.1:8091/api/health   # → {"ok":true,...}
 ```
 
+### MCP-сервер на проде
+
+С 08.10 в `/opt/abop/.env` стоит `ABOP_MCP=1`: сервер для чужих агентов поднят на `/mcp`
+(streamable-http) того же порта 8091, то есть доступен везде, где доступен `/api`. Проверка:
+
+```bash
+curl -s -X POST http://127.0.0.1:8091/mcp/ -H 'Content-Type: application/json'   -H 'Accept: application/json, text/event-stream'   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"probe","version":"0"}}}'
+# в логах старта: {"event": "mcp.mounted", "tools": 11} и {"event": "mcp.lifespan_started"}
+```
+
+Рукопожатие открыто (это сам протокол), **вызов инструмента без Bearer отвечает 401** — проверено
+на проде. Выключение — убрать строку из `.env` и перезапустить контейнер; пересборка не нужна.
+
 > ⚠️ **Никогда не запускать без `-v abop_ape:/root/.ape`** — потеряете память прогонов, архив доски и файловые рецепты. Канонические записи Data Plane с 08.10 в Postgres (`dp_records`), но переносом из файлов занимается старт сервера: подняв контейнер без тома ДО переноса, вы потеряете и их.
 
 ### Деплой с локальной машины (как в разработке)
