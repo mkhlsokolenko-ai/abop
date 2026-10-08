@@ -92,5 +92,8 @@ def test_миграция_зовёт_хук():
     """Сам разрыв: скрипт переноса обязан пройти через тот же хук, что и HTTP-применение."""
     текст = (ROOT / "scripts" / "migrate_process_map.py").read_text(encoding="utf-8")
     assert "deploy_seated" in текст, "перенос снова применяет редакцию мимо развёртывания"
-    веб = (ROOT / "server" / "web_api.py").read_text(encoding="utf-8")
+    # Карта процессов переехала в server/routes/process.py (п.23) — ищем там же, где она живёт.
+    веб = chr(10).join(f.read_text(encoding="utf-8") for f in
+                       [ROOT / "server" / "web_api.py"]
+                       + sorted((ROOT / "server" / "routes").glob("*.py")))
     assert "process_deploy.deploy_seated" in веб, "у HTTP-пути своя копия хука — разъедутся"

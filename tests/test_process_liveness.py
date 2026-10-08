@@ -127,7 +127,10 @@ def test_операции_прогона_берутся_из_посадок_аг
             {"kind": "add_seat", "target": "o213", "payload": {"audit_id": "audit-1c"}}])
         await ps.apply("finance", base_version=r["version"], actor="@pm")
         from server import web_api
-        return await web_api._seat_ops({"id": "audit-1c.v2", "contract_audit_id": "audit-1c"})
+        # _seat_ops переехал вместе с картой процессов в server/routes/process.py (п.23).
+        from server.routes import process as маршруты_карты
+        return await маршруты_карты._seat_ops({"id": "audit-1c.v2",
+                                               "contract_audit_id": "audit-1c"})
     assert sorted(asyncio.run(сценарий())) == ["o212", "o213"]
 
 

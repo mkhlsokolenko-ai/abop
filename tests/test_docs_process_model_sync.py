@@ -30,7 +30,21 @@ import pytest
 ADR = КОРЕНЬ / "docs" / "ABOP_ADR.md"
 РАЗБОР = КОРЕНЬ / "docs" / "UX_ANALYSIS_OPS_LENS_2026-10-07.md"
 API = КОРЕНЬ / "docs" / "ABOP_API.md"
-WEB_API = КОРЕНЬ / "server" / "web_api.py"
+# Домены переезжают из монолита в server/routes/* (п.23). Тест обязан искать ручки по всему
+# пакету, иначе переезд «теряет» их на ровном месте — и статическая проверка начинает врать.
+WEB_API_ФАЙЛЫ = [КОРЕНЬ / "server" / "web_api.py"] + sorted(
+    (КОРЕНЬ / "server" / "routes").glob("*.py"))
+
+
+class _Сборный:
+    """Склеенный исходник HTTP-слоя: один объект с .read_text(), как раньше был файл."""
+
+    @staticmethod
+    def read_text(encoding: str = "utf-8") -> str:
+        return chr(10).join(f.read_text(encoding=encoding) for f in WEB_API_ФАЙЛЫ)
+
+
+WEB_API = _Сборный
 
 НОМЕР_ЗАГОЛОВКА = re.compile(r"^#{2,3}\s+ADR-(\d{3})\.", re.M)
 НОМЕР_ТАБЛИЦЫ = re.compile(r"^\|\s*(\d{3})\s*\|", re.M)
@@ -76,8 +90,8 @@ def test_эндпоинты_карты_есть_в_api_доке():
     """Ручка, которой нет в ABOP_API.md, не существует для того, кто интегрируется."""
     код = WEB_API.read_text(encoding="utf-8")
     док = API.read_text(encoding="utf-8")
-    пути = sorted(set(re.findall(r'@app\.(?:get|post|delete|put)\("(/api/process/[^"]+)"', код)))
-    assert пути, "в web_api.py не нашлось ручек /api/process/* — проверьте шаблон поиска"
+    пути = sorted(set(re.findall(r'@(?:app|router)\.(?:get|post|delete|put)\("(/api/process/[^"]+)"', код)))
+    assert пути, "в HTTP-слое не нашлось ручек /api/process/* — проверьте шаблон поиска"
     нет = [p for p in пути if p not in док]
     assert not нет, "ручки есть в коде, но не описаны в ABOP_API.md: " + ", ".join(нет)
 
