@@ -30,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, arbiter, assembly, audit_store, blackboard, planner, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, bpmn_import, dataplane_records, mcp_server, pipeline_store, process_deploy, process_store, rbac_map, reglament_store, chat_store, orchestrator, report_compose, report_store, choice_store, doclink, run_cache_store, run_parts_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, arbiter, assembly, audit_store, blackboard, planner, cachebus, charts, clients, compute, contract_store, cost_estimate, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, bpmn_import, dataplane_records, mcp_server, pipeline_store, process_deploy, process_store, rbac_map, reglament_store, chat_store, orchestrator, report_compose, report_store, choice_store, doclink, run_cache_store, run_parts_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
@@ -3358,6 +3358,35 @@ async def _agent_for_skills(sids: list[str], u: dict) -> dict | None:
         if rank == 0:
             break                      # свой нашёлся — дальше искать нечего
     return best[1] if best else None
+
+
+@app.post("/api/plan/estimate")
+async def plan_estimate(payload: dict, u: dict = Depends(user)) -> dict:
+    """Во что обойдётся цепочка ДО запуска (пункт 5 разбора 05.10).
+
+    Человек собирал шесть навыков и жал «запустить», не зная цены. Бюджет прогона (ADR-035) умеет
+    остановить перерасход, но останавливает он уже потраченное.
+
+    Числа — из собственного журнала: медиана токенов по прошлым прогонам навыка. Оценка сама
+    улучшается по мере работы, а навык без истории помечается отдельно, вместо того чтобы
+    получить правдоподобную выдумку.
+    """
+    шаги = [str(x) for x in (payload.get("steps") or []) if str(x).strip()]
+    if not шаги:
+        raise HTTPException(422, "steps: пусто")
+    # Модель берём ту же, что пойдёт в прогон: первая в каскаде профиля. Иначе оценка считалась
+    # бы по одной цене, а работа — по другой.
+    каскад = settings.cascade_for(str(payload.get("profile") or "standard"))
+    модель = str(payload.get("model") or "").strip() or (каскад[0] if каскад else "")
+    прогоны = []
+    for сводка in await run_store.list_runs(limit=120):
+        полный = await run_store.get(сводка["id"])
+        if полный:
+            прогоны.append(полный)
+    история = cost_estimate.наблюдения(прогоны)
+    from .pricing import cost_rub
+    итог = cost_estimate.оценить(steps=шаги, history=история, model=модель, цена=cost_rub)
+    return {**итог, "runs_seen": len(прогоны)}
 
 
 @app.post("/api/plan/feedback")
@@ -8179,13 +8208,104 @@ async def runs_search(q: str = "", agent_id: str = "", verdict: str = "", days: 
     return {"runs": out, "count": len(out), "query": q}
 
 
+@app.post("/api/agents/{agent_id:path}/step")
+async def agent_run_step(agent_id: str, payload: dict, u: dict = Depends(user)) -> dict:
+    """Прогнать ОДИН навык агента и показать вход-выход (пункт 3 разбора 05.10).
+
+    Запуск был «всё или ничего»: на цепочке из шести навыков это четыре–шесть минут до первой
+    обратной связи, и если первый же шаг собрал не те данные, человек узнавал об этом в конце. В
+    Dify и n8n один узел выполняется отдельно — у нас такого не было.
+
+    Сделано БЕЗ второго пути исполнения: собираем временного агента из одного узла и гоняем его
+    тем же `execute_agent_run`, что и обычный прогон. Иначе «один шаг» со временем начал бы вести
+    себя не так, как тот же шаг внутри цепочки, — и отладка по нему стала бы враньём.
+
+    Прогон журналируется (он правда тратит токены), но помечается `started_by: step-test` и
+    уходит БЕЗ `op_ids`: пробный шаг не вправе подтверждать участок карты.
+    """
+    навык = str(payload.get("skill") or "").strip()
+    if not навык:
+        raise HTTPException(422, "skill: пусто")
+    агент = await agent_store.get(agent_id)
+    if not агент:
+        raise HTTPException(404, "нет такого агента")
+    if not can_see_family(u, агент.get("family")):
+        raise HTTPException(403, "агент чужого отдела")
+    require_level(u, "manager")
+
+    граф = агент.get("graph") or {}
+    узлы = [n for n in (граф.get("nodes") or []) if n.get("kind") == "skill"]
+    узел = next((n for n in узлы if (n.get("skill") or n.get("id")) == навык), None)
+    if узел is None:
+        raise HTTPException(404, f"в графе агента нет навыка «{навык}»: "
+                                 + ", ".join(sorted({str(n.get("skill") or n.get("id")) for n in узлы})))
+
+    # Узлы-источники оставляем: без них навык не получит данных и шаг проверит не то. Выходы
+    # наружу убираем всегда — пробный шаг не должен ничего отправлять, даже в превью.
+    оставить = [n for n in (граф.get("nodes") or [])
+                if n is узел or n.get("kind") in ("source", "trigger", "input", "doc")]
+    один = {**агент, "id": агент["id"] + "#step",
+            "graph": {**граф, "nodes": оставить,
+                      "edges": [e for e in (граф.get("edges") or [])
+                                if e.get("to") == узел.get("id")]}}
+
+    контракт = await contract_store.get(агент.get("contract_audit_id") or "") or {}
+    итог = await execute_agent_run(
+        один, контракт, "step-test", started_by_sub=_sub(u),
+        use_cache=False,                       # пробный шаг обязан пойти в модель, иначе это не проверка
+        user_context=str(payload.get("context") or ""),
+        deliver_filter="none",                 # наружу ничего
+        limits=payload.get("limits") or None)
+    результат = итог.get("result") or {}
+    шаги = [f for f in (результат.get("findings") or []) if f.get("skill") == навык]
+    ш = шаги[0] if шаги else {}
+    return {"agent": агент["id"], "skill": навык,
+            "run_id": (итог.get("saved") or {}).get("id"),
+            "ok": bool((результат.get("verdict") or {}).get("ok")),
+            "sources": {"entities": ш.get("entities") or [],
+                        "documents": [d.get("name") or d.get("path")
+                                      for d in ((результат.get("run_metrics") or {}).get("documents") or [])]},
+            "model": ш.get("model"), "input_tokens": ш.get("input_tokens"),
+            "output_tokens": ш.get("output_tokens"),
+            "text": str(ш.get("text") or "")[:8000],
+            "note": "пробный шаг: в журнале помечен step-test, участок карты не подтверждает"}
+
+
+def шаги_с_источниками(run: dict) -> list[dict]:
+    """Что именно дошло до каждого навыка (пункт 6 разбора 05.10).
+
+    В карточке прогона было видно, ЧТО навык ответил, но не видно, из чего он это взял: сущности
+    Data Plane, документы по ссылке, вложения. Вопрос «а он вообще мой файл прочитал?» оставался
+    без ответа. Данные были в записи прогона всё это время — не хватало их собрать в одно место.
+    """
+    документы = [d.get("name") or d.get("path")
+                 for d in ((run.get("run_metrics") or {}).get("documents") or []) if d.get("ok")]
+    снимок = ((run.get("run_metrics") or {}).get("data_snapshot") or {})
+    out = []
+    for f in (run.get("findings") or []):
+        if not isinstance(f, dict) or not f.get("skill"):
+            continue
+        сущности = [str(e) for e in (f.get("entities") or [])]
+        out.append({"skill": f["skill"], "model": f.get("model") or "",
+                    "entities": сущности,
+                    "records": {e: (снимок.get(e) or {}).get("records") for e in сущности
+                                if isinstance(снимок.get(e), dict)},
+                    "documents": документы if f.get("model") else [],
+                    "input_tokens": f.get("input_tokens") or 0,
+                    "output_tokens": f.get("output_tokens") or 0,
+                    "skipped": bool(f.get("skipped"))})
+    return out
+
+
 @app.get("/api/runs/{run_id}")
 async def run_get(run_id: str, u: dict = Depends(user)) -> dict:
     """Полная запись прогона (волны, доска, вердикт, run_metrics)."""
     r = await run_store.get(run_id)
     if not r:
         raise HTTPException(404, "нет такого прогона")
-    return r
+    # «Источники шага» собираем здесь, а не в браузере: данные были в записи всё это время, но
+    # разбросаны по findings и run_metrics, и каждый клиент собирал бы их по-своему.
+    return {**r, "step_sources": шаги_с_источниками(r)}
 
 
 def _diff_key(x: dict) -> str:
