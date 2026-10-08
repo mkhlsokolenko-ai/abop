@@ -302,8 +302,12 @@ async def admin_rbac(u: dict = Depends(user)) -> dict:
 # при перенакате). Теперь общие для всех операторов и переживают рестарт. См.
 # persistence-localstorage-hole. Отсутствующие ключи ⇒ клиент берёт свой дефолт (сид в state).
 # tree/assignments — карта процессов (области ответственности агентов), авторится в RBAC-редакторе.
+# `tree` и `assignments` отсюда убраны 08.10: карта процессов и посадки живут в собственных
+# таблицах (ADR-042/043), и эти ключи больше никто не читает. Оставлять их в белом списке записи
+# значило бы держать настройку, которую можно поменять и не получить ничего, — худший вид мёртвого
+# интерфейса. Чистка уже записанных значений — `scripts/cleanup_legacy_config.py`.
 _ADMIN_CONFIG_KEYS = {"modelCfg", "defaultProfile", "tenantMode", "quotaLimit", "quotaPolicy",
-                      "escThresholds", "tree", "assignments", "tokenQuota", "nluConfig", "runLimits"}
+                      "escThresholds", "tokenQuota", "nluConfig", "runLimits"}
 
 @router.get("/api/admin/config")
 async def admin_config(u: dict = Depends(user)) -> dict:

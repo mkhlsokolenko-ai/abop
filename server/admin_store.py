@@ -61,3 +61,19 @@ async def save(key: str, value, editor: str = "dev"):
             "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, editor=EXCLUDED.editor, updated_at=now()",
             (key, json.dumps(value), editor))
     return value
+
+
+async def delete(key: str) -> bool:
+    """Убрать настройку совсем. Вернёт True, если было что убирать.
+
+    Раньше ключ, записанный однажды, жил вечно: `save` умел только перезаписывать. Для настройки,
+    которая перестала читаться кодом, это ловушка — человек правит её в интерфейсе и ждёт эффекта.
+    Удаление не то же, что запись пустого значения: пустое значение клиент покажет как выбор
+    оператора, а отсутствующий ключ — как «берём умолчание».
+    """
+    if not _has_pg():
+        return _MEM.pop(key, None) is not None
+    from .db import _conn
+    async with _conn() as conn:
+        cur = await conn.execute("DELETE FROM app_config WHERE key = %s", (key,))
+        return (cur.rowcount or 0) > 0
