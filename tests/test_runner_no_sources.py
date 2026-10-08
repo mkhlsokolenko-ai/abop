@@ -88,7 +88,9 @@ def test_прогон_предупреждает_один_раз_за_всех()
 def test_строка_источников_не_молчит():
     """Документ без строки источника выглядит так же убедительно, как собранный по выгрузке из 1С."""
     import pathlib
-    src = (pathlib.Path(__file__).resolve().parents[1] / "server" / "web_api.py").read_text(encoding="utf-8")
+    # Слой сборки контекста отчёта уехал из монолита в server/report_context.py (ADR-052): его
+    # зовут и карточка прогона, и предпросмотр шаблона. Проверка смотрит туда, где код живёт.
+    src = (pathlib.Path(__file__).resolve().parents[1] / "server" / "report_context.py").read_text(encoding="utf-8")
     i = src.index("def _sources_html")
     body = src[i:i + 2200]
     assert "knowledge_mode" in body, "строка источников не знает про работу без данных"

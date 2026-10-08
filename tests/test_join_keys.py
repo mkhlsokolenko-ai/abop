@@ -128,7 +128,7 @@ def test_push_script_sends_the_contract():
 
 def test_import_endpoint_carries_the_contract():
     """Эндпоинт импорта кладёт контракт в карточку, а не теряет его по дороге."""
-    src = (Path(__file__).resolve().parents[1] / "server" / "web_api.py").read_text(encoding="utf-8")
+    src = (Path(__file__).resolve().parents[1] / "server" / "routes" / "templates.py").read_text(encoding="utf-8")
     i = src.index("async def schema_templates_import(")
     body = src[i:i + 3000]
     for field in ("inputs", "produces", "slots", "tool_steps"):

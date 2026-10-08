@@ -7,8 +7,13 @@
 который продаёт управляемость, это худшее место для декларации.
 
 Здесь матрица собирается разбором собственного исходника: каждый роут `@app.<метод>("/api/…")`
-сопоставляется с `require_level(u, "<уровень>")` в его теле. Нет вызова — роут доступен любому
-аутентифицированному (ABAC по отделу при этом продолжает действовать отдельно).
+или `@router.<метод>(…)` сопоставляется с `require_level(u, "<уровень>")` в его теле. Нет вызова —
+роут доступен любому аутентифицированному (ABAC по отделу при этом продолжает действовать
+отдельно).
+
+Разбирается ВЕСЬ HTTP-слой: приложение и каждый вынесенный домен (`server/routes/*.py`, ADR-052).
+Смотреть только в монолит значило бы занижать охват ровно на те ручки, которые уже переехали, —
+и экран прав снова начал бы отвечать не на тот вопрос.
 
 Разбор идёт по AST, а не регуляркой: иначе закомментированный или упомянутый в строке вызов
 посчитался бы за настоящий гейт — ровно та подмена декларации фактом, против которой модуль и
@@ -20,7 +25,9 @@ import ast
 import pathlib
 
 УРОВНИ = ("analyst", "manager", "support", "admin")
-_ИСХОДНИК = pathlib.Path(__file__).with_name("web_api.py")
+_ПАКЕТ = pathlib.Path(__file__).resolve().parent
+_ИСХОДНИКИ = [_ПАКЕТ / "web_api.py"] + sorted(
+    p for p in (_ПАКЕТ / "routes").glob("*.py") if p.name != "__init__.py")
 _КЭШ: dict | None = None
 
 
@@ -46,7 +53,8 @@ def _роуты(узел: ast.AST) -> list[tuple[str, str]]:
             continue
         хозяин = getattr(d.func.value, "id", "")
         метод = d.func.attr
-        if хозяин != "app" or метод not in ("get", "post", "put", "patch", "delete"):
+        # `app` в монолите, `router` в вынесенном домене — одна и та же внешняя ручка.
+        if хозяин not in ("app", "router") or метод not in ("get", "post", "put", "patch", "delete"):
             continue
         if d.args and isinstance(d.args[0], ast.Constant) and isinstance(d.args[0].value, str):
             out.append((метод.upper(), d.args[0].value))
@@ -58,27 +66,28 @@ def собрать() -> dict:
     global _КЭШ
     if _КЭШ is not None:
         return _КЭШ
-    дерево = ast.parse(_ИСХОДНИК.read_text(encoding="utf-8"))
     по_уровням: dict[str, list[dict]] = {lv: [] for lv in УРОВНИ}
     открытых = 0
     всего = 0
-    for узел in ast.walk(дерево):
-        if not isinstance(узел, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            continue
-        роуты = _роуты(узел)
-        if not роуты:
-            continue
-        уровень = _гейт(узел)
-        for метод, путь in роуты:
-            всего += 1
-            if уровень in по_уровням:
-                по_уровням[уровень].append({"method": метод, "path": путь})
-            else:
-                открытых += 1
+    for файл in _ИСХОДНИКИ:
+        дерево = ast.parse(файл.read_text(encoding="utf-8"))
+        for узел in ast.walk(дерево):
+            if not isinstance(узел, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            роуты = _роуты(узел)
+            if not роуты:
+                continue
+            уровень = _гейт(узел)
+            for метод, путь in роуты:
+                всего += 1
+                if уровень in по_уровням:
+                    по_уровням[уровень].append({"method": метод, "path": путь})
+                else:
+                    открытых += 1
     for lv in по_уровням:
         по_уровням[lv].sort(key=lambda r: (r["path"], r["method"]))
     _КЭШ = {"by_level": по_уровням, "open": открытых, "total": всего,
-            "source": "ast:" + _ИСХОДНИК.name}
+            "source": "ast:" + ", ".join(f.name for f in _ИСХОДНИКИ)}
     return _КЭШ
 
 
