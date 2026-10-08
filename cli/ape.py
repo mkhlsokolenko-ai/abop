@@ -2941,6 +2941,19 @@ def set_connector_store(connectors) -> None:
     _CONNECTOR_STORE = None if connectors is None else list(connectors)
 
 
+# Канонические ЗАПИСИ (не определения) — последний файловый слой Data Plane. Пока они лежали в
+# ~/.ape/data/*.jsonl, вторая реплика на другом хосте видела пустую сущность, а том оставался
+# единственной точкой потери данных. Сервер инжектит стор (server/dataplane_records), CLI без
+# сервера продолжает работать файлами. Семантика версий одна и та же.
+_RECORD_STORE = None
+
+
+def set_record_store(store) -> None:
+    """Сервер инжектит стор канонических записей. None — вернуть файловый режим."""
+    global _RECORD_STORE
+    _RECORD_STORE = store
+
+
 def data_recipes() -> list:
     if _RECIPE_STORE is not None:
         return sorted(_RECIPE_STORE.keys())
@@ -3232,6 +3245,11 @@ def data_run(name: str, reset: bool = False) -> tuple:
     """
     r = data_load_recipe(name)
     entity, out, dropped, invalid = _apply_recipe(r, name=name)
+    if _RECORD_STORE is not None:
+        _RECORD_STORE.append(entity, out, reset=reset)
+        if not reset:
+            _RECORD_STORE.compact(entity)
+        return entity, len(out), dropped, invalid
     with open(_data_path(entity), "w" if reset else "a", encoding="utf-8") as f:
         for rec in out:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
@@ -3360,6 +3378,8 @@ def data_query(entity: str, filters: dict = None, fields: list = None, limit: in
     НЕ протухает по одному лишь времени — данные не исчезают, пока их не заменит более новая
     версия. TTL вытесняет только СТАРЫЕ, перекрытые версии (они и так отсеяны дедупом при чтении;
     физически удаляются компакцией — см. _data_compact). include_stale=True → вся история версий."""
+    if _RECORD_STORE is not None:
+        return _RECORD_STORE.query(entity, filters, fields, limit, include_stale)
     try:
         with open(_data_path(entity), encoding="utf-8") as f:
             recs = [json.loads(x) for x in f if x.strip()]
@@ -3405,6 +3425,8 @@ def _data_compact(entity: str) -> int:
     """Компакция canonical store: оставляем ПОСЛЕДНЮЮ версию каждого id (всегда) + недавно
     перекрытые версии в пределах TTL; более старые перекрытые — удаляем (чтобы файл не рос
     бесконечно и старьё уходило по TTL). Возвращает число удалённых строк."""
+    if _RECORD_STORE is not None:
+        return _RECORD_STORE.compact(entity)
     p = _data_path(entity)
     try:
         with open(p, encoding="utf-8") as f:

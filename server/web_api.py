@@ -30,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, arbiter, assembly, audit_store, blackboard, planner, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, process_deploy, process_store, rbac_map, reglament_store, chat_store, orchestrator, report_compose, report_store, choice_store, doclink, run_cache_store, run_parts_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, arbiter, assembly, audit_store, blackboard, planner, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, dataplane_records, pipeline_store, process_deploy, process_store, rbac_map, reglament_store, chat_store, orchestrator, report_compose, report_store, choice_store, doclink, run_cache_store, run_parts_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
@@ -2466,6 +2466,52 @@ async def _refresh_dataplane_cache() -> None:
         pass
 
 
+def _attach_record_store() -> None:
+    """Канонические записи — из Postgres, а не из файлов тома.
+
+    Определения (рецепты, коннекторы) уехали в БД давно, записи оставались последним файловым
+    слоем: вторая реплика на другом хосте видела пустую сущность, а том `abop_ape` был
+    единственной точкой потери данных. Инъекция — тем же приёмом, что у рецептов: `ape` остаётся
+    пригодным как CLI без сервера.
+    """
+    try:
+        dataplane_records.init()
+        ape.set_record_store(dataplane_records)
+        obs.log_event("info", "dataplane.records.store", backend="pg" if dataplane_records._has_pg() else "mem")
+    except Exception as ex:  # noqa: BLE001 — без стора работаем файлами, но это надо видеть
+        obs.log_event("error", "dataplane.records.store_fail", error=f"{type(ex).__name__}: {ex}")
+
+
+async def _backfill_records_from_files() -> int:
+    """Одноразовый перенос ~/.ape/data/*.jsonl в Postgres: сущность пуста в БД — заливаем файл.
+
+    Непустую не трогаем: повторный запуск сервера не должен дублировать записи, а ручная правка
+    в БД не должна затираться старым файлом.
+    """
+    if not dataplane_records._has_pg():
+        return 0
+    import glob
+    import json as _json
+    каталог = os.path.join(os.path.expanduser("~"), ".ape", "data")
+    перенесено = 0
+    for путь in sorted(glob.glob(os.path.join(каталог, "*.jsonl"))):
+        сущность = os.path.splitext(os.path.basename(путь))[0]
+        try:
+            if dataplane_records.count(сущность):
+                continue
+            with open(путь, encoding="utf-8") as f:
+                записи = [_json.loads(x) for x in f if x.strip()]
+            if not записи:
+                continue
+            dataplane_records.append(сущность, записи)
+            перенесено += len(записи)
+            obs.log_event("info", "dataplane.records.backfill", entity=сущность, records=len(записи))
+        except Exception as ex:  # noqa: BLE001 — одна битая сущность не должна ронять старт
+            obs.log_event("warn", "dataplane.records.backfill_fail", entity=сущность,
+                          error=f"{type(ex).__name__}: {ex}")
+    return перенесено
+
+
 async def _backfill_dataplane_from_files() -> None:
     """Одноразовый перенос существующих файловых рецептов/коннекторов (~/.ape) в Postgres, чтобы
     демо-данные не исчезли при переходе на PG. Читает файлы, пока ape ещё в файловом режиме (стор
@@ -3334,6 +3380,8 @@ async def _startup() -> None:
         obs.log_event("warning", "lexicon.init_failed", error=str(_ex)[:200])
     await _backfill_dataplane_from_files()  # одноразовый перенос ~/.ape → PG (сохранить демо-рецепты)
     await _refresh_dataplane_cache()  # инжект рецептов/коннекторов из PG в ape
+    _attach_record_store()                  # канонические записи — из PG, а не из файлов тома
+    await _backfill_records_from_files()    # одноразовый перенос ~/.ape/data/*.jsonl в PG
     # LLM-override (эндпоинт бокса из UI) — восстановить из PG при старте, инжектить в clients
     await _refresh_llm_override()
     # Cache-bus: инвалидация in-process кэшей между репликами (LISTEN/NOTIFY). Разблокирует 2+ реплики.

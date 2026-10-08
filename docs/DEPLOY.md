@@ -258,8 +258,53 @@ curl -s -XPOST 'http://127.0.0.1:8091/api/runs?async=1' -H "Authorization: Beare
 - **Leader-election планировщика** (`triggers.scheduler_loop`): `pg_try_advisory_lock(0x41424F50)` — фаерит только лидер; лог `scheduler.leader_acquired`.
 - **Admission control к LLM**: глобальный семафор `ABOP_LLM_MAX_INFLIGHT` (12); метрики `abop_llm_inflight`/`_max`.
 - **Per-user rate-limit** и **идемпотентность прогонов** (двойной клик → 1 реальный + 1 cached). NB: rate-limit и idempotency-lock — per-replica (в памяти).
-- **Что уже общее (PG):** agents/contracts/runs/run_jobs/skills/шаблоны/рецепты/admin/RBAC/память/HITL. **Canonical Data Plane** — в томе `abop_ape` (при нескольких хостах нужен общий том/перенос эмита в PG).
+- **Что уже общее (PG):** agents/contracts/runs/run_jobs/skills/шаблоны/рецепты/admin/RBAC/память/HITL и **канонические записи Data Plane** (`dp_records`, с 08.10 — `server/dataplane_records.py`). Том `abop_ape` остаётся нужен для памяти прогонов и архива доски, но Data Plane им больше не ограничен: реплика на другом хосте видит те же сущности.
 - **Вторая реплика — НЕ поднята**: на server-1 свободно ~370 МБ; реплике на server-2 нужен доступ к Postgres server-1 (туннель/TLS или перенос PG) + свой порт и LB/Caddy upstream.
+
+## 7б. Резервное копирование и восстановление
+
+Том обязателен и бэкапа у него до 08.10 не было — это была единственная точка потери данных,
+не прикрытая ничем. Теперь копируем оба слоя: базу и том.
+
+**Что где лежит.**
+
+| слой | где | что потеряем без копии |
+|---|---|---|
+| Postgres | БД `abop` | агенты, прогоны, очередь, карта процессов, рецепты, шаблоны, RBAC, аудит, **канонические записи Data Plane** |
+| том `abop_ape` | `/var/lib/docker/volumes/abop_ape` | долгая память, архив доски прогонов, конфиг `~/.ape` |
+
+**Снять копию** (обе команды — на server-1, без остановки сервиса):
+
+```bash
+# 1) база
+docker exec abop-pg pg_dump -U abop -Fc abop > /opt/backup/abop-$(date +%F).dump
+# 2) том (tar изнутри временного контейнера — не зависит от прав на хосте)
+docker run --rm -v abop_ape:/v -v /opt/backup:/out alpine \
+  tar czf /out/abop_ape-$(date +%F).tgz -C /v .
+```
+
+Хранить вне server-1: том и база лежат на той же машине, что и сервис, — копия рядом спасает от
+ошибки оператора, но не от потери машины.
+
+**Восстановить:**
+
+```bash
+docker run --rm -v abop_ape:/v -v /opt/backup:/in alpine \
+  sh -c "rm -rf /v/* && tar xzf /in/abop_ape-ГГГГ-ММ-ДД.tgz -C /v"
+docker exec -i abop-pg pg_restore -U abop -d abop --clean --if-exists < /opt/backup/abop-ГГГГ-ММ-ДД.dump
+bash ops/deploy-webapi.sh
+```
+
+**Проверка, что копия живая** (делать после каждой: нечитаемый бэкап хуже отсутствующего):
+
+```bash
+pg_restore -l /opt/backup/abop-ГГГГ-ММ-ДД.dump | head
+tar tzf /opt/backup/abop_ape-ГГГГ-ММ-ДД.tgz | head
+```
+
+**Частота.** База — ежедневно, хранить 14 копий. Том — еженедельно: он меняется медленнее.
+Перед каждой раскаткой — внеочередная копия базы: перенакат образа данные не трогает, но
+миграции схемы необратимы.
 
 ## 8. Частые проблемы
 
@@ -276,7 +321,8 @@ curl -s -XPOST 'http://127.0.0.1:8091/api/runs?async=1' -H "Authorization: Beare
 | «нет доступа к семье» | ABAC: у пользователя нет прав на семью — войти админом |
 | OUT не отправился реально | у OUT-узла нет `✓ Реальная отправка` / стоит `Под HITL` / нет токенов в env |
 | Фронт не обновился после деплоя | hard refresh (Ctrl+F5); бандл должен быть собран из `webapp/src` (`build.py check`) |
-| Деплой «прошёл», но контейнер старый | смотрите `/tmp/deploy.log`: `set: pipefail: invalid option name` = скрипт приехал с CRLF. Лечится `sed -i 's/$//' ops/*.sh`; в репозитории закрыто `.gitattributes` (`*.sh text eol=lf`) и тестом `tests/test_release_eol.py` |
+| Деплой «прошёл», но контейнер старый | смотрите `/tmp/deploy.log`: `set: pipefail: invalid option name` = скрипт приехал с CRLF. Лечится `sed -i 's/
+$//' ops/*.sh`; в репозитории закрыто `.gitattributes` (`*.sh text eol=lf`) и тестом `tests/test_release_eol.py` |
 | Шаблон навыка в UI не тот, что в репо | ручная правка (`builtin=false`) имеет приоритет: `POST /api/schema-templates/{id}/reset` или `push_templates.py --force` |
 | Двойной запуск триггера | планировщик фаерит только лидер (advisory lock); проверить `pg_locks objid=1094864720` |
 
