@@ -33,7 +33,6 @@ import ape  # noqa: E402
 from . import access, admin_store, agent_store, arbiter, assembly, audit_store, blackboard, planner, cachebus, charts, clients, compute, contract_store, cost_estimate, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, bpmn_import, dataplane_records, mcp_server, pipeline_store, process_deploy, process_store, rbac_map, reglament_store, chat_store, orchestrator, report_compose, report_store, choice_store, doclink, run_cache_store, run_parts_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 
-BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
 
 
 # Аутентификация, уровни доступа и ABAC живут в server/deps.py — их переиспользуют и маршруты,
@@ -43,7 +42,7 @@ import hashlib as _hashlib  # noqa: E402
 
 from .deps import (  # noqa: E402
     _client, _extra_issuers, _identity, _jwks_url, _jwt_cache_get, _jwt_cache_put,
-    _LEVELS, _role_level, _sub, can_see_family, require_level, user)
+    _LEVELS, _role_level, _sub, _uid_of, can_see_family, require_level, user)
 
 app = FastAPI(title="ABOP Web API", version="0.1.0",
               description="Тонкий REST/SSE поверх ядра ape (среда разработки агентов)")
@@ -213,33 +212,6 @@ def models() -> dict:
                       "configured": bool(act.get("base_url"))}}
 
 
-@app.get("/api/admin/llm")
-async def admin_llm_get(u: dict = Depends(user)) -> dict:
-    """Текущий self-host LLM-эндпоинт (для UI-настройки «эндпоинт бокса»)."""
-    return {"llm": clients.llm_active()}
-
-
-@app.post("/api/admin/llm")
-async def admin_llm_set(body: dict, u: dict = Depends(user)) -> dict:
-    """1-клик переключение self-host LLM-эндпоинта БЕЗ правки .env/рестарта. Тело:
-    {base_url, model?, api_key?}. Сохраняется в admin_config (PG, переживает рестарт) + инжект в clients.
-    Пустой base_url → сброс на env. manager+."""
-    require_level(u, "manager")
-    base_url = str((body or {}).get("base_url", "")).strip()
-    cfg = {}
-    if base_url:
-        cfg = {"base_url": base_url,
-               "model": str((body or {}).get("model", "")).strip() or None,
-               "api_key": str((body or {}).get("api_key", "")).strip() or None}
-        cfg = {k: v for k, v in cfg.items() if v}
-    clients.set_llm_override(cfg)
-    await admin_store.save("llmOverride", cfg, editor=u.get("name") or u.get("sub") or "dev")
-    await cachebus.notify("llm")   # применить на других репликах
-    await audit_store.record(u.get("name") or "dev", "admin.llm", "llmOverride",
-                             {"base_url": base_url or "(reset to env)"}, severity="info")
-    return {"ok": True, "llm": clients.llm_active()}
-
-
 @app.get("/metrics")
 def metrics() -> PlainTextResponse:
     """Метрики в формате Prometheus (scrape). Открыт для внутреннего мониторинга."""
@@ -253,57 +225,6 @@ def metrics() -> PlainTextResponse:
 def observability_snapshot(u: dict = Depends(user)) -> dict:
     """JSON-срез метрик для внутренних дашбордов ABOP (кто/что/сколько прогонов, латентность, стоимость)."""
     return obs.snapshot()
-
-
-@app.get("/api/me")
-def me(u: dict = Depends(user)) -> dict:
-    return {"user": u}
-
-
-def _uid_of(u: dict) -> str:
-    """Мастер-UID пользователя для сквозного ID: preferred_username/name/sub из JWT."""
-    return str(u.get("name") or u.get("preferred_username") or u.get("sub") or "").strip()
-
-
-@app.get("/api/identity/me")
-async def identity_me(u: dict = Depends(user)) -> dict:
-    """Сквозной профиль ТЕКУЩЕГО пользователя: мастер-UID + department/roles (ABAC/RBAC из JWT) +
-    карта его аккаунтов во внешних системах (почта/Redmine/CRM/1С). Это адресный контекст, который
-    наследует агент, запущенный от имени пользователя."""
-    return await identity_store.bundle(_uid_of(u), department=u.get("department"), roles=u.get("roles"))
-
-
-@app.get("/api/identity/{uid}")
-async def identity_get(uid: str, u: dict = Depends(user)) -> dict:
-    """Сквозной профиль пользователя по UID. Свой профиль — всем; чужой — только admin/support (*)."""
-    if uid != _uid_of(u) and u.get("department") not in ("*", None):
-        raise HTTPException(403, "нет доступа к чужой идентичности")
-    return await identity_store.bundle(uid)
-
-
-@app.post("/api/identity/{uid}")
-async def identity_link(uid: str, body: dict, u: dict = Depends(user)) -> dict:
-    """Привязать/обновить внешний аккаунт пользователя (account-linking). Admin-уровень.
-    Тело: {system, external_id?, display?, attrs?}. Пример: {"system":"redmine","external_id":"pm.manager","attrs":{"assignee_id":4}}."""
-    require_level(u, "admin")
-    system = str((body or {}).get("system") or "").strip()
-    if not system:
-        raise HTTPException(422, "нужен system")
-    editor = _uid_of(u) or "dev"
-    row = await identity_store.link(uid, system, str((body or {}).get("external_id") or ""),
-                                    str((body or {}).get("display") or ""),
-                                    (body or {}).get("attrs") or {}, editor=editor)
-    await audit_store.record(editor, "identity.link", f"{uid}:{system}", {"external_id": row.get("external_id")})
-    return row
-
-
-@app.delete("/api/identity/{uid}/{system}")
-async def identity_unlink(uid: str, system: str, u: dict = Depends(user)) -> dict:
-    """Отвязать аккаунт пользователя в системе. Admin-уровень."""
-    require_level(u, "admin")
-    await identity_store.unlink(uid, system)
-    await audit_store.record(_uid_of(u) or "dev", "identity.unlink", f"{uid}:{system}", {})
-    return {"ok": True}
 
 
 # Свободный ответ в чате — это РАЗГОВОР, а не работа. Без этой рамки модель берётся отчитываться за
@@ -442,256 +363,6 @@ async def auth_refresh(body: dict) -> dict:
             "expires_in": int(tokens.get("expires_in") or 0), "user": _identity(claims)}
 
 
-# ═══════════════ АДМИН-ПАНЕЛЬ: реальные пользователи (Keycloak) и штат (Redmine) ═══════════════
-
-def _kc_base() -> str:
-    """Базовый URL Keycloak (без /realms/...), из KEYCLOAK_ADMIN_BASE или ISSUER."""
-    base = os.getenv("KEYCLOAK_ADMIN_BASE")
-    if base:
-        return base.rstrip("/")
-    iss = os.getenv("KEYCLOAK_ISSUER") or "http://127.0.0.1:8811/realms/abop"
-    return iss.split("/realms/")[0].rstrip("/")
-
-
-_KC_НЕ_НАСТРОЕН = ("админ-API Keycloak не настроено: не задан KC_ADMIN_PASS. "
-                   "Пользователи, роли и штат ведутся в Keycloak — без доступа к нему читать нечего.")
-
-
-def _kc_configured() -> bool:
-    """Настроено ли админ-API Keycloak. READ-ручки при `false` отвечают 200 с пустым телом и
-    причиной: 501 «не реализовано» было неправдой — ручка реализована, просто не настроена, и
-    браузер писал ошибку в консоль на каждой загрузке."""
-    return bool(os.getenv("KC_ADMIN_PASS", ""))
-
-
-async def _kc_admin_token(client) -> str:
-    """Токен админа Keycloak (realm master, client admin-cli) по KC_ADMIN_USER/KC_ADMIN_PASS."""
-    usr = os.getenv("KC_ADMIN_USER", "admin")
-    pw = os.getenv("KC_ADMIN_PASS", "")
-    if not pw:
-        raise HTTPException(501, "KC_ADMIN_PASS не задан на сервере (нужен для админ-панели)")
-    r = await client.post(_kc_base() + "/realms/master/protocol/openid-connect/token",
-                          data={"client_id": "admin-cli", "grant_type": "password",
-                                "username": usr, "password": pw})
-    if r.status_code != 200:
-        raise HTTPException(502, "Keycloak admin: не удалось получить токен")
-    return r.json()["access_token"]
-
-
-@app.get("/api/admin/users")
-async def admin_users(u: dict = Depends(user)) -> dict:
-    """Реальные пользователи Keycloak realm abop: роли (уровень) + отдел (ABAC). Только admin/support."""
-    require_level(u, "support")
-    if not _kc_configured():
-        return {"users": [], "configured": False, "reason": _KC_НЕ_НАСТРОЕН}
-    import httpx
-    realm = (os.getenv("KEYCLOAK_ISSUER") or "/realms/abop").split("/realms/")[-1].strip("/") or "abop"
-    async with httpx.AsyncClient(timeout=20) as c:
-        at = await _kc_admin_token(c)
-        h = {"Authorization": "Bearer " + at}
-        ru = await c.get(_kc_base() + f"/admin/realms/{realm}/users?max=200", headers=h)
-        if ru.status_code != 200:
-            raise HTTPException(502, "Keycloak: не удалось получить пользователей")
-        out = []
-        for usr in ru.json():
-            uid = usr.get("id")
-            roles = []
-            try:
-                rr = await c.get(_kc_base() + f"/admin/realms/{realm}/users/{uid}/role-mappings/realm", headers=h)
-                roles = [x.get("name") for x in (rr.json() if rr.status_code == 200 else []) if x.get("name")]
-            except Exception:  # noqa: BLE001
-                pass
-            attrs = usr.get("attributes") or {}
-            dept = (attrs.get("department") or [None])[0]
-            level = _role_level(roles)
-            if level in ("admin", "support"):
-                dept = "*"
-            name = (usr.get("firstName", "") + " " + usr.get("lastName", "")).strip() or usr.get("username")
-            out.append({"id": uid, "username": usr.get("username"), "email": usr.get("email"),
-                        "name": name, "enabled": usr.get("enabled", True),
-                        "roles": roles, "level": level, "department": dept or "—"})
-    out.sort(key=lambda x: (_LEVELS.index(x["level"]) * -1, x["username"] or ""))
-    return {"users": out, "realm": realm}
-
-
-@app.get("/api/admin/staff")
-async def admin_staff(u: dict = Depends(user)) -> dict:
-    """Штатное расписание из Redmine (users API) — источник для ABAC-областей. Только admin/support."""
-    require_level(u, "support")
-    import httpx
-    base = (os.getenv("REDMINE_BASE") or "http://127.0.0.1:3000").rstrip("/")
-    key = os.getenv("REDMINE_API_KEY", "")
-    if not key:
-        return {"staff": [], "note": "REDMINE_API_KEY не задан на сервере"}
-    async with httpx.AsyncClient(timeout=20) as c:
-        r = await c.get(base + "/users.json?limit=100&status=1",
-                        headers={"X-Redmine-API-Key": key})
-        if r.status_code != 200:
-            raise HTTPException(502, f"Redmine: HTTP {r.status_code}")
-        staff = []
-        for x in (r.json().get("users") or []):
-            staff.append({"id": x.get("id"), "login": x.get("login"),
-                          "name": (x.get("firstname", "") + " " + x.get("lastname", "")).strip(),
-                          "mail": x.get("mail"), "created_on": x.get("created_on"),
-                          "last_login_on": x.get("last_login_on")})
-    return {"staff": staff, "source": "redmine"}
-
-
-@app.post("/api/admin/cleanup")
-async def admin_cleanup(body: dict, u: dict = Depends(user)) -> dict:
-    """Убрать следы проверочных прогонов перед показом (admin).
-
-    Стенд, на котором тестировались, и стенд, который показывают заказчику, — разные вещи: журнал с
-    сотней проверочных прогонов, очередь чужих превью и тестовые цепочки выглядят как настоящая
-    работа и смазывают демо.
-
-    Тело: {what: [runs|jobs|hitl|dlq|pipelines], confirm: "зачистить", dry_run: bool, before?: ISO}.
-    По умолчанию **сухой прогон**: возвращает, сколько чего будет удалено, и ничего не трогает.
-    Удаление требует `confirm: "зачистить"` — случайный вызов не должен стирать историю.
-
-    Что НЕ трогает ни при каких параметрах: агентов, навыки и шаблоны, данные Data Plane,
-    засеянные демо-материалы, журнал аудита ИБ. Чистятся только следы исполнения.
-    """
-    require_level(u, "admin")
-    b = body or {}
-    known = ("runs", "jobs", "hitl", "dlq", "pipelines")
-    what = [w for w in (b.get("what") or known) if w in known]
-    if not what:
-        raise HTTPException(422, "нечего чистить: what пуст или содержит неизвестное")
-    dry = b.get("dry_run") is not False
-    before = str(b.get("before") or "").strip() or None
-    if not dry and str(b.get("confirm") or "") != "зачистить":
-        raise HTTPException(422, 'удаление требует confirm: "зачистить"')
-
-    plan: dict[str, int] = {}
-    if "runs" in what:
-        plan["runs"] = len(await run_store.list_runs(limit=100000))
-    if "jobs" in what:
-        st = await run_queue.stats()
-        by = st.get("by_status") or {}
-        plan["jobs"] = sum(int(v or 0) for k, v in by.items() if k in ("done", "failed", "cancelled"))
-    if "hitl" in what:
-        plan["hitl"] = len(await hitl_store.list_pending())
-    if "dlq" in what:
-        # Сообщение Kafka удалить нельзя — состояние разбора живёт отдельно, по ключу partition:offset.
-        # Поэтому считаем и помечаем сами сообщения хвоста DLQ, а не уже существующие отметки.
-        _acks = await dlq_store.all()
-        _tail = await run_bus.bus().tail(run_bus.TOPIC_DLQ, 200)
-        plan["dlq"] = len([m for m in _tail
-                           if (_acks.get(dlq_store.key_of(m.get("partition") or 0, m.get("offset") or 0)) or {}).get("state") != "acked"])
-    if "pipelines" in what:
-        plan["pipelines"] = len(await pipeline_store.all())
-
-    if dry:
-        return {"dry_run": True, "что_будет_удалено": plan,
-                "подсказка": 'повторите с {"confirm": "зачистить", "dry_run": false}',
-                "не_трогаем": ["агентов", "навыки и шаблоны", "данные Data Plane",
-                               "засеянные демо-материалы", "журнал аудита"]}
-
-    done: dict[str, int] = {}
-    if "runs" in what:
-        done["runs"] = await run_store.purge(before=before)
-    if "jobs" in what:
-        done["jobs"] = await run_queue.purge()
-    if "hitl" in what:
-        done["hitl"] = await hitl_store.purge(pending_only=True)
-    if "dlq" in what:
-        acks = await dlq_store.all()
-        n = 0
-        for m in await run_bus.bus().tail(run_bus.TOPIC_DLQ, 200):
-            k = dlq_store.key_of(m.get("partition") or 0, m.get("offset") or 0)
-            if (acks.get(k) or {}).get("state") != "acked":
-                await dlq_store.mark(k, "acked", u.get("name") or "admin", "зачистка перед показом")
-                n += 1
-        done["dlq"] = n
-    if "pipelines" in what:
-        n = 0
-        for p in await pipeline_store.all():
-            if await pipeline_store.delete(p["id"]):
-                n += 1
-        done["pipelines"] = n
-
-    await audit_store.record(u.get("name") or u.get("sub") or "dev", "admin.cleanup", ",".join(what), done)
-    obs.log_event("warn", "admin.cleanup", **{k: int(v) for k, v in done.items()})
-    return {"dry_run": False, "удалено": done,
-            "note": "следы прогонов убраны; агенты, навыки, шаблоны и данные на месте"}
-
-
-@app.get("/api/admin/audit")
-async def admin_audit(limit: int = 100, u: dict = Depends(user)) -> dict:
-    """Аудит ИБ: неизменяемый лог governance-событий среды (не хардкод). Только admin/support."""
-    require_level(u, "support")
-    return {"events": await audit_store.list_events(limit=limit), "source": "audit_log"}
-
-
-# Словесное описание уровня — ПОДПИСЬ к матрице, а не сама матрица: фактические разрешения
-# выводятся разбором гейтов require_level в исходнике (server/rbac_map.py). Раньше здесь была
-# только эта проза, и экран отвечал на вопрос «что мы написали про права», а не «как они работают».
-POLICY_УРОВНЕЙ = {
-    "admin":   {"allow": "всё: RBAC, арендаторы, модели, все отделы, деплой в прод",
-                "deny": "—"},
-    "support": {"allow": "чтение всех отделов, аудит ИБ, штат, эскалации",
-                "deny": "правка RBAC, деплой в прод"},
-    "manager": {"allow": "сборка/прогон/деплой агентов своего отдела, HITL-подтверждения",
-                "deny": "чужие отделы, правка политик безопасности"},
-    "analyst": {"allow": "чтение агентов/прогонов/данных своего отдела",
-                "deny": "любые мутации (read-only), действия наружу"},
-}
-
-
-@app.get("/api/admin/rbac")
-async def admin_rbac(u: dict = Depends(user)) -> dict:
-    """RBAC-матрица из РЕАЛЬНЫХ ролей Keycloak: роль → люди + разрешения/запреты (не хардкод-константа)."""
-    require_level(u, "support")
-    карта0 = rbac_map.собрать()
-    гейты = {"levels": list(rbac_map.УРОВНИ), "routes_total": карта0["total"],
-             "routes_gated": карта0["total"] - карта0["open"],
-             "routes_open": карта0["open"], "derived_from": карта0["source"]}
-    if not _kc_configured():
-        # Людей без Keycloak не назвать, но ГЕЙТЫ выводятся из кода и доступны всегда —
-        # «кто есть в системе» и «что уровню разрешено» это два разных вопроса. Отдаём строки
-        # уровней без людей: экран показывает права, а не выдуманный список сотрудников.
-        пусто = [{"role": lv, "count": 0, "people": "—", "departments": [],
-                  "allow": POLICY_УРОВНЕЙ[lv]["allow"], "deny": POLICY_УРОВНЕЙ[lv]["deny"],
-                  "enforced": rbac_map.сводка(lv)} for lv in rbac_map.УРОВНИ]
-        return {"rows": пусто, "configured": False, "reason": _KC_НЕ_НАСТРОЕН,
-                "editable": False, "enforcement": гейты}
-    try:
-        data = await admin_users(u)  # переиспользуем живой список Keycloak
-    except HTTPException:
-        raise
-    users = data.get("users", [])
-    POLICY = POLICY_УРОВНЕЙ
-    rows = []
-    for lvl in ("admin", "support", "manager", "analyst"):
-        people = [usr["name"] or usr["username"] for usr in users if usr.get("level") == lvl]
-        depts = sorted({usr.get("department") for usr in users if usr.get("level") == lvl and usr.get("department") not in (None, "—", "*")})
-        pol = POLICY.get(lvl, {"allow": "—", "deny": "—"})
-        факт = rbac_map.сводка(lvl)
-        rows.append({"role": lvl, "count": len(people), "people": ", ".join(people[:6]) or "нет пользователей",
-                     "departments": depts, "allow": pol["allow"], "deny": pol["deny"],
-                     "enforced": факт})
-    карта = rbac_map.собрать()
-    return {"rows": rows, "realm": data.get("realm"), "source": "keycloak",
-            # Матрица не редактируется из интерфейса: права живут в ролях Keycloak и в гейтах кода.
-            # Кнопка «применить», которая показывала успех и ничего не писала, убрана — см. §7.1
-            # docs/ISSLEDOVANIE_VEB_DESKTOP_2026-10-08.md.
-            "editable": False,
-            "editable_note": "матрица выводится из ролей Keycloak и гейтов кода и здесь не правится: "
-                             "роли меняются в Keycloak, гейты — в исходнике",
-            "enforcement": {"levels": list(rbac_map.УРОВНИ), "routes_total": карта["total"],
-                            "routes_gated": карта["total"] - карта["open"],
-                            "routes_open": карта["open"], "derived_from": карта["source"]}}
-
-
-# ── Админ-конфиг среды (модели/арендаторы/квоты/пороги ИБ) + карта процессов (области) в Postgres — §7.2/БД-фаза ──
-# Раньше эти настройки правились в UI и оседали в localStorage браузера (per-браузер, терялись
-# при перенакате). Теперь общие для всех операторов и переживают рестарт. См.
-# persistence-localstorage-hole. Отсутствующие ключи ⇒ клиент берёт свой дефолт (сид в state).
-# tree/assignments — карта процессов (области ответственности агентов), авторится в RBAC-редакторе.
-_ADMIN_CONFIG_KEYS = {"modelCfg", "defaultProfile", "tenantMode", "quotaLimit", "quotaPolicy",
-                      "escThresholds", "tree", "assignments", "tokenQuota", "nluConfig", "runLimits"}
-
 # пороги подбора: правятся в UI (Настройки → Подбор), живут в admin_config.nluConfig
 _NLU_DEFAULTS = {"min_confidence": 0.35, "weak_stage": 0.2, "rerank": True, "max_stages": 6}
 
@@ -708,129 +379,6 @@ async def nlu_config() -> dict:
     return out
 
 
-@app.get("/api/admin/config")
-async def admin_config(u: dict = Depends(user)) -> dict:
-    """Сохранённые в Postgres админ-настройки среды (только правки; дефолты — на клиенте)."""
-    return {"config": await admin_store.all()}
-
-
-@app.post("/api/admin/config")
-async def admin_config_set(body: dict, u: dict = Depends(user)) -> dict:
-    """Сохранить админ-настройку в Postgres (общая для всех операторов, переживает перенакат —
-    не localStorage). Тело: {key, value}. key ∈ modelCfg/defaultProfile/tenantMode/quotaLimit/
-    quotaPolicy/escThresholds. Правка настроек среды — уровень manager+ (RBAC-гейт)."""
-    require_level(u, "manager")
-    key = (body or {}).get("key")
-    if key not in _ADMIN_CONFIG_KEYS:
-        raise HTTPException(422, "неизвестный ключ конфига")
-    value = (body or {}).get("value")
-    editor = u.get("name") or u.get("sub") or "dev"
-    await admin_store.save(key, value, editor=editor)
-    await audit_store.record(editor, "admin.config", key, {"key": key})
-    return {"key": key, "value": value}
-
-
-@app.get("/api/admin/run-limits")
-async def run_limits_get(u: dict = Depends(user)) -> dict:
-    """Действующие лимиты прогона: что задано кодом, что изменено настройкой и в каких границах.
-
-    Раньше это жило только в переменных окружения сервера: человек видел лимит ответа навыка в
-    карточке, но изменить его не мог и не знал, откуда взялось число."""
-    saved = (await admin_store.all()).get("runLimits") or {}
-    saved = saved if isinstance(saved, dict) else {}
-    defaults = runner.default_limits()
-    return {"limits": runner.effective_limits(saved), "defaults": defaults, "saved": saved,
-            "fields": [{"key": k, "label": v[0], "min": v[1], "max": v[2],
-                        "default": defaults.get(k), "changed": k in saved}
-                       for k, v in runner.LIMIT_FIELDS.items()]}
-
-
-@app.post("/api/admin/run-limits")
-async def run_limits_set(body: dict, u: dict = Depends(user)) -> dict:
-    """Изменить лимиты прогона (manager+). Пустое значение поля возвращает его к умолчанию.
-
-    Значение вне границ не отвергается молча, а подрезается: опечатка в поле иначе ломала бы прогоны
-    до тех пор, пока кто-нибудь не догадается заглянуть в настройки."""
-    require_level(u, "manager")
-    cur = (await admin_store.all()).get("runLimits") or {}
-    cur = dict(cur) if isinstance(cur, dict) else {}
-    patch = (body or {}).get("limits")
-    if not isinstance(patch, dict):
-        raise HTTPException(422, "нужен объект limits")
-    for k, v in patch.items():
-        if k not in runner.LIMIT_FIELDS:
-            raise HTTPException(422, f"неизвестный лимит «{k}»")
-        if v in (None, ""):
-            cur.pop(k, None)
-            continue
-        cur[k] = v
-    clean = {k: v for k, v in runner.effective_limits(cur).items() if k in cur}
-    editor = u.get("name") or u.get("sub") or "dev"
-    await admin_store.save("runLimits", clean, editor=editor)
-    await audit_store.record(editor, "admin.run_limits", "runLimits", {"keys": sorted(clean)})
-    obs.log_event("info", "run_limits.changed", editor=editor, keys=sorted(clean))
-    return await run_limits_get(u)
-
-
-@app.get("/api/me/scenarios")
-async def my_scenarios(u: dict = Depends(user)) -> dict:
-    """Черновики агентов ТЕКУЩЕГО пользователя (per-user, ключ = JWT sub) из Postgres — не localStorage,
-    не видны другим. §БД-фаза (persistence-localstorage-hole)."""
-    return {"scenarios": await userdata_store.get_scenarios(u.get("sub") or "")}
-
-
-@app.post("/api/me/scenarios")
-async def my_scenarios_save(body: dict, u: dict = Depends(user)) -> dict:
-    """Сохранить черновики агентов текущего пользователя в Postgres. Тело: {scenarios:{key:scenario}}."""
-    data = (body or {}).get("scenarios")
-    if not isinstance(data, dict):
-        raise HTTPException(422, "нужен объект scenarios")
-    saved = await userdata_store.save_scenarios(u.get("sub") or "", data)
-    return {"scenarios": saved}
-
-
-@app.get("/api/systems")
-async def systems_list(u: dict = Depends(user)) -> dict:
-    """Реестр систем/подключений (эндпоинты REST/БД/вектор + Kafka-топики) из Postgres. Единый каталог,
-    на который ссылаются коннекторы/рецепты/триггеры (system_id + путь/топик), а не хардкод URL.
-    Секреты НЕ отдаём — только auth_ref (имя переменной). Каждой системе проставляем `allowed` —
-    доступна ли текущему отделу (ABAC-scope, изоляция агентов на MCP-шлюзе). §БД-фаза."""
-    dept = u.get("department")
-    out = []
-    for s in await systems_store.all():
-        s = dict(s)
-        s["allowed"] = systems_store.allowed_for(s, dept)
-        out.append(s)
-    return {"systems": out, "department": dept}
-
-
-@app.get("/api/systems/{sid}")
-async def system_get(sid: str, u: dict = Depends(user)) -> dict:
-    s = await systems_store.get(sid)
-    if not s:
-        raise HTTPException(404, "нет такой системы")
-    return s
-
-
-@app.post("/api/systems/{sid}")
-async def system_save(sid: str, body: dict, u: dict = Depends(user)) -> dict:
-    """Сохранить систему в реестр (эндпоинт/топики/auth_ref/egress). Тело: {kind, base_url, brokers[],
-    topics[], auth_ref, tenant, egress, note}. Правка интеграций — уровень manager+ (RBAC-гейт)."""
-    require_level(u, "manager")
-    saved = await systems_store.save(sid, body or {}, editor=u.get("name") or u.get("sub") or "dev")
-    await audit_store.record(u.get("name") or u.get("sub") or "dev", "system.save", sid,
-                             {"kind": saved.get("kind"), "egress": saved.get("egress")})
-    return saved
-
-
-@app.delete("/api/systems/{sid}")
-async def system_delete(sid: str, u: dict = Depends(user)) -> dict:
-    require_level(u, "manager")
-    await systems_store.delete(sid)
-    await audit_store.record(u.get("name") or u.get("sub") or "dev", "system.delete", sid, {})
-    return {"id": sid, "deleted": True}
-
-
 def _cosine(a: list, b: list) -> float:
     import math
     if not a or not b:
@@ -841,311 +389,45 @@ def _cosine(a: list, b: list) -> float:
     return dot / (na * nb) if na and nb else 0.0
 
 
-def _parse_json_array(text: str) -> list:
-    import json as _json
-    import re as _re
-    t = (text or "").strip()
-    m = _re.search(r"\[.*\]", t, _re.S)
-    if m:
-        t = m.group(0)
-    try:
-        return _json.loads(t)
-    except Exception:  # noqa: BLE001
-        return []
-
-
-@app.post("/api/reglament/ingest")
-async def reglament_ingest(body: dict, u: dict = Depends(user)) -> dict:
-    """Загрузить регламент и РАЗМЕТИТЬ чанки ЛЛМ (RouteAI DeepSeek v4): каждому — ключ НСИ [P][SS][OOO]
-    + метки процесс/подпроцесс/операция; посчитать эмбеддинг (BGE-M3) и сохранить в Postgres.
-    Тело: {text, tenant?, replace?}. §регламент-конформанс (reglament-conformance-slava)."""
-    require_level(u, "manager")
-    text = str((body or {}).get("text") or "").strip()
-    if not text:
-        raise HTTPException(422, "нужен text регламента")
-    tenant = str((body or {}).get("tenant") or "default").strip() or "default"
-    import re as _re
-    raw = [c.strip() for c in _re.split(r"\n\s*\n", text) if len(c.strip()) >= 15]
-    if not raw:
-        raw = [c.strip() for c in text.split("\n") if len(c.strip()) >= 15]
-    raw = raw[:40]
-    if not raw:
-        raise HTTPException(422, "не удалось выделить фрагменты")
-    prompt = (
-        "Ты размечаешь регламент бизнес-процесса ключами НСИ. Для КАЖДОГО фрагмента присвой "
-        "иерархический ключ вида [P][SS][OOO] (P=номер процесса 1..9, SS=подпроцесс 01..99, "
-        "OOO=операция 001..999; связанные фрагменты — общий процесс/подпроцесс) и краткие метки. "
-        "Верни СТРОГО JSON-массив без пояснений: "
-        "[{\"i\":0,\"nsi_key\":\"[1][01][001]\",\"process\":\"...\",\"subprocess\":\"...\",\"op\":\"...\"}].\n\n"
-        + "\n".join(f"[{i}] {c[:300]}" for i, c in enumerate(raw)))
-    try:
-        # deepseek-v4-pro — reasoning-модель: даём запас max_tokens, иначе «мышление» съедает бюджет → пустой content
-        resp = await clients.chat(messages=[{"role": "user", "content": prompt}],
-                                  model="deepseek/deepseek-v4-pro", max_tokens=4000)
-        marks = _parse_json_array(resp.get("text") or "")
-    except Exception as ex:  # noqa: BLE001
-        raise HTTPException(502, f"LLM-разметка недоступна: {ex}")
-    by_i = {int(m["i"]): m for m in marks if isinstance(m, dict) and m.get("i") is not None}
-    embs = await clients.embed(raw)
-    if (body or {}).get("replace"):
-        await reglament_store.clear(tenant)
-    editor = u.get("name") or u.get("sub") or "dev"
-    saved = []
-    for i, (chunk, emb) in enumerate(zip(raw, embs)):
-        m = by_i.get(i, {})
-        key = str(m.get("nsi_key") or f"[9][99][{i + 1:03d}]")
-        await reglament_store.save_chunk(tenant, key, m.get("process") or "—", m.get("subprocess") or "—",
-                                         m.get("op") or chunk[:60], chunk, emb, editor=editor)
-        saved.append({"nsi_key": key, "op": m.get("op") or chunk[:60], "process": m.get("process") or "—"})
-    await audit_store.record(editor, "reglament.ingest", tenant, {"chunks": len(saved), "model": resp.get("model")})
-    return {"tenant": tenant, "chunks": saved, "count": len(saved), "markup_model": resp.get("model")}
-
-
-@app.get("/api/family/collections")
-async def family_collections(u: dict = Depends(user)) -> dict:
-    """Коллекции sLAVA (в т.ч. slava_fam_<family>) + доступность текущему отделу (ABAC)."""
-    try:
-        cols = await slava.collections()
-    except Exception as ex:  # noqa: BLE001
-        raise HTTPException(502, f"sLAVA недоступна: {ex}")
-    return {"collections": cols, "department": u.get("department")}
-
-
-@app.post("/api/family/seed")
-async def family_seed(body: dict, u: dict = Depends(user)) -> dict:
-    """Наполнить корпуса семей РЕАЛЬНЫМ знанием из каталога навыков: тело каждого навыка (методика .md)
-    → slava_fam_<family> той семьи, что несёт навык. Тело: {family?} (пусто ⇒ все семьи). Admin-уровень."""
-    require_level(u, "admin")
-    only = str((body or {}).get("family") or "").strip()
-    out = {}
-    for fid, fam in ape.AGENT_FAMILIES.items():
-        if only and fid != only:
-            continue
-        col = slava.fam_collection(fid)
-        sids = []
-        for _mk, (_mt, sk) in (fam.get("members") or {}).items():
-            for s in sk:
-                if s not in sids:
-                    sids.append(s)
-        n = 0
-        for sid in sids:
-            if sid not in ape.SKILLS:
-                continue
-            title, short, _instr = ape.SKILLS[sid]
-            try:
-                body_txt = (ape.load_skill_body(sid) or "")[:4000]
-            except Exception:  # noqa: BLE001
-                body_txt = ""
-            text = f"[{fam.get('title', fid)}] Навык «{title}». {short}\n\n{body_txt}".strip()
-            if len(text) < 20:
-                continue
-            try:
-                await slava.ingest(col, f"{sid}.md", text, tenant="abop", replace=False, doc_id=sid)
-                n += 1
-            except Exception:  # noqa: BLE001 — пропускаем сбойный навык, продолжаем
-                pass
-        out[fid] = {"collection": col, "skills_ingested": n}
-    await audit_store.record(u.get("name") or u.get("sub") or "dev", "family.seed", only or "all",
-                             {"families": len(out)})
-    return {"seeded": out, "families": len(out)}
-
-
-# СПЕЦИФИЧНЫЕ под-запросы (sLAVA отсекает широкие/generic по релевантности — нужны точные темы норм)
-_FAMILY_NORM_QUERY = {
-    "finance": ["вычет НДС при наличии счёта-фактуры", "признание выручки и себестоимости ФСБУ",
-                "налог на прибыль расходы уменьшают доход", "уточнённая декларация по НДС"],
-    "audit": ["реализация без счёта-фактуры выданного НДС", "поступление без счёта-фактуры вычет НДС",
-              "переходящая операция разные периоды", "сделки взаимозависимых лиц деловая цель"],
-    "credit": ["резервы на возможные потери по ссудам", "оценка кредитоспособности заёмщика",
-               "обеспечение по кредиту залог"],
-    "analytics": ["финансовые показатели отчётность", "оценка эффективности рентабельность"],
-    "management": ["договорные условия сроки ответственность", "регламент бизнес-процесса"],
-    "architecture": ["требования к интеграции API", "стандарты проектирования систем"],
-    "engineering": ["требования к разработке тестирование", "качество кода стандарты"],
-    "research": ["методология исследования источники", "анализ данных достоверность"],
-    "critic": ["контроль соответствия требованиям", "проверка качества результата"],
-    "decisions": ["полномочия и согласование решений", "governance принятие решений"],
-}
-
-
-@app.post("/api/family/seed-norms")
-async def family_seed_norms(body: dict, u: dict = Depends(user)) -> dict:
-    """Раздать ЗАКОНОДАТЕЛЬНЫЕ НОРМЫ по корпусам семей из большого корпуса регламента (slava_reglament_ru):
-    семантический запрос по домену семьи → top-N чанков → в slava_fam_<family>. Тело: {family?, query?,
-    count?, source?}. Пусто family ⇒ норм-релевантные семьи (finance/audit/credit). Admin-уровень.
-    NB: запускать ПО ОДНОЙ семье с паузой (sLAVA cooldown)."""
-    require_level(u, "admin")
-    src = str((body or {}).get("source") or "slava_reglament_ru").strip()
-    count = int((body or {}).get("count") or 6)
-    fam = str((body or {}).get("family") or "").strip()
-    fams = [fam] if fam else ["finance", "audit", "credit"]
-    out = {}
-    for fid in fams:
-        qs = ([str((body or {}).get("query"))] if (body or {}).get("query")
-              else _FAMILY_NORM_QUERY.get(fid, [fid]))
-        seen_txt, chunks = set(), []
-        for q in qs:  # специфичные под-запросы: собираем уникальные чанки
-            try:
-                for s in (await slava.query(src, q, top_k=max(2, count // len(qs)), tenant="abop")).get("sources") or []:
-                    txt = (s.get("text") or "").strip()
-                    if len(txt) >= 30 and txt[:120] not in seen_txt:
-                        seen_txt.add(txt[:120])
-                        chunks.append(txt)
-            except Exception:  # noqa: BLE001
-                pass
-        col = slava.fam_collection(fid)
-        n = 0
-        for i, txt in enumerate(chunks[:count * 2]):
-            try:
-                await slava.ingest(col, f"norm_reg_{i}.txt", "[закон/норма] " + txt, tenant="abop",
-                                   replace=False, doc_id=f"reg_{fid}_{i}")
-                n += 1
-            except Exception:  # noqa: BLE001
-                pass
-        out[fid] = {"collection": col, "norms_ingested": n, "from": src, "subqueries": len(qs)}
-    await audit_store.record(u.get("name") or u.get("sub") or "dev", "family.seed_norms", fam or "norm-fams",
-                             {"families": len(out)})
-    return {"seeded_norms": out}
-
-
-@app.post("/api/family/ingest")
-async def family_ingest(body: dict, u: dict = Depends(user)) -> dict:
-    """Загрузить знание/регламент в корпус СЕМЬИ (slava_fam_<family>) через sLAVA. ABAC: отдел = семья
-    (или admin/support). Тело: {family, text, filename?, replace?}. §graph-RAG по семьям."""
-    require_level(u, "manager")
-    family = str((body or {}).get("family") or "").strip()
-    text = str((body or {}).get("text") or "").strip()
-    if not family or not text:
-        raise HTTPException(422, "нужны family и text")
-    if not access.can_reach_family(u.get("department"), family):
-        await access.audit_denial(u.get("name") or u.get("sub") or "dev", u.get("department"),
-                                  slava.fam_collection(family), "family.ingest", "отдел ≠ семья")
-        raise HTTPException(403, f"нет доступа к корпусу семьи «{family}» (изоляция знания)")
-    col = slava.fam_collection(family)
-    try:
-        res = await slava.ingest(col, str((body or {}).get("filename") or f"{family}.txt"), text,
-                                 tenant="abop", replace=bool((body or {}).get("replace")))
-    except Exception as ex:  # noqa: BLE001
-        raise HTTPException(502, f"sLAVA ingest не удался: {ex}")
-    await audit_store.record(u.get("name") or u.get("sub") or "dev", "family.ingest", col, {"family": family})
-    return {"family": family, "collection": col, "result": res}
-
-
-@app.post("/api/family/query")
-async def family_query(body: dict, u: dict = Depends(user)) -> dict:
-    """RAG-поиск по корпусу СЕМЬИ (slava_fam_<family>) через sLAVA. ABAC-изоляция: отдел = семья
-    (аналитик не читает корпус архитектуры). Тело: {family, query, top_k?}."""
-    family = str((body or {}).get("family") or "").strip()
-    q = str((body or {}).get("query") or "").strip()
-    if not family or not q:
-        raise HTTPException(422, "нужны family и query")
-    if not access.can_reach_family(u.get("department"), family):
-        await access.audit_denial(u.get("name") or u.get("sub") or "dev", u.get("department"),
-                                  slava.fam_collection(family), "family.query", "отдел ≠ семья")
-        raise HTTPException(403, f"нет доступа к корпусу семьи «{family}» (изоляция знания)")
-    col = slava.fam_collection(family)
-    try:
-        res = await slava.query(col, q, top_k=int((body or {}).get("top_k") or 5), tenant="abop")
-    except Exception as ex:  # noqa: BLE001
-        raise HTTPException(502, f"sLAVA query не удался: {ex}")
-    return {"family": family, "collection": col, "result": res}
-
-
-def _nsi_parts(key: str) -> list:
-    import re as _re
-    return _re.findall(r"\[([^\]]+)\]", key or "")
-
-
-@app.post("/api/reglament/graph/build")
-async def reglament_graph_build(body: dict, u: dict = Depends(user)) -> dict:
-    """Построить граф-слой регламента: (1) рёбра ИЕРАРХИИ НСИ (contains: процесс→подпроцесс→операция,
-    детерминированно из ключа), (2) КРОСС-ЦИТИРОВАНИЕ норм через RouteAI DeepSeek v4 (нарушение одной
-    нормы влечёт проверку связанной / обязательное действие — уточнённые декларации). §граф-слой."""
-    require_level(u, "manager")
-    tenant = str((body or {}).get("tenant") or "default").strip() or "default"
-    chunks = await reglament_store.all_for(tenant)
-    if not chunks:
-        raise HTTPException(422, f"нет регламента для tenant «{tenant}» — сначала /api/reglament/ingest")
-    await reglament_store.clear_edges(tenant)
-    # (1) иерархия НСИ: в группе по [P][SS] родитель = чанк с минимальным [OOO], остальные — contains
-    groups: dict = {}
-    for c in chunks:
-        p = _nsi_parts(c["nsi_key"])
-        pref = "".join(f"[{x}]" for x in p[:2]) if len(p) >= 2 else c["nsi_key"]
-        groups.setdefault(pref, []).append(c["nsi_key"])
-    hier = 0
-    for pref, keys in groups.items():
-        keys = sorted(keys)
-        parent = keys[0]
-        for k in keys[1:]:
-            await reglament_store.save_edge(tenant, parent, k, "contains", "иерархия НСИ")
-            hier += 1
-    # (2) кросс-цитирование норм (DeepSeek v4)
-    listing = "\n".join(f"{c['nsi_key']} — {c['op']}: {c['text'][:160]}" for c in chunks)
-    prompt = (
-        "Ниже операции/нормы регламента (ключ НСИ — текст). Определи КРОСС-ССЫЛКИ: нарушение или "
-        "выполнение одной нормы ВЛЕЧЁТ проверку связанной ИЛИ обязательное действие (напр. уточнённая "
-        "декларация по НДС/прибыли, проверка договора). Верни СТРОГО JSON-массив без пояснений: "
-        "[{\"from\":\"[1][01][002]\",\"to\":\"[1][01][005]\",\"relation\":\"entails\",\"note\":\"почему\"}]. "
-        "relation: entails (связанная норма, to=ключ) | action (обязательное действие, to=\"\", note=действие).\n\n"
-        + listing)
-    xcite = 0
-    model = ""
-    try:
-        resp = await clients.chat(messages=[{"role": "user", "content": prompt}],
-                                  model="deepseek/deepseek-v4-pro", max_tokens=8000)  # reasoning + граф-вывод
-        model = resp.get("model", "")
-        for e in _parse_json_array(resp.get("text") or ""):
-            if isinstance(e, dict) and e.get("from"):
-                await reglament_store.save_edge(tenant, str(e["from"]), str(e.get("to") or ""),
-                                                str(e.get("relation") or "entails"), str(e.get("note") or "")[:200])
-                xcite += 1
-    except Exception as ex:  # noqa: BLE001 — кросс-цитирование опционально
-        model = f"(LLM недоступен: {ex})"
-    await audit_store.record(u.get("name") or u.get("sub") or "dev", "reglament.graph", tenant,
-                             {"hierarchy": hier, "xcite": xcite})
-    return {"tenant": tenant, "nodes": len(chunks), "hierarchy_edges": hier, "xcite_edges": xcite, "markup_model": model}
-
-
-@app.get("/api/reglament")
-async def reglament_list(tenant: str = "default", u: dict = Depends(user)) -> dict:
-    """Размеченный регламент (чанки + ключи НСИ, без эмбеддингов)."""
-    reg = await reglament_store.all_for(tenant)
-    return {"tenant": tenant, "chunks": [{"nsi_key": r["nsi_key"], "process": r["process"],
-            "subprocess": r["subprocess"], "op": r["op"], "text": r["text"]} for r in reg]}
-
-
 # Карта процессов переехала в server/routes/process.py (п.23): семнадцать ручек, один стор, свои
 # правила прав. Внешняя поверхность не изменилась — сторожит tests/test_routes_inventory.py.
 from .routes import process as _routes_process  # noqa: E402
 
 app.include_router(_routes_process.router)
 
+# Админ-панель переехала в server/routes/admin.py: люди и роли из Keycloak, штат, аудит ИБ,
+# настройки среды, лимиты прогона. Пороги подбора (`nlu_config`) остались здесь — это настройка
+# ПОДБОРА, а не админки, и её зовут планировщик и NLU.
+from .routes import admin as _routes_admin  # noqa: E402
+
+app.include_router(_routes_admin.router)
+
+# Ключи админ-конфига и описание уровней нужны и вне домена: первое — валидации в других ручках,
+# второе — экранам. Ссылаемся ПО ИМЕНИ у роутера, а не копией: копия со временем разойдётся.
+_ADMIN_CONFIG_KEYS = _routes_admin._ADMIN_CONFIG_KEYS
+POLICY_УРОВНЕЙ = _routes_admin.POLICY_УРОВНЕЙ
+_kc_configured = _routes_admin._kc_configured
+run_limits_get = _routes_admin.run_limits_get
+
+# Четыре домена, вынесенные тем же порядком: сквозной ID (кто я и мои аккаунты), реестр систем и
+# манифест области, регламент с ключом НСИ, семьи ролей. Выбраны по связности, а не по размеру:
+# в каждый не заглядывает никто, кроме него самого.
+from .routes import families as _routes_families  # noqa: E402
+from .routes import identity as _routes_identity  # noqa: E402
+from .routes import reglament as _routes_reglament  # noqa: E402
+from .routes import registry as _routes_registry  # noqa: E402
+
+for _r in (_routes_identity, _routes_registry, _routes_reglament, _routes_families):
+    app.include_router(_r.router)
+
+# Проверка доступа нужна и прогонам (решить, можно ли агенту в систему), и подтверждениям.
+# Ссылка ПО ИМЕНИ у роутера, а не копия: копия со временем разойдётся с оригиналом.
+access_check = _routes_registry.access_check
+# Деление семей на бизнесовые и инженерные — классификация самих семей, живёт у них.
+BIZ_FAMILIES = _routes_families.BIZ_FAMILIES
+
 # Операции участка по агенту: нужны прогонам, чтобы записать op_ids и подтвердить карту (ADR-044).
 _seat_ops = _routes_process._seat_ops
-
-@app.get("/api/access/manifest")
-async def access_manifest(department: str = "", family: str = "", u: dict = Depends(user)) -> dict:
-    """Least-privilege манифест области (отдел/семья): доступные/закрытые системы реестра + Qdrant-тенант.
-    Основа гейта агентов на MCP-шлюзе (agent-rbac-mcp-gateway). Без параметров — область текущего юзера."""
-    key = access.scope_key(department=department or None, family=family or None) if (department or family) \
-        else access.scope_key(department=u.get("department"))
-    return await access.manifest(key)
-
-
-@app.post("/api/access/check")
-async def access_check(body: dict, u: dict = Depends(user)) -> dict:
-    """Проверка права доступа: {department|family, system_id} → {allowed, reason}. Отказ пишется в аудит."""
-    b = body or {}
-    key = access.scope_key(department=b.get("department"), family=b.get("family"))
-    system = await systems_store.get(str(b.get("system_id") or ""))
-    ok, reason = access.can_reach_system(key, system or {})
-    if not ok:
-        await access.audit_denial(u.get("name") or u.get("sub") or "dev", key,
-                                  str(b.get("system_id") or "?"), "check", reason)
-    return {"scope": key, "system_id": b.get("system_id"), "allowed": ok, "reason": reason,
-            "qdrant_tenant": access.qdrant_tenant(key)}
-
 
 @app.get("/api/triggers")
 async def triggers_list(u: dict = Depends(user)) -> dict:
@@ -1163,80 +445,6 @@ async def trigger_fire(agent_id: str, trigger_id: str, u: dict = Depends(user)) 
     await audit_store.record(u.get("name") or u.get("sub") or "dev", "trigger.fire", trigger_id,
                              {"agent_id": agent_id, "status": res.get("status")})
     return res
-
-
-@app.get("/api/memory/{scope}")
-async def memory_get(scope: str, u: dict = Depends(user)) -> dict:
-    """Память агента/процесса (per-АГЕНТ, ОБЩАЯ для всех — не пер-юзер, не localStorage). scope =
-    сценарий/процесс. None ⇒ клиент берёт свой сид. §БД-фаза (persistence-localstorage-hole)."""
-    mem = await userdata_store.get_memory(scope)
-    return {"scope": scope, "memory": mem, "seeded": mem is not None}
-
-
-@app.post("/api/memory/{scope}")
-async def memory_save(scope: str, body: dict, u: dict = Depends(user)) -> dict:
-    """Сохранить память агента/процесса в Postgres (общая для всех операторов). Тело: {memory:[...]}."""
-    require_level(u, "manager")
-    data = (body or {}).get("memory")
-    if not isinstance(data, list):
-        raise HTTPException(422, "нужен массив memory")
-    saved = await userdata_store.save_memory(scope, data)
-    return {"scope": scope, "memory": saved}
-
-
-@app.get("/api/families")
-async def families(u: dict = Depends(user)) -> dict:
-    """Ростер Семья→Роль→Навык из ЕДИНОГО реестра families_store (сид из кода, правки/кастомные в БД).
-    §4/§6 ABOP_SCREENS. Единый источник семей/отделов (ABAC department==family)."""
-    reg = await families_store.all()
-    if not reg:                          # реестр ещё не засеян (первый старт до seed) → отдаём код
-        reg = [{"id": fid, "title": fam["title"], "profile": fam["profile"], "mission": fam["mission"],
-                "kind": "business" if fid in BIZ_FAMILIES else "engineering",
-                "members": {mk: [mt, sk] for mk, (mt, sk) in fam["members"].items()}}
-               for fid, fam in ape.AGENT_FAMILIES.items()]
-    out = []
-    for f in reg:
-        mem = f.get("members") or {}
-        members = [{"key": mk, "title": (v[0] if isinstance(v, (list, tuple)) else mk),
-                    "skills": (v[1] if isinstance(v, (list, tuple)) and len(v) > 1 else [])}
-                   for mk, v in mem.items()]
-        out.append({"id": f["id"], "title": f.get("title") or f["id"], "profile": f.get("profile") or "research",
-                    "mission": f.get("mission") or "", "kind": f.get("kind") or "custom",
-                    "builtin": bool(f.get("builtin")), "members": members})
-    return {"families": out}
-
-
-@app.post("/api/families")
-async def family_save(body: dict, u: dict = Depends(user)) -> dict:
-    """Создать/править семью (в т.ч. СВОЮ кастомную) в едином реестре. Кастомная семья = валидный
-    отдел для ABAC (department==family) и тег навыка. Тело: {id, title?, mission?, profile?, members?}.
-    id — slug [a-z0-9_-]. Admin-уровень (реестр семей = чувствительно к доступу)."""
-    require_level(u, "admin")
-    import re as _re
-    fid = _re.sub(r"[^a-z0-9_-]", "", str((body or {}).get("id") or "").strip().lower())
-    if not fid:
-        raise HTTPException(422, "нужен id семьи (slug a-z0-9_-)")
-    existing = await families_store.get(fid)
-    kind = "custom" if not existing else (existing.get("kind") or "custom")
-    editor = u.get("name") or u.get("sub") or "dev"
-    card = await families_store.save(fid, {"title": (body or {}).get("title") or fid,
-                                           "mission": (body or {}).get("mission") or "",
-                                           "profile": (body or {}).get("profile") or "research",
-                                           "kind": kind, "members": (body or {}).get("members") or (existing or {}).get("members") or {}},
-                                     editor=editor, builtin=bool(existing and existing.get("builtin")))
-    await audit_store.record(editor, "family.save", fid, {"title": card.get("title")})
-    return card
-
-
-@app.delete("/api/families/{fid}")
-async def family_delete(fid: str, u: dict = Depends(user)) -> dict:
-    """Удалить кастомную семью (встроенные защищены). Admin-уровень."""
-    require_level(u, "admin")
-    ok = await families_store.delete(fid)
-    if not ok:
-        raise HTTPException(400, "нельзя удалить (нет такой или встроенная семья)")
-    await audit_store.record(u.get("name") or u.get("sub") or "dev", "family.delete", fid, {})
-    return {"ok": True}
 
 
 # ── Шаблоны отчётов (Schema-driven: вид отчёта в БД, меняется без передеплоя) ──

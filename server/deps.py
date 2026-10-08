@@ -169,3 +169,12 @@ def require_level(u: dict, minimum: str) -> None:
 def _sub(u: dict) -> str:
     """Устойчивый идентификатор человека: имя меняется, личная доска переживает переименование."""
     return str((u or {}).get("sub") or (u or {}).get("name") or "dev")
+
+def _uid_of(u: dict) -> str:
+    """Мастер-UID пользователя для сквозного ID: preferred_username/name/sub из JWT.
+
+    Отличается от `_sub`: тот отвечает «кто это устойчиво внутри ABOP», а этот — «под каким именем
+    его знают внешние системы» (почта, трекер, CRM). Живёт в шве, потому что нужен и домену
+    сквозного ID, и прогонам, и доске.
+    """
+    return str(u.get("name") or u.get("preferred_username") or u.get("sub") or "").strip()
