@@ -300,6 +300,28 @@
                           </div>
                         </sc-for>
                       </div>
+                      <sc-if value="{{ gl.selIsSkill }}" hint-placeholder-val="{{ false }}">
+                        <div style="display: flex; flex-direction: column; gap: 8px;">
+                          <button onClick="{{ gl.stepRun }}" title="Выполнить только этот навык и показать вход-выход. Наружу ничего не уйдёт, участок карты не подтвердится." style="padding: 9px 12px; border: 1px solid rgba(52,211,153,.35); border-radius: 10px; background: rgba(52,211,153,.1); color: var(--ok-ink); font-size: 12px; font-weight: 600;" style-hover="background: rgba(52,211,153,.18);">{{ gl.stepLabel }}</button>
+                          <sc-if value="{{ gl.stepHas }}" hint-placeholder-val="{{ false }}">
+                            <div style="display: flex; flex-direction: column; gap: 7px; padding: 12px; border-radius: 11px; background: var(--s55); border: 1px solid var(--w9);">
+                              <div style="display: flex; align-items: baseline; gap: 8px;">
+                                <span style="flex: 1; font-size: 12px; font-weight: 600; color: var(--ink);">{{ gl.stepTitle }}</span>
+                                <button onClick="{{ gl.closeStep }}" style="border: none; background: transparent; color: var(--w45); font-size: 12px;">✕</button>
+                              </div>
+                              <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--w45);">{{ gl.stepTokens }}</span>
+                              <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--w40);">что дошло до навыка</span>
+                              <sc-for list="{{ gl.stepSrc }}" as="s" hint-placeholder-count="2">
+                                <span style="font-size: 11.5px; color: var(--w65);">{{ s.text }}</span>
+                              </sc-for>
+                              <sc-if value="{{ gl.stepSrcEmpty }}" hint-placeholder-val="{{ false }}">
+                                <span style="font-size: 11.5px; color: var(--warn-ink);">ничего: навык отработал без данных — проверьте источник</span>
+                              </sc-if>
+                              <div style="max-height: 220px; overflow-y: auto; padding: 10px; border-radius: 9px; background: var(--s70); font-size: 11.5px; line-height: 1.5; white-space: pre-wrap; color: var(--w75);">{{ gl.stepText }}</div>
+                            </div>
+                          </sc-if>
+                        </div>
+                      </sc-if>
                       <sc-if value="{{ gl.selHasFamily }}" hint-placeholder-val="{{ true }}">
                         <div style="display: flex; flex-direction: column; gap: 10px;">
                           <label style="display: flex; flex-direction: column; gap: 6px;">

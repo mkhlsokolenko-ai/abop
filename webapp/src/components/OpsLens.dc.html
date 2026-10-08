@@ -156,6 +156,7 @@
                   <sc-for list="{{ ol.opsLinkKinds }}" as="lk" hint-placeholder-count="4">
                     <button onClick="{{ lk.pick }}" title="{{ lk.hint }}" style="padding: 5px 9px; border: 1px solid {{ lk.border }}; border-radius: 8px; background: {{ lk.bg }}; color: {{ lk.fg }}; font-size: 11.5px; text-align: left;">{{ lk.label }}</button>
                   </sc-for>
+                  <button onClick="{{ ol.openBpmn }}" title="Импортировать процесс из Camunda, Signavio или ARIS (BPMN 2.0)" style="padding: 6px 9px; border: 1px solid rgba(234,179,8,.35); border-radius: 8px; background: rgba(234,179,8,.1); color: var(--warn-ink); font-size: 11.5px;">Импорт BPMN…</button>
                   <button onClick="{{ ol.opsAlign }}" title="Разложить блоки по потоку, как на канве" style="margin-top: 6px; padding: 6px 9px; border: 1px solid var(--w14); border-radius: 8px; background: var(--w4); color: var(--w65); font-size: 11.5px;">Выровнять по потоку</button>
                 </div>
               </div>
@@ -359,6 +360,8 @@
                   <sc-if value="{{ ol.ctxSeatable }}" hint-placeholder-val="{{ false }}">
                   <button onClick="{{ ol.openDeploy }}" style="padding: 11px; border: 1px solid var(--w14); border-radius: 10px; background: var(--w5); color: var(--ink); font-size: 12.5px; font-weight: 600;" style-hover="background: var(--w10);">Посадить агента на участок</button>
                   </sc-if>
+                  <button onClick="{{ ol.openCoverage }}" title="Где агенты и где дыры: какая часть процесса закрыта и чем подтверждена" style="padding: 11px; border: 1px solid rgba(52,211,153,.3); border-radius: 10px; background: rgba(52,211,153,.1); color: var(--ok-ink); font-size: 12.5px; font-weight: 600;" style-hover="background: rgba(52,211,153,.18);">Где агенты и где дыры ▸</button>
+                  <button onClick="{{ ol.openHistory }}" title="Как менялся процесс: применённые редакции, кто и когда" style="padding: 11px; border: 1px solid var(--w14); border-radius: 10px; background: var(--w5); color: var(--ink); font-size: 12.5px; font-weight: 600;" style-hover="background: var(--w10);">История процесса ▸</button>
                   <button onClick="{{ ol.openHealth }}" title="Здоровье всего флота: KPI, дрейф DoD и алерты" style="padding: 11px; border: 1px solid var(--w14); border-radius: 10px; background: var(--w5); color: var(--ink); font-size: 12.5px; font-weight: 600;" style-hover="background: var(--w10);">Здоровье флота ▸</button>
                 </div>
               </div>

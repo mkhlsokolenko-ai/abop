@@ -1291,6 +1291,17 @@
                     <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: {{ dodColor }};">{{ dodPassed }} / {{ dodTotal }}</span>
                   </div>
                   <div style="display: flex; flex-direction: column; gap: 9px;">
+                    <sc-if value="{{ runSourcesEmpty }}" hint-placeholder-val="{{ false }}"></sc-if>
+                    <div style="display: flex; flex-direction: column; gap: 5px; padding: 10px 0; border-bottom: 1px solid var(--w6);">
+                      <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--w40);">источники шага</span>
+                      <sc-for list="{{ runSources }}" as="s" hint-placeholder-count="2">
+                        <div style="display: flex; align-items: baseline; gap: 8px; font-size: 11.5px;">
+                          <span style="flex: none; min-width: 110px; color: var(--w70);">{{ s.skill }}</span>
+                          <span style="flex: 1; min-width: 0; color: {{ s.fg }};">{{ s.what }}</span>
+                          <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--w40);">{{ s.tokens }}</span>
+                        </div>
+                      </sc-for>
+                    </div>
                     <sc-for list="{{ dodItems }}" as="d" hint-placeholder-count="4">
                       <div style="display: flex; align-items: flex-start; gap: 10px;">
                         <span style="margin-top: 1px; width: 16px; height: 16px; flex: none; border-radius: 5px; background: {{ d.bg }}; color: {{ d.fg }}; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center;">{{ d.mark }}</span>
@@ -2574,6 +2585,8 @@ class Component extends DCLogic {
     opsLinkKind: 'seq', opsDropHover: false,
     path: ['org'], mapLayer: 'AS-IS', mapLive: false, selOp: null, mapDrawer: null, renameText: '', lens: 'build', guardTo: null, fromOps: null,
     agentsLoading: false, dataLoading: false, narrow: false,
+    procCoverage: null, procHistory: [], procDiff: null, bpmnText: '', bpmnPreview: null,
+    costPreview: null, costBusy: false, stepResult: null, stepBusy: false,
     deployments: [], instances: [], findingsList: [], findingsMetrics: null, findingsRuns: [], findingsLoading: false, findingCard: null, findingsFilterRun: null, findingFrom: null, labelDecision: '', labelManual: false, labelComment: '', fleetReal: false, fleetAlertsReal: [], fleetSeries: [], fleetDod: null, fleetQueue: null, fleetHitl: 0, rollbackDiffReal: null, rollbackPrevVersion: '', deployAgentId: null,
     liveFrozen: false, fleetFilter: 'все',
     deployTarget: null, deployVersion: 'v3', deployArea: 'оценка заявок', deployTrigger: 'событие Data Plane', deployLimit: 3, deployAutonomy: 2,
@@ -3192,7 +3205,7 @@ class Component extends DCLogic {
     v.hasDrawer = !!this.state.mapDrawer;
     v.mModal = Object.assign({}, v, { regDrawer: false, liveDrawer: false, healthDrawer: false });
     // Шторка рисует те же оверлеи, что и корень, — модалку, открытую из неё, иначе покажет дважды.
-    v.mDrawer = Object.assign({}, v, { dodWhyModal: false });
+    v.mDrawer = Object.assign({}, v, { dodWhyModal: false, bpmnModal: false });
     return v;
   }
 
@@ -4375,6 +4388,133 @@ class Component extends DCLogic {
       // Шторка здоровья — дашборд, а не подпись к плитке: открываем сразу в широкой колонке,
       // иначе 24-пиксельные KPI и спарклайны ужимаются в 320 px и теряют масштаб.
       openHealth: () => this.setState({ mapDrawer: 'health', inspectorOpen: true, opsWide: true }),
+
+      // ── Карта как продуктовое отличие: покрытие, история, сравнение, импорт ──────────────
+      // Четыре вещи, которых нет ни у Agent 365, ни у Camunda, ни у ELMA. Пока они жили только
+      // ручками API, отличия не существовало: оно начинается там, где человек это видит.
+      openCoverage: () => { this.setState({ mapDrawer: 'coverage', inspectorOpen: true, opsWide: true }); this.loadCoverage(); },
+      openHistory: () => { this.setState({ mapDrawer: 'history', inspectorOpen: true, opsWide: true }); this.loadHistory(); },
+      openBpmn: () => this.setState({ modal: 'bpmn', bpmnText: '', bpmnPreview: null }),
+
+      coverageDrawer: s.mapDrawer === 'coverage',
+      historyDrawer: s.mapDrawer === 'history',
+      covHas: !!s.procCoverage,
+      covPct: (s.procCoverage || {}).coverage_pct,
+      covTotal: (s.procCoverage || {}).operations || 0,
+      covConfirmed: (s.procCoverage || {}).confirmed || 0,
+      // Подтверждение «со слов агента» показываем отдельной строкой: для того, кто принимает
+      // решение по карте, это другая степень уверенности, и усреднять их нельзя (ADR-028).
+      covReported: (s.procCoverage || {}).confirmed_reported_only || 0,
+      covReportedNote: ((s.procCoverage || {}).confirmed_reported_only || 0)
+        ? 'из них ' + (s.procCoverage || {}).confirmed_reported_only + ' — со слов чужого агента'
+        : '',
+      covRows: ((s.procCoverage || {}).rows || []).map(r => ({
+        op: r.label || r.op_id,
+        who: (r.agent_names || []).join(', ') || '—',
+        state: r.state,
+        evidence: r.evidence === 'нет' ? '' : r.evidence,
+        runs: r.runs ? (r.runs + ' пр.') : '',
+        fg: r.state === 'подтверждён' ? 'var(--ok-ink)'
+          : r.state === 'осиротел' ? 'var(--err-ink)'
+          : r.state === 'без агента' ? 'var(--w45)' : 'var(--warn-ink)',
+        weak: r.evidence === 'со слов агента'
+      })),
+      covGaps: ((s.procCoverage || {}).gaps || []).map(g => ({ op: g.label || g.op_id, why: g.why })),
+      covGapsEmpty: !((s.procCoverage || {}).gaps || []).length,
+
+      histRows: (s.procHistory || []).map(r => ({
+        rev: 'редакция ' + r.revision,
+        who: r.applied_by || '—',
+        when: String(r.applied_at || '').replace('T', ' ').slice(0, 16),
+        note: r.note || '',
+        nodes: r.nodes + ' ' + this.plural(r.nodes, 'узел', 'узла', 'узлов'),
+        show: () => this.loadDiff(r.revision)
+      })),
+      histEmpty: !(s.procHistory || []).length,
+      diffOpen: !!s.procDiff,
+      diffTitle: s.procDiff ? ('что изменилось между редакциями ' + s.procDiff.base + ' и ' + s.procDiff.target) : '',
+      diffRows: s.procDiff ? [].concat(
+        (s.procDiff.diff.added || []).map(x => ({ mark: '+', fg: 'var(--ok-ink)', text: 'добавлен ' + (x.label || x.id) })),
+        (s.procDiff.diff.removed || []).map(x => ({ mark: '−', fg: 'var(--err-ink)', text: 'удалён ' + (x.label || x.id) })),
+        (s.procDiff.diff.renamed || []).map(x => ({ mark: '✎', fg: 'var(--acc-ink2)', text: '«' + x.from + '» → «' + x.to + '»' })),
+        (s.procDiff.diff.moved || []).map(x => ({ mark: '⇄', fg: 'var(--acc-ink2)', text: (x.label || x.id) + ' переехал' })),
+        (s.procDiff.diff.edges_added || []).map(x => ({ mark: '→', fg: 'var(--ok-ink)', text: 'связь ' + x.from + ' → ' + x.to })),
+        (s.procDiff.diff.edges_removed || []).map(x => ({ mark: '⇥', fg: 'var(--err-ink)', text: 'убрана связь ' + x.from + ' → ' + x.to }))
+      ) : [],
+      diffEmpty: !!s.procDiff && !s.procDiff.diff.total,
+      closeDiff: () => this.setState({ procDiff: null }),
+
+      bpmnModal: s.modal === 'bpmn',
+      bpmnText: s.bpmnText || '',
+      setBpmn: (e) => this.setState({ bpmnText: e.target.value }),
+      bpmnCheck: () => this.previewBpmn(),
+      bpmnApply: () => this.applyBpmn(),
+      bpmnHas: !!s.bpmnPreview,
+      bpmnStats: s.bpmnPreview ? Object.keys(s.bpmnPreview.stats || {})
+        .filter(k => k !== 'org').map(k => ({ text: k + ': ' + s.bpmnPreview.stats[k] })) : [],
+      // Отброшенное называем поимённо: молча потерять элементы чужой схемы нельзя.
+      bpmnSkipped: s.bpmnPreview ? (s.bpmnPreview.skipped || []).map(
+        x => ({ text: x.element + ' × ' + x.count })) : [],
+      bpmnSkippedEmpty: !!s.bpmnPreview && !(s.bpmnPreview.skipped || []).length,
+
+      // ── Во что обойдётся цепочка ДО запуска ─────────────────────────────────────────────
+      // Бюджет прогона умеет остановить перерасход, но останавливает уже потраченное.
+      costAsk: () => this.estimateCost(),
+      costBusy: !!s.costBusy,
+      costHas: !!s.costPreview,
+      costLabel: s.costBusy ? 'считаю…' : (s.costPreview ? 'пересчитать' : 'во что обойдётся?'),
+      costTotal: s.costPreview
+        ? ((s.costPreview.rub || 0).toFixed(2) + ' ₽ · ' + s.costPreview.input_tokens + ' + '
+           + s.costPreview.output_tokens + ' токенов')
+        : '',
+      // Основание важнее числа: по нему человек понимает, доверять оценке или нет.
+      costNote: (s.costPreview || {}).note || '',
+      costPartial: !!(s.costPreview || {}).partial,
+      costRows: ((s.costPreview || {}).rows || []).map(r => ({
+        skill: r.skill,
+        value: r.rub === null ? 'оценить нечем' : (r.rub.toFixed(2) + ' ₽'),
+        basis: r.basis + (r.runs ? (' · ' + r.runs + ' пр.') : ''),
+        fg: r.basis === 'по прогонам' ? 'var(--w70)'
+          : r.basis === 'по каталогу' ? 'var(--warn-ink)' : 'var(--w40)'
+      })),
+
+      // ── Прогнать один шаг ───────────────────────────────────────────────────────────────
+      // Запуск был «всё или ничего»: четыре–шесть минут до первой обратной связи.
+      stepBusy: !!s.stepBusy,
+      stepHas: !!s.stepResult,
+      stepTitle: (s.stepResult || {}).skill || '',
+      stepOk: !!(s.stepResult || {}).ok,
+      stepText: ((s.stepResult || {}).text || '').slice(0, 4000),
+      stepTokens: s.stepResult
+        ? ((s.stepResult.input_tokens || 0) + ' + ' + (s.stepResult.output_tokens || 0) + ' токенов · '
+           + (s.stepResult.model || 'модель не названа'))
+        : '',
+      stepSrc: s.stepResult
+        ? [].concat(((s.stepResult.sources || {}).entities || []).map(e => ({ text: 'сущность ' + e })),
+                    ((s.stepResult.sources || {}).documents || []).filter(Boolean).map(d => ({ text: 'документ ' + d })))
+        : [],
+      stepSrcEmpty: !!s.stepResult && !(((s.stepResult.sources || {}).entities || []).length
+        + ((s.stepResult.sources || {}).documents || []).length),
+      closeStep: () => this.setState({ stepResult: null }),
+      selIsSkill: !!(s.selectedNode && (s.canvasNodes || []).some(
+        n => n.id === s.selectedNode && n.kind === 'skill' && n.skill)),
+      stepRun: () => {
+        const n = (s.canvasNodes || []).find(x => x.id === s.selectedNode);
+        if (n && n.skill) this.runOneStep(n.skill);
+      },
+      stepLabel: s.stepBusy ? 'гоняю шаг…' : '▷ Прогнать этот шаг',
+
+      // ── Источники шага в карточке прогона ───────────────────────────────────────────────
+      // «А он вообще мой файл прочитал?» — вопрос, на который карточка не отвечала.
+      runSources: (((s.lastRun || {}).step_sources) || []).map(x => ({
+        skill: x.skill,
+        what: [].concat((x.entities || []).map(e => e + (x.records && x.records[e] !== undefined
+                                                         ? (' (' + x.records[e] + ')') : '')),
+                        (x.documents || [])).join(', ') || '—',
+        tokens: x.skipped ? 'пропущен' : ((x.input_tokens || 0) + ' + ' + (x.output_tokens || 0)),
+        fg: x.skipped ? 'var(--w40)' : 'var(--w65)'
+      })),
+      runSourcesEmpty: !(((s.lastRun || {}).step_sources) || []).length,
       closeDrawer: () => this.setState({ mapDrawer: null }),
       lineageModal: s.modal === 'lineage',
       lineageTitle: linGet(s.lineageId).label,
@@ -6120,6 +6260,88 @@ class Component extends DCLogic {
 
   // Карта процессов с сервера. AS-IS — применённая редакция (факт), TO-BE — она же с наложенным
   // черновиком области. Дерево и посадки больше не живут в браузере и не пишутся в app_config.
+  estimateCost() {
+    var self = this, s = this.state;
+    var шаги = (s.planWavesReal || []).reduce(function (acc, w) {
+      return acc.concat((w.steps || w.nodes || []).map(function (x) { return x.skill || x.id; }));
+    }, []).filter(Boolean);
+    if (!шаги.length) {
+      шаги = (s.canvasNodes || []).filter(function (n) { return n.kind === 'skill' && n.skill; })
+        .map(function (n) { return n.skill; });
+    }
+    if (!шаги.length) { this.showToast('Нечего оценивать: в плане нет навыков'); return; }
+    this.setState({ costBusy: true });
+    fetch('/api/plan/estimate', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ steps: шаги }) })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) { self.setState({ costBusy: false, costPreview: d }); })
+      .catch(function () { self.setState({ costBusy: false }); self.showToast('Сеть недоступна'); });
+  }
+
+  runOneStep(skill) {
+    var self = this, id = (this.state.agentStatus || {}).id || this.state.scenario;
+    if (!id) { this.showToast('Сначала сохраните агента: пробный шаг гоняется по его графу'); return; }
+    this.setState({ stepBusy: true, stepResult: null });
+    fetch('/api/agents/' + encodeURIComponent(id) + '/step', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ skill: skill }) })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (x) {
+        self.setState({ stepBusy: false, stepResult: x.ok ? x.j : null });
+        if (!x.ok) self.showToast((x.j && x.j.detail) || 'Шаг не прогнался');
+      })
+      .catch(function () { self.setState({ stepBusy: false }); self.showToast('Сеть недоступна'); });
+  }
+
+  loadCoverage() {
+    var self = this;
+    fetch('/api/process/coverage').then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) { self.setState({ procCoverage: d }); })
+      .catch(function () { self.setState({ procCoverage: null }); });
+  }
+
+  loadHistory() {
+    var self = this;
+    fetch('/api/process/history').then(function (r) { return r.ok ? r.json() : { revisions: [] }; })
+      .then(function (d) { self.setState({ procHistory: d.revisions || [] }); })
+      .catch(function () { self.setState({ procHistory: [] }); });
+  }
+
+  loadDiff(target) {
+    var self = this;
+    fetch('/api/process/diff?target=' + encodeURIComponent(target))
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) { if (d) self.setState({ procDiff: d }); else self.showToast('Не удалось сравнить редакции'); })
+      .catch(function () { self.showToast('Сеть недоступна'); });
+  }
+
+  previewBpmn() {
+    var self = this;
+    fetch('/api/process/import/bpmn', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ xml: this.state.bpmnText }) })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (x) {
+        if (x.ok) { self.setState({ bpmnPreview: x.j }); return; }
+        self.setState({ bpmnPreview: null });
+        self.showToast((x.j && x.j.detail) || 'Это не похоже на BPMN 2.0');
+      })
+      .catch(function () { self.showToast('Сеть недоступна'); });
+  }
+
+  applyBpmn() {
+    var self = this;
+    fetch('/api/process/import/bpmn', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ xml: this.state.bpmnText, preview: false }) })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (x) {
+        if (!x.ok) { self.showToast((x.j && x.j.detail) || 'Не удалось импортировать'); return; }
+        self.setState({ modal: null, bpmnText: '', bpmnPreview: null });
+        self.showToast('Импортировано правок: ' + x.j.applied_to_draft
+          + ' — они в ЧЕРНОВИКЕ, примените редакцию, чтобы они попали в факт');
+        self.loadProcessMap();
+      })
+      .catch(function () { self.showToast('Сеть недоступна'); });
+  }
+
   loadProcessMap(silent) {
     var self = this, s = this.state;
     var layer = s.mapLayer === 'TO-BE' ? 'to-be' : 'as-is';

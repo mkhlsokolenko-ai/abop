@@ -48,6 +48,22 @@
             </div>
           </sc-for>
           <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w50);">{{ ov.planEstimate }}</div>
+          <div style="display: flex; flex-direction: column; gap: 7px; padding-top: 10px; border-top: 1px solid var(--w8);">
+            <div style="display: flex; align-items: center; gap: 9px; flex-wrap: wrap;">
+              <button onClick="{{ ov.costAsk }}" title="Оценка по медиане токенов из собственных прошлых прогонов" style="padding: 6px 12px; border: 1px solid rgba(129,140,248,.35); border-radius: 9px; background: rgba(99,102,241,.12); color: var(--acc-ink2); font-size: 11.5px; font-weight: 600;" style-hover="background: rgba(99,102,241,.22);">{{ ov.costLabel }}</button>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--ink);">{{ ov.costTotal }}</span>
+            </div>
+            <sc-if value="{{ ov.costHas }}" hint-placeholder-val="{{ false }}">
+              <span style="font-size: 11.5px; line-height: 1.45; color: var(--w55);">{{ ov.costNote }}</span>
+              <sc-for list="{{ ov.costRows }}" as="c" hint-placeholder-count="3">
+                <div style="display: flex; align-items: baseline; gap: 8px; font-size: 11.5px;">
+                  <span style="flex: 1; min-width: 0; color: var(--w70);">{{ c.skill }}</span>
+                  <span style="font-family: 'JetBrains Mono', monospace; color: {{ c.fg }};">{{ c.value }}</span>
+                  <span style="font-size: 10.5px; color: var(--w40);">{{ c.basis }}</span>
+                </div>
+              </sc-for>
+            </sc-if>
+          </div>
         </div>
         <sc-if value="{{ ov.showBudget }}" hint-placeholder-val="{{ true }}"><div style="display: flex; flex-direction: column; gap: 9px; padding: 13px 15px; border-radius: 12px; background: var(--s55); border: 1px solid var(--w8);">
           <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
@@ -807,6 +823,85 @@
     </div>
   </sc-if>
 
+  <sc-if value="{{ ov.coverageDrawer }}" hint-placeholder-val="{{ false }}">
+    <div style="display: flex; justify-content: flex-end; width: 100%;">
+      <div style="position: relative; width: 100%; max-height: 640px; overflow-y: auto; padding: 18px; border-radius: 16px; background: var(--bg3); border: 1px solid var(--w12); display: flex; flex-direction: column; gap: 14px;">
+        <div style="display: flex; align-items: baseline; gap: 10px;">
+          <div style="flex: 1; font-size: 15px; font-weight: 700;">Где агенты и где дыры</div>
+          <button onClick="{{ ov.closeDrawer }}" title="Убрать шторку вправо" style="width: 30px; height: 30px; border: 1px solid var(--w12); border-radius: 9px; background: var(--w5); color: var(--acc-ink2); font-size: 15px;" style-hover="border-color: #818cf8;">→</button>
+        </div>
+        <sc-if value="{{ ov.covHas }}" hint-placeholder-val="{{ true }}">
+        <div style="display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; padding: 13px; border-radius: 12px; background: var(--w4); border: 1px solid var(--w10);">
+          <span style="font-size: 26px; font-weight: 800; line-height: 1; color: var(--ok-ink);">{{ ov.covPct }}%</span>
+          <span style="font-size: 12px; color: var(--w60);">операций закрыто агентами: {{ ov.covConfirmed }} из {{ ov.covTotal }}</span>
+          <span style="flex: 1 1 100%; font-size: 11.5px; color: var(--warn-ink);">{{ ov.covReportedNote }}</span>
+        </div>
+        <sc-for list="{{ ov.covRows }}" as="r" hint-placeholder-count="4">
+          <div style="display: flex; align-items: baseline; gap: 8px; padding: 8px 10px; border-radius: 9px; background: var(--w3); border: 1px solid var(--w7); flex-wrap: wrap;">
+            <span style="flex: 1 1 150px; min-width: 0; font-size: 12.5px; color: var(--ink);">{{ r.op }}</span>
+            <span style="flex: 1 1 120px; font-size: 11.5px; color: var(--w55);">{{ r.who }}</span>
+            <span style="font-size: 11.5px; font-weight: 600; color: {{ r.fg }};">{{ r.state }}</span>
+            <span title="Отчёт чужого агента подтверждает слабее собственного прогона" style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--warn-ink);">{{ r.evidence }}</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--w40);">{{ r.runs }}</span>
+          </div>
+        </sc-for>
+        <div style="display: flex; flex-direction: column; gap: 6px; padding-top: 10px; border-top: 1px solid var(--w8);">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--w45);">пробелы</span>
+          <sc-for list="{{ ov.covGaps }}" as="g" hint-placeholder-count="2">
+            <div style="display: flex; gap: 8px; align-items: baseline; font-size: 12px;">
+              <span style="color: var(--warn-ink);">•</span>
+              <span style="flex: none; color: var(--ink);">{{ g.op }}</span>
+              <span style="color: var(--w55);">{{ g.why }}</span>
+            </div>
+          </sc-for>
+          <sc-if value="{{ ov.covGapsEmpty }}" hint-placeholder-val="{{ false }}">
+            <span style="font-size: 12px; color: var(--ok-ink);">Пробелов нет: каждая операция закрыта агентом и подтверждена прогонами.</span>
+          </sc-if>
+        </div>
+        </sc-if>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ ov.historyDrawer }}" hint-placeholder-val="{{ false }}">
+    <div style="display: flex; justify-content: flex-end; width: 100%;">
+      <div style="position: relative; width: 100%; max-height: 640px; overflow-y: auto; padding: 18px; border-radius: 16px; background: var(--bg3); border: 1px solid var(--w12); display: flex; flex-direction: column; gap: 12px;">
+        <div style="display: flex; align-items: baseline; gap: 10px;">
+          <div style="flex: 1; font-size: 15px; font-weight: 700;">Как менялся процесс</div>
+          <button onClick="{{ ov.closeDrawer }}" title="Убрать шторку вправо" style="width: 30px; height: 30px; border: 1px solid var(--w12); border-radius: 9px; background: var(--w5); color: var(--acc-ink2); font-size: 15px;" style-hover="border-color: #818cf8;">→</button>
+        </div>
+        <sc-for list="{{ ov.histRows }}" as="h" hint-placeholder-count="3">
+          <button onClick="{{ h.show }}" title="Показать, что изменилось в этой редакции" style="display: flex; align-items: baseline; gap: 8px; padding: 9px 11px; border: 1px solid var(--w8); border-radius: 10px; background: var(--s45); text-align: left; flex-wrap: wrap;" style-hover="border-color: #818cf8;">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--acc-ink2);">{{ h.rev }}</span>
+            <span style="flex: 1 1 110px; font-size: 12px; color: var(--w70);">{{ h.note }}</span>
+            <span style="font-size: 11.5px; color: var(--w50);">{{ h.who }}</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--w40);">{{ h.when }} · {{ h.nodes }}</span>
+          </button>
+        </sc-for>
+        <sc-if value="{{ ov.histEmpty }}" hint-placeholder-val="{{ false }}">
+          <span style="padding: 16px; text-align: center; font-size: 12.5px; color: var(--w50);">Карту ещё ни разу не применяли — истории нет.</span>
+        </sc-if>
+        <sc-if value="{{ ov.diffOpen }}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; flex-direction: column; gap: 7px; padding: 13px; border-radius: 12px; background: rgba(99,102,241,.08); border: 1px solid rgba(129,140,248,.26);">
+            <div style="display: flex; align-items: baseline; gap: 8px;">
+              <span style="flex: 1; font-size: 12px; color: var(--acc-ink2);">{{ ov.diffTitle }}</span>
+              <button onClick="{{ ov.closeDiff }}" style="border: none; background: transparent; color: var(--w45); font-size: 12px;">✕</button>
+            </div>
+            <sc-for list="{{ ov.diffRows }}" as="d" hint-placeholder-count="3">
+              <div style="display: flex; gap: 8px; align-items: baseline; font-size: 12px;">
+                <span style="width: 12px; flex: none; color: {{ d.fg }};">{{ d.mark }}</span>
+                <span style="color: var(--w75);">{{ d.text }}</span>
+              </div>
+            </sc-for>
+            <sc-if value="{{ ov.diffEmpty }}" hint-placeholder-val="{{ false }}">
+              <span style="font-size: 12px; color: var(--w50);">Структура не менялась — правки касались только посадок агентов.</span>
+            </sc-if>
+          </div>
+        </sc-if>
+      </div>
+    </div>
+  </sc-if>
+
   <sc-if value="{{ ov.healthDrawer }}" hint-placeholder-val="{{ false }}">
     <div style="display: flex; justify-content: flex-end; width: 100%;">
       <div style="position: relative; width: 100%; max-height: 640px; overflow-y: auto; padding: 18px; border-radius: 16px; background: var(--bg3); border: 1px solid var(--w12); display: flex; flex-direction: column; gap: 14px;">
@@ -861,6 +956,49 @@
           </sc-for>
         </div>
         <span style="font-size: 11.5px; color: var(--w50);">{{ ov.sparksNote }}</span>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ ov.bpmnModal }}" hint-placeholder-val="{{ false }}">
+    <div role="dialog" aria-modal="true" aria-label="Импорт BPMN" style="position: fixed; inset: 0; z-index: 84; display: flex; align-items: center; justify-content: center; padding: 24px;">
+      <div onClick="{{ ov.closeModal }}" style="position: absolute; inset: 0; background: var(--scrim); backdrop-filter: blur(5px);"></div>
+      <div style="position: relative; width: 680px; max-width: 94vw; max-height: 88vh; overflow-y: auto; padding: 24px; border-radius: 18px; background: var(--bg2); border: 1px solid rgba(234,179,8,.3); box-shadow: 0 24px 70px var(--sh50); display: flex; flex-direction: column; gap: 14px; animation: ab-drop .3s ease-out;">
+        <div style="display: flex; align-items: flex-start; gap: 12px;">
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 5px;">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .9px; text-transform: uppercase; color: var(--w40);">импорт процесса</span>
+            <span style="font-size: 18px; font-weight: 700;">BPMN 2.0 → карта процессов</span>
+            <span style="font-size: 11.5px; line-height: 1.45; color: var(--w55);">Выгрузите схему из Camunda, Signavio, Bizagi или ARIS и вставьте XML. Переносится скелет: процессы и подпроцессы, задачи, события, шлюзы и потоки. Пулы и дорожки отбрасываются — на вопрос «кто исполняет» в ABOP отвечает посадка агента.</span>
+          </div>
+          <button onClick="{{ ov.closeModal }}" style="width: 30px; height: 30px; flex: none; border: 1px solid var(--w12); border-radius: 9px; background: var(--w5); color: var(--ink); font-size: 13px;">✕</button>
+        </div>
+        <textarea value="{{ ov.bpmnText }}" onChange="{{ ov.setBpmn }}" placeholder="&lt;?xml version=&quot;1.0&quot;?&gt;&lt;definitions xmlns=&quot;http://www.omg.org/spec/BPMN/20100524/MODEL&quot;&gt;…" style="min-height: 180px; padding: 12px; border-radius: 11px; border: 2px solid var(--w12); background: var(--s70); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 11.5px; line-height: 1.5;"></textarea>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button onClick="{{ ov.bpmnCheck }}" style="padding: 10px 16px; border: 1px solid var(--w14); border-radius: 10px; background: var(--w5); color: var(--ink); font-size: 12.5px; font-weight: 600;" style-hover="background: var(--w10);">Проверить</button>
+          <sc-if value="{{ ov.bpmnHas }}" hint-placeholder-val="{{ false }}">
+            <button onClick="{{ ov.bpmnApply }}" style="padding: 10px 16px; border: none; border-radius: 10px; background: linear-gradient(135deg,#6366f1,#8b5cf6); color: #fff; font-size: 12.5px; font-weight: 700;">Положить в черновик редакции</button>
+          </sc-if>
+        </div>
+        <sc-if value="{{ ov.bpmnHas }}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; flex-direction: column; gap: 8px; padding: 13px; border-radius: 12px; background: var(--s55); border: 1px solid var(--w9);">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--w45);">что переедет</span>
+            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+              <sc-for list="{{ ov.bpmnStats }}" as="s" hint-placeholder-count="4">
+                <span style="padding: 3px 9px; border-radius: 9999px; background: rgba(99,102,241,.14); color: var(--acc-ink2); font-family: 'JetBrains Mono', monospace; font-size: 11px;">{{ s.text }}</span>
+              </sc-for>
+            </div>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--w45); margin-top: 4px;">что не переедет</span>
+            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+              <sc-for list="{{ ov.bpmnSkipped }}" as="s" hint-placeholder-count="2">
+                <span style="padding: 3px 9px; border-radius: 9999px; background: rgba(245,158,11,.14); color: var(--warn-ink); font-family: 'JetBrains Mono', monospace; font-size: 11px;">{{ s.text }}</span>
+              </sc-for>
+              <sc-if value="{{ ov.bpmnSkippedEmpty }}" hint-placeholder-val="{{ false }}">
+                <span style="font-size: 11.5px; color: var(--ok-ink);">ничего не потеряно</span>
+              </sc-if>
+            </div>
+            <span style="font-size: 11.5px; line-height: 1.45; color: var(--w55); margin-top: 4px;">Правки лягут в ЧЕРНОВИК вашей области. Чтобы они стали фактом, примените редакцию — импорт не обходит согласование.</span>
+          </div>
+        </sc-if>
       </div>
     </div>
   </sc-if>
