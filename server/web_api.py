@@ -763,6 +763,21 @@ async def admin_audit(limit: int = 100, u: dict = Depends(user)) -> dict:
     return {"events": await audit_store.list_events(limit=limit), "source": "audit_log"}
 
 
+# Словесное описание уровня — ПОДПИСЬ к матрице, а не сама матрица: фактические разрешения
+# выводятся разбором гейтов require_level в исходнике (server/rbac_map.py). Раньше здесь была
+# только эта проза, и экран отвечал на вопрос «что мы написали про права», а не «как они работают».
+POLICY_УРОВНЕЙ = {
+    "admin":   {"allow": "всё: RBAC, арендаторы, модели, все отделы, деплой в прод",
+                "deny": "—"},
+    "support": {"allow": "чтение всех отделов, аудит ИБ, штат, эскалации",
+                "deny": "правка RBAC, деплой в прод"},
+    "manager": {"allow": "сборка/прогон/деплой агентов своего отдела, HITL-подтверждения",
+                "deny": "чужие отделы, правка политик безопасности"},
+    "analyst": {"allow": "чтение агентов/прогонов/данных своего отдела",
+                "deny": "любые мутации (read-only), действия наружу"},
+}
+
+
 @app.get("/api/admin/rbac")
 async def admin_rbac(u: dict = Depends(user)) -> dict:
     """RBAC-матрица из РЕАЛЬНЫХ ролей Keycloak: роль → люди + разрешения/запреты (не хардкод-константа)."""
@@ -773,27 +788,19 @@ async def admin_rbac(u: dict = Depends(user)) -> dict:
              "routes_open": карта0["open"], "derived_from": карта0["source"]}
     if not _kc_configured():
         # Людей без Keycloak не назвать, но ГЕЙТЫ выводятся из кода и доступны всегда —
-        # «кто есть в системе» и «что уровню разрешено» это два разных вопроса.
-        return {"rows": [], "configured": False, "reason": _KC_НЕ_НАСТРОЕН,
+        # «кто есть в системе» и «что уровню разрешено» это два разных вопроса. Отдаём строки
+        # уровней без людей: экран показывает права, а не выдуманный список сотрудников.
+        пусто = [{"role": lv, "count": 0, "people": "—", "departments": [],
+                  "allow": POLICY_УРОВНЕЙ[lv]["allow"], "deny": POLICY_УРОВНЕЙ[lv]["deny"],
+                  "enforced": rbac_map.сводка(lv)} for lv in rbac_map.УРОВНИ]
+        return {"rows": пусто, "configured": False, "reason": _KC_НЕ_НАСТРОЕН,
                 "editable": False, "enforcement": гейты}
     try:
         data = await admin_users(u)  # переиспользуем живой список Keycloak
     except HTTPException:
         raise
     users = data.get("users", [])
-    # Словесное описание уровня — ПОДПИСЬ к матрице, а не сама матрица: фактические разрешения
-    # ниже выводятся разбором гейтов require_level в исходнике (server/rbac_map.py). Раньше здесь
-    # была только эта проза, и экран отвечал на вопрос «что мы написали про права».
-    POLICY = {
-        "admin":   {"allow": "всё: RBAC, арендаторы, модели, все отделы, деплой в прод",
-                    "deny": "—"},
-        "support": {"allow": "чтение всех отделов, аудит ИБ, штат, эскалации",
-                    "deny": "правка RBAC, деплой в прод"},
-        "manager": {"allow": "сборка/прогон/деплой агентов своего отдела, HITL-подтверждения",
-                    "deny": "чужие отделы, правка политик безопасности"},
-        "analyst": {"allow": "чтение агентов/прогонов/данных своего отдела",
-                    "deny": "любые мутации (read-only), действия наружу"},
-    }
+    POLICY = POLICY_УРОВНЕЙ
     rows = []
     for lvl in ("admin", "support", "manager", "analyst"):
         people = [usr["name"] or usr["username"] for usr in users if usr.get("level") == lvl]

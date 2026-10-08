@@ -1705,6 +1705,7 @@
                 </div>
                 <div style="margin-top: 8px; font-size: 12.5px; color: var(--w72);">{{ r.rights }}</div>
                 <div style="margin-top: 4px; font-size: 11.5px; color: var(--w66);">Области (ABAC): {{ r.areas }}</div>
+                <div title="{{ r.enforcedSample }}" style="margin-top: 6px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--acc-ink2);">{{ r.enforcedText }}</div>
               </div>
             </sc-for>
           </div>
@@ -2366,43 +2367,6 @@ const PALETTE = [
     { kind: 'skill', skill: 'report-editor', label: 'Сборка отчёта', glyph: '🧾', iconBg: 'rgba(56,189,248,.24)', meta: 'один документ из разделов' },
     { kind: 'out', label: 'Вывод наружу', glyph: '➤', iconBg: 'rgba(249,115,22,.24)' }
   ]}
-];
-
-const RBAC = [
-  { role: 'developer', people: '@sokolenko · @petrova', rights: ['собирать агентов', 'править рецепты', 'запускать прогоны'], deny: ['вывод в прод', 'правка RBAC'] },
-  { role: 'operator',  people: '@ivanov',               rights: ['подтверждать HITL', 'останавливать прогоны'], deny: ['сборка агентов', 'правка рецептов'] },
-  { role: 'viewer',    people: '@zakazchik',            rights: ['смотреть паспорта и отчёты'], deny: ['любые действия наружу'] },
-  { role: 'admin',     people: '@security',             rights: ['RBAC', 'вывод в прод', 'ре-аттестация', 'аудит ИБ'], deny: ['—'] }
-];
-
-const RBAC_YAML = [
-  'realm: abop-prod',
-  'roles:',
-  '  developer:',
-  '    allow: [flow.build, recipe.write, run.start]',
-  '    deny:  [agent.promote, rbac.write]',
-  '  operator:',
-  '    allow: [hitl.approve, run.stop]',
-  '    deny:  [flow.build, recipe.write]',
-  '  viewer:',
-  '    allow: [passport.read, report.read]',
-  '  admin:',
-  '    allow: ["*"]',
-  'invariant: agent.scope ⊆ creator.rights'
-];
-
-const SEC_AUDIT = [
-  { at: '04.09 14:22', who: '@sokolenko', what: 'agent.promote · Финаналитик → prod', hash: '9f2a…c1', level: 'ok' },
-  { at: '04.09 13:58', who: '@ivanov',    what: 'hitl.approve · email-draft (egress external)', hash: '71bd…4e', level: 'ok' },
-  { at: '04.09 12:04', who: '@sokolenko', what: 'rights.loosen · узел finance: write → action', hash: 'c05f…9a', level: 'warn' },
-  { at: '03.09 18:31', who: 'system',     what: 'envelope.block · требовалась L4 при потолке L3', hash: '4ae2…77', level: 'fail' },
-  { at: '03.09 10:12', who: '@security',  what: 'rbac.write · viewer: убран report.export', hash: 'b8c1…20', level: 'ok' }
-];
-
-const REATTEST = [
-  { subject: 'Финаналитик · prod', due: 'через 12 дней', owner: '@security', state: 'в графике' },
-  { subject: 'Аудитор данных в 1С · prod', due: 'просрочено 3 дня', owner: '@security', state: 'просрочено' },
-  { subject: 'Роль developer · права', due: 'через 40 дней', owner: '@security', state: 'в графике' }
 ];
 
 const FAMILIES = {
@@ -3199,7 +3163,8 @@ class Component extends DCLogic {
       const glyphs = { overview: '◉', canvas: '⊞', skills: '✦', data: '⛁', agents: '◈', settings: '⚙', security: '⛨' };
       let badge = id === 'runs' ? (!s.startedOnce ? '' : hitlPending ? '1' : (finished ? '' : '•')) : '';
       if (id === 'canvas') badge = hitlPending ? '1' : (s.startedOnce && !finished ? '•' : '');
-      if (id === 'security' && secViolations) badge = String(secViolations);
+      // Пункта «security» в рейле нет (экран открывается из меню профиля), поэтому бейдж для
+      // него считался в никуда. Оставлен только живой — очередь HITL.
       return {
         label, go: () => this.go(id), current: active ? 'page' : 'false',
         glyph: glyphs[id] || '·',
@@ -3208,8 +3173,8 @@ class Component extends DCLogic {
         fg: active ? 'var(--ink)' : 'var(--w62)',
         bar: active ? '#818cf8' : 'transparent',
         badge,
-        badgeBg: (hitlPending && id === 'runs') ? 'rgba(245,158,11,.25)' : (id === 'security' && secViolations ? 'rgba(239,68,68,.25)' : 'var(--w12)'),
-        badgeFg: (hitlPending && id === 'runs') ? 'var(--warn-ink)' : (id === 'security' && secViolations ? 'var(--err-ink)' : 'var(--w65)')
+        badgeBg: (hitlPending && id === 'runs') ? 'rgba(245,158,11,.25)' : 'var(--w12)',
+        badgeFg: (hitlPending && id === 'runs') ? 'var(--warn-ink)' : 'var(--w65)'
       };
     });
 
@@ -4902,6 +4867,20 @@ class Component extends DCLogic {
       isRecipes: s.dataTab === 'recipes', isConnectors: s.dataTab === 'connectors', isLineage: s.dataTab === 'lineage', lineageCards: ((s.lineage || {}).entities || []).map(function(e){ return { entity: e.entity, hint: e.schema_hint || '', recipes: (e.recipes || []).map(function(r){ return r.id; }).join(', ') || '— нет рецепта (создайте)', skills: (e.consumers || []).map(function(c){ return c.title; }).join(', ') || '— никто не потребляет', roles: (function(){ var rs = []; (e.consumers || []).forEach(function(c){ (c.roles || []).forEach(function(r){ if (rs.indexOf(r.role_title) < 0) rs.push(r.role_title); }); }); return rs.join(', ') || '—'; })() }; }), lineageConnectors: ((s.lineage || {}).connectors || []).map(function(c){ return { title: c.title, adapter: c.adapter, badge: c.badge || '' }; }),
       lineageView: s.lineageView || 'cards',
       reglShow: !!s.reglShow, toggleReglGraph: () => this.toggleReglGraph(),
+      // Пять обработчиков «Регламента» существовали методами класса, но не выставлялись сюда,
+      // а рантайм читает только renderVals — кнопка «＋ Регламент (нормы · sLAVA)» на экране
+      // «Данные» не делала ничего, хотя /api/reglament/ingest и /graph/build работают. Соседние
+      // кнопки в той же строке разметки были выставлены — асимметрия в одну строку.
+      reglamentModal: s.modal === 'reglament',
+      reglamentTenant: (s.me && s.me.department) || 'общий',
+      reglamentText: s.reglamentText || '',
+      reglamentBtnLabel: s.reglamentBusy ? 'Загружаю…' : 'Загрузить в sLAVA',
+      reglamentMsg: s.reglamentMsg || '',
+      openReglament: () => this.openReglament(),
+      closeReglament: () => this.closeReglament(),
+      setReglamentText: (e) => this.setReglamentText(e),
+      ingestReglament: () => this.ingestReglament(),
+      buildReglamentGraph: () => this.buildReglamentGraph(),
       reglBtnLabel: (s.reglShow ? 'Скрыть граф регламента' : 'Граф регламента (НСИ + нормы)'),
       reglBtnBg: (s.reglShow ? 'rgba(234,179,8,.2)' : 'rgba(234,179,8,.08)'),
       reglActions: (((s.reglGraph && s.reglGraph.edges) || []).filter(function(e){ return e.relation === 'action'; }).map(function(e){ var n = ((s.reglGraph.nodes) || []).find(function(x){ return x.nsi_key === e.from_key; }); return { from: (n && n.op ? n.op.slice(0, 28) : e.from_key), note: (e.note || '').slice(0, 70) }; })),
@@ -5733,9 +5712,11 @@ class Component extends DCLogic {
           return (r.allow || '').split(', ').filter(Boolean).map(t => ({ text: t, mark: '✓', fg: 'var(--ok-ink)' }))
             .concat((r.deny || '').split(', ').filter(d => d && d !== '—').map(t => ({ text: t, mark: '✕', fg: 'var(--err-ink)' })));
         }
-        const r = RBAC.find(x => x.role === s.role) || RBAC[0];
-        return r.rights.map(t => ({ text: t, mark: '✓', fg: 'var(--ok-ink)' }))
-          .concat(r.deny.filter(d => d !== '—').map(t => ({ text: t, mark: '✕', fg: 'var(--err-ink)' })));
+        // Фолбэка на демо-права здесь больше нет: показывать выдуманный список того, что
+        // пользователю «можно», опаснее, чем сказать, что права не загрузились. Тот же приём,
+        // что уже применён к roleOptions.
+        return [{ text: 'права не загружены: нужен доступ уровня «поддержка»', mark: '—',
+                  fg: 'var(--w45)' }];
       })(),
       escRows: [
         { key: 'cost', label: 'Стоимость шага выше порога', note: 'дороже — спросить человека', options: ['0.20 ₽', '0.50 ₽', '1.00 ₽', '5.00 ₽'] },
@@ -5759,80 +5740,16 @@ class Component extends DCLogic {
       secViolations: secViolations,
       // Подзаголовок называет источник честно: «живые данные» писалось всегда, в том числе когда
       // Keycloak не настроен и таблицы берут демо-фолбэк.
-      secSourceNote: ((s.adminUsers || []).length ? 'люди и роли из Keycloak' : 'Keycloak не ответил — показаны демо-строки')
-        + ((s.adminAudit || []).length ? ', аудит из журнала' : ', аудит демонстрационный'),
-      reattestDemo: 'демо-данные: ре-аттестация ещё не подключена к источнику',
-      secTabs: ['RBAC', 'Периметр', 'Эскалация', 'Ре-аттестация', 'Аудит ИБ'].map(t => ({
-        label: t, pick: () => this.setState({ secTab: t }),
-        bg: s.secTab === t ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : 'transparent',
-        fg: s.secTab === t ? 'var(--ink)' : 'var(--w55)'
-      })),
-      secIsRbac: s.secTab === 'RBAC', secIsScope: s.secTab === 'Периметр',
-      secIsEsc: s.secTab === 'Эскалация', secIsReattest: s.secTab === 'Ре-аттестация',
-      secIsAudit: s.secTab === 'Аудит ИБ',
-      rbacVersion: 'v4 · изменил @security 03.09',
-      rbacRows: (s.adminRbac && s.adminRbac.length) ? s.adminRbac.map(r => ({
-        role: r.role + (r.count ? (' · ' + r.count) : ''), people: r.people, allow: r.allow, deny: r.deny,
-        enforcedText: r.enforced
-          ? ('по факту мутаций: разрешено ' + r.enforced.allowed_count + ', закрыто '
-             + r.enforced.denied_count + ' · выведено из гейтов кода')
-          : 'фактические гейты не считаны'
-      })) : RBAC.map(r => ({
-        role: r.role, people: r.people, allow: r.rights.join(' · '), deny: r.deny.join(' · '),
-        enforcedText: 'демо-строка, фактические гейты не считаны'
-      })),
-      rbacYaml: RBAC_YAML.map(t => ({ text: t })),
+      secSourceNote: ((s.adminUsers || []).length ? 'люди и роли из Keycloak' : 'Keycloak не ответил — люди не показаны')
+        + ', права выведены из гейтов кода'
+        + ((s.adminAudit || []).length ? ', аудит из журнала' : ', журнал аудита пуст'),
+      reattestDemo: 'демо-данные: ре-аттестация ещё не подключена к источнику', secIsScope: s.secTab === 'Периметр', secIsReattest: s.secTab === 'Ре-аттестация',
       // saveRbac убран: ручки на запись нет (/api/admin/rbac только GET), а кнопка показывала
       // «RBAC применён · запись в аудит ИБ». Права живут в ролях Keycloak и в гейтах кода —
       // матрица их отражает, но не редактирует, и теперь так и написано.
       rbacEditable: false,
       rbacEditNote: 'Матрица не правится здесь: роли задаются в Keycloak, гейты — в коде сервера.',
-      scopeChecks: [
-        { title: 'Финаналитик · scope ⊆ права developer', detail: 'требует: data.read, board.write, egress через HITL — всё есть у создателя', ok: true },
-        { title: 'Аудитор 1С · scope ⊆ права developer', detail: 'требует: data.read (read-only копия базы) — конфликтов нет', ok: true },
-        { title: 'Узел finance · автономия L' + s.rights + ' vs потолок L3', detail: s.rights >= 4 ? 'нарушение: требуется переаудит DeploymentContract в LUDA' : 'в конверте, запуск разрешён', ok: s.rights < 4 }
-      ].map(c => ({
-        title: c.title, detail: c.detail, mark: c.ok ? '✓' : '✕',
-        bg: c.ok ? 'rgba(16,185,129,.07)' : 'rgba(239,68,68,.09)',
-        border: c.ok ? 'rgba(16,185,129,.24)' : 'rgba(239,68,68,.3)',
-        markBg: c.ok ? 'rgba(16,185,129,.18)' : 'rgba(239,68,68,.18)',
-        markFg: c.ok ? 'var(--ok-ink)' : 'var(--err-ink)'
-      })),
-      agentClasses: [
-        { label: 'read-only', count: '5 агентов', note: 'Только чтение и запись на доску прогона. Деплой без ре-аттестации, эскалация не требуется.', bg: 'rgba(16,185,129,.12)', border: 'rgba(16,185,129,.3)', fg: 'var(--ok-ink)' },
-        { label: 'действующий', count: '2 агента', note: 'Есть action-узлы с egress. Обязательны HITL-точки, ре-аттестация каждые 90 дней, запись в аудит ИБ.', bg: 'rgba(245,158,11,.12)', border: 'rgba(245,158,11,.32)', fg: 'var(--warn-ink)' }
-      ],
-      escRules: [
-        { key: 'cost', trigger: 'Стоимость прогона выше порога', route: 'прогон → оператор → admin', options: ['0.20 ₽', '0.50 ₽', '2.00 ₽'] },
-        { key: 'egress', trigger: 'Действие с egress наружу', route: 'узел → HITL оператора', options: ['всегда', 'только external', 'по классу данных'] },
-        { key: 'autonomy', trigger: 'Требуемая автономия выше конверта', route: 'блокировка → переаудит в LUDA', options: ['L2', 'L3', 'L4'] },
-        { key: 'data', trigger: 'Объём выборки выше порога', route: 'рецепт → подтверждение владельца данных', options: ['500 записей', '1000 записей', '10 000 записей'] }
-      ].map(r => ({
-        trigger: r.trigger, route: r.route, threshold: s.escThresholds[r.key],
-        options: r.options.map(o => ({ value: o, label: o })),
-        setThreshold: (e) => { const v = e.target.value; const ne = Object.assign({}, s.escThresholds, { [r.key]: v }); this.setState({ escThresholds: ne }); this.saveConfig('escThresholds', ne); this.showToast('Порог эскалации обновлён · запись в аудит ИБ'); }
-      })),
-      reattestRows: REATTEST.map(r => {
-        const late = r.state === 'просрочено';
-        return {
-          subject: r.subject, due: r.due, owner: r.owner, state: r.state,
-          bg: late ? 'rgba(239,68,68,.08)' : 'var(--s50)',
-          border: late ? 'rgba(239,68,68,.3)' : 'var(--w7)',
-          badgeBg: late ? 'rgba(239,68,68,.16)' : 'rgba(16,185,129,.12)',
-          badgeFg: late ? 'var(--err-ink)' : 'var(--ok-ink)',
-          review: () => this.showToast('Пересмотр «' + r.subject + '» поставлен в очередь')
-        };
-      }),
-      secFilters: ['все', 'ok', 'warn', 'fail'].map(ft => ({
-        label: ft, pick: () => this.setState({ secFilter: ft }),
-        bg: s.secFilter === ft ? 'rgba(99,102,241,.22)' : 'var(--w4)',
-        fg: s.secFilter === ft ? 'var(--ink)' : 'var(--w60)',
-        border: s.secFilter === ft ? 'rgba(129,140,248,.6)' : 'var(--w12)'
-      })),
-      auditSec: (function(){ var src = (s.adminAudit && s.adminAudit.length) ? s.adminAudit.map(function(e){ var lvl = e.severity === 'warn' ? 'warn' : (e.severity === 'error' || e.severity === 'fail' ? 'fail' : 'ok'); return { at: (e.ts||'').replace('T',' ').slice(0,16), who: e.actor||'система', what: (e.action||'') + (e.target ? (' · ' + e.target) : ''), hash: 'id ' + (e.id||''), level: lvl }; }) : SEC_AUDIT; return src.filter(a => s.secFilter === 'все' || a.level === s.secFilter).map(a => ({ at: a.at, who: a.who, what: a.what, hash: a.hash, color: a.level === 'fail' ? 'var(--err-ink)' : a.level === 'warn' ? 'var(--warn-ink)' : 'var(--w72)' })); })(),
-      auditEmpty: !((s.adminAudit && s.adminAudit.length) ? s.adminAudit : SEC_AUDIT).filter(a => s.secFilter === 'все' || (a.level||a.severity) === s.secFilter).length,
-      auditSource: (s.adminAudit && s.adminAudit.length) ? 'audit_log (реальные события)' : 'демо-журнал',
-      exportAudit: () => this.showToast('Аудит ИБ выгружен · хэш-цепочка приложена'),
+      auditEmpty: !(s.adminAudit || []).filter(a => s.secFilter === 'все' || (a.level || a.severity) === s.secFilter).length,
       settingsTitle: s.settingsTab, settingsRows,
       isMemoryTab: s.settingsTab === 'Память',
       memoryRows: s.memory.map(m => ({
