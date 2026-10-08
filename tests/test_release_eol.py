@@ -34,3 +34,20 @@ def test_gitattributes_закрепляет_lf():
     текст = (КОРЕНЬ / ".gitattributes").read_text(encoding="utf-8")
     for правило in ("*.sh text eol=lf", "Dockerfile* text eol=lf", "ops/** text eol=lf"):
         assert правило in текст, f"в .gitattributes нет правила «{правило}»"
+
+
+def test_образ_несёт_ops_скрипты():
+    """Руководство администратора зовёт скрипты как `docker exec abop-webapi python scripts/…`.
+
+    Пока `scripts/` не копировались в образ, документ обещал то, чего там нет: перенос карты и
+    чистку настроек выполнить было нечем, а узнавал об этом тот, кто в три часа ночи переносил
+    стенд. Проверка дешевле.
+    """
+    import pathlib
+    import re
+    корень = pathlib.Path(__file__).resolve().parents[1]
+    dockerfile = (корень / "Dockerfile.webapi").read_text(encoding="utf-8")
+    assert re.search(r"^COPY\s+scripts\s", dockerfile, re.M), "образ не несёт scripts/"
+    админ = (корень / "docs" / "guide" / "RUKOVODSTVO_ADMINISTRATORA.html").read_text(encoding="utf-8")
+    for имя in re.findall(r"python (scripts/[\w./-]+\.py)", админ):
+        assert (корень / имя).exists(), f"руководство зовёт {имя}, которого нет в репозитории"

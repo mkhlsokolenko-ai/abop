@@ -20,6 +20,10 @@ COPY reports ./reports
 COPY webapp ./webapp
 COPY demo ./demo
 COPY desktop/ui ./desktop/ui
+# Ops-скрипты (перенос карты, чистка мёртвых настроек, проверка шаблонов): руководство
+# администратора зовёт их как `docker exec abop-webapi python scripts/...` — без этой строки
+# документ обещал то, чего в образе нет.
+COPY scripts ./scripts
 # руководства поставки — отдаются по /guide и открываются из «Помощи»
 COPY docs/guide ./docs/guide
 
