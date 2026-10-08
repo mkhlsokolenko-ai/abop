@@ -612,7 +612,9 @@
     --sh50: rgba(0,0,0,.5);
     --sh55: rgba(0,0,0,.55);
   }
-  :root[data-theme="light"] { color-scheme: light;
+  :root { --danger-ink: #f87171; }   /* использовался в двух местах и не был определён нигде:
+                                         индикатор «свой LLM-бокс не отвечает» терял цвет */
+  :root[data-theme="light"] { color-scheme: light; --danger-ink: #b91c1c;
     --w3: rgba(15,23,42,.03);
     --w4: rgba(15,23,42,.04);
     --w5: rgba(15,23,42,.05);
@@ -1131,12 +1133,14 @@
               </div>
             </div>
 
+            <sc-if value="{{ hasRunTrace }}" hint-placeholder-val="{{ false }}">
             <div style="display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 12px; background: var(--w4); border: 1px solid var(--w10); flex-wrap: wrap;">
               <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .9px; text-transform: uppercase; color: var(--w38);">где идёт</span>
               <button sc-camel-on-click="{{ goTraceOnMap }}" style="padding: 7px 12px; border: 1px solid rgba(129,140,248,.4); border-radius: 9px; background: rgba(99,102,241,.14); color: var(--acc-ink2); font-size: 12.5px; font-weight: 600;" style-hover="background: rgba(99,102,241,.24);">{{ runTracePath }} ▸</button>
               <span style="font-size: 12.5px; color: var(--w60);">текущий шаг: {{ runTraceStep }}</span>
               <button sc-camel-on-click="{{ goTraceInGraph }}" style="margin-left: auto; padding: 7px 12px; border: 1px solid var(--w14); border-radius: 9px; background: var(--w5); color: var(--ink); font-size: 12px; font-weight: 600;" style-hover="background: var(--w10);">Открыть в графе ▸</button>
             </div>
+            </sc-if>
 
             <div style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 18px; align-items: start;">
 
@@ -1665,7 +1669,7 @@
           <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
             <div style="flex: 1; min-width: 0;">
               <h1 style="margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -.6px; color: var(--ink);">Админ-панель</h1><div style="margin-top: 4px; font-size: 12.5px; color: var(--w62);">Только просмотр: пользователи и роли ведутся в Keycloak (realm abop), штат — в Redmine. Изменения здесь не вносятся.</div>
-              <div style="font-size: 12.5px; color: var(--w50);">Управление доступом, ролями и областями · RBAC + ABAC · живые данные Keycloak/Redmine</div>
+              <div style="font-size: 12.5px; color: var(--w50);">Управление доступом, ролями и областями · RBAC + ABAC · {{ secSourceNote }}</div>
             </div>
             <button sc-camel-on-click="{{ reloadAdmin }}" style="padding: 8px 14px; border: 1px solid var(--w14); border-radius: 10px; background: var(--w5); color: var(--ink); font-size: 12.5px;" style-hover="background: var(--w9);">Обновить</button>
           </div>
@@ -3187,7 +3191,9 @@ class Component extends DCLogic {
       prometheus: 'http://' + _obsHost + ':9091/targets',
       metrics: '/metrics'
     };
-    const secViolations = REATTEST.filter(r => r.state === 'просрочено').length + (s.rights >= 4 ? 1 : 0);
+    // Бейдж «нарушения» считался от демо-константы REATTEST плюс выдуманная добавка за уровень
+    // прав. Считаем по тому, что действительно есть: события аудита с пометкой отказа.
+    const secViolations = (s.adminAudit || []).filter(e => e.severity === 'error' || e.severity === 'fail').length;
     const nav = navDefs.map(([id, label]) => {
       const active = s.screen === id;
       const glyphs = { overview: '◉', canvas: '⊞', skills: '✦', data: '⛁', agents: '◈', settings: '⚙', security: '⛨' };
@@ -3395,7 +3401,7 @@ class Component extends DCLogic {
 
     const depStatus = { 'актив': SEM.ok, 'пауза': SEM.warn, 'отозван': SEM.err, 'выведен': SEM.idle, 'черновик': SEM.idle };
     const instStatus = {
-      'думает': { ape: 'think', fg: 'var(--acc-ink2)' }, 'скан': { ape: 'think', fg: 'var(--acc-ink)' },
+      'думает': { ape: 'thinking', fg: 'var(--acc-ink2)' }, 'скан': { ape: 'thinking', fg: 'var(--acc-ink)' },
       'HITL': { ape: 'hitl', fg: 'var(--warn-ink)' }, 'ошибка': { ape: 'stop', fg: 'var(--err-ink)' },
       'idle': { ape: 'idle', fg: 'var(--w50)' }, 'готово': { ape: 'done', fg: 'var(--ok-ink)' },
       'ждёт': { ape: 'idle', fg: 'var(--acc-ink2)' }, 'внимание': { ape: 'stop', fg: 'var(--warn-ink)' }, 'отменён': { ape: 'idle', fg: 'var(--w50)' }
@@ -4237,7 +4243,7 @@ class Component extends DCLogic {
       }),
       showInstances: mapOpInstances.length > 0,
       opInstances: mapOpInstances.map(i => {
-        const ist = { 'думает': { ape: 'think', fg: 'var(--acc-ink2)' }, 'скан': { ape: 'think', fg: 'var(--acc-ink)' }, 'HITL': { ape: 'hitl', fg: 'var(--warn-ink)' }, 'ошибка': { ape: 'stop', fg: 'var(--err-ink)' }, 'idle': { ape: 'idle', fg: 'var(--w50)' }, 'готово': { ape: 'done', fg: 'var(--ok-ink)' } }[i.status] || { ape: 'idle', fg: 'var(--ink)' };
+        const ist = { 'думает': { ape: 'thinking', fg: 'var(--acc-ink2)' }, 'скан': { ape: 'thinking', fg: 'var(--acc-ink)' }, 'HITL': { ape: 'hitl', fg: 'var(--warn-ink)' }, 'ошибка': { ape: 'stop', fg: 'var(--err-ink)' }, 'idle': { ape: 'idle', fg: 'var(--w50)' }, 'готово': { ape: 'done', fg: 'var(--ok-ink)' } }[i.status] || { ape: 'idle', fg: 'var(--ink)' };
         const mm = Math.floor(i.dur / 60), ss2 = i.dur % 60;
         return {
           agent: i.agent, step: i.step, init: i.init, status: i.status, ape: ist.ape, fg: ist.fg,
@@ -4405,7 +4411,7 @@ class Component extends DCLogic {
         this.route('canvas');
       },
       nav, obsLinks, openRunTrace: () => this.openRunTrace(), crumb: s.screen === 'canvas' ? ('Граф · ' + ({ build: 'Строю', run: 'Прогон', ops: 'Эксплуатирую', envelope: 'Конверт' }[s.lens] || '')) : crumbs[s.screen],
-      meName: (s.me && s.me.name) || 'Гость', meRole: s.me ? ({admin:'администратор',support:'поддержка',manager:'менеджер',analyst:'аналитик'}[s.me.level] || s.me.level) : 'вход не выполнен', meDept: s.me ? (s.me.department === '*' ? 'все области' : s.me.department) : '—', meInitials: (((s.me && s.me.name) || 'МС').replace('@','')).substr(0,2).toUpperCase(), meRing: s.me ? 'rgba(129,140,248,.5)' : 'var(--w10)', meAvatarBg: s.me ? (s.me.level==='admin' ? 'linear-gradient(135deg,#8b5cf6,#6366f1)' : (s.me.department==='finance' ? 'linear-gradient(135deg,#34d399,#059669)' : 'linear-gradient(135deg,#f59e0b,#d97706)')) : 'linear-gradient(135deg, #6366f1, #8b5cf6)', canMutate: !!s.me && ['manager','support','admin'].indexOf(s.me.level) > -1, notAuthed: !s.me, authed: !!s.me, userMenu: !!s.userMenu, toggleUserMenu: () => this.setState({ userMenu: !s.userMenu }), doLogout: () => this.logout(), demoUsers: this.demoAccounts().map(u => ({ username: u.username, label: u.label, deptLabel: u.deptLabel, tone: u.tone, pick: () => this.setState({ loginEmail: u.username }), bg: (s.me && s.me.department === u.deptId) ? 'rgba(129,140,248,.16)' : 'var(--w3)', ring: (s.me && s.me.department === u.deptId) ? 'rgba(129,140,248,.5)' : 'var(--w8)' })), loginEmail: s.loginEmail || '', setLoginEmail: (e) => this.setState({ loginEmail: e.target.value }), loginPass: (s.loginPass || ''), setLoginPass: (e) => this.setState({ loginPass: e.target.value }), loginJwt: s.loginJwt || '', setLoginJwt: (e) => this.setState({ loginJwt: e.target.value }), doLoginForm: () => { if (!s.loginEmail || !s.loginPass) { this.showToast('Введите логин и пароль'); return; } this.doLogin(s.loginEmail, s.loginPass); }, applyJwt: () => this.applyJwt(s.loginJwt), quickUsers: ['admin.abop','buh.analyst','pm.manager'].map(n => ({ name: n, fill: () => this.setState({ loginEmail: n }) })), readOnly: !!(s.me && s.me.level === 'analyst'), goLk: () => { this.setState({ userMenu: false }); this.go('lk'); }, goSettings: () => { this.setState({ userMenu: false }); this.go('settings'); }, goAdmin: () => { this.setState({ userMenu: false }); this.go('security'); this.loadAdmin(); }, isAdmin: !!s.me && (s.me.level === 'admin' || s.me.level === 'support'), isLkScreen: s.screen === 'lk', isSettingsScreen: s.screen === 'settings', isSecScreen: s.screen === 'security', adminTab: s.adminTab || 'users', adminTabs: [['users','Пользователи'],['roles','Роли и области'],['staff','Штат'],['audit','Аудит ИБ']].map(t => ({ label: t[1], pick: () => this.setState({ adminTab: t[0] }), bg: (s.adminTab||'users')===t[0] ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : 'transparent', fg: (s.adminTab||'users')===t[0] ? 'var(--ink)' : 'var(--w55)' })), isAU: (s.adminTab||'users')==='users', isAR: (s.adminTab||'users')==='roles', isAS: (s.adminTab||'users')==='staff', isAA: (s.adminTab||'users')==='audit', adminUsers: (s.adminUsers||[]).map(x => { var c={admin:['rgba(139,92,246,.16)','var(--vio-ink)'],support:['rgba(59,130,246,.16)','#93c5fd'],manager:['rgba(245,158,11,.16)','var(--warn-ink)'],analyst:['rgba(52,211,153,.16)','var(--ok-ink)']}[x.level] || ['var(--w8)','var(--ink)']; return { username: x.username, email: x.email || '—', department: x.department || '—', levelLabel: {admin:'администратор',support:'поддержка',manager:'менеджер',analyst:'аналитик'}[x.level] || x.level, roleBg: c[0], roleFg: c[1], statusDot: x.enabled ? '#34d399' : '#6b7280' }; }), adminStaff: (s.adminStaff||[]).map(p => ({ login: p.login, name: p.name || '—', mail: p.mail || '—' })), adminEmpty: !(s.adminUsers||[]).length, adminNote: s.adminLoading ? 'Загрузка…' : (s.adminErr || 'Нет данных (нужны права admin/support)'), rolesMatrix: ['admin','support','manager','analyst'].map(lv => { var us=(s.adminUsers||[]).filter(x => x.level===lv); var ar=[]; us.forEach(x => { if(x.department && ar.indexOf(x.department)<0) ar.push(x.department); }); var c={admin:['rgba(139,92,246,.16)','var(--vio-ink)'],support:['rgba(59,130,246,.16)','#93c5fd'],manager:['rgba(245,158,11,.16)','var(--warn-ink)'],analyst:['rgba(52,211,153,.16)','var(--ok-ink)']}[lv]; return { label: {admin:'администратор',support:'поддержка',manager:'менеджер',analyst:'аналитик'}[lv], count: us.length, rights: {admin:'полный доступ · роли и области · governance',support:'сквозной доступ (чтение) · поддержка',manager:'сборка и публикация агентов в своём отделе · прогоны',analyst:'только чтение · агенты и данные своей области'}[lv], areas: (ar.join(', ') || '—'), roleBg: c[0], roleFg: c[1], bg: 'var(--w3)', border: 'var(--w9)' }; }), reloadAdmin: () => this.loadAdmin(), runsJournal: (function(){ var mapRow = (r) => ({ agent: r.agent_name || r.agent_id, ver: r.version ? ('v'+r.version) : '—', startedBy: r.started_by || '—', vLabel: r.verdict_ok ? 'пройден' : 'замечания', vBg: r.verdict_ok ? 'rgba(16,185,129,.14)' : 'rgba(239,68,68,.14)', vFg: r.verdict_ok ? 'var(--ok-ink)' : 'var(--err-ink)', autonomy: r.autonomy_used || '—', hitl: String(r.hitl_count || 0), when: (r.created_at || '').replace('T', ' ').slice(0, 16) }); return (s.runsList||[]).map(mapRow); })(),
+      meName: (s.me && s.me.name) || 'Гость', meRole: s.me ? ({admin:'администратор',support:'поддержка',manager:'менеджер',analyst:'аналитик'}[s.me.level] || s.me.level) : 'вход не выполнен', meDept: s.me ? (s.me.department === '*' ? 'все области' : s.me.department) : '—', meInitials: (((s.me && s.me.name) || 'МС').replace('@','')).substr(0,2).toUpperCase(), meRing: s.me ? 'rgba(129,140,248,.5)' : 'var(--w10)', meAvatarBg: s.me ? (s.me.level==='admin' ? 'linear-gradient(135deg,#8b5cf6,#6366f1)' : (s.me.department==='finance' ? 'linear-gradient(135deg,#34d399,#059669)' : 'linear-gradient(135deg,#f59e0b,#d97706)')) : 'linear-gradient(135deg, #6366f1, #8b5cf6)', canMutate: !!s.me && ['manager','support','admin'].indexOf(s.me.level) > -1, notAuthed: !s.me, authed: !!s.me, userMenu: !!s.userMenu, toggleUserMenu: () => this.setState({ userMenu: !s.userMenu }), doLogout: () => this.logout(), demoUsers: this.demoAccounts().map(u => ({ username: u.username, label: u.label, deptLabel: u.deptLabel, tone: u.tone, pick: () => this.setState({ loginEmail: u.username }), bg: (s.me && s.me.department === u.deptId) ? 'rgba(129,140,248,.16)' : 'var(--w3)', ring: (s.me && s.me.department === u.deptId) ? 'rgba(129,140,248,.5)' : 'var(--w8)' })), loginEmail: s.loginEmail || '', setLoginEmail: (e) => this.setState({ loginEmail: e.target.value }), loginPass: (s.loginPass || ''), setLoginPass: (e) => this.setState({ loginPass: e.target.value }), loginJwt: s.loginJwt || '', setLoginJwt: (e) => this.setState({ loginJwt: e.target.value }), doLoginForm: () => { if (!s.loginEmail || !s.loginPass) { this.showToast('Введите логин и пароль'); return; } this.doLogin(s.loginEmail, s.loginPass); }, applyJwt: () => this.applyJwt(s.loginJwt), quickUsers: ['admin.abop','buh.analyst','pm.manager'].map(n => ({ name: n, fill: () => this.setState({ loginEmail: n }) })), readOnly: !!(s.me && s.me.level === 'analyst'), goLk: () => { this.setState({ userMenu: false }); this.go('lk'); }, goSettings: () => { this.setState({ userMenu: false }); this.go('settings'); }, goAdmin: () => { this.setState({ userMenu: false }); this.go('security'); this.loadAdmin(); }, isAdmin: !!s.me && (s.me.level === 'admin' || s.me.level === 'support'), isLkScreen: s.screen === 'lk', isSettingsScreen: s.screen === 'settings', isSecScreen: s.screen === 'security', adminTab: s.adminTab || 'users', adminTabs: [['users','Пользователи'],['roles','Роли и области'],['staff','Штат'],['audit','Аудит ИБ']].map(t => ({ label: t[1], pick: () => this.setState({ adminTab: t[0] }), bg: (s.adminTab||'users')===t[0] ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : 'transparent', fg: (s.adminTab||'users')===t[0] ? 'var(--ink)' : 'var(--w55)' })), isAU: (s.adminTab||'users')==='users', isAR: (s.adminTab||'users')==='roles', isAS: (s.adminTab||'users')==='staff', isAA: (s.adminTab||'users')==='audit', adminUsers: (s.adminUsers||[]).map(x => { var c={admin:['rgba(139,92,246,.16)','var(--vio-ink)'],support:['rgba(59,130,246,.16)','#93c5fd'],manager:['rgba(245,158,11,.16)','var(--warn-ink)'],analyst:['rgba(52,211,153,.16)','var(--ok-ink)']}[x.level] || ['var(--w8)','var(--ink)']; return { username: x.username, email: x.email || '—', department: x.department || '—', levelLabel: {admin:'администратор',support:'поддержка',manager:'менеджер',analyst:'аналитик'}[x.level] || x.level, roleBg: c[0], roleFg: c[1], statusDot: x.enabled ? '#34d399' : '#6b7280' }; }), adminStaff: (s.adminStaff||[]).map(p => ({ login: p.login, name: p.name || '—', mail: p.mail || '—' })), adminEmpty: !(s.adminUsers||[]).length, adminNote: s.adminLoading ? 'Загрузка…' : (s.adminErr || 'Нет данных (нужны права admin/support)'), rolesMatrix: ['admin','support','manager','analyst'].map(lv => { var us=(s.adminUsers||[]).filter(x => x.level===lv); var ar=[]; us.forEach(x => { if(x.department && ar.indexOf(x.department)<0) ar.push(x.department); }); var c={admin:['rgba(139,92,246,.16)','var(--vio-ink)'],support:['rgba(59,130,246,.16)','#93c5fd'],manager:['rgba(245,158,11,.16)','var(--warn-ink)'],analyst:['rgba(52,211,153,.16)','var(--ok-ink)']}[lv]; var срв=((s.adminRbac||[]).filter(function(x){return x.role===lv;})[0]||{}); var ен=срв.enforced||null; return { label: {admin:'администратор',support:'поддержка',manager:'менеджер',analyst:'аналитик'}[lv], count: us.length, rights: {admin:'полный доступ · роли и области · governance',support:'сквозной доступ (чтение) · поддержка',manager:'сборка и публикация агентов в своём отделе · прогоны',analyst:'только чтение · агенты и данные своей области'}[lv], areas: (ar.join(', ') || '—'), hasEnforced: !!ен, enforcedText: ен ? ('по факту: мутаций разрешено ' + ен.allowed_count + ', закрыто ' + ен.denied_count + ' (выведено из гейтов кода)') : 'фактические гейты не загружены — показана только подпись уровня', enforcedSample: ен ? (ен.denied_sample||[]).join(' · ') : '', roleBg: c[0], roleFg: c[1], bg: 'var(--w3)', border: 'var(--w9)' }; }), reloadAdmin: () => this.loadAdmin(), runsJournal: (function(){ var mapRow = (r) => ({ agent: r.agent_name || r.agent_id, ver: r.version ? ('v'+r.version) : '—', startedBy: r.started_by || '—', vLabel: r.verdict_ok ? 'пройден' : 'замечания', vBg: r.verdict_ok ? 'rgba(16,185,129,.14)' : 'rgba(239,68,68,.14)', vFg: r.verdict_ok ? 'var(--ok-ink)' : 'var(--err-ink)', autonomy: r.autonomy_used || '—', hitl: String(r.hitl_count || 0), when: (r.created_at || '').replace('T', ' ').slice(0, 16) }); return (s.runsList||[]).map(mapRow); })(),
       runsQuery: s.runsQuery || '',
       setRunsQuery: (e) => this.setState({ runsQuery: e.target.value }),
       runsVerdicts: [['', 'любой вердикт'], ['ok', 'пройден'], ['no', 'с замечаниями']].map(function(x){
@@ -4627,20 +4633,45 @@ class Component extends DCLogic {
       runBadgeFg: ape === 'hitl' ? 'var(--warn-ink)' : ape === 'done' ? 'var(--ok-ink)' : ape === 'stop' ? 'var(--err-ink)' : 'var(--acc-ink2)',
       playLabel: s.playing ? '⏸ Пауза' : '▶ Продолжить',
       togglePlay: () => { if (s.runReadOnly) { this.showToast('Архивный прогон — только чтение'); return; } this.setState({ playing: !s.playing }); },
-      confirmStop: () => { this.setState({ stopped: true, playing: false, modal: null }); this.showToast('Прогон остановлен, аудит-след сохранён'); },
+      // Кнопка обещала остановку И запись в аудит-след, а делала локальный флаг с тостом —
+      // при живом cancelRunJob() рядом. Теперь отменяем задание на сервере; если задания нет
+      // (прогон уже завершился или шёл не через очередь), говорим это прямо, а не рапортуем успех.
+      confirmStop: () => {
+        this.setState({ modal: null, playing: false });
+        if (s.runJob) { this.cancelRunJob(); return; }
+        this.setState({ stopped: true });
+        this.showToast('Останавливать нечего: активного задания нет');
+      },
       handoffActive: s.pct >= 34 && s.pct < 70,
       handoffText: s.pct < 46 ? 'analyst → finance' : 'finance → critic',
       boardEvents: boardEvents.map(e => Object.assign({}, e, {
-        hasLineage: /находок|находк|дубл|ВГО|расхожд/i.test(e.text),
-        lineage: () => this.setState({ modal: 'lineage', lineageId: /дубл|ИНН/i.test(e.text) ? 'retention' : 'npv' })
+        // Ссылка «откуда число» показывается, только когда у события ЕСТЬ своя цепочка
+        // происхождения. Раньше цепочка выбиралась регуляркой по тексту события
+        // (/дубл|ИНН/ → одна из двух демо-цепочек с конкретными числами) и подставлялась поверх
+        // настоящего факта — прямое нарушение ADR-016 «каждое число с cite».
+        hasLineage: !!e.lineage_id,
+        lineage: () => this.setState({ modal: 'lineage', lineageId: e.lineage_id })
       })),
       boardEmpty: boardEvents.length === 0, eventCount: boardEvents.length,
       dodItems, dodPassed, dodTotal: isRealRun ? dodItems.length : DOD.length,
       dodColor: dodPassed >= 4 ? 'var(--ok-ink)' : 'var(--acc-ink)',
       dodGap: !isRealRun && s.pct >= 96 && !s.remediated,
       remediate: () => { this.setState({ remediated: true }); this.showToast('Под-волна ремедиации добавлена на канвас'); },
-      approveHitl: () => { if (realHitl.length) { this.decideHitl(realHitl[0].id, 'approve'); return; } this.setState({ hitlResolved: true, modal: null, playing: true }); this.showToast('Демо-симуляция: подтверждение записано, наружу ничего не уходит'); },
-      rejectHitl: () => { if (realHitl.length) { this.decideHitl(realHitl[0].id, 'reject'); return; } this.setState({ hitlResolved: 'reject', modal: null, playing: false }); this.showToast('Демо-симуляция: отклонено'); },
+      // «Разрешить» внешнее действие обязано либо разрешить его, либо сказать, что нечего
+      // разрешать. Демо-ветка, которая закрывала заявку тостом «подтверждение записано», давала
+      // кнопке два разных смысла в governance-продукте — худший класс неоднозначности.
+      approveHitl: () => {
+        if (realHitl.length) { this.decideHitl(realHitl[0].id, 'approve'); return; }
+        this.setState({ modal: null });
+        this.showToast('Заявка уже закрыта или отозвана — подтверждать нечего');
+        this.loadHitl();
+      },
+      rejectHitl: () => {
+        if (realHitl.length) { this.decideHitl(realHitl[0].id, 'reject'); return; }
+        this.setState({ modal: null });
+        this.showToast('Заявка уже закрыта или отозвана — отклонять нечего');
+        this.loadHitl();
+      },
       undoToast: () => {
         clearInterval(this.toastTimer);
         if (s.pendingDelete) { clearTimeout(this.pendingDelTimer); this.setState({ toast: null, pendingDelete: null }); this.loadData(); this.showToast('Удаление отменено'); return; }
@@ -5099,8 +5130,12 @@ class Component extends DCLogic {
       runOverlayOn: s.showRunOverlay !== false && s.startedOnce,
       toggleRunOverlay: () => this.setState({ showRunOverlay: s.showRunOverlay === false }),
       runOverlayLabel: s.showRunOverlay === false ? '◻ показать исполнение' : '◼ исполнение видно',
-      runTracePath: RUN_TRACE.pathLabel,
-      runTraceStep: RUN_TRACE.steps[currentStepIdx].label,
+      // Полоса «где идёт» ничем не была загейтована и при ЛЮБОМ реальном прогоне показывала шаг
+      // из демо-константы RUN_TRACE. Теперь путь и шаг берутся из самого прогона, а когда их нет
+      // — полоса не рисуется вовсе (hasRunTrace), вместо того чтобы показывать чужой маршрут.
+      hasRunTrace: !!(isRealRun && s.lastRun && (s.lastRun.op_path || s.lastRun.current_step)),
+      runTracePath: (s.lastRun && s.lastRun.op_path_label) || RUN_TRACE.pathLabel,
+      runTraceStep: (s.lastRun && s.lastRun.current_step) || RUN_TRACE.steps[currentStepIdx].label,
       goTraceInGraph: () => {
         const st4 = RUN_TRACE.steps[currentStepIdx];
         this.setState({ lens: 'build', showRunOverlay: true, selectedNode: st4.node || s.selectedNode });
@@ -5722,6 +5757,11 @@ class Component extends DCLogic {
         fg: s.settingsTab === t ? 'var(--ink)' : 'var(--w55)'
       })),
       secViolations: secViolations,
+      // Подзаголовок называет источник честно: «живые данные» писалось всегда, в том числе когда
+      // Keycloak не настроен и таблицы берут демо-фолбэк.
+      secSourceNote: ((s.adminUsers || []).length ? 'люди и роли из Keycloak' : 'Keycloak не ответил — показаны демо-строки')
+        + ((s.adminAudit || []).length ? ', аудит из журнала' : ', аудит демонстрационный'),
+      reattestDemo: 'демо-данные: ре-аттестация ещё не подключена к источнику',
       secTabs: ['RBAC', 'Периметр', 'Эскалация', 'Ре-аттестация', 'Аудит ИБ'].map(t => ({
         label: t, pick: () => this.setState({ secTab: t }),
         bg: s.secTab === t ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : 'transparent',
@@ -5733,13 +5773,20 @@ class Component extends DCLogic {
       rbacVersion: 'v4 · изменил @security 03.09',
       rbacRows: (s.adminRbac && s.adminRbac.length) ? s.adminRbac.map(r => ({
         role: r.role + (r.count ? (' · ' + r.count) : ''), people: r.people, allow: r.allow, deny: r.deny,
-        edit: () => this.showToast('Роль ' + r.role + ': из Keycloak (' + (r.departments||[]).join(', ') + ')')
+        enforcedText: r.enforced
+          ? ('по факту мутаций: разрешено ' + r.enforced.allowed_count + ', закрыто '
+             + r.enforced.denied_count + ' · выведено из гейтов кода')
+          : 'фактические гейты не считаны'
       })) : RBAC.map(r => ({
         role: r.role, people: r.people, allow: r.rights.join(' · '), deny: r.deny.join(' · '),
-        edit: () => this.showToast('Правка роли ' + r.role + ' — уйдёт в аудит ИБ с автором')
+        enforcedText: 'демо-строка, фактические гейты не считаны'
       })),
       rbacYaml: RBAC_YAML.map(t => ({ text: t })),
-      saveRbac: () => this.showToast('RBAC применён · v5 · запись в аудит ИБ'),
+      // saveRbac убран: ручки на запись нет (/api/admin/rbac только GET), а кнопка показывала
+      // «RBAC применён · запись в аудит ИБ». Права живут в ролях Keycloak и в гейтах кода —
+      // матрица их отражает, но не редактирует, и теперь так и написано.
+      rbacEditable: false,
+      rbacEditNote: 'Матрица не правится здесь: роли задаются в Keycloak, гейты — в коде сервера.',
       scopeChecks: [
         { title: 'Финаналитик · scope ⊆ права developer', detail: 'требует: data.read, board.write, egress через HITL — всё есть у создателя', ok: true },
         { title: 'Аудитор 1С · scope ⊆ права developer', detail: 'требует: data.read (read-only копия базы) — конфликтов нет', ok: true },

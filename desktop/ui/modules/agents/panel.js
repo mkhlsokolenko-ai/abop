@@ -12,6 +12,7 @@ const CARD = "padding:18px;border-radius:16px;background:var(--panel);border:1px
 export async function mount(root, ctx) {
   const { api, toast, humanError, confirm: confirmDialog } = ctx;
   let agents = [], families = [], mode = "catalog", tab = "mine", loadErr = null;
+  let archived = [];   // Лимб: выведенные из работы агенты, вкладка «Архив»
   let bFamily = "", bSkills = new Set(), bName = "", editingId = null, bOutput = "";
 
   async function reconfig(id) {
@@ -24,7 +25,12 @@ export async function mount(root, ctx) {
     bOutput = ((g.nodes || []).find((n) => n.kind === "skill" && n.output) || {}).output || "";
     editingId = id; mode = "builder"; render();
   }
-  async function loadAgents() { loadErr = null; try { agents = await api(A + "/catalog"); if (!Array.isArray(agents)) agents = []; } catch (e) { agents = []; loadErr = e; } }
+  async function loadAgents() {
+    loadErr = null;
+    try { agents = await api(A + "/catalog"); if (!Array.isArray(agents)) agents = []; } catch (e) { agents = []; loadErr = e; }
+    // Архив грузим отдельно и молча: его отсутствие не должно ломать основной каталог.
+    try { archived = await api(A + "/catalog?archived=1"); if (!Array.isArray(archived)) archived = []; } catch (e) { archived = []; }
+  }
   async function loadFamilies() { try { families = await api(A + "/families"); if (!Array.isArray(families)) families = []; } catch (e) { families = []; toast(humanError(e), "danger"); } }
 
   function errorBlock() {
@@ -38,13 +44,21 @@ export async function mount(root, ctx) {
   function render() {
     if (mode === "builder") return renderBuilder();
     const mine = agents.filter((a) => a.owner), common = agents.filter((a) => !a.owner);
-    const shown = tab === "mine" ? mine : common;
+    const shown = tab === "mine" ? mine : (tab === "arch" ? archived : common);
     // Действия знаками, без подписей: три подписанные кнопки не влезали в карточку 280 px и
     // переносились — отсюда и съехавшая вёрстка. Подпись у действия осталась в title и aria-label,
     // то есть и в подсказке, и для чтения с экрана.
     // Разрушающие действия стоят справа, отдельно от запуска: промах мышью не должен стоить агента.
     const ico = (cls, glyph, title, a) =>
       `<button class="ico ${cls}" data-id="${esc(a.id)}" data-name="${esc(a.name)}" title="${esc(title)}" aria-label="${esc(title)}: ${esc(a.name)}">${glyph}</button>`;
+    // В архиве у агента одно осмысленное действие — вернуть. Диалог архивации обещает
+    // «вернуть можно в любой момент», ручка /restore есть с самого начала, а кнопки не было:
+    // обещание было невыполнимо из десктопа.
+    const archActions = (a) => `<div style="display:flex;gap:6px;align-items:center">
+      <button class="btn sm restore" data-id="${esc(a.id)}" data-name="${esc(a.name)}" title="Вернуть из архива в работу" aria-label="Вернуть «${esc(a.name)}» из архива">↩ Вернуть</button>
+      <span style="flex:1"></span>
+      ${ico("danger del", "✕", "Удалить навсегда — все версии", a)}
+    </div>`;
     const actions = (a) => `<div style="display:flex;gap:6px;align-items:center">
       ${ico("go run", "▶", "Запустить — откроется чат", a)}
       ${a.owner ? ico("cfg", "✎", "Настроить — сохранит новую версию", a) : ""}
@@ -64,7 +78,7 @@ export async function mount(root, ctx) {
             <button id="refresh" class="ico" title="Обновить список агентов" aria-label="Обновить список агентов">↻</button></span>
         </div>
         ${errorBlock()}
-        <div style="display:flex;gap:8px">${tabBtn("mine", "Мои агенты", mine.length)}${tabBtn("common", "Общие агенты", common.length)}</div>
+        <div style="display:flex;gap:8px">${tabBtn("mine", "Мои агенты", mine.length)}${tabBtn("common", "Общие агенты", common.length)}${tabBtn("arch", "Архив", archived.length)}</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">
           ${shown.length ? shown.map((a) => `<div class="lift" style="${CARD}">
             <div style="min-width:0">
@@ -73,8 +87,8 @@ export async function mount(root, ctx) {
             </div>
             ${a.description ? `<div style="font-size:12px;line-height:1.45;color:var(--ink-2)">${esc(a.description)}</div>` : ""}
             <div style="font-size:11.5px;color:var(--ink-3)">автономия ${esc(a.autonomy_max || "?")} · v${esc(String(a.version || 1))}${a.owner ? " · мой" : " · общий"}${a.outward ? " · действует наружу 🛡" : ""}</div>
-            ${actions(a)}
-          </div>`).join("") : (loadErr ? "" : `<div class="faint" style="padding:20px;grid-column:1/-1">${tab === "mine" ? "У вас пока нет своих агентов — нажмите «＋ Собрать агента»." : "Нет общих агентов, доступных вашей роли."}</div>`)}
+            ${tab === "arch" ? archActions(a) : actions(a)}
+          </div>`).join("") : (loadErr ? "" : `<div class="faint" style="padding:20px;grid-column:1/-1">${tab === "mine" ? "У вас пока нет своих агентов — нажмите «＋ Собрать агента»." : (tab === "arch" ? "Архив пуст: выведенных из работы агентов нет." : "Нет общих агентов, доступных вашей роли.")}</div>`)}
         </div>
       </div></div>`;
     root.querySelectorAll(".tabBtn").forEach((b) => (b.onclick = () => { tab = b.dataset.tab; render(); }));
@@ -85,6 +99,7 @@ export async function mount(root, ctx) {
     root.querySelectorAll(".arch").forEach((b) => (b.onclick = () => archiveAgent(b.dataset.id, b.dataset.name)));
     root.querySelectorAll(".del").forEach((b) => (b.onclick = () => deleteAgent(b.dataset.id, b.dataset.name)));
     root.querySelectorAll(".back").forEach((b) => (b.onclick = () => rollbackAgent(b.dataset.id, b.dataset.name)));
+    root.querySelectorAll(".restore").forEach((b) => (b.onclick = () => restoreAgent(b.dataset.id, b.dataset.name)));
     const el = root.querySelector("#errLogin"); if (el) el.onclick = () => ctx.login();
     const er = root.querySelector("#errRetry"); if (er) er.onclick = async () => { await loadAgents(); render(); };
   }
@@ -119,6 +134,16 @@ export async function mount(root, ctx) {
   // Архив и удаление раньше жили в одном диалоге под кнопкой «✕»: человек нажимал «удалить», а
   // выбирать приходилось между двумя действиями с разными последствиями. Теперь у каждого своя
   // кнопка, и подтверждение спрашивает ровно про то, что нажали.
+  async function restoreAgent(id, name) {
+    try {
+      await api(A + "/restore/" + encodeURIComponent(id), { method: "POST" });
+      toast(`Агент «${name}» вернулся в работу`, "ok");
+    } catch (e) { toast(humanError(e), "danger"); return; }
+    await loadAgents();
+    tab = "mine";
+    render();
+  }
+
   async function archiveAgent(id, name) {
     if (!(await confirmDialog({ title: `Убрать «${name}» в архив?`,
       text: "Агент перестанет запускаться и пропадёт из списка, расписания остановятся. История прогонов останется, вернуть можно в любой момент.",

@@ -30,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, arbiter, assembly, audit_store, blackboard, planner, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, process_deploy, process_store, reglament_store, chat_store, orchestrator, report_compose, report_store, choice_store, doclink, run_cache_store, run_parts_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, arbiter, assembly, audit_store, blackboard, planner, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, pipeline_store, process_deploy, process_store, rbac_map, reglament_store, chat_store, orchestrator, report_compose, report_store, choice_store, doclink, run_cache_store, run_parts_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
@@ -191,6 +191,23 @@ from fastapi.middleware.gzip import GZipMiddleware  # noqa: E402
 app.add_middleware(GZipMiddleware, minimum_size=1024)   # UX-аудит: 1 МБ index.html, 14 с загрузки снаружи
 
 
+def _route_label(request) -> str:
+    """Лейбл роута для метрик: ШАБЛОН пути, а не сам путь.
+
+    Сырой `request.url.path` даёт отдельную серию на каждый идентификатор — `/api/runs/run-x-ab12`,
+    `/api/runs/run-x-cd34` и так далее. Счётчики живут в обычном словаре без ограничения размера
+    (`observability.py`), поэтому это не просто мусор в Prometheus, а медленная утечка памяти.
+    Starlette кладёт сопоставленный роут в scope — берём его шаблон; для несопоставленных
+    (404, статика) хватает одной общей метки.
+    """
+    маршрут = request.scope.get("route")
+    шаблон = getattr(маршрут, "path", None)
+    if шаблон:
+        return str(шаблон)
+    путь = request.url.path
+    return путь if путь.count("/") <= 2 else "/".join(путь.split("/")[:3]) + "/*"
+
+
 @app.middleware("http")
 async def _no_cache_html(request, call_next):
     """index.html фронта не кэшировать в браузере (иначе деплой не виден без hard-refresh).
@@ -214,14 +231,15 @@ async def _observability(request, call_next):
         dt = time.perf_counter() - t0
         path = request.url.path
         if path.startswith("/api/"):
-            obs.inc("abop_http_requests_total", route=path, status=resp.status_code)
-            obs.observe("abop_http_request_seconds", dt, route=path)
+            метка = _route_label(request)
+            obs.inc("abop_http_requests_total", route=метка, status=resp.status_code)
+            obs.observe("abop_http_request_seconds", dt, route=метка)
             obs.log_event("info", "http.request", route=path, method=request.method,
                           status=resp.status_code, ms=round(dt * 1000, 1))
         resp.headers["X-Trace-Id"] = tid
         return resp
     except Exception as ex:  # noqa: BLE001 — фиксируем ошибку в метрики/лог и пробрасываем
-        obs.inc("abop_http_requests_total", route=request.url.path, status="500")
+        obs.inc("abop_http_requests_total", route=_route_label(request), status="500")
         obs.log_event("error", "http.error", route=request.url.path,
                       error=f"{type(ex).__name__}: {ex}")
         raise
@@ -749,14 +767,23 @@ async def admin_audit(limit: int = 100, u: dict = Depends(user)) -> dict:
 async def admin_rbac(u: dict = Depends(user)) -> dict:
     """RBAC-матрица из РЕАЛЬНЫХ ролей Keycloak: роль → люди + разрешения/запреты (не хардкод-константа)."""
     require_level(u, "support")
+    карта0 = rbac_map.собрать()
+    гейты = {"levels": list(rbac_map.УРОВНИ), "routes_total": карта0["total"],
+             "routes_gated": карта0["total"] - карта0["open"],
+             "routes_open": карта0["open"], "derived_from": карта0["source"]}
     if not _kc_configured():
-        return {"rows": [], "configured": False, "reason": _KC_НЕ_НАСТРОЕН}
+        # Людей без Keycloak не назвать, но ГЕЙТЫ выводятся из кода и доступны всегда —
+        # «кто есть в системе» и «что уровню разрешено» это два разных вопроса.
+        return {"rows": [], "configured": False, "reason": _KC_НЕ_НАСТРОЕН,
+                "editable": False, "enforcement": гейты}
     try:
         data = await admin_users(u)  # переиспользуем живой список Keycloak
     except HTTPException:
         raise
     users = data.get("users", [])
-    # разрешения по уровню (ADR-013/014): что уровень может в среде
+    # Словесное описание уровня — ПОДПИСЬ к матрице, а не сама матрица: фактические разрешения
+    # ниже выводятся разбором гейтов require_level в исходнике (server/rbac_map.py). Раньше здесь
+    # была только эта проза, и экран отвечал на вопрос «что мы написали про права».
     POLICY = {
         "admin":   {"allow": "всё: RBAC, арендаторы, модели, все отделы, деплой в прод",
                     "deny": "—"},
@@ -772,9 +799,21 @@ async def admin_rbac(u: dict = Depends(user)) -> dict:
         people = [usr["name"] or usr["username"] for usr in users if usr.get("level") == lvl]
         depts = sorted({usr.get("department") for usr in users if usr.get("level") == lvl and usr.get("department") not in (None, "—", "*")})
         pol = POLICY.get(lvl, {"allow": "—", "deny": "—"})
+        факт = rbac_map.сводка(lvl)
         rows.append({"role": lvl, "count": len(people), "people": ", ".join(people[:6]) or "нет пользователей",
-                     "departments": depts, "allow": pol["allow"], "deny": pol["deny"]})
-    return {"rows": rows, "realm": data.get("realm"), "source": "keycloak"}
+                     "departments": depts, "allow": pol["allow"], "deny": pol["deny"],
+                     "enforced": факт})
+    карта = rbac_map.собрать()
+    return {"rows": rows, "realm": data.get("realm"), "source": "keycloak",
+            # Матрица не редактируется из интерфейса: права живут в ролях Keycloak и в гейтах кода.
+            # Кнопка «применить», которая показывала успех и ничего не писала, убрана — см. §7.1
+            # docs/ISSLEDOVANIE_VEB_DESKTOP_2026-10-08.md.
+            "editable": False,
+            "editable_note": "матрица выводится из ролей Keycloak и гейтов кода и здесь не правится: "
+                             "роли меняются в Keycloak, гейты — в исходнике",
+            "enforcement": {"levels": list(rbac_map.УРОВНИ), "routes_total": карта["total"],
+                            "routes_gated": карта["total"] - карта["open"],
+                            "routes_open": карта["open"], "derived_from": карта["source"]}}
 
 
 # ── Админ-конфиг среды (модели/арендаторы/квоты/пороги ИБ) + карта процессов (области) в Postgres — §7.2/БД-фаза ──
@@ -7086,13 +7125,29 @@ async def bus_describe(u: dict = Depends(user)) -> dict:
     return {**run_bus.describe(), "systems": pairs, "tool_steps": skill_tools.TOOL_STEPS}
 
 
+def _bus_state() -> dict:
+    """Драйвер шины рядом с данными шины.
+
+    По умолчанию `ABOP_BUS=pg`, а PgBus — заглушка: чтение всегда пусто. Пустой список без этого
+    признака читается как «инцидентов нет», хотя шины просто нет — ноль по факту и ноль из-за
+    отсутствия транспорта неразличимы. Форма ответа обязана называть, который это ноль.
+    """
+    b = run_bus.bus()
+    активна = bool(getattr(b, "active", False))
+    return {"bus": b.kind, "bus_active": активна,
+            "bus_note": "" if активна else
+                        "шина не подключена (ABOP_BUS=" + str(b.kind) + ") — список пуст не потому, "
+                        "что ошибок нет, а потому что транспорта нет"}
+
+
 @app.get("/api/bus/tail")
 async def bus_tail(topic: str, limit: int = 20, u: dict = Depends(user)) -> dict:
     """Последние сообщения топика (admin/support): отладка коннекторов и событий."""
     require_level(u, "support")
     if not topic.startswith("abop."):
         raise HTTPException(422, "topic: только abop.*")
-    return {"topic": topic, "items": await run_bus.bus().tail(topic, max(1, min(200, limit)))}
+    return {"topic": topic, "items": await run_bus.bus().tail(topic, max(1, min(200, limit))),
+            **_bus_state()}
 
 
 @app.get("/api/bus/dlq")
@@ -7117,7 +7172,8 @@ async def bus_dlq(limit: int = 30, u: dict = Depends(user)) -> dict:
                     "replayable": src.endswith(".commands") and isinstance(v.get("payload"), dict) and bool((v.get("payload") or {}).get("system")),
                     "ack": acks.get(k)})
     open_ = sum(1 for x in out if not x.get("ack"))
-    return {"topic": run_bus.TOPIC_DLQ, "items": out, "count": len(out), "open": open_}
+    return {"topic": run_bus.TOPIC_DLQ, "items": out, "count": len(out), "open": open_,
+            **_bus_state()}
 
 
 async def _dlq_find(partition: int, offset: int) -> dict | None:

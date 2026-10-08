@@ -1058,9 +1058,7 @@ export async function mount(root, ctx) {
       setTimeout(() => { const i = document.getElementById("hrReason"); if (i) { i.focus(); i.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); const b = ov.querySelector("#mOk"); if (b) b.click(); } }; } }, 30);
     });
   }
-  function sanitize(html) {   // превью отчёта: убираем скрипты/обработчики, остальное показываем как есть
-    return String(html || "").replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<style[\s\S]*?<\/style>/gi, "").replace(/\son\w+="[^"]*"/gi, "").replace(/\son\w+='[^']*'/gi, "").replace(/javascript:/gi, "");
-  }
+  const sanitize = (html) => ctx.sanitizeHtml(html);   // общий санитайзер ядра (был свой, см. core/app.js)
   async function decideHitl(ids, decision, btn, reason) {
     if (btn) { btn.disabled = true; btn.textContent = "…"; }
     let n = 0, last = "", err = "";

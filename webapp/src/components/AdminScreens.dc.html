@@ -51,17 +51,17 @@
                       <span style="font-size: 12px; line-height: 1.5; color: var(--w65);">{{ r.allow }}</span>
                       <span style="display: flex; align-items: flex-start; gap: 8px;">
                         <span style="flex: 1; font-size: 12px; line-height: 1.5; color: var(--err-ink);">{{ r.deny }}</span>
-                        <button onClick="{{ r.edit }}" style="padding: 5px 10px; border: 1px solid var(--w14); border-radius: 8px; background: var(--w5); color: var(--acc-ink2); font-size: 11px; font-weight: 600; flex: none;" style-hover="border-color: #818cf8;">Править</button>
+                        <span title="{{ r.enforcedText }}" style="font-size: 10.5px; color: var(--w40); flex: none;">из кода</span>
                       </span>
                     </div>
                   </sc-for>
-                  <div style="font-size: 11.5px; color: var(--w40);">Роли приходят из Keycloak realm; правки RBAC версионируются и попадают в аудит ИБ с автором.</div>
+                  <div style="font-size: 11.5px; color: var(--w40);">{{ adm.rbacEditNote }}</div>
                 </div>
 
                 <div style="padding: 24px; border-radius: 16px; background: var(--w5); border: 1px solid var(--w10); display: flex; flex-direction: column; gap: 14px;">
                   <div style="display: flex; align-items: center; justify-content: space-between;">
                     <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; color: var(--w40);">YAML · side-by-side</span>
-                    <button onClick="{{ adm.saveRbac }}" style="padding: 6px 12px; border: 1px solid var(--w14); border-radius: 8px; background: var(--w5); color: var(--ink); font-size: 11.5px; font-weight: 600;" style-hover="background: var(--w10);">Применить</button>
+                    <span title="{{ adm.rbacEditNote }}" style="font-size: 11px; color: var(--w45);">только чтение</span>
                   </div>
                   <div style="padding: 14px; border-radius: 12px; background: var(--s60); border: 1px solid var(--w8); font-family: 'JetBrains Mono', monospace; font-size: 11.5px; line-height: 1.75; color: var(--w72);">
                     <sc-for list="{{ adm.rbacYaml }}" as="ln" hint-placeholder-count="8">

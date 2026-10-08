@@ -68,10 +68,14 @@ class PipelineRunIn(BaseModel):
 
 
 @router.get("/catalog")
-def catalog():
-    """Каталог агентов ABOP (ABAC по семье пользователя — сервер отдаёт только доступное)."""
+def catalog(archived: int = 0):
+    """Каталог агентов ABOP (ABAC по семье пользователя — сервер отдаёт только доступное).
+
+    `archived=1` — архив (Лимб). Нужен затем, что диалог архивации обещает «вернуть можно в любой
+    момент», ручка `/restore` есть, а показать архив и нажать возврат было негде.
+    """
     try:
-        return abop.agents()
+        return abop.agents(archived=bool(archived))
     except abop.AbopError as e:
         return _err(e)
 

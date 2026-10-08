@@ -99,8 +99,13 @@ def me() -> dict:
     return _req("GET", "/api/me", timeout=20)
 
 
-def agents(contract: str = "") -> list:
-    q = ("?contract=" + urllib.request.quote(contract)) if contract else ""
+def agents(contract: str = "", archived: bool = False) -> list:
+    части = []
+    if contract:
+        части.append("contract=" + urllib.request.quote(contract))
+    if archived:
+        части.append("archived=1")
+    q = ("?" + "&".join(части)) if части else ""
     r = _req("GET", "/api/agents" + q, timeout=30)
     return (r or {}).get("agents", []) if isinstance(r, dict) else (r or [])
 

@@ -239,10 +239,24 @@ export function toast(msg, kind = "", opts = {}) {
 }
 
 // ── контекст модулей ────────────────────────────────────────────────────────────────────────────
+// Один санитайзер на приложение. Их было два: строгий в чате и слабее в прогонах — последний
+// пропускал обработчики в одинарных кавычках (onclick='…'). Один и тот же HTML отчёта с сервера
+// очищался по-разному, и слабый рано или поздно стал бы дырой.
+export function sanitizeHtml(html) {
+  return String(html || "")
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<iframe[\s\S]*?<\/iframe>/gi, "")
+    .replace(/\son\w+\s*=\s*"[^"]*"/gi, "")
+    .replace(/\son\w+\s*=\s*'[^']*'/gi, "")
+    .replace(/\son\w+\s*=\s*[^\s>]+/gi, "")
+    .replace(/javascript:/gi, "");
+}
+
 export const ctx = {
   api, base: API, user: null, roles: [], email: null, authed: false,
   gate: apeGate, mascot: apeMascot, modal, confirm: confirmDialog, toast, humanError, esc, openOverlay,
-  copy: copyText, say,
+  copy: copyText, say, sanitizeHtml,
   // навигация с намерением: ctx.open("chat", { attach: {...} }) — модуль получает intent (см. loadModule)
   open: (id, intent) => loadModule(id, intent),
   fileToast,
@@ -328,10 +342,18 @@ async function renderAuth() {
   if (was !== ctx.authed) { renderNav(); renderQuick(); }
 }
 
-// RBAC-видимость модулей: admin/advanced — только lecturer/admin (реальные роли из JWT).
-// Клиент фильтрует каталог для UX; фактический энфорс — на шлюзе.
-const MODULE_ROLES = { security: ["lecturer", "admin"], graphlens: ["lecturer", "admin"], opslens: ["lecturer", "admin"] };
-function canSee(id) { const req = MODULE_ROLES[id]; if (!req) return true; return (ctx.roles || []).some((r) => req.includes(r)); }
+// RBAC-видимость модулей по ШКАЛЕ ABOP (analyst < manager < support < admin) — её же считает
+// сайдкар в /api/modules/.../me и сервер в require_level. Раньше здесь стояли роли "lecturer" и
+// "admin" из чужого realm: роли lecturer в ABOP нет, поэтому «Граф» был скрыт от manager и
+// support молча — человек уровня «менеджер» не видел раздела и не получал объяснения.
+const LEVELS = ["analyst", "manager", "support", "admin"];
+const MODULE_MIN_LEVEL = { graphlens: "manager", security: "support", opslens: "support" };
+function levelAtLeast(min) {
+  const have = LEVELS.indexOf(ctx.level || "analyst");
+  const need = LEVELS.indexOf(min);
+  return need < 0 || (have >= 0 && have >= need);
+}
+function canSee(id) { const min = MODULE_MIN_LEVEL[id]; return !min || levelAtLeast(min); }
 // «Операции» (opslens) убраны как лишние (#10); «Безопасность» слита в «Кабинет» (#11).
 // «Находки» и «Источники» убраны из маршрута по решению владельца 05.10: находки видны в карточке
 // прогона и в отчёте, а подключение источников — работа по управлению, её место в вебе (там же

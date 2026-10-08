@@ -307,7 +307,7 @@ export async function mount(root, ctx) {
       const tpl = $("oTpl") ? $("oTpl").value : "";
       try {
         const r = await api(R + "/report-html/" + encodeURIComponent(open) + (tpl ? "?template=" + encodeURIComponent(tpl) : ""));
-        const safe = String(r.html || "").replace(/<script[\s\S]*?<\/script>/gi, "").replace(/\son\w+="[^"]*"/gi, "");
+        const safe = ctx.sanitizeHtml(r.html);   // общий санитайзер ядра, а не своя копия
         ctx.modal("Отчёт прогона", `<div style="max-height:64vh;overflow:auto;background:#fff;color:#111;border-radius:10px;padding:8px">${safe}</div>`, null, "", { width: "980px" });
       } catch (er) { toast(humanError(er), "danger"); }
     };
