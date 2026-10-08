@@ -4,7 +4,7 @@
     {"tool":"<имя>","args":{...}}   или   {"final":true}
 Наблюдение инструмента попадает в контекст итогового ответа навыка (grounded: цитируем источник).
 
-Инструменты чтения (data_query/data_get/data_schema/rag_search/audit1c_graph/audit1c_checks/bus_events)
+Инструменты чтения (data_query/data_get/data_schema/audit1c_graph/audit1c_checks/bus_events)
 безопасны всегда. Инструменты-действия (email_send/bookstack_publish/redmine_create_issue/bus_publish)
 — dry_run по умолчанию; реальное выполнение требует `run:true` И режим навыка write/action (skill_safety),
 внешняя доставка всё равно идёт через OUT-узлы под HITL.

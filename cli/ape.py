@@ -4190,7 +4190,6 @@ def _t_audit1c_checks(a):
 
 
 AGENT_TOOLS = {
-    "rag_search": (_t_rag, 'поиск по своей RAG-коллекции — args: {"query": "..."}'),
     "read_file": (_t_read, 'прочитать локальный файл — args: {"path": "..."}'),
     "write_file": (_t_write, 'записать файл в ./ape_work — args: {"path": "...", "content": "..."}'),
     "ask": (_t_ask, 'спросить исследовательскую модель — args: {"query": "..."}'),
