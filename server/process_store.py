@@ -444,8 +444,9 @@ def liveness(*, seats: list[dict], runs: list[dict], retired: set,
 
     по_операциям: dict = {}
     for s in seats:
-        по_операциям.setdefault(s["op_id"], {"runs": 0, "ok": 0, "last_at": None,
-                                             "audit_ids": [], "state": "тихо", "silent_days": None})
+        по_операциям.setdefault(s["op_id"], {"runs": 0, "ok": 0, "reported": 0, "last_at": None,
+                                             "audit_ids": [], "state": "тихо", "silent_days": None,
+                                             "evidence": "нет"})
         по_операциям[s["op_id"]]["audit_ids"].append(s["audit_id"])
 
     посажены = {s["audit_id"] for s in seats}
@@ -459,6 +460,11 @@ def liveness(*, seats: list[dict], runs: list[dict], retired: set,
             if когда and когда >= порог:
                 зап["runs"] += 1
                 зап["ok"] += 1 if r.get("verdict_ok") else 0
+                # Прогон чужого агента приходит ОТЧЁТОМ: мы его не исполняли и вердикт не
+                # выносили. Такое подтверждение слабее, и прятать разницу нельзя — иначе карта
+                # снова станет утверждать больше, чем знает.
+                if str(r.get("source") or "abop") == "external":
+                    зап["reported"] += 1
             if когда and (зап["last_at"] is None or когда > зап["last_at"]):
                 зап["last_at"] = когда
         # агент работает, но ни на одной операции не сидит — карта отстала от жизни
@@ -474,6 +480,9 @@ def liveness(*, seats: list[dict], runs: list[dict], retired: set,
             зап["state"] = "осиротел"
         elif зап["runs"] > 0:
             зап["state"] = "подтверждён"
+            своих = зап["runs"] - зап["reported"]
+            зап["evidence"] = ("журнал ABOP" if зап["reported"] == 0
+                               else "со слов агента" if своих == 0 else "смешанно")
         else:
             зап["state"] = "тихо"
         if зап["last_at"] is not None:
@@ -653,13 +662,20 @@ def покрытие(*, tree: dict, seats: list[dict], live: dict | None = None)
                              "why": "агент посажен, но не работает"
                                     + (f" {дней} дн." if дней is not None else "")})
         состояния[состояние] = состояния.get(состояние, 0) + 1
+        зап = по_операциям.get(op) or {}
         строки.append({"op_id": op, "label": инфо.get("label"), "agents": агенты,
                        "state": состояние,
-                       "runs": (по_операциям.get(op) or {}).get("runs") or 0})
+                       "runs": зап.get("runs") or 0,
+                       "reported": зап.get("reported") or 0,
+                       "evidence": зап.get("evidence") or "нет"})
 
     всего = len(операции)
     закрыто = состояния.get("подтверждён", 0)
+    # Отдельной строкой: сколько участков держится ТОЛЬКО на отчётах чужих агентов. Для того,
+    # кто принимает решение по карте, это другая степень уверенности, и усреднять их нельзя.
+    со_слов = sum(1 for r in строки if r["evidence"] == "со слов агента")
     return {"operations": всего, "confirmed": закрыто,
+            "confirmed_reported_only": со_слов,
             "coverage_pct": round(100 * закрыто / всего) if всего else 0,
             "by_state": состояния,
             "non_task_leaves": len(прочие_листья),

@@ -1466,7 +1466,10 @@ async def process_liveness(response: Response, window: str = "7d", u: dict = Dep
     дней = {"24h": 1, "24ч": 1, "7d": 7, "7д": 7, "30d": 30, "30д": 30}.get(str(window).lower(), 7)
     посадки = await process_store.seats_of()
     прогоны = [{"agent_id": r.get("agent_id"), "created_at": r.get("created_at"),
-                "verdict_ok": r.get("verdict_ok"), "op_ids": r.get("op_ids") or []}
+                "verdict_ok": r.get("verdict_ok"), "op_ids": r.get("op_ids") or [],
+                # Источник обязан доехать: отчёт чужого агента подтверждает участок слабее
+                # собственного прогона, и карта должна это различать (ADR-028/044).
+                "source": r.get("source") or "abop"}
                for r in await run_store.list_runs(limit=500)]
     в_лимбе = {str(a.get("contract_audit_id") or a["id"]).split(".v")[0]
                for a in await agent_store.list_for(None, limit=500, archived=True)}
@@ -1480,6 +1483,119 @@ async def process_liveness(response: Response, window: str = "7d", u: dict = Dep
     for x in итог["outside"]:
         x["agent"] = имена.get(x["audit_id"]) or x["audit_id"]
     return итог
+
+
+РАНТАЙМЫ = ("langgraph", "copilot-studio", "agentforce", "bedrock", "crewai", "autogen",
+            "n8n", "другой")
+
+# Конверт чужого агента ОБЪЯВЛЕН, а не проверен: графа у нас нет, узлы осмотреть нечем, и
+# авто-верификация (ADR-013) к нему неприменима. Писать «ok» было бы ровно той подделкой, против
+# которой заведено правило честности. Пишем прямо: кто объявил и что проверки не было.
+ВЕРИФИКАЦИЯ_ЧУЖОГО = {
+    "ok": None, "kind": "external",
+    "note": "рантайм чужой: конверт объявлен владельцем агента и автоматически не проверяется",
+}
+
+
+@app.post("/api/agents/external")
+async def agents_register_external(payload: dict, u: dict = Depends(user)) -> dict:
+    """Зарегистрировать агента, которого ABOP не породил (ADR-028, п.21 исследования).
+
+    Способность №1 по обзору рынка 2026 — реестр агентов независимо от того, где они развёрнуты.
+    Посадочная модель к этому готова с самого начала: посадка ссылается на агента по
+    `contract_audit_id` без версии (ADR-043), и рантайму там взяться неоткуда. Не хватало только
+    записи в реестре и честного конверта.
+
+    Что ОБЯЗАТЕЛЬНО остаётся прежним: агент принадлежит семье (ABAC), автономия не выше потолка,
+    посадка проходит ту же редакцию с согласованием. Отличие ровно одно и оно видно насквозь:
+    конверт объявлен, а не проверен.
+    """
+    require_level(u, "manager")
+    имя = str(payload.get("name") or "").strip()
+    рантайм = str(payload.get("runtime") or "").strip().lower()
+    семья = str(payload.get("family") or u.get("department") or "").strip()
+    автономия = str(payload.get("autonomy_max") or "A1").strip().upper()
+    if not имя:
+        raise HTTPException(422, "name: пусто")
+    if рантайм not in РАНТАЙМЫ:
+        raise HTTPException(422, "runtime: один из " + ", ".join(РАНТАЙМЫ))
+    if not can_see_family(u, семья):
+        raise HTTPException(403, f"семья «{семья}» вам не принадлежит")
+    if автономия not in ("A0", "A1", "A2", "A3", "A4"):
+        raise HTTPException(422, "autonomy_max: A0..A4")
+
+    import re as _re
+    audit_id = str(payload.get("audit_id") or "").strip() or ("ext-" + _re.sub(
+        r"[^a-z0-9]+", "-", имя.lower()).strip("-"))[:60]
+    прошлые = await agent_store.list_for(audit_id, limit=50)
+    версия = max([int(a.get("version") or 0) for a in прошлые] or [0]) + 1
+    агент = await agent_store.save(
+        name=имя, audit_id=audit_id, version=версия,
+        # Графа нет и быть не должно: исполняет чужой рантайм, а наша схема описывала бы то,
+        # чего мы не контролируем. Вместо графа — паспорт внешнего исполнителя.
+        graph={"external": {"runtime": рантайм,
+                            "endpoint": str(payload.get("endpoint") or ""),
+                            "owner": str(payload.get("owner") or u.get("name") or "")}},
+        autonomy_max=автономия, created_by=u.get("name") or u.get("sub") or "dev",
+        family=семья, role=str(payload.get("role") or ""), source="external",
+        verification=ВЕРИФИКАЦИЯ_ЧУЖОГО)
+    await audit_store.record(u.get("name") or u.get("sub") or "dev", "agent.register.external",
+                             агент["id"], {"runtime": рантайм, "family": семья,
+                                           "autonomy_max": автономия})
+    краткий = agent_store._brief(агент) if hasattr(agent_store, "_brief") else dict(агент)
+    return {"agent": {**краткий, "source": "external", "runtime": рантайм},
+            "envelope": ВЕРИФИКАЦИЯ_ЧУЖОГО,
+            "note": "агент в реестре. Посадка на операцию идёт обычной редакцией карты: "
+                    "чужой рантайм не даёт права миновать согласование"}
+
+
+@app.post("/api/runs/report")
+async def runs_report_external(payload: dict, u: dict = Depends(user)) -> dict:
+    """Чужой агент сообщает о выполненной работе на участке карты (ADR-044).
+
+    AS-IS подтверждается прогонами. Прогон чужого агента мы не исполняли, поэтому принимаем
+    ОТЧЁТ — и помечаем его как отчёт: подтверждение «со слов агента» слабее, чем запись
+    собственного журнала, и эта разница доезжает до карты и отчёта о покрытии.
+
+    Защита от накрутки: сообщить можно только про те операции, на которые агент посажен. Иначе
+    любой держатель токена поднимал бы покрытие любого участка одним запросом.
+    """
+    audit_id = str(payload.get("audit_id") or "").split(".v")[0].strip()
+    op_ids = [str(x) for x in (payload.get("op_ids") or []) if str(x).strip()]
+    if not audit_id:
+        raise HTTPException(422, "audit_id: пусто")
+    if not op_ids:
+        raise HTTPException(422, "op_ids: пусто — отчёт без участка ничего не подтверждает")
+
+    версии = await agent_store.list_for(audit_id, limit=50)
+    if not версии:
+        raise HTTPException(404, f"агента {audit_id} нет в реестре")
+    свежая = max(версии, key=lambda a: a.get("version") or 0)
+    if not can_see_family(u, свежая.get("family")):
+        raise HTTPException(403, "агент чужого отдела")
+    if str(свежая.get("source") or "") != "external":
+        raise HTTPException(422, "отчёт принимается только от внешнего агента: "
+                                 "свои прогоны ABOP пишет сам")
+
+    посажен = {s["op_id"] for s in await process_store.seats_by_agent(audit_id)}
+    чужие = [o for o in op_ids if o not in посажен]
+    if чужие:
+        raise HTTPException(403, "агент не посажен на операции: " + ", ".join(sorted(чужие))
+                            + " — отчёт о чужом участке не принимается")
+
+    итог = await run_store.save({
+        "agent_id": свежая["id"], "contract_audit_id": audit_id,
+        "verdict": {"ok": bool(payload.get("ok", True)),
+                    "autonomy_used": свежая.get("autonomy_max")},
+        "op_ids": op_ids, "source": "external",
+        "reported_by": u.get("name") or u.get("sub") or "dev",
+        "started_by": "external:" + str((свежая.get("graph") or {}).get("external", {}).get("runtime") or "?"),
+        "run_metrics": {"cost": payload.get("cost") or {}},
+        "summary": str(payload.get("summary") or "")[:2000]})
+    await audit_store.record(u.get("name") or u.get("sub") or "dev", "run.report.external",
+                             итог["id"], {"agent": свежая["id"], "op_ids": op_ids})
+    return {"run_id": итог["id"], "op_ids": op_ids, "source": "external",
+            "note": "принято как отчёт: в карте участок будет помечен «со слов агента»"}
 
 
 @app.get("/api/process/history")
@@ -3873,7 +3989,11 @@ async def fleet(u: dict = Depends(user)) -> dict:
         rows = trig_by.get(a["id"], [])
         ttext, ticon = _trig_text(rows)
         ver = (a.get("verification") or {}) if isinstance(a.get("verification"), dict) else {}
-        verify = "contract" if a.get("source") != "authored" else ("ok" if ver.get("ok") else ("fail" if ver else "draft"))
+        # Чужой рантайм: графа нет, осматривать нечем. Показать «contract», как у агента по
+        # контракту LUDA, значило бы выдать объявленный конверт за проверенный.
+        verify = ("external" if a.get("source") == "external"
+                  else "contract" if a.get("source") != "authored"
+                  else ("ok" if ver.get("ok") else ("fail" if ver else "draft")))
         cid = a.get("contract_audit_id") or a.get("id")
         vs = sorted(versions.get(cid, []))
         return {"id": a["id"], "agent": a.get("name") or a["id"], "version": "v" + str(a.get("version") or 1),
