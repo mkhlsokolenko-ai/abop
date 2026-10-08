@@ -30,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, arbiter, assembly, audit_store, blackboard, planner, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, dataplane_records, pipeline_store, process_deploy, process_store, rbac_map, reglament_store, chat_store, orchestrator, report_compose, report_store, choice_store, doclink, run_cache_store, run_parts_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, arbiter, assembly, audit_store, blackboard, planner, cachebus, charts, clients, compute, contract_store, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, dataplane_records, mcp_server, pipeline_store, process_deploy, process_store, rbac_map, reglament_store, chat_store, orchestrator, report_compose, report_store, choice_store, doclink, run_cache_store, run_parts_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 
 BIZ_FAMILIES = {"analytics", "finance", "credit", "architecture", "management"}
@@ -8446,6 +8446,11 @@ def desktop_ui_bundle() -> dict:
 
 if _DESKTOP_UI.is_dir():
     app.mount("/desktop-ui", StaticFiles(directory=str(_DESKTOP_UI), html=True), name="desktop-ui")
+
+# MCP-сервер: чужой агент работает с процессами и данными под теми же правами (ADR-028).
+# Выключен по умолчанию, включается ABOP_MCP=1 — см. server/mcp_server.py.
+if mcp_server.подключить(app):
+    obs.log_event("info", "mcp.enabled", path="/mcp")
 _WEBAPP = Path(__file__).resolve().parents[1] / "webapp"
 if _WEBAPP.is_dir():
     app.mount("/", StaticFiles(directory=str(_WEBAPP), html=True), name="webapp")
