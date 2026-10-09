@@ -27,3 +27,26 @@ import pathlib
 def исходник() -> str:
     """Весь HTTP-слой одной строкой: приложение, вынесенные слои и домены маршрутов."""
     return "\n".join(p.read_text(encoding="utf-8") for p in ФАЙЛЫ_СЛОЯ if p.exists())
+
+
+def пути(app) -> set[str]:
+    """Все пути приложения, включая вынесенные домены.
+
+    FastAPI держит подключённый роутер ОДНОЙ записью в `app.routes` и не раскрывает его ручки.
+    Плоский обход поэтому «не видит» ровно то, что уже переехало, — и тест начинает проверять
+    приложение годовой давности. Разворачиваем вложенные роутеры рекурсивно.
+    """
+    out: set[str] = set()
+
+    def обойти(маршруты, префикс: str = "") -> None:
+        for r in маршруты:
+            исходный = getattr(r, "original_router", None)
+            вложенные = (getattr(исходный, "routes", None)
+                         or getattr(getattr(r, "router", None), "routes", None))
+            if вложенные:
+                обойти(вложенные, префикс + str(getattr(r, "prefix", "") or ""))
+                continue
+            out.add(префикс + str(getattr(r, "path", "")))
+
+    обойти(app.routes)
+    return out

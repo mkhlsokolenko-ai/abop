@@ -79,7 +79,8 @@ def test_сумма_сходится_со_строками():
 
 
 def test_эндпоинт_оценки_существует():
-    пути = {getattr(r, "path", "") for r in web_api.app.routes}
+    from http_layer import пути as _пути   # домены вынесены: плоский обход их не видит
+    пути = _пути(web_api.app)
     assert "/api/plan/estimate" in пути
 
 

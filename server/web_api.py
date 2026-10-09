@@ -33,6 +33,7 @@ import ape  # noqa: E402
 from . import access, admin_store, agent_store, arbiter, assembly, audit_store, blackboard, planner, cachebus, charts, clients, compute, contract_store, cost_estimate, dataplane_store, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, bpmn_import, dataplane_records, mcp_server, pipeline_store, process_deploy, process_store, rbac_map, reglament_store, chat_store, orchestrator, report_compose, report_store, choice_store, doclink, run_cache_store, run_parts_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 from .vectors import cosine as _cosine  # noqa: E402
+from .nlu import nlu_config  # noqa: E402  (пороги подбора переехали к разбору фразы)
 
 # Контекст шаблона отчёта уехал в server/report_context.py: его зовут и карточка прогона, и
 # предпросмотр шаблона. Имена оставлены в этом пространстве имён — на них ссылаются ручки отчётов.
@@ -379,20 +380,8 @@ async def auth_refresh(body: dict) -> dict:
             "expires_in": int(tokens.get("expires_in") or 0), "user": _identity(claims)}
 
 
-# пороги подбора: правятся в UI (Настройки → Подбор), живут в admin_config.nluConfig
-_NLU_DEFAULTS = {"min_confidence": 0.35, "weak_stage": 0.2, "rerank": True, "max_stages": 6}
 
 
-async def nlu_config() -> dict:
-    try:
-        cfg = (await admin_store.all()).get("nluConfig") or {}
-    except Exception:  # noqa: BLE001
-        cfg = {}
-    out = dict(_NLU_DEFAULTS)
-    for k, v in (cfg if isinstance(cfg, dict) else {}).items():
-        if k in out and isinstance(v, type(out[k])):
-            out[k] = v
-    return out
 
 
 # Карта процессов переехала в server/routes/process.py (п.23): семнадцать ручек, один стор, свои
@@ -461,6 +450,18 @@ _run_lock = _routes_runs._run_lock
 resolve_entity = _routes_runs.resolve_entity
 run_start = _routes_runs.run_start
 шаги_с_источниками = _routes_runs.шаги_с_источниками
+from .routes import pipelines as _routes_pipelines  # noqa: E402
+from .routes import plan as _routes_plan  # noqa: E402
+from .routes import skills as _routes_skills  # noqa: E402
+
+for _r in (_routes_skills, _routes_pipelines, _routes_plan):
+    app.include_router(_r.router)
+
+# Старт инжектит оверрайды навыков в ядро: имя живёт в своём домене, приложение берёт его оттуда.
+_refresh_skill_ds_cache = _routes_skills._refresh_skill_ds_cache
+# Сборка агентов из плана: на неё ссылаются проверки «не плодить дубли при повторной сборке».
+plan_auto_build = _routes_plan.plan_auto_build
+_agent_for_skills = _routes_plan._agent_for_skills
 # Деление семей на бизнесовые и инженерные — классификация самих семей, живёт у них.
 BIZ_FAMILIES = _routes_families.BIZ_FAMILIES
 
@@ -487,168 +488,24 @@ async def trigger_fire(agent_id: str, trigger_id: str, u: dict = Depends(user)) 
 
 
 
-async def _refresh_skill_ds_cache() -> None:
-    """Подтянуть data-need + флаг формата вывода (output) оверрайды из Postgres → инжект в ape."""
-    try:
-        ape.set_skill_ds_overrides(await skill_store.datasources_map())
-        ape.set_skill_output_overrides(await skill_store.output_map())
-    except Exception:  # noqa: BLE001
-        pass
 
 
-def _skill_families() -> dict:
-    in_fam: dict = {}
-    for fid, fam in ape.AGENT_FAMILIES.items():
-        for _mk, (_mt, sk) in fam["members"].items():
-            for s in sk:
-                in_fam.setdefault(s, []).append(fid)
-    return {k: sorted(set(v)) for k, v in in_fam.items()}
 
 
-# поля навыка, которые оператор правит в UI и которые оверрайдятся из Postgres (skill_store.patch)
-_SKILL_TEXT_FIELDS = ("title", "short", "flow", "when", "method", "dod", "anti")
-# output — формат вывода навыка (structured|freeform), редактируется в UI. mode/egress/cite —
-# отображаются, но governance-безопасность узла берётся авторитетно из каталога (assembly), не из правок.
-_SKILL_SAFETY_FIELDS = ("mode", "egress", "cite", "output", "schema_template_id")
 
 
-def _skill_base_card(sid: str, fam: dict) -> dict:
-    title, short, _instr = ape.SKILLS[sid]
-    parsed = ape.parse_skill_md(sid)   # секции/шаги — чтобы drawer не был пустым
-    return {"id": sid, "title": title, "short": short,
-            "safety": ape.skill_safety(sid), "scope": ape.skill_scope(sid),
-            "families": fam.get(sid, []),
-            "sections": parsed["sections"], "flow": parsed["flow"],
-            "when": parsed["when"], "method": parsed["method"],
-            "dod": parsed["dod"], "anti": parsed["anti"],
-            "datasources": ape.skill_datasources_resolved(sid)}
 
 
-def _overlay_skill(card: dict, ov: dict | None) -> dict:
-    """Наложить сохранённые в Postgres правки навыка (общие для всех) поверх базового каталога (.md).
-    Governance-безопасность узла берётся АВТОРИТЕТНО из базового каталога (assembly), а не из правок."""
-    if ov:
-        patch = ov.get("patch") or {}
-        for k in _SKILL_TEXT_FIELDS:
-            if k in patch and patch[k]:
-                card[k] = patch[k]
-        saf = dict(card.get("safety") or {})
-        for k in _SKILL_SAFETY_FIELDS:
-            if k in patch:
-                saf[k] = patch[k]
-        card["safety"] = saf
-        # привязка навыка к семьям из UI (тег семьи): PG-список перекрывает вычисленный из ростера.
-        # Влияет на ABAC-видимость (_skill_visible) и фильтр по семьям на экране навыков.
-        if isinstance(patch.get("families"), list):
-            card["families"] = sorted(set(patch["families"]))
-            card["families_edited"] = True
-        card["version"] = ov.get("version")
-        card["editor"] = ov.get("editor")
-        card["edited_at"] = ov.get("updated_at")
-        # какой шаблон извлечения реально применяется к навыку: без этого поля привязка видна только
-        # в UI, и сверка «ответ в схеме» шла не с той схемой (мы так потеряли 4 поля у разбора почты)
-        if patch.get("schema_template_id"):
-            card["schema_template_id"] = patch["schema_template_id"]
-    else:
-        card["version"] = "v1.0"
-        card["editor"] = None
-        card["edited_at"] = None
-    return card
 
 
-def _skill_visible(u: dict, card: dict) -> bool:
-    """ABAC для навыков: admin/support (область *) видят все; общий навык (вне семей) виден всем;
-    иначе — только если ХОТЯ БЫ одна семья навыка совпадает с отделом пользователя (department == family).
-    Так менеджер видит менеджерские навыки, финансист — финансовые (изоляция периметра по данным)."""
-    fams = card.get("families") or []
-    if not fams:                      # навык вне семей — общий инструмент, доступен всем ролям
-        return True
-    return any(can_see_family(u, f) for f in fams)
 
 
-@app.get("/api/skills")
-async def skills(u: dict = Depends(user), all: bool = False) -> dict:
-    """Каталог навыков (.md) + PG-правки. По умолчанию ФИЛЬТРУЕТСЯ по ABAC (навыки своей семьи +
-    общие); `?all=1` — полный каталог (инженерная платформа/сборка агентов). §4."""
-    fam = _skill_families()
-    overrides = await skill_store.all()
-    cards = [_overlay_skill(_skill_base_card(sid, fam), overrides.get(sid)) for sid in ape.SKILLS]
-    total = len(cards)
-    if not all:
-        cards = [c for c in cards if _skill_visible(u, c)]
-    return {"skills": cards, "count": len(cards), "total": total}
 
 
-@app.get("/api/skills/{sid}")
-async def skill(sid: str, u: dict = Depends(user)) -> dict:
-    """Полное тело навыка (progressive disclosure = use_skill) + PG-правки. §4 drawer."""
-    if sid not in ape.SKILLS:
-        raise HTTPException(404, "нет навыка")
-    card = _overlay_skill(_skill_base_card(sid, _skill_families()), await skill_store.get(sid))
-    parsed = ape.parse_skill_md(sid)
-    card["body"] = ape.load_skill_body(sid)
-    card["intro"] = parsed["intro"]
-    _out = card
-    try:
-        _out["tools"] = skill_tools.tools_for(sid)
-    except Exception:  # noqa: BLE001
-        _out["tools"] = []
-    return _out
 
 
-@app.post("/api/skills/{sid}")
-async def skill_save(sid: str, body: dict, u: dict = Depends(user)) -> dict:
-    """Сохранить правки навыка НОВОЙ версией в Postgres (общие для всех пользователей, переживают
-    перенакат/рестарт — не localStorage). Редактор = текущий пользователь. Тело: {title?, short?,
-    mode?, egress?, cite?, flow?, when?, method?, dod?, anti?}. §БД-фаза (persistence-localstorage-hole)."""
-    require_level(u, "manager")  # analyst — только чтение
-    if sid not in ape.SKILLS:
-        raise HTTPException(404, "нет навыка")
-    allowed = set(_SKILL_TEXT_FIELDS) | set(_SKILL_SAFETY_FIELDS)
-    patch = {k: v for k, v in (body or {}).items() if k in allowed}
-    # тег семьи навыка: привязка к семьям из ЕДИНОГО реестра (известным ИЛИ своей кастомной через «＋»).
-    # Кастомные — slug [a-z0-9_-] (для корректного ABAC: department==family).
-    if isinstance((body or {}).get("families"), list):
-        import re as _re
-        known = await families_store.ids() or set(ape.AGENT_FAMILIES.keys())
-        fams = []
-        for f in body["families"]:
-            f = str(f).strip()
-            if not f:
-                continue
-            if f in known:
-                fams.append(f)                       # семья из реестра
-            else:
-                slug = _re.sub(r"[^a-z0-9_-]", "", f.lower())  # кастомная — санитизируем в slug
-                if slug:
-                    fams.append(slug)
-        patch["families"] = sorted(set(fams))
-    if not patch:
-        raise HTTPException(422, "нет полей для сохранения")
-    editor = u.get("name") or u.get("sub") or "dev"
-    ov = await skill_store.save_patch(sid, patch, editor=editor)
-    if "output" in patch or "families" in patch:  # формат вывода / привязка семьи → на другие реплики
-        await _refresh_skill_ds_cache()
-        await cachebus.notify("skills")
-    await audit_store.record(editor, "skill.save", sid,
-                             {"version": ov.get("version"), "fields": sorted(patch.keys())})
-    return _overlay_skill(_skill_base_card(sid, _skill_families()), ov)
 
 
-@app.post("/api/skills/{sid}/datasources")
-async def skill_datasources_set(sid: str, body: dict, u: dict = Depends(user)) -> dict:
-    """Оператор правит data-need навыка (ADR-032): какие сущности/поля берёт навык → Postgres. §4 drawer.
-    Тело: {datasources:[{entity, fields[], kind?, note?}]}. Возвращает резолвнутые (с рецептом по entity)."""
-    require_level(u, "manager")
-    if sid not in ape.SKILLS:
-        raise HTTPException(404, "нет навыка")
-    norm = ape.normalize_skill_datasources((body or {}).get("datasources") or [])
-    editor = u.get("name") or u.get("sub") or "dev"
-    await skill_store.save_datasources(sid, norm, editor=editor)
-    await _refresh_skill_ds_cache()   # чтобы build_agent_spec/lineage сразу видели новые источники
-    await cachebus.notify("skills")   # инвалидировать кэш навык-источников на других репликах
-    await audit_store.record(editor, "skill.datasources", sid, {"count": len(norm)})
-    return {"id": sid, "datasources": ape.skill_datasources_resolved(sid)}
 
 
 # Домен «data» переехал в server/routes/data.py (п.23): 18 ручек. Внешняя
@@ -748,417 +605,24 @@ from .routes import chat as _routes_chat  # noqa: E402
 
 app.include_router(_routes_chat.router)
 
-@app.post("/api/orchestrate")
-async def orchestrate(body: dict, u: dict = Depends(user)) -> dict:
-    """Одно решение по задаче: кого звать, что собрать, какие границы — и запись, почему именно так.
-
-    До этого каждый канал (чат десктопа, веб, крон, шина) сам сшивал последовательность: достаточно
-    ли описания → есть ли готовый агент → собрать ли из навыков → какой документ. Они расходились:
-    карточка в чате держала план, собранный до правки подбора, и человек запускал устаревший. Теперь
-    решение принимается здесь, целиком, и ложится в журнал.
-
-    Тело: {task, slots?: {имя: значение}, max_steps?}. Ответ — решение и его трасса; выполнять его
-    (запустить агента, собрать из навыков) вызывающая сторона идёт отдельными ручками: оркестратор
-    решает, а не действует. Это не формальность — у действия своя проверка прав и свой журнал.
-    """
-    task = str((body or {}).get("task") or (body or {}).get("goal") or "").strip()
-    if not task:
-        raise HTTPException(422, "нужна задача")
-    max_steps = max(1, min(6, int((body or {}).get("max_steps") or 4)))
-    slots_given = {str(k) for k, v in ((body or {}).get("slots") or {}).items() if str(v or "").strip()}
-
-    # Факты собираем здесь, решение принимает чистая функция: тогда его можно проверить тестом.
-    matches = []
-    try:
-        m = await agents_match({"q": task}, u)
-        for it in (m.get("matches") or [])[:5]:
-            # Навыки агента нужны решению: «звать готового или собирать» решается сравнением того,
-            # что агент УМЕЕТ, с тем, что нужно задаче — а не двух счётов из разных шкал.
-            ag = await agent_store.get(str(it.get("id") or "")) or {}
-            sk = [str(n.get("skill") or "") for n in ((ag.get("graph") or {}).get("nodes") or [])
-                  if n.get("kind") == "skill" and n.get("skill")]
-            matches.append({"id": it.get("id"), "name": it.get("name"), "score": it.get("score"),
-                            "skills": sk})
-    except Exception:  # noqa: BLE001 — без подбора агентов решение всё равно принимается
-        matches = []
-    # План для РЕШЕНИЯ считаем без подсказок от похожих агентов. Иначе получается круг: агент
-    # «ADR» похож на задачу → его навык adr-writer получает прибавку → он возглавляет план →
-    # агент «покрывает план» → запускаем ADR на разбор идеи сервиса. Подсказка подтверждала сама
-    # себя, и никакая правка подбора этого не перебивала. Проверено на проде 05.10.
-    plan = await plan_auto({"task": task, "slots": (body or {}).get("slots") or {},
-                            "max_steps": max_steps, "hints": False}, u)
-    _sids = [str(s.get("skill") or "") for s in (plan.get("steps") or []) if s.get("skill")]
-    cached = False
-    if len(_sids) >= orchestrator.EDITOR_FROM:
-        _cid = report_compose.cache_id(_sids)
-        cached = bool(_cid and (await report_store.get(_cid) or {}).get("layout"))
-
-    d = orchestrator.decide(task, catalog={}, entities=set(plan.get("entities_ready") or []),
-                            slots=slots_given, matches=matches, plan=plan, cached_layout=cached,
-                            max_steps=max_steps)
-    out = d.as_dict()
-    out["итог"] = orchestrator.explain(d)
-    # Журнал решений: по нему видно, почему выбран этот исполнитель. Именно это дважды позволило
-    # поймать неверный подбор — незаметный оркестратор выдал бы гладкий документ не по задаче.
-    await audit_store.record(u.get("name") or u.get("sub") or "dev", "orchestrator.decide",
-                             d.agent_id or ",".join(d.skills) or d.kind,
-                             {"kind": d.kind, "task": task[:200], "skills": d.skills,
-                              "editor": d.editor, "form": d.form, "facts": d.facts,
-                              "why": d.why[:8]})
-    obs.log_event("info", "orchestrator.decide", kind=d.kind, skills=len(d.skills),
-                  editor=d.editor or "-", score=d.facts.get("подбор_агента"))
-    return out
 
 
-_SKILL_EMB_CACHE: dict[str, tuple[str, list]] = {}
 
 
-async def _skill_semantics(q: str, catalog: dict) -> dict:
-    """Смысловая близость запроса к каждому навыку (эмбеддинги BGE-M3, best-effort).
-
-    Семантика применялась только к агентам, а навыки искались словами — и запрос, написанный другими
-    словами, не находил навык вовсе. Кэш по содержимому описания: методики меняются редко, пересчёт
-    на каждый запрос стоил бы дороже самого подбора. Сбой эмбеддингов не ломает подбор: словарная
-    часть работает всегда.
-    """
-    import hashlib as _h
-    out: dict = {}
-    if not q or not catalog:
-        return out
-    try:
-        need, ids = [], []
-        for sid, meta in catalog.items():
-            doc = " ".join(str(meta.get(k) or "") for k in ("title", "short"))[:400] \
-                + " " + str(meta.get("body") or "")[:1200]
-            dh = _h.md5(doc.encode("utf-8")).hexdigest()
-            c = _SKILL_EMB_CACHE.get(sid)
-            if not c or c[0] != dh:
-                need.append(doc)
-                ids.append((sid, dh))
-        if need:
-            embs = await clients.embed(need)
-            for (sid, dh), e in zip(ids, embs):
-                _SKILL_EMB_CACHE[sid] = (dh, e)
-        qe = (await clients.embed([q]))[0]
-        for sid in catalog:
-            c = _SKILL_EMB_CACHE.get(sid)
-            if c:
-                out[sid] = round(_cosine(qe, c[1]), 4)
-    except Exception as _ex:  # noqa: BLE001 — смысл усиление, а не условие подбора
-        obs.log_event("warning", "plan.semantics_failed", error=str(_ex)[:160])
-        return {}
-    return out
 
 
-@app.post("/api/plan/auto")
-async def plan_auto(body: dict, u: dict = Depends(user)) -> dict:
-    """Собрать исполнимую цепочку под задачу ПО КОНТРАКТАМ навыков (этап 8).
-
-    Отличие от подбора по фразе: тот отвечает на вопрос «кто похож», а этот — «что из похожего
-    вообще сможет выполниться здесь и сейчас». Планировщик смотрит на фактическое состояние среды:
-    какие сущности наполнены, какой предмет работы известен, что отдают предыдущие шаги, — и
-    достраивает недостающие звенья теми навыками, которые их производят.
-
-    Тело: {task, slots?: {имя: значение}, max_steps?}. Пустой план — это ответ: он говорит, чего не
-    хватает, вместо того чтобы собрать красивую цепочку и упасть на середине.
-    """
-    task = str((body or {}).get("task") or (body or {}).get("goal") or "").strip()
-    if not task:
-        raise HTTPException(422, "нужна задача")
-    max_steps = max(1, min(6, int((body or {}).get("max_steps") or 4)))
-
-    # каталог: методика, контракт и то, что навык отдаёт
-    catalog: dict = {}
-    tpls = {t["id"]: t for t in (await schema_store.all() or [])}
-    fam = access.scope_key(family=str((body or {}).get("family") or "")) if (body or {}).get("family") else ""
-    for sid in list(ape.SKILLS):
-        meta = ape.SKILLS.get(sid) or ()
-        tpl = tpls.get(sid) or {}
-        catalog[sid] = {
-            "title": meta[0] if len(meta) > 0 else sid,
-            "short": meta[1] if len(meta) > 1 else "",
-            # Полная методика, а не однострочное описание: по короткой фразе навык не отличить от
-            # соседнего, и планировщик выбирал похожий, а не подходящий.
-            "body": (ape.load_skill_body(sid) or (meta[2] if len(meta) > 2 else ""))[:6000],
-            "inputs": tpl.get("inputs") or {},
-            "produces": tpl.get("produces") or {},
-            # Куда навык объявил доставку: если человек назвал адресата («в трекер»), планировщик
-            # сравнивает объявленное с названным, а не угадывает по словам методики.
-            "delivery": tpl.get("delivery") or {},
-            "mode": (ape.skill_safety(sid) or {}).get("mode") or "read",
-        }
-
-    # сущности, в которых РЕАЛЬНО есть данные: навык на пустой сущности не отработает
-    ents = {e["entity"] for e in ((await data_entities(u)).get("entities") or []) if (e.get("rows") or 0) > 0}
-    slots_given = {str(k) for k, v in ((body or {}).get("slots") or {}).items() if str(v or "").strip()}
-
-    # подсказки по смыслу: у подбора агентов уже есть словарь и сравнение по смыслу — используем их.
-    # Вызывающая сторона может их отключить (`"hints": false`): решение «звать готового или собирать»
-    # нельзя принимать на плане, который сам же построен под похожего агента — это круг.
-    hints: dict = {}
-    try:
-        if (body or {}).get("hints") is False:
-            raise RuntimeError("подсказки отключены вызывающей стороной")
-        m = await agents_match({"q": task}, u)
-        for it in (m.get("matches") or [])[:5]:
-            ag = await agent_store.get(it.get("id") or "")
-            for n in (((ag or {}).get("graph") or {}).get("nodes") or []):
-                if n.get("skill"):
-                    hints[n["skill"]] = max(float(hints.get(n["skill"]) or 0), float(it.get("score") or 0))
-    except Exception:  # noqa: BLE001 — подсказки усиление, а не условие работы планировщика
-        hints = {}
-
-    sem = await _skill_semantics(planner.without_links(task), catalog)
-    try:
-        pref = await choice_store.prefer(_sub(u))
-    except Exception as _ex:  # noqa: BLE001 — предпочтения усиление, а не условие подбора
-        obs.log_event("warning", "plan.prefer_failed", error=str(_ex)[:160])
-        pref = {}
-    p = planner.plan(task, catalog, entities=ents, slots=slots_given, max_steps=max_steps,
-                     hints=hints, semantic=sem, prefer=pref)
-    # Форму спрашиваем у реестра форм: бланк вертикали объявляет, чьи результаты оформляет, и знает
-    # предмет лучше правила по виду результата. Правило по виду остаётся фолбэком — на случай, когда
-    # под навыки плана бланка нет.
-    _sids = [str(st.get("skill") or "") for st in (p.get("steps") or []) if st.get("skill")]
-    try:
-        _by_skill = await report_store.template_for_skills(_sids)
-    except Exception:  # noqa: BLE001 — реестр недоступен: решает вид результата
-        _by_skill = ""
-    p["report_template"] = _by_skill or planner.report_template(p.get("steps") or [], catalog)
-    p["entities_ready"] = sorted(ents)
-    p["family"] = fam
-    obs.log_event("info", "plan.auto", task=task[:80], steps=len(p.get("steps") or []),
-                  ok=bool(p.get("ok")))
-    return p
 
 
-async def _agent_for_skills(sids: list[str], u: dict) -> dict | None:
-    """Готовый агент ровно на этот набор навыков — чтобы сборка из плана не плодила однофамильцев.
-
-    Прежде каждый шаг плана заводил нового агента (а при повторной сборке — новую версию того же),
-    и после нескольких проб «Мои агенты» зарастали карточками, отличающимися только номером версии.
-    Если подходящий агент уже есть, цепочка должна ссылаться на него.
-
-    Подходящим считаем активного агента, у которого набор узлов-навыков совпадает с планом и нет
-    вывода во внешний канал: собранный по плану агент не должен неожиданно начать отправлять письма
-    или заводить задачи только потому, что когда-то такого агента собрали с доставкой.
-
-    Свои агенты предпочтительнее общих: у общего может не хватить прав на запуск у этого человека.
-    """
-    try:
-        rows = await agent_store.list_for(limit=200) or []
-    except Exception:  # noqa: BLE001 — не нашли кандидатов, соберём нового
-        return None
-    import hashlib as _hl
-    mine_prefix = "authored-" + _hl.md5(str(u.get("sub") or u.get("name") or "dev").encode("utf-8")).hexdigest()[:6]
-    best: tuple[int, dict] | None = None
-    for row in rows:
-        if (row.get("status") or "") == "retired":
-            continue
-        ag = await agent_store.get(row.get("id") or "")
-        graph = (ag or {}).get("graph") or {}
-        nodes = [n for n in (graph.get("nodes") or []) if isinstance(n, dict)]
-        skills = [str(n.get("skill") or "") for n in nodes if n.get("kind") == "skill"]
-        if sorted(skills) != sorted(sids):
-            continue
-        outward = any(n.get("kind") == "out"
-                      and str((n.get("out") or {}).get("channel") or "") not in assembly._LOCAL_CHANNELS
-                      for n in nodes)
-        if outward:
-            continue
-        rank = 0 if str(row.get("contract_audit_id") or "").startswith(mine_prefix) else 1
-        if best is None or rank < best[0]:
-            best = (rank, ag)
-        if rank == 0:
-            break                      # свой нашёлся — дальше искать нечего
-    return best[1] if best else None
 
 
-@app.post("/api/plan/estimate")
-async def plan_estimate(payload: dict, u: dict = Depends(user)) -> dict:
-    """Во что обойдётся цепочка ДО запуска (пункт 5 разбора 05.10).
-
-    Человек собирал шесть навыков и жал «запустить», не зная цены. Бюджет прогона (ADR-035) умеет
-    остановить перерасход, но останавливает он уже потраченное.
-
-    Числа — из собственного журнала: медиана токенов по прошлым прогонам навыка. Оценка сама
-    улучшается по мере работы, а навык без истории помечается отдельно, вместо того чтобы
-    получить правдоподобную выдумку.
-    """
-    шаги = [str(x) for x in (payload.get("steps") or []) if str(x).strip()]
-    if not шаги:
-        raise HTTPException(422, "steps: пусто")
-    # Модель берём ту же, что пойдёт в прогон: первая в каскаде профиля. Иначе оценка считалась
-    # бы по одной цене, а работа — по другой.
-    каскад = settings.cascade_for(str(payload.get("profile") or "standard"))
-    модель = str(payload.get("model") or "").strip() or (каскад[0] if каскад else "")
-    прогоны = []
-    for сводка in await run_store.list_runs(limit=120):
-        полный = await run_store.get(сводка["id"])
-        if полный:
-            прогоны.append(полный)
-    история = cost_estimate.наблюдения(прогоны)
-    from .pricing import cost_rub
-    итог = cost_estimate.оценить(steps=шаги, history=история, model=модель, цена=cost_rub)
-    return {**итог, "runs_seen": len(прогоны)}
 
 
-@app.post("/api/plan/feedback")
-async def plan_feedback(body: dict, u: dict = Depends(user)) -> dict:
-    """Исход предложения: человек отказался или взял своё. Нужен, чтобы подбор учился.
-
-    Отмена — самый ценный сигнал: её делают осознанно, в отличие от согласия, которое часто
-    случается по инерции. Без этой ручки отказ оставался только в карточке чата.
-    """
-    task = str((body or {}).get("task") or "")
-    offered = [str(x) for x in ((body or {}).get("offered") or [])]
-    taken = [str(x) for x in ((body or {}).get("taken") or [])]
-    outcome = str((body or {}).get("outcome") or "cancelled")
-    if outcome not in ("accepted", "edited", "cancelled"):
-        raise HTTPException(422, "исход бывает accepted | edited | cancelled")
-    await choice_store.record(_sub(u), task, offered, taken, outcome)
-    return {"ok": True}
 
 
-@app.get("/api/plan/prefer")
-async def plan_prefer(u: dict = Depends(user)) -> dict:
-    """Что подбор выучил на решениях этого человека — чтобы это можно было посмотреть, а не гадать."""
-    return {"prefer": await choice_store.prefer(_sub(u)),
-            "history": (await choice_store.history(_sub(u), 20))[:20]}
 
 
-@app.post("/api/plan/auto/build")
-async def plan_auto_build(body: dict, u: dict = Depends(user)) -> dict:
-    """Собрать из плана исполнителя — ОДНОГО агента на все навыки плана.
-
-    Прежде каждый шаг плана становился отдельным агентом, а шаги — цепочкой. Владелец, прогнав такую
-    цепочку, сказал главное: «навыки работают в вакууме, и отчёт получается на каждый шаг». Так и
-    было. У цепочки агентов вход следующего шага — это ТЕКСТОВЫЙ блок с результатом предыдущего,
-    склеенный в промпт; каждый шаг — отдельный прогон, а значит и отдельный отчёт.
-
-    Внутри ОДНОГО агента всё иначе: навыки идут волнами, выход кладётся на доску прогона под
-    объявленным ключом, а приёмник получает ровно тот ключ, который объявил входом (`from: skill` /
-    `from: board`). Это и есть точная передача — по контракту, а не пересказом. И прогон один, значит
-    отчёт один: бланк вертикали собирает разделы по всем навыкам прогона.
-    Поэтому план теперь собирается в одного агента, а цепочка остаётся по явной просьбе
-    (`as_chain: true`) — она нужна там, где у шагов разная доставка или своё подтверждение.
-    """
-    require_level(u, "manager")
-    steps = (body or {}).get("steps") or []
-    if not steps:
-        raise HTTPException(422, "нечего собирать: план пуст")
-    name = str((body or {}).get("name") or "Агент по плану").strip()
-    reuse = bool((body or {}).get("reuse", True))      # по умолчанию переиспользуем готовых
-    as_chain = bool((body or {}).get("as_chain", False))
-    sids: list[str] = []
-    for st in steps:
-        sid = str(st.get("skill") or "")
-        if sid not in ape.SKILLS:
-            raise HTTPException(422, f"нет навыка «{sid}»")
-        if sid not in sids:
-            sids.append(sid)
-
-    def _family_of(sid: str) -> str:
-        fams = [f for f, spec in ape.AGENT_FAMILIES.items()
-                if any(sid in (m[1] or []) for m in (spec.get("members") or {}).values())]
-        return fams[0] if fams else "management"
-
-    async def _author(one_name: str, skills: list[str]) -> dict:
-        """Создать агента и вернуть тело ответа: agent_author отдаёт JSONResponse."""
-        resp = await agent_author({"name": one_name, "family": _family_of(skills[0]), "skills": skills}, u)
-        import json as _json  # noqa: PLC0415 — как и в соседних роутах, модуль по месту
-        ag = _json.loads(bytes(resp.body).decode()) if hasattr(resp, "body") else (resp or {})
-        if not ag.get("id"):
-            raise HTTPException(500, "агент по плану не собрался")
-        return ag
-
-    if not as_chain:
-        # Редактор отчёта добавляется сам, когда навыков больше одного: иначе человек получит
-        # документ, сшитый механически по волнам, хотя порядок разделов под задачу бывает другим.
-        # Но только если раскладки для этого набора ещё нет: вызов модели нужен на новое сочетание,
-        # а не на каждый запуск — дальше работает кэш.
-        editor = ""
-        if len(sids) >= 2 and report_compose.EDITOR_SKILL not in sids:
-            _cid = report_compose.cache_id(sids)
-            _cached = await report_store.get(_cid) if _cid else None
-            if _cached and _cached.get("layout"):
-                editor = "cached"
-            else:
-                sids = sids + [report_compose.EDITOR_SKILL]
-                editor = "added"
-        # Решение человека — факт, который стоит помнить: он взял ИМЕННО эти навыки, и если правил
-        # цепочку руками, это сильнее простого согласия.
-        try:
-            await choice_store.record(_sub(u), str((body or {}).get("task") or ""),
-                                      list((body or {}).get("offered") or sids), sids,
-                                      "edited" if (body or {}).get("manual") else "accepted")
-        except Exception as _ex:  # noqa: BLE001
-            obs.log_event("warning", "plan.choice_failed", error=str(_ex)[:160])
-        exist = await _agent_for_skills(sids, u) if reuse else None
-        _ed = {"added": " Добавлен редактор отчёта — он сложит разделы в один документ.",
-               "cached": " Раскладка отчёта для этого набора уже известна: редактор не нужен."}.get(editor, "")
-        if exist:
-            return {"ok": True, "agent_id": exist["id"], "name": exist.get("name"), "skills": sids,
-                    "pipeline": None, "created": 0, "reused": 1, "editor": editor,
-                    "agents": [{"agent_id": exist["id"], "name": exist.get("name"),
-                                "skills": sids, "reused": True}],
-                    "note": f"готовый агент «{exist.get('name')}» уже умеет эти навыки ({len(sids)}) — "
-                            f"собирать нечего, запускаю его." + _ed}
-        ag = await _author(name, sids)
-        return {"ok": True, "agent_id": ag["id"], "name": name, "skills": sids,
-                "pipeline": None, "created": 1, "reused": 0, "editor": editor,
-                "agents": [{"agent_id": ag["id"], "name": name, "skills": sids, "reused": False}],
-                "note": f"собран агент из {len(sids)} навыков: передача между ними идёт по контрактам, "
-                        f"отчёт будет один." + _ed}
-
-    # ── цепочка по явной просьбе: у шагов разная доставка или своё подтверждение ──
-    made, ids = [], {}
-    for st in steps:
-        sid = str(st.get("skill") or "")
-        if sid in ids:
-            continue
-        exist = await _agent_for_skills([sid], u) if reuse else None
-        if exist:
-            ids[sid] = exist["id"]
-            made.append({"skill": sid, "agent_id": exist["id"], "family": exist.get("family") or _family_of(sid),
-                         "name": exist.get("name"), "reused": True})
-            continue
-        ag = await _author(str(st.get("title") or sid), [sid])
-        ids[sid] = ag["id"]
-        made.append({"skill": sid, "agent_id": ag["id"], "family": _family_of(sid),
-                     "name": ag.get("name"), "reused": False})
-    pl_steps = []
-    for i, st in enumerate(steps, 1):
-        sid = str(st.get("skill") or "")
-        step = {"id": "p" + str(i), "agent_id": ids[sid], "deliver": "chat"}
-        after = [f"p{j}" for j, prev in enumerate(steps, 1) if str(prev.get("skill")) in (st.get("after") or [])]
-        if after:
-            step["after"] = after
-        pl_steps.append(step)
-    _reused = sum(1 for m in made if m.get("reused"))
-    _new = len(made) - _reused
-    _who = f"агентов {len(made)}: новых {_new}, переиспользовано {_reused}"
-    if len(pl_steps) < 2:
-        return {"ok": True, "agents": made, "pipeline": None, "created": _new, "reused": _reused,
-                "agent_id": made[0]["agent_id"],
-                "note": f"в плане один шаг — цепочка не нужна, запускаю агента напрямую ({_who})"}
-    pl = await pipeline_save({"name": name, "steps": pl_steps}, u)
-    return {"ok": True, "agents": made, "pipeline": pl.get("id"), "name": pl.get("name"),
-            "created": _new, "reused": _reused,
-            "note": f"{_who}, цепочка из {len(pl_steps)} шагов"}
 
 
-@app.post("/api/plan")
-def plan(body: dict, u: dict = Depends(user)) -> dict:
-    """Превью декомпозиции цели по семьям (детерминированно, без LLM). §9.1 запуск."""
-    goal = str((body or {}).get("goal", "")).strip()
-    if not goal:
-        raise HTTPException(422, "нужна goal")
-    fams = ape.detect_families(goal)
-    waves = [[{"task": f"{goal} — аспект: {ape.AGENT_FAMILIES[f]['title']}", "family": f}
-              for f in fams]] if len(fams) >= 2 else [[{"task": goal, "family": ape.route_family(goal)}]]
-    return {"goal": goal, "families": fams, "preview_waves": waves,
-            "note": "предварительный план (эвристика); финальный план строит LLM-планировщик при запуске"}
 
 
 # ═══════════════ CONTRACT INGRESS: приём бандла из LUDA (ADR-029, SDD §4) ═══════════════
@@ -1383,34 +847,6 @@ async def demo_prepare(body: dict, u: dict = Depends(user)) -> dict:
 
 
 
-@app.get("/api/catalog/fields")
-async def catalog_fields(u: dict = Depends(user)) -> dict:
-    """Словарь понятий: канонические имена полей, их синонимы и употребление в каталоге.
-
-    По нему интерфейс подсказывает автору навыка каноническое имя и показывает, где в каталоге
-    одно понятие названо по-разному (из-за этого шаги цепочки не соединялись)."""
-    used: dict[str, set] = {}
-
-    def walk(node, sid):
-        if not isinstance(node, dict):
-            return
-        for k, v in (node.get("properties") or {}).items():
-            used.setdefault(k, set()).add(sid)
-            if isinstance(v, dict):
-                walk(v, sid)
-                walk(v.get("items") or {}, sid)
-
-    for t in await schema_store.all():
-        walk(t.get("json_schema") or {}, t.get("id"))
-
-    rows = []
-    for canon, syns in sorted(skill_contract.CANON.items()):
-        alts = [{"name": a, "skills": sorted(used.get(a, []))} for a in syns if a in used]
-        rows.append({"canon": canon, "skills": sorted(used.get(canon, [])),
-                     "synonyms": sorted(syns), "used_synonyms": alts,
-                     "split": bool(alts and used.get(canon))})
-    return {"fields": rows, "unique_names": len(used),
-            "split_count": sum(1 for r in rows if r["split"])}
 
 
 
@@ -1924,178 +1360,11 @@ app.include_router(_routes_bus.router)
 
 # Обработчик событий шины и сборка контекста цепочки живут рядом с шиной, но зовутся из
 # планировщика триггеров и из прогонов. Берём по имени — это та же функция, а не копия.
-_bus_event_handler = _routes_bus._bus_event_handler
-_enrich_pipeline = _routes_bus._enrich_pipeline
+# Перенос результата шага в контекст следующего нужен и воркеру цепочек в приложении.
 _result_to_context = _routes_bus._result_to_context
+_bus_event_handler = _routes_bus._bus_event_handler
 _on_command_result = _routes_bus._on_command_result
 
-@app.get("/api/pipelines")
-async def pipelines_list(u: dict = Depends(user)) -> dict:
-    items = await pipeline_store.all()
-    return {"pipelines": [await _enrich_pipeline(p) for p in items]}
-
-
-@app.post("/api/pipelines")
-async def pipeline_save(body: dict, u: dict = Depends(user)) -> dict:
-    name = str((body or {}).get("name") or "").strip()
-    steps = (body or {}).get("steps") or []
-    if not name or len(steps) < 2:
-        raise HTTPException(422, "нужно имя и минимум 2 шага (цепочка)")
-    # граф проверяем до сохранения: ссылка в никуда, цикл или неверное слияние иначе всплывут посреди
-    # прогона, когда часть шагов уже отработала и потратила токены
-    gerr = pipeline_graph.validate(steps)
-    if gerr:
-        raise HTTPException(422, "граф цепочки: " + "; ".join(gerr[:5]))
-    import uuid as _uuid
-    pid = str((body or {}).get("id") or "").strip() or ("pl_" + _uuid.uuid4().hex[:10])
-    owner = _uid_of(u) or (u.get("name") or "dev")
-    saved = await pipeline_store.save(pid, name, steps, owner)
-    await audit_store.record(owner, "pipeline.save", pid, {"steps": len(saved.get("steps") or [])})
-    return await _enrich_pipeline(saved)
-
-
-@app.delete("/api/pipelines/{pid}")
-async def pipeline_delete(pid: str, u: dict = Depends(user)) -> dict:
-    ok = await pipeline_store.delete(pid)
-    if not ok:
-        raise HTTPException(404, "нет такой цепочки")
-    await audit_store.record(_uid_of(u) or "dev", "pipeline.delete", pid, {})
-    return {"ok": True}
-
-
-@app.post("/api/pipelines/{pid}/run")
-async def pipeline_run(pid: str, body: dict, u: dict = Depends(user),
-                       request_async: str = Query(default="", alias="async")) -> JSONResponse:
-    """Исполнить цепочку по порядку: выход шага → контекст следующего. Промежуточные шаги идут в чат
-    (без внешней доставки), последний — как настроено в шаге. Возвращает результаты по шагам."""
-    p = await pipeline_store.get(pid)
-    if not p:
-        raise HTTPException(404, "нет такой цепочки")
-    steps = p.get("steps") or []
-    if len(steps) < 2:
-        raise HTTPException(422, "в цепочке меньше 2 шагов")
-    actor = u.get("name") or u.get("sub") or "dev"
-    if not _rate_check(actor):
-        raise HTTPException(429, "слишком много прогонов — подождите")
-    base_ctx = str((body or {}).get("context") or "").strip()[:20000]
-    if bool((body or {}).get("async")) or str(request_async or "").lower() in ("1", "true", "yes"):
-        # цепочка через очередь: шаги — задания воркера, HITL-пауза между шагами, чекпоинт переживает рестарт
-        job = await run_queue.enqueue(agent_id=str((steps[0] or {}).get("agent_id") or pid), actor=actor, kind="pipeline",
-                                      payload={"pid": pid, "name": p.get("name"), "context": base_ctx,
-                                               "trace_id": obs.current_trace_id()})
-        await run_bus.bus().publish_request(job, obs.current_trace_id())
-        obs.inc("abop_run_jobs_total", status="queued")
-        pos = await run_queue.position(job["id"])
-        return JSONResponse({**run_queue.public(job, pos), "pipeline": pid, "name": p.get("name"),
-                             "poll": f"/api/runs/jobs/{job['id']}"}, status_code=202)
-    prev_ctx = ""
-    prev_src = None   # от кого пришёл вход: заполняется после первого шага
-    out_steps = []
-    for i, st in enumerate(steps):
-        agent = await agent_store.get(st.get("agent_id"))
-        if not agent:
-            out_steps.append({"agent_id": st.get("agent_id"), "error": "агент не найден", "skipped": True})
-            continue
-        contract = await contract_store.get(agent.get("contract_audit_id")) or \
-            {"intake": {"autonomy_ceiling": agent.get("autonomy_max") or "A2"}, "bundle": {}}
-        last = i == len(steps) - 1
-        # выход предыдущего шага + исходная задача → контекст текущего (grounded-передача)
-        ctx_parts = []
-        if base_ctx:
-            ctx_parts.append(base_ctx)
-        if prev_ctx:
-            ctx_parts.append(f"=== РЕЗУЛЬТАТ ПРЕДЫДУЩЕГО АГЕНТА ЦЕПОЧКИ (вход для тебя) ===\n{prev_ctx}")
-        step_ctx = "\n\n".join(ctx_parts)
-        deliver = st.get("deliver") or ("" if last else "chat")   # промежуточные — только в чат
-        try:
-            res = await execute_agent_run(agent, contract, actor, use_cache=False,
-                                          user_context=step_ctx, deliver_filter=deliver,
-                                          input_from=prev_src)
-            result = res["result"]
-            prev_ctx = _result_to_context(agent, result)
-            prev_src = {"шаг": st.get("id") or "", "агент": agent.get("name") or agent.get("id"),
-                        "прогон": res["saved"]["id"]}
-            _sc = ((res.get("saved") or {}).get("run_metrics") or {}).get("cost") or {}
-            _step_tokens = int(_sc.get("input_tokens") or 0) + int(_sc.get("output_tokens") or 0)
-            out_steps.append({"agent_id": agent["id"], "agent_name": agent.get("name"),
-                              "run_id": res["saved"]["id"], "deliver": deliver,
-                              "tokens": _step_tokens,       # токены шага — повод для оптимизации (#3)
-                              # полный формат прогона (как одиночный запуск) → клиент рендерит runCard:
-                              # реальные находки, доставка и HITL по каждому шагу видны в чате (#4/#7)
-                              "findings": result.get("findings") or [],
-                              "findings_total": (result.get("findings_summary") or {}).get("total")
-                              or len(result.get("findings") or []),
-                              "investigations_total": len(result.get("investigations") or []),
-                              "delivery": result.get("delivery") or [],
-                              "verdict": result.get("verdict") or {},
-                              "trace_id": result.get("trace_id") or (result.get("verdict") or {}).get("trace_id") or ""})
-        except Exception as ex:  # noqa: BLE001 — сбой шага не рушит всю цепочку, помечаем и продолжаем
-            out_steps.append({"agent_id": agent["id"], "agent_name": agent.get("name"), "error": str(ex)[:300]})
-    await audit_store.record(actor, "pipeline.run", pid, {"steps": len(out_steps)})
-    return JSONResponse({"pipeline": pid, "name": p.get("name"), "steps": out_steps}, status_code=201)
-
-
-async def _rerank_chain(q: str, stage_rows: list[dict], cands: list[dict], ids: list[str], reason: str):
-    """Низкая уверенность детерминированного подбора → модель выбирает из УЖЕ отобранных кандидатов
-    на каждый этап. Порядок этапов не трогаем: он задан фразой."""
-    import json as _json
-    lines = []
-    for r in stage_rows:
-        opts = [{"id": r["agent_id"], "name": r["agent_name"]}] + [{"id": a["id"], "name": a["name"]} for a in (r.get("alternatives") or [])]
-        lines.append(f'этап {r["order"]} ({r.get("kind") or "шаг"}, «{r["text"][:70]}»): ' +
-                     "; ".join(f'{o["id"]}={o["name"]}' for o in opts))
-    prompt = ("Для каждого этапа задачи выбери ОДНОГО агента из предложенных на этот этап. Порядок этапов менять нельзя.\n"
-              'Ответ строго JSON: {"pick":{"1":"<id>","2":"<id>"}}\n\nЗАДАЧА: ' + q + "\n\n" + "\n".join(lines))
-    try:
-        resp = await clients.chat(messages=[{"role": "user", "content": prompt}], profile="standard", max_tokens=300)
-        txt = resp.get("text") or ""
-        i, j = txt.find("{"), txt.rfind("}")
-        pick = (_json.loads(txt[i:j + 1]) if i >= 0 and j > i else {}).get("pick") or {}
-        out = []
-        for r in stage_rows:
-            allowed = {r["agent_id"]} | {a["id"] for a in (r.get("alternatives") or [])}
-            chosen = str(pick.get(str(r["order"])) or "")
-            out.append(chosen if chosen in allowed else r["agent_id"])
-        if out and out != ids:
-            return out, reason + " · уточнено моделью", True
-        return ids, reason + " · модель подтвердила", True
-    except Exception:  # noqa: BLE001 — модель недоступна: остаёмся на детерминированном подборе
-        return ids, reason + " · модель недоступна, подбор по словарю", False
-
-
-@app.get("/api/nlu/parse")
-async def nlu_parse(q: str = "", u: dict = Depends(user)) -> dict:
-    """Разбор фразы для песочницы в UI: лексемы, этапы, триггер и его окружение. Ничего не запускает."""
-    return {"q": q, **nlu.describe(q), "triggers": sorted(set(nlu.TRIGGERS.values())), "config": await nlu_config()}
-
-
-@app.get("/api/nlu/config")
-async def nlu_config_get(u: dict = Depends(user)) -> dict:
-    return await nlu_config()
-
-
-@app.post("/api/nlu/config")
-async def nlu_config_set(body: dict, u: dict = Depends(user)) -> dict:
-    """Пороги подбора: ниже min_confidence — предупреждение, weak_stage — «слабый шаг», rerank — уточнять ли моделью."""
-    require_level(u, "admin")
-    cur = await nlu_config()
-    for k in ("min_confidence", "weak_stage"):
-        if k in (body or {}):
-            try:
-                v = float(body[k])
-            except Exception:  # noqa: BLE001
-                raise HTTPException(422, f"{k}: число 0..1")
-            if not 0.0 <= v <= 1.0:
-                raise HTTPException(422, f"{k}: число 0..1")
-            cur[k] = v
-    if "rerank" in (body or {}):
-        cur["rerank"] = bool(body["rerank"])
-    if "max_stages" in (body or {}):
-        cur["max_stages"] = max(2, min(12, int(body["max_stages"])))
-    actor = u.get("name") or u.get("sub") or "dev"
-    await admin_store.save("nluConfig", cur, editor=actor)
-    await audit_store.record(actor, "nlu.config", "nluConfig", cur)
-    return cur
 
 
 
@@ -2104,118 +1373,20 @@ async def nlu_config_set(body: dict, u: dict = Depends(user)) -> dict:
 
 
 
-@app.post("/api/pipelines/suggest")
-async def pipeline_suggest(body: dict, u: dict = Depends(user)) -> dict:
-    """Авто-сборка цепочки под задачу (#5, гибрид): семантический матчер даёт кандидатов → LLM собирает
-    из них упорядоченную линейную цепочку по контексту + выбирает доставку. Дешевле полного LLM-
-    планирования: кандидатов отбирает детерминированный /match, LLM лишь упорядочивает/отсекает."""
-    q = str((body or {}).get("q") or "").strip()
-    if not q:
-        return {"steps": []}
-    cands = (await agents_match(body, u)).get("matches", [])[:8]
-    if not cands:
-        return {"steps": [], "reason": "нет подходящих агентов в вашем отделе"}
-    # ── детерминированный разбор: этапы фразы задают ПОРЯДОК шагов, модель его не меняет ──
-    parsed = nlu.describe(q)
-    stages = nlu.split_stages(q)
-    lexmap = await lexicon.all_terms()
 
-    def _pick(stage) -> list[dict]:
-        """Кандидаты на этап по словарю лексем, от лучшего к худшему."""
-        out = []
-        for c in cands:
-            terms = lexmap.get(c["id"]) or {}
-            sc = lexicon.score(stage.terms, terms) if terms else 0.0
-            out.append({"id": c["id"], "name": c.get("name"), "score": round(sc, 3), "channels": c.get("channels") or []})
-        return sorted(out, key=lambda x: -x["score"])
 
-    stage_rows: list[dict] = []
-    if len(stages) > 1:
-        used: set[str] = set()
-        carry: set[str] = set()          # предмет предыдущего этапа: «объясни их» ссылается на него
-        for st in stages:
-            own = st.terms - {st.trigger}
-            if len(own) < 1:
-                st.before = list(set(st.before) | carry)     # местоимение/пустое окружение → контекст выше
-            else:
-                carry = own
-            ranked = _pick(st)
-            best = next((r for r in ranked if r["id"] not in used), ranked[0] if ranked else None)
-            if not best:
-                continue
-            alts = [r for r in ranked if r["id"] != best["id"]][:2]
-            used.add(best["id"])
-            top_alt = alts[0]["score"] if alts else 0.0
-            stage_rows.append({**st.as_dict(), "agent_id": best["id"], "agent_name": best["name"],
-                               "score": best["score"], "margin": round(max(0.0, best["score"] - top_alt), 3),
-                               "ambiguous": bool(best["score"] > 0 and top_alt > 0 and (best["score"] - top_alt) / best["score"] < 0.1),
-                               "alternatives": alts})
-    if len(stage_rows) >= 2:
-        ids = [r["agent_id"] for r in stage_rows]
-        cfg = await nlu_config()
-        conf = round(min(min(r["score"], 1.0) for r in stage_rows), 3)
-        weak = [r for r in stage_rows if r["score"] < cfg["weak_stage"]]
-        amb = [r for r in stage_rows if r.get("ambiguous")]
-        low = conf < cfg["min_confidence"] or bool(weak)
-        deliver = next((r["channel"] for r in reversed(stage_rows) if r.get("channel")), "chat")
-        name = ("Цепочка: " + " → ".join(str(r.get("kind") or r.get("trigger") or "шаг") for r in stage_rows))[:60]
-        reason = "разбор фразы: " + " → ".join(f'{r["order"]}. {r.get("kind") or "шаг"}' for r in stage_rows)
-        reranked = False
-        if low and cfg.get("rerank"):   # низкая уверенность → реранк моделью среди кандидатов этапа
-            ids, reason, reranked = await _rerank_chain(q, stage_rows, cands, ids, reason)
-        nm = {c["id"]: c.get("name") for c in cands}
-        for r, aid in zip(stage_rows, ids):          # этапы и шаги обязаны совпадать в UI
-            if r["agent_id"] != aid:
-                r["agent_id"], r["agent_name"], r["picked_by"] = aid, nm.get(aid, aid), "модель"
-            else:
-                r.setdefault("picked_by", "словарь")
-        warn = ""
-        if weak:
-            warn = ("Слабый подбор на шагах: " + ", ".join(f'{r["order"]} ({r.get("kind") or "шаг"})' for r in weak)
-                    + " — проверьте перед запуском")
-        elif low:
-            warn = "Уверенность подбора низкая — проверьте шаги перед запуском"
-        elif amb:
-            warn = ("Равные кандидаты на шагах: " + ", ".join(str(r["order"]) for r in amb) + " — можно заменить агента")
-        return {"steps": [{"agent_id": i, "agent_name": nm.get(i, i)} for i in ids],
-                "name": name, "deliver": deliver, "reason": reason,
-                "confidence": conf, "low_confidence": bool(low), "ambiguous": bool(amb), "reranked": reranked,
-                "warning": warn, "stages": stage_rows, "parse": parsed}
-    if len(cands) < 2:
-        return {"steps": [], "reason": "для цепочки нужно 2+ подходящих агента", "parse": parsed}
-    cands = cands[:5]
-    lines = "\n".join(
-        f'- id={c["id"]} · {c.get("name")} · семья={c.get("family")} · роль={c.get("role") or "—"} · каналы={c.get("channels") or []}'
-        for c in cands)
-    prompt = (
-        "Ты оркестратор агентов. Пользователь описал задачу; ниже агенты-кандидаты. Собери ЛИНЕЙНУЮ "
-        "цепочку (выход одного агента → вход следующего), если задача требует нескольких шагов; порядок "
-        "важен. Верни СТРОГО JSON без пояснений:\n"
-        '{"steps":["<id>",...],"name":"<кратко>","deliver":"chat|email|redmine","reason":"<1 фраза>"}\n'
-        "Бери ТОЛЬКО id из списка. Если хватает одного агента — один шаг. deliver — куда финальный результат.\n\n"
-        f"ЗАДАЧА:\n{q}\n\nАГЕНТЫ:\n{lines}")
-    import json as _json
-    ids, name, deliver, reason = [], "Авто-цепочка", "chat", ""
-    try:
-        resp = await clients.chat(messages=[{"role": "user", "content": prompt}],
-                                  profile="standard", max_tokens=700)
-        txt = resp.get("text") or ""
-        i, j = txt.find("{"), txt.rfind("}")
-        data = _json.loads(txt[i:j + 1]) if i >= 0 and j > i else {}
-        valid = {c["id"] for c in cands}
-        ids = [s for s in (data.get("steps") or []) if s in valid]
-        name = (data.get("name") or name)[:60]
-        if data.get("deliver") in ("chat", "email", "redmine"):
-            deliver = data["deliver"]
-        reason = (data.get("reason") or "")[:200]
-    except Exception:  # noqa: BLE001 — LLM недоступен → фолбэк на топ-2 семантики
-        pass
-    if len(ids) < 2:
-        ids = [c["id"] for c in cands[:2]]
-        reason = reason or "по семантике (LLM-докрутка недоступна)"
-    nm = {c["id"]: c.get("name") for c in cands}
-    steps = [{"agent_id": i, "agent_name": nm.get(i, i)} for i in ids]
-    return {"steps": steps, "name": name, "deliver": deliver, "reason": reason}
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -2229,76 +1400,10 @@ async def pipeline_suggest(body: dict, u: dict = Depends(user)) -> dict:
 
 
 
-@app.get("/api/skills/{sid}/slots")
-async def skill_slots(sid: str, u: dict = Depends(user)) -> dict:
-    """Какие предметы навык обязан получить до запуска (из шаблона извлечения)."""
-    if sid not in ape.SKILLS:
-        raise HTTPException(404, "нет навыка")
-    ov = ((await skill_store.get(sid)) or {}).get("patch") or {}
-    tid = ov.get("schema_template_id") or sid
-    tpl = await schema_store.get(tid) or await schema_store.get(sid) or {}
-    slots = tpl.get("slots") or (tpl.get("spec") or {}).get("slots") or []
-    return {"skill": sid, "template_id": tpl.get("id") or tid, "slots": slots}
 
 
-@app.get("/api/skills/{sid}/contract")
-async def skill_contract_get(sid: str, u: dict = Depends(user)) -> dict:
-    """Контракт навыка: чем кормить (inputs), что отдаёт (produces), какой предмет уточнять (slots).
-
-    По нему сборка агента считает покрытие входов, а планировщик цепочки понимает, можно ли поставить
-    навык после другого. До контракта вход навыка был описан только прозой в инструкции."""
-    if sid not in ape.SKILLS:
-        raise HTTPException(404, "нет навыка")
-    ov = ((await skill_store.get(sid)) or {}).get("patch") or {}
-    tid = ov.get("schema_template_id") or sid
-    tpl = await schema_store.get(tid) or await schema_store.get(sid) or {}
-    inputs = tpl.get("inputs") or {}
-    ds = []
-    try:
-        ds = [d.get("entity") for d in (ape.skill_datasources_resolved(sid) or []) if d.get("entity")]
-    except Exception:  # noqa: BLE001 — область данных опциональна
-        ds = []
-    return {"skill": sid, "template_id": tpl.get("id") or tid,
-            "inputs": inputs, "produces": tpl.get("produces") or {}, "slots": tpl.get("slots") or [],
-            "delivery": tpl.get("delivery") or None, "entities": ds,
-            "has_schema": bool((tpl.get("json_schema") or {}).get("properties")),
-            "errors": skill_contract.validate_contract(tpl),
-            "field_hints": skill_contract.field_warnings(tpl)}
 
 
-@app.get("/api/catalog/coverage")
-async def catalog_coverage(u: dict = Depends(user)) -> dict:
-    """Готовность каталога к сборке: у скольких навыков есть схема, контракт входа, область данных,
-    слоты и доставка. Отчёт, по которому видно, что ещё предстоит привести к единому виду."""
-    tpls = {t["id"]: t for t in await schema_store.all()}
-    ov = await skill_store.all()
-    rows, totals = [], {"всего": 0, "схема": 0, "вход": 0, "выход": 0, "данные": 0, "слоты": 0, "доставка": 0}
-    for sid in sorted(ape.SKILLS):
-        patch = (ov.get(sid) or {}).get("patch") or {}
-        tid = patch.get("schema_template_id") or sid
-        t = tpls.get(tid) or tpls.get(sid) or {}
-        try:
-            ents = [d.get("entity") for d in (ape.skill_datasources_resolved(sid) or []) if d.get("entity")]
-        except Exception:  # noqa: BLE001
-            ents = []
-        ref = sid in getattr(ape, "SKILL_REFERENCE", frozenset())
-        r = {"skill": sid, "template_id": t.get("id") or "", "reference": ref,
-             "схема": bool((t.get("json_schema") or {}).get("properties")),
-             "вход": bool((t.get("inputs") or {}).get("required") or (t.get("inputs") or {}).get("optional")),
-             "выход": bool(t.get("produces")),
-             "данные": bool(ents), "слоты": bool(t.get("slots")), "доставка": bool(t.get("delivery")),
-             "ошибки": skill_contract.validate_contract(t)}
-        totals["всего"] += 1
-        if ref:
-            # справочные навыки (стилевые гайды) в цепочку не встраиваются: считаем отдельно, иначе
-            # покрытие каталога вечно будет выглядеть незакрытым
-            totals["справочные"] = totals.get("справочные", 0) + 1
-            rows.append(r)
-            continue
-        for k in ("схема", "вход", "выход", "данные", "слоты", "доставка"):
-            totals[k] += 1 if r[k] else 0
-        rows.append(r)
-    return {"totals": totals, "skills": rows}
 
 
 

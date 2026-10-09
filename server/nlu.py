@@ -201,3 +201,24 @@ def describe(text: str) -> dict:
     sts = split_stages(text)
     return {"lexemes": sorted(lexemes(text)), "stages": [s.as_dict() for s in sts],
             "multi_stage": len(sts) > 1}
+
+# ── Пороги подбора: правятся в UI (Настройки → Подбор), живут в admin_config.nluConfig ──────────
+# Жили в web_api, пока их звал только разбор запроса. Теперь их спрашивают два домена маршрутов
+# (план и цепочки), и место настройки — рядом с тем, что она настраивает, а не в приложении.
+
+# пороги подбора: правятся в UI (Настройки → Подбор), живут в admin_config.nluConfig
+_NLU_DEFAULTS = {"min_confidence": 0.35, "weak_stage": 0.2, "rerank": True, "max_stages": 6}
+
+
+async def nlu_config() -> dict:
+    """Действующие пороги подбора: умолчания кода, перекрытые настройкой из админки."""
+    from . import admin_store          # импорт внутри: модуль разбора фразы не зависит от БД
+    try:
+        cfg = (await admin_store.all()).get("nluConfig") or {}
+    except Exception:  # noqa: BLE001
+        cfg = {}
+    out = dict(_NLU_DEFAULTS)
+    for k, v in (cfg if isinstance(cfg, dict) else {}).items():
+        if k in out and isinstance(v, type(out[k])):
+            out[k] = v
+    return out
