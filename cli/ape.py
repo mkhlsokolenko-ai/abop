@@ -4189,6 +4189,33 @@ def _t_audit1c_checks(a):
                       ensure_ascii=False)[:7000]
 
 
+# Потолок ответа инструмента: длинная выборка не должна уезжать в контекст модели целиком.
+# Раньше JSON резался по символам — и обрывался посреди строки. Получатель (внутренний агент или
+# чужой по MCP) не мог его разобрать и видел «данных нет», хотя данные были. Разница между «нет
+# записей» и «их слишком много» — ровно та, ради которой продукт и затевался, поэтому список
+# режется ПО ЗАПИСЯМ и заворачивается в объект, который прямо говорит об обрезке.
+ПРЕДЕЛ_ОТВЕТА_ИНСТРУМЕНТА = 4000
+
+
+def _json_в_пределе(данные, предел: int = ПРЕДЕЛ_ОТВЕТА_ИНСТРУМЕНТА) -> str:
+    целиком = json.dumps(данные, ensure_ascii=False)
+    if len(целиком) <= предел:
+        return целиком
+    if isinstance(данные, list):
+        влезло = []
+        for элемент in данные:
+            проба = влезло + [элемент]
+            if len(json.dumps(проба, ensure_ascii=False)) > предел - 300:
+                break
+            влезло = проба
+        return json.dumps({"truncated": True, "returned": len(влезло), "total": len(данные),
+                           "hint": "ответ обрезан по размеру: сузьте выборку (limit, filter, fields)",
+                           "rows": влезло}, ensure_ascii=False)
+    return json.dumps({"truncated": True, "limit": предел,
+                       "hint": "ответ обрезан по размеру: сузьте запрос",
+                       "text": целиком[:предел - 200]}, ensure_ascii=False)
+
+
 AGENT_TOOLS = {
     "read_file": (_t_read, 'прочитать локальный файл — args: {"path": "..."}'),
     "write_file": (_t_write, 'записать файл в ./ape_work — args: {"path": "...", "content": "..."}'),
@@ -4199,12 +4226,12 @@ AGENT_TOOLS = {
     "use_skill": (_t_use_skill, 'подгрузить полную методику навыка ПЕРЕД применением — args: {"id":"<skill-id>"}'),
     "handoff": (_t_handoff, 'передать задачу другой роли/семье (эстафета) — args: {"task":"...","family":"...","member":"...","result":"..."}'),
     "remember": (_t_remember, 'сохранить в долговременную память (с TTL по критичности) — args: {"key":"...","text":"...","criticality":"operational|important|critical|regulatory|permanent"}'),
-    "data_query": (lambda a: json.dumps(
+    "data_query": (lambda a: _json_в_пределе(
         data_query(a.get("entity", ""), a.get("filter") if isinstance(a.get("filter"), dict) else None,
                    a.get("fields") if isinstance(a.get("fields"), list) else None,
-                   int(a.get("limit", 30))), ensure_ascii=False)[:4000] or "[]",
+                   int(a.get("limit", 30)))) or "[]",
         'взять машиночитаемые данные из Data Plane (только свежие) — args: {"entity":"...","filter":{...},"fields":[...]}'),
-    "data_get": (lambda a: json.dumps(data_get(a.get("entity", ""), str(a.get("id", ""))), ensure_ascii=False)[:4000] or "null",
+    "data_get": (lambda a: _json_в_пределе(data_get(a.get("entity", ""), str(a.get("id", "")))) or "null",
                  'одна каноническая запись по id — args: {"entity":"...","id":"..."}'),
     "data_schema": (lambda a: json.dumps(data_schema(a.get("entity", "")), ensure_ascii=False),
                     'Data Contract сущности (обязательные поля) — args: {"entity":"..."}'),
