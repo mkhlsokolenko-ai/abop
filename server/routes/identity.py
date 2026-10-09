@@ -17,7 +17,21 @@ from fastapi import APIRouter, Depends, HTTPException
 from .. import audit_store, identity_store, userdata_store
 from ..deps import _uid_of, require_level, user
 
+from .. import admin_store, agent_store, run_store
+from ..deps import can_see_family, user
+
 router = APIRouter()
+
+
+def _parse_rub(v, default: float) -> float:
+    """Число рублей из значения квоты ('4 000 ₽' → 4000). Пусто/мусор → default."""
+    if isinstance(v, (int, float)):
+        return float(v)
+    import re as _re
+    digits = _re.sub(r"[^\d]", "", str(v or ""))
+    return float(digits) if digits else default
+
+
 
 
 @router.get("/api/me")
@@ -99,3 +113,57 @@ async def memory_save(scope: str, body: dict, u: dict = Depends(user)) -> dict:
         raise HTTPException(422, "нужен массив memory")
     saved = await userdata_store.save_memory(scope, data)
     return {"scope": scope, "memory": saved}
+
+
+@router.get("/api/billing")
+async def billing(u: dict = Depends(user)) -> dict:
+    """Реальный биллинг (7.1, БД-фаза): расход ₽/токенов из RunMetrics.cost всех прогонов (реальные
+    токены RouteAI × тариф pricing — не хардкод 1240₽/0.42₽/0.14₽) + недельная квота из admin_config.
+    ABAC: не-admin видит только прогоны агентов своего отдела."""
+    items = await run_store.list_runs(limit=500)
+    total_rub = 0.0
+    tin = tout = calls = 0
+    by_model: dict = {}
+    by_run: list = []
+    _fam_cache: dict = {}
+    for it in items:
+        aid = it.get("agent_id")
+        if aid not in _fam_cache:
+            ag = await agent_store.get(aid) if aid else None
+            _fam_cache[aid] = ag or {}
+        ag = _fam_cache[aid]
+        if not can_see_family(u, ag.get("family")):
+            continue
+        c = it.get("cost") or {}
+        rub = float(c.get("rub") or 0)
+        total_rub += rub
+        tin += int(c.get("input_tokens") or 0)
+        tout += int(c.get("output_tokens") or 0)
+        calls += int(c.get("calls") or 0)
+        for m, bm in (c.get("by_model") or {}).items():
+            agg = by_model.setdefault(m, {"input_tokens": 0, "output_tokens": 0, "rub": 0.0, "calls": 0})
+            agg["input_tokens"] += int(bm.get("input_tokens") or 0)
+            agg["output_tokens"] += int(bm.get("output_tokens") or 0)
+            agg["rub"] = round(agg["rub"] + float(bm.get("rub") or 0), 4)
+            agg["calls"] += int(bm.get("calls") or 0)
+        if rub > 0 or c.get("calls"):
+            by_run.append({"id": it["id"], "agent_name": ag.get("name") or aid,
+                           "rub": round(rub, 4), "input_tokens": int(c.get("input_tokens") or 0),
+                           "output_tokens": int(c.get("output_tokens") or 0),
+                           "when": (it.get("created_at") or "").replace("T", " ")[:16],
+                           "by": it.get("started_by")})
+    cfg = await admin_store.all()
+    quota = _parse_rub(cfg.get("quotaLimit"), 4000.0)
+    total_rub = round(total_rub, 4)
+    # Токен-квота: на self-host стоимость≈0, но токены списываем с квоты — чтобы пользователь видел
+    # ОСТАТОК (сколько ещё может отработать) и это был повод для оптимизации. Лимит из
+    # admin_config.tokenQuota (по умолчанию 30M — прежние 5M быстро выжигались, #3).
+    tok_quota = int(_parse_rub(cfg.get("tokenQuota"), 30_000_000.0))
+    tokens = tin + tout
+    return {"spent_rub": total_rub, "quota_limit_rub": quota,
+            "quota_pct": min(100, round(total_rub / quota * 100)) if quota else 0,
+            "input_tokens": tin, "output_tokens": tout, "tokens": tokens,
+            "token_quota": tok_quota, "tokens_remaining": max(0, tok_quota - tokens),
+            "tokens_pct": min(100, round(tokens / tok_quota * 100)) if tok_quota else 0,
+            "calls": calls, "avg_call_rub": round(total_rub / calls, 4) if calls else 0.0,
+            "by_model": by_model, "by_run": by_run[:12], "source": "run_metrics"}

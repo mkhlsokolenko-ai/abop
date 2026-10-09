@@ -244,140 +244,14 @@ def observability_snapshot(u: dict = Depends(user)) -> dict:
     return obs.snapshot()
 
 
-# Свободный ответ в чате — это РАЗГОВОР, а не работа. Без этой рамки модель берётся отчитываться за
-# систему: 04.10 в чате появились «цепочка выполнена», «отчёт собран в PDF», имя файла и путь
-# «docs/…» — ничего из этого не существовало. Это худший вид отказа: не ошибка, а правдоподобный
-# отчёт о несделанном, под которым стоит подпись модели и ноль рублей.
-# Рамка добавляется НА СЕРВЕРЕ, а не в клиенте: правило про границы рантайма обязано действовать в
-# любом канале, а не только в той версии десктопа, которую успели обновить.
-CHAT_GUARD = (
-    "Ты отвечаешь ТЕКСТОМ и не выполняешь действий: не запускаешь агентов, не собираешь отчёты, "
-    "не создаёшь файлы, не отправляешь письма и не заводишь задачи. Никогда не утверждай, что "
-    "что-то выполнено, собрано, сохранено, прикреплено или отправлено, и не выдумывай имена файлов, "
-    "пути, ссылки и идентификаторы. Если просят сделать работу — дай текстом то, что можешь дать "
-    "сам (разбор, план, вопросы по существу), а про запуск исполнителя скажи ОДНОЙ короткой "
-    "строкой в конце: «запустить исполнителя — команда /work». НИКОГДА не выводи команду с "
-    "текстом задачи внутри и не цитируй задачу человека обратно вместо ответа: человек уже "
-    "написал её, переписывать её ему не нужно. Команды набирает человек, не ты. "
-    "За готовым отчётом прогона отправляй к команде «/report» — она соберёт настоящий файл. "
-    "О том, что уже сделано, человек узнаёт из карточек прогона, а не из твоего пересказа. "
-    # Qwen на длинной системной рамке иногда вставляет иероглифы в середину русской фразы —
-    # проверено живым ответом. Язык объявляем явно, это дешевле, чем чистить вывод.
-    "Отвечай по-русски."
-)
 
 
-@app.post("/api/chat")
-async def chat_freeform(body: dict, u: dict = Depends(user)) -> dict:
-    """Свободный LLM-ответ под JWT пользователя — единый рантайм-канал для desktop-чата,
-    цепочек графа и распознавания (тот же self-host каскад, что и у агентов). Отвязка от
-    курсового шлюза: desktop больше НЕ ходит в MCP/portal курса. Rate-limit по пользователю."""
-    prompt = str((body or {}).get("prompt") or "").strip()
-    if not prompt:
-        raise HTTPException(422, "нужен prompt")
-    actor = u.get("name") or u.get("sub") or "dev"
-    if not _rate_check(actor):
-        raise HTTPException(429, "слишком часто — попробуйте чуть позже")
-    system = str((body or {}).get("system") or "").strip()
-    context = str((body or {}).get("context") or "").strip()
-    profile = str((body or {}).get("profile") or "standard").strip() or "standard"
-    max_tokens = min(int((body or {}).get("max_tokens") or 1200), 4096)
-    messages: list[dict] = [{"role": "system", "content": CHAT_GUARD}]
-    if system:
-        messages.append({"role": "system", "content": system})
-    user_content = (f"Контекст:\n{context}\n\n" if context else "") + prompt
-    messages.append({"role": "user", "content": user_content})
-    try:
-        resp = await clients.chat(messages=messages, profile=profile, max_tokens=max_tokens)
-    except Exception as ex:  # noqa: BLE001
-        raise HTTPException(502, f"LLM недоступен: {ex}")
-    return {"text": resp.get("text") or "", "model": resp.get("model"),
-            "input_tokens": resp.get("input_tokens"), "output_tokens": resp.get("output_tokens")}
 
 
-@app.post("/api/chat/stream")
-async def chat_freeform_stream(body: dict, u: dict = Depends(user)):
-    """Стриминг свободного ответа (SSE): токены-дельты по мере генерации — настоящий стрим для
-    desktop-чата (не псевдо-нарезка на сайдкаре). Формат строк: `data: {"delta": "..."}` и финал
-    `data: {"done": true, "model": ...}`. Тот же self-host каскад, что и /api/chat."""
-    import json as _json
-    from fastapi.responses import StreamingResponse
-    prompt = str((body or {}).get("prompt") or "").strip()
-    if not prompt:
-        raise HTTPException(422, "нужен prompt")
-    actor = u.get("name") or u.get("sub") or "dev"
-    if not _rate_check(actor):
-        raise HTTPException(429, "слишком часто — попробуйте чуть позже")
-    system = str((body or {}).get("system") or "").strip()
-    context = str((body or {}).get("context") or "").strip()
-    profile = str((body or {}).get("profile") or "standard").strip() or "standard"
-    max_tokens = min(int((body or {}).get("max_tokens") or 1500), 4096)
-    messages: list[dict] = [{"role": "system", "content": CHAT_GUARD}]
-    if system:
-        messages.append({"role": "system", "content": system})
-    messages.append({"role": "user", "content": (f"Контекст:\n{context}\n\n" if context else "") + prompt})
-
-    async def gen():
-        try:
-            async for ev in clients.chat_stream(messages=messages, profile=profile, max_tokens=max_tokens):
-                yield "data: " + _json.dumps(ev, ensure_ascii=False) + "\n\n"
-        except Exception as ex:  # noqa: BLE001
-            yield "data: " + _json.dumps({"error": f"LLM: {ex}"}, ensure_ascii=False) + "\n\n"
-
-    return StreamingResponse(gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
 
 
-@app.post("/api/auth/login")
-async def auth_login(body: dict) -> dict:
-    """Прокси-логин к Keycloak (realm abop) — Keycloak не публичный, поэтому вход идёт через ABOP.
-    Тело: {username, password}. Возвращает {access_token, refresh_token, expires_in, user}: access у Keycloak живёт
-    ~5 минут, поэтому фронт обязан обновлять сессию через /api/auth/refresh, иначе всё отваливается по 401
-    и выглядит как «сервер недоступен»."""
-    import httpx
-    import jwt
-    un = str((body or {}).get("username", "")).strip()
-    pw = str((body or {}).get("password", ""))
-    if not un or not pw:
-        raise HTTPException(422, "нужны username и password")
-    iss = os.getenv("KEYCLOAK_ISSUER") or "http://localhost:8811/realms/abop"
-    try:
-        async with httpx.AsyncClient(timeout=15) as c:
-            r = await c.post(iss + "/protocol/openid-connect/token",
-                             data={"client_id": "abop-web", "username": un, "password": pw,
-                                   "grant_type": "password"})
-    except Exception as ex:  # noqa: BLE001
-        raise HTTPException(502, f"Keycloak недоступен: {ex}")
-    if r.status_code != 200:
-        raise HTTPException(401, "неверный логин или пароль")
-    tokens = r.json()
-    claims = jwt.decode(tokens["access_token"], options={"verify_signature": False})
-    return {"access_token": tokens["access_token"], "refresh_token": tokens.get("refresh_token"),
-            "expires_in": int(tokens.get("expires_in") or 0),
-            "refresh_expires_in": int(tokens.get("refresh_expires_in") or 0),
-            "user": _identity(claims)}
 
 
-@app.post("/api/auth/refresh")
-async def auth_refresh(body: dict) -> dict:
-    """Обновление сессии по refresh_token (Keycloak realm abop). Без этого веб жил 5 минут до первого 401."""
-    import httpx
-    import jwt
-    rt = str((body or {}).get("refresh_token", "")).strip()
-    if not rt:
-        raise HTTPException(422, "нужен refresh_token")
-    iss = os.getenv("KEYCLOAK_ISSUER") or "http://localhost:8811/realms/abop"
-    try:
-        async with httpx.AsyncClient(timeout=15) as c:
-            r = await c.post(iss + "/protocol/openid-connect/token",
-                             data={"client_id": "abop-web", "grant_type": "refresh_token", "refresh_token": rt})
-    except Exception as ex:  # noqa: BLE001
-        raise HTTPException(502, f"Keycloak недоступен: {ex}")
-    if r.status_code != 200:
-        raise HTTPException(401, "сессия истекла — войдите заново")
-    tokens = r.json()
-    claims = jwt.decode(tokens["access_token"], options={"verify_signature": False})
-    return {"access_token": tokens["access_token"], "refresh_token": tokens.get("refresh_token") or rt,
-            "expires_in": int(tokens.get("expires_in") or 0), "user": _identity(claims)}
 
 
 
@@ -454,7 +328,14 @@ from .routes import pipelines as _routes_pipelines  # noqa: E402
 from .routes import plan as _routes_plan  # noqa: E402
 from .routes import skills as _routes_skills  # noqa: E402
 
-for _r in (_routes_skills, _routes_pipelines, _routes_plan):
+from .routes import auth as _routes_auth  # noqa: E402
+from .routes import board as _routes_board  # noqa: E402
+from .routes import canvas as _routes_canvas  # noqa: E402
+from .routes import hitl as _routes_hitl  # noqa: E402
+from .routes import triggers as _routes_triggers  # noqa: E402
+
+for _r in (_routes_skills, _routes_pipelines, _routes_plan, _routes_hitl, _routes_triggers,
+           _routes_board, _routes_auth, _routes_canvas):
     app.include_router(_r.router)
 
 # Старт инжектит оверрайды навыков в ядро: имя живёт в своём домене, приложение берёт его оттуда.
@@ -468,22 +349,8 @@ BIZ_FAMILIES = _routes_families.BIZ_FAMILIES
 # Операции участка по агенту: нужны прогонам, чтобы записать op_ids и подтвердить карту (ADR-044).
 _seat_ops = _routes_process._seat_ops
 
-@app.get("/api/triggers")
-async def triggers_list(u: dict = Depends(user)) -> dict:
-    """Стартовые события агентов (триггеры из графов) + последний фаер. Планировщик фаерит только
-    enabled schedule/event-триггеры. §триггер-узел (persistence-localstorage-hole)."""
-    return {"triggers": await triggers.list_triggers(), "fires": await trigger_store.list_fires(limit=30)}
 
 
-@app.post("/api/triggers/{agent_id}/{trigger_id}/fire")
-async def trigger_fire(agent_id: str, trigger_id: str, u: dict = Depends(user)) -> dict:
-    """Ручной запуск триггера (кнопка/тест): чтит политику spawn (автономия ≤ контракт, HITL-на-создание),
-    но игнорирует enabled/min-interval. Уровень manager+ (запуск = мутация среды)."""
-    require_level(u, "manager")
-    res = await triggers.fire_manual(agent_id, trigger_id, execute_agent_run)
-    await audit_store.record(u.get("name") or u.get("sub") or "dev", "trigger.fire", trigger_id,
-                             {"agent_id": agent_id, "status": res.get("status")})
-    return res
 
 
 
@@ -524,21 +391,8 @@ _backfill_records_from_files = _routes_data._backfill_records_from_files
 # Перечень сущностей нужен и оркестратору: он решает, исполним ли план на фактических данных.
 data_entities = _routes_data.data_entities
 
-@app.get("/api/canvas/layout/{key}")
-async def canvas_layout_get(key: str, u: dict = Depends(user)) -> dict:
-    """Прочитать сохранённую раскладку канвы (узлы с x/y + рёбра) по ключу (контракт/сценарий)."""
-    row = await layout_store.get(key)
-    return row or {"key": key, "nodes": None, "edges": None}
 
 
-@app.post("/api/canvas/layout/{key}")
-async def canvas_layout_save(key: str, body: dict, u: dict = Depends(user)) -> dict:
-    """Сохранить раскладку канвы в Postgres. Тело: {nodes:[{id,kind,x,y,...}], edges:[...]}."""
-    require_level(u, "manager")  # правка раскладки — мутация (analyst read-only)
-    nodes = (body or {}).get("nodes") or []
-    edges = (body or {}).get("edges") or []
-    saved = await layout_store.save(key, nodes, edges)
-    return {"key": key, "saved": True, "updated_at": saved.get("updated_at")}
 
 
 # ── История чатов пользователя: в Postgres, а не в локальной базе машины ─────────────────────────
@@ -559,42 +413,10 @@ async def canvas_layout_save(key: str, body: dict, u: dict = Depends(user)) -> d
 
 
 
-@app.get("/api/board")
-async def board_read(kind: str = "user", family: str = "", stale: bool = False,
-                     u: dict = Depends(user)) -> dict:
-    """Факты доски: личной или отдела. Просроченные не отдаём, пока не попросят явно."""
-    scope = _board_scope(kind, u, family)
-    rows = await blackboard.load(scope, include_stale=bool(stale))
-    return {"scope": scope, "facts": rows, "count": len(rows)}
 
 
-@app.post("/api/board/facts")
-async def board_put(body: dict, u: dict = Depends(user)) -> dict:
-    """Положить факт на доску руками: «вынести на общую доску».
-
-    Автором ставим человека, а не агента: это его утверждение, даже если взято из прогона.
-    """
-    key = str((body or {}).get("key") or "").strip()
-    if not key:
-        raise HTTPException(422, "нужен ключ факта")
-    scope = _board_scope(str((body or {}).get("kind") or "user"), u, str((body or {}).get("family") or ""))
-    row = await blackboard.put_fact(
-        scope, key, (body or {}).get("value"),
-        author=u.get("name") or _sub(u), note=str((body or {}).get("note") or ""),
-        ttl_sec=int((body or {}).get("ttl_sec") or blackboard.DEFAULT_TTL_SEC),
-        run_id=str((body or {}).get("run_id") or ""))
-    await audit_store.record(u.get("name") or _sub(u), "board.put", scope,
-                             {"key": key, "run_id": row.get("run_id"), "ttl_sec": row.get("ttl_sec")})
-    return {"ok": True, "scope": scope, "fact": row}
 
 
-@app.delete("/api/board/facts/{key}")
-async def board_drop(key: str, kind: str = "user", family: str = "", author: str = "",
-                     u: dict = Depends(user)) -> dict:
-    scope = _board_scope(kind, u, family)
-    n = await blackboard.drop_fact(scope, key, author)
-    await audit_store.record(u.get("name") or _sub(u), "board.drop", scope, {"key": key})
-    return {"ok": True, "removed": n}
 
 
 
@@ -604,6 +426,9 @@ async def board_drop(key: str, kind: str = "user", family: str = "", author: str
 from .routes import chat as _routes_chat  # noqa: E402
 
 app.include_router(_routes_chat.router)
+
+# Рамка свободного чата — правило про границы рантайма; на него ссылаются проверки.
+CHAT_GUARD = _routes_chat.CHAT_GUARD
 
 
 
@@ -751,63 +576,8 @@ async def _refresh_llm_override() -> None:
 
 
 
-_DEMO_DIR = Path(__file__).resolve().parents[1] / "demo"
 
 
-@app.post("/api/demo/prepare")
-async def demo_prepare(body: dict, u: dict = Depends(user)) -> dict:
-    """Один клик «Собрать и запустить»: идемпотентно готовит демо-сценарий к прогону —
-    ингест контракта + сохранение AgentVersion из demo/<key>/ (contract*.json + agent_body.json).
-    Возвращает {audit_id, agent_id, contract} для привязки на канве. Сценарий без демо-пакета → 404.
-
-    Закрывает разрыв UX: вкладка сценария на канве не привязывала контракт, поэтому «Запустить
-    прогон» молча ничего не делал. Теперь запуск из UI доступен в один клик (см. persistence-hole)."""
-    import json as _json
-    import glob as _glob
-    key = str((body or {}).get("scenario") or "").strip()
-    ddir = _DEMO_DIR / key
-    if not key or not ddir.is_dir():
-        raise HTTPException(404, f"нет демо-пакета для сценария «{key}»")
-    cfiles = sorted(_glob.glob(str(ddir / "contract*.json")))
-    bfile = ddir / "agent_body.json"
-    if not cfiles or not bfile.is_file():
-        raise HTTPException(404, f"демо-пакет «{key}» неполон (нужны contract*.json + agent_body.json)")
-    with open(cfiles[0], encoding="utf-8") as f:
-        contract = _json.load(f)
-    audit_id = ((contract.get("capability_request") or {}).get("audit_id") or "").strip()
-    if not audit_id:
-        raise HTTPException(422, "в контракте нет capability_request.audit_id")
-    actor = u.get("name") or u.get("sub") or "demo"
-    # 1) контракт — ингест, если ещё не принят (идемпотентно)
-    if not await contract_store.get(audit_id):
-        res = ingress.validate(contract)
-        if not res.accepted:
-            raise HTTPException(422, {"errors": res.errors})
-        await contract_store.save(contract, res.intake, ingested_by=actor)
-    cs = await contract_store.get(audit_id)
-    intake = cs.get("intake") or {}
-    # ABAC: пользователь должен иметь доступ к семье контракта (иначе чужой процесс не запустить)
-    if not can_see_family(u, intake.get("family")):
-        raise HTTPException(403, f"нет доступа к семье «{intake.get('family')}»")
-    # 2) агент — upsert draft из agent_body.json (идемпотентно: правки файла, вкл. OUT-узел,
-    #    подхватываются на следующем «Собрать и запустить», версии не плодятся — ADR-024).
-    with open(bfile, encoding="utf-8") as f:
-        body_data = _json.load(f)
-    graph = body_data.get("graph") or {}
-    check = assembly.check_graph(graph, intake, ape.skill_safety, reads_data=await _skills_reading_data())
-    if check["errors"]:
-        raise HTTPException(422, {"errors": check["errors"]})
-    fam = intake.get("family") or ""
-    saved = await agent_store.save_draft(
-        name=body_data.get("name") or key, audit_id=audit_id, graph=graph,
-        autonomy_max=check["autonomy_max"], created_by=actor,
-        family=fam, role=_resolve_role(fam, intake))
-    agent_id = saved["id"]
-    await audit_store.record(actor, "agent.save", agent_id,
-                             {"family": fam, "via": "demo.prepare", "scenario": key})
-    return {"audit_id": audit_id, "agent_id": agent_id,
-            "contract": {"audit_id": audit_id, "autonomy": intake.get("autonomy_ceiling"),
-                         "family": intake.get("family"), "skills": intake.get("skills") or []}}
 
 
 
@@ -888,50 +658,8 @@ async def _reseed_lexicons() -> None:
 
 
 
-@app.get("/api/triggers/mine")
-async def triggers_mine(u: dict = Depends(user)) -> dict:
-    """Расписания, заведённые ТЕКУЩИМ пользователем (created_by агента = я, или trig.owner = я): агент,
-    cron, вкл/выкл, куда доставка (чат/система), последний фаер + краткий итог последнего прогона.
-    Для раздела «Мои расписания» и уведомлений о завершении."""
-    me = _uid_of(u)
-    admin = u.get("department") in ("*", None)
-    out = []
-    for t in await triggers.list_triggers():
-        if (t.get("source") or "") != "chat.recurring":
-            continue
-        agent = await agent_store.get(t["agent_id"])
-        owner = ((_node_trig(agent, t.get("trigger_id")) or {}).get("owner")) or (agent or {}).get("created_by")
-        if not admin and owner != me:
-            continue
-        last_run = None
-        fires = [f for f in await trigger_store.list_fires(limit=200)
-                 if f.get("agent_id") == t["agent_id"] and f.get("trigger_id") == t.get("trigger_id")]
-        if fires:
-            rid = fires[0].get("run_id")
-            at = fires[0].get("fired_at")
-            if rid:
-                r = await run_store.get(rid)
-                if r:
-                    last_run = {"run_id": rid, "at": at,
-                                "findings": (r.get("findings_summary") or {}).get("total"),
-                                "status": fires[0].get("status")}
-                else:
-                    last_run = {"run_id": rid, "at": at, "status": fires[0].get("status")}
-            else:
-                last_run = {"at": at, "status": fires[0].get("status"), "note": fires[0].get("note")}
-        node = _node_trig(agent, t.get("trigger_id")) or {}
-        out.append({"agent_id": t["agent_id"], "agent": t.get("agent"), "trigger_id": t.get("trigger_id"),
-                    "title": t.get("title"), "cron": t.get("cron"), "enabled": t.get("enabled"),
-                    "deliver": node.get("deliver") or "chat", "last_fire": t.get("last_fire"),
-                    "last_run": last_run})
-    return {"schedules": out, "count": len(out)}
 
 
-def _node_trig(agent: dict, trigger_id: str) -> dict | None:
-    for n in ((agent or {}).get("graph") or {}).get("nodes") or []:
-        if n.get("kind") == "trigger" and n.get("id") == trigger_id:
-            return n.get("trig") or {}
-    return None
 
 
 
@@ -976,61 +704,8 @@ def _node_trig(agent: dict, trigger_id: str) -> dict | None:
 
 
 
-# Каталог каналов OUT-узла: объявлен РЯДОМ с кодом, который их исполняет (`_send_channel`), и
-# отдаётся интерфейсу. Раньше список жил в вёрстке канвы и разошёлся с рантаймом: предлагался
-# YouGile, которого нет на стенде, и отсутствовал Redmine, в который уходит аудит 1С.
-# `to` описывает, что именно спрашивать у человека для адреса: у вики это номер книги, у почты
-# адрес, у файла имя. Эти подписи тоже были тремя тернарниками в вёрстке.
-OUT_CHANNELS = [
-    {"id": "redmine",   "label": "Redmine — задача",        "system": "redmine",
-     "to": {"label": "проект трекера", "placeholder": "demo", "kind": "text"}},
-    {"id": "bookstack", "label": "BookStack — страница вики", "system": "bookstack",
-     "to": {"label": "книга BookStack (book_id)", "placeholder": "1", "kind": "int", "field": "book_id"}},
-    {"id": "email",     "label": "Почта стенда (Mailpit) — наружу не уходит", "system": "mailpit",
-     "to": {"label": "адрес получателя", "placeholder": "glavbuh@demo.local", "kind": "email"}},
-    {"id": "yandex",    "label": "Яндекс.Почта — реальная отправка", "system": "mailpit",
-     "to": {"label": "адрес получателя", "placeholder": "user@yandex.ru", "kind": "email"}},
-    {"id": "yougile",   "label": "YouGile — задача",        "system": "yougile",
-     "to": {"label": "колонка YouGile (column_id)", "placeholder": "ID колонки", "kind": "text"}},
-    {"id": "pdf",       "label": "PDF-файл",                "system": None,
-     "to": {"label": "имя файла", "placeholder": "report", "kind": "text"}},
-    {"id": "file",      "label": "Файл",                    "system": None,
-     "to": {"label": "имя файла", "placeholder": "report", "kind": "text"}},
-]
 
 
-@app.get("/api/out-channels")
-async def out_channels(family: str = "", u: dict = Depends(user)) -> dict:
-    """Куда узел вывода может доставить результат — по факту, а не по списку в вёрстке.
-
-    Канал показывается всегда (чтобы было видно, что платформа умеет), но помечается: есть ли его
-    система в реестре и открыт ли к ней доступ отделу. Собирать узел на систему, которой нет, —
-    та же ошибка, что показывать демо-данные как настоящие.
-    """
-    known = {s.get("id"): s for s in (await systems_store.all() or [])}
-    fam = str(family or "").strip()
-    out = []
-    for c in OUT_CHANNELS:
-        sysid = c.get("system")
-        entry = {**c, "registered": True, "allowed": True, "note": ""}
-        if sysid:
-            sysrec = known.get(sysid)
-            entry["registered"] = bool(sysrec)
-            if not sysrec:
-                entry["allowed"] = False
-                entry["note"] = f"системы «{sysid}» нет в реестре — узел соберётся, но доставки не будет"
-            elif fam:
-                try:
-                    chk = await access_check({"family": fam, "system_id": sysid}, u)
-                    entry["allowed"] = bool(chk.get("allowed"))
-                    if not entry["allowed"]:
-                        entry["note"] = str(chk.get("reason") or "отделу закрыт доступ к этой системе")
-                except Exception:  # noqa: BLE001 — проверка доступа усиление, а не условие показа
-                    pass
-        else:
-            entry["note"] = "локальный файл, наружу не уходит"
-        out.append(entry)
-    return {"channels": out, "family": fam}
 
 
 
@@ -1338,17 +1013,6 @@ async def _contract_for_agent(agent: dict, audit_id: str = "") -> dict:
 
 
 
-@app.get("/api/audit1c/norms/{name}")
-async def audit1c_norm(name: str, u: dict = Depends(user)):
-    """Текст нормы из экспертного справочника demo/audit1c/norms (markdown) — источник «Чем грозит / Что проверить»."""
-    from fastapi.responses import PlainTextResponse
-    import re as _re
-    if not _re.match(r"^[\w\-]+\.md$", name):
-        raise HTTPException(404, "нет такой нормы")
-    p = findings.NORMS_DIR / name
-    if not p.exists():
-        raise HTTPException(404, "нет такой нормы")
-    return PlainTextResponse(p.read_text(encoding="utf-8"), media_type="text/markdown; charset=utf-8")
 
 
 
@@ -1432,200 +1096,20 @@ _on_command_result = _routes_bus._on_command_result
 
 
 
-def _parse_rub(v, default: float) -> float:
-    """Число рублей из значения квоты ('4 000 ₽' → 4000). Пусто/мусор → default."""
-    if isinstance(v, (int, float)):
-        return float(v)
-    import re as _re
-    digits = _re.sub(r"[^\d]", "", str(v or ""))
-    return float(digits) if digits else default
-
-
-@app.get("/api/billing")
-async def billing(u: dict = Depends(user)) -> dict:
-    """Реальный биллинг (7.1, БД-фаза): расход ₽/токенов из RunMetrics.cost всех прогонов (реальные
-    токены RouteAI × тариф pricing — не хардкод 1240₽/0.42₽/0.14₽) + недельная квота из admin_config.
-    ABAC: не-admin видит только прогоны агентов своего отдела."""
-    items = await run_store.list_runs(limit=500)
-    total_rub = 0.0
-    tin = tout = calls = 0
-    by_model: dict = {}
-    by_run: list = []
-    _fam_cache: dict = {}
-    for it in items:
-        aid = it.get("agent_id")
-        if aid not in _fam_cache:
-            ag = await agent_store.get(aid) if aid else None
-            _fam_cache[aid] = ag or {}
-        ag = _fam_cache[aid]
-        if not can_see_family(u, ag.get("family")):
-            continue
-        c = it.get("cost") or {}
-        rub = float(c.get("rub") or 0)
-        total_rub += rub
-        tin += int(c.get("input_tokens") or 0)
-        tout += int(c.get("output_tokens") or 0)
-        calls += int(c.get("calls") or 0)
-        for m, bm in (c.get("by_model") or {}).items():
-            agg = by_model.setdefault(m, {"input_tokens": 0, "output_tokens": 0, "rub": 0.0, "calls": 0})
-            agg["input_tokens"] += int(bm.get("input_tokens") or 0)
-            agg["output_tokens"] += int(bm.get("output_tokens") or 0)
-            agg["rub"] = round(agg["rub"] + float(bm.get("rub") or 0), 4)
-            agg["calls"] += int(bm.get("calls") or 0)
-        if rub > 0 or c.get("calls"):
-            by_run.append({"id": it["id"], "agent_name": ag.get("name") or aid,
-                           "rub": round(rub, 4), "input_tokens": int(c.get("input_tokens") or 0),
-                           "output_tokens": int(c.get("output_tokens") or 0),
-                           "when": (it.get("created_at") or "").replace("T", " ")[:16],
-                           "by": it.get("started_by")})
-    cfg = await admin_store.all()
-    quota = _parse_rub(cfg.get("quotaLimit"), 4000.0)
-    total_rub = round(total_rub, 4)
-    # Токен-квота: на self-host стоимость≈0, но токены списываем с квоты — чтобы пользователь видел
-    # ОСТАТОК (сколько ещё может отработать) и это был повод для оптимизации. Лимит из
-    # admin_config.tokenQuota (по умолчанию 30M — прежние 5M быстро выжигались, #3).
-    tok_quota = int(_parse_rub(cfg.get("tokenQuota"), 30_000_000.0))
-    tokens = tin + tout
-    return {"spent_rub": total_rub, "quota_limit_rub": quota,
-            "quota_pct": min(100, round(total_rub / quota * 100)) if quota else 0,
-            "input_tokens": tin, "output_tokens": tout, "tokens": tokens,
-            "token_quota": tok_quota, "tokens_remaining": max(0, tok_quota - tokens),
-            "tokens_pct": min(100, round(tokens / tok_quota * 100)) if tok_quota else 0,
-            "calls": calls, "avg_call_rub": round(total_rub / calls, 4) if calls else 0.0,
-            "by_model": by_model, "by_run": by_run[:12], "source": "run_metrics"}
 
 
 
 
 
 
-@app.get("/api/hitl/queue")
-async def hitl_queue(u: dict = Depends(user)) -> dict:
-    """Очередь HITL-подтверждений: pending-заявки на доставку наружу (ABAC по семье агента)."""
-    items = await hitl_store.list_pending()
-    return {"queue": [i for i in items if can_see_family(u, i.get("family"))]}
 
 
-@app.get("/api/hitl/{item_id}")
-async def hitl_item(item_id: str, u: dict = Depends(user)) -> dict:
-    """Одна HITL-заявка с содержимым доставки (html/cfg) — превью перед подтверждением
-    (UX-аудит 25.09 D-C3: подтверждали письмо, не видя его текста)."""
-    item = await hitl_store.get(item_id)
-    if not item:
-        raise HTTPException(404, "нет такой HITL-заявки")
-    if not can_see_family(u, item.get("family")):
-        raise HTTPException(403, "нет доступа к семье заявки")
-    payload = item.get("payload") or {}
-    cfg = payload.get("cfg") or {}
-    cp = payload.get("payload") if payload.get("kind") == "command" and isinstance(payload.get("payload"), dict) else {}
-    # Команда в систему (задача трекера, страница вики) шла на подтверждение без текста: html пуст,
-    # и человек видел «Содержимое не приложено». Отдаём тело и остальные поля команды — подтверждают
-    # ровно то, что уйдёт.
-    _body, _fields = "", []
-    if cp:
-        for _k in ("description", "body", "text", "content", "comment", "message", "html"):
-            _v = cp.get(_k)
-            if isinstance(_v, str) and _v.strip():
-                _body = _v[:20000]
-                break
-        for _k, _v in cp.items():
-            if _k in ("description", "body", "text", "content", "comment", "message", "html"):
-                continue
-            if isinstance(_v, (str, int, float, bool)) and str(_v).strip():
-                _fields.append([_k, str(_v)[:300]])
-        _fields = _fields[:12]
-    return {"body": _body, "command_fields": _fields,
-            "id": item.get("id"), "state": item.get("state"), "agent_id": item.get("agent_id"),
-            "agent_name": payload.get("agent_name"), "title": item.get("title"), "channel": item.get("channel"),
-            "to": item.get("to_addr"), "format": cfg.get("format") or ("command" if cp else None),
-            "subject": cfg.get("subject") or cfg.get("title") or cp.get("subject") or cp.get("title"),
-            "html": (payload.get("html") or "")[:20000], "created_at": item.get("created_at"),
-            "requested_by": item.get("requested_by"),
-            "kind": payload.get("kind") or "report", "system": payload.get("system"), "type": payload.get("type"),
-            "command_id": payload.get("command_id"), "result_state": payload.get("result_state"),
-            "result": payload.get("result"), "source": payload.get("source")}
 
 
-@app.post("/api/hitl/{item_id}/approve")
-async def hitl_approve(item_id: str, body: dict = None, u: dict = Depends(user)) -> JSONResponse:
-    """Одобрить/отклонить HITL-заявку. Тело: {decision: approve|reject, reason?}. При approve —
-    выполняется РЕАЛЬНАЯ доставка отчёта в канал OUT-узла. manager+ (analyst — только чтение)."""
-    require_level(u, "manager")
-    item = await hitl_store.get(item_id)
-    if not item:
-        raise HTTPException(404, "нет такой HITL-заявки")
-    if not can_see_family(u, item.get("family")):
-        raise HTTPException(403, "нет доступа к семье заявки")
-    if item.get("state") != "pending":
-        raise HTTPException(409, f"заявка уже обработана: {item.get('state')}")
-    decision = str((body or {}).get("decision", "approve")).lower()
-    reason = str((body or {}).get("reason", ""))
-    actor = u.get("name") or u.get("sub") or "operator"
-    payload = item.get("payload") or {}
-    if decision == "reject":
-        await hitl_store.decide(item_id, "rejected", actor, reason)
-        await audit_store.record(actor, "hitl.reject", item_id,
-                                 {"agent_id": item.get("agent_id"), "channel": item.get("channel")}, severity="warn")
-        obs.inc("abop_hitl_total", decision="reject")
-        resumed = await _resume_job_after_hitl(item_id, payload, "reject")
-        return JSONResponse({"id": item_id, "state": "rejected", "resumed_job": resumed})
-    # approve: заявка на ЗАПУСК (триггер с HITL-на-создание) → прогон в очередь заданий
-    if payload.get("kind") == "spawn":
-        ag = await agent_store.get(item.get("agent_id") or "")
-        if not ag:
-            raise HTTPException(404, "агент заявки не найден")
-        job = await run_queue.enqueue(agent_id=ag["id"], actor=actor, kind="run",
-                                      payload={"contract_audit_id": ag.get("contract_audit_id"), "use_cache": False,
-                                               "user_context": "", "deliver_filter": "",
-                                               "trigger": payload.get("trigger_node"), "trace_id": obs.current_trace_id()})
-        await run_bus.bus().publish_request(job, obs.current_trace_id())
-        await hitl_store.decide(item_id, "approved", actor, reason)
-        await audit_store.record(actor, "hitl.approve", item_id, {"agent_id": ag["id"], "channel": "spawn", "job_id": job["id"]})
-        obs.inc("abop_hitl_total", decision="approve")
-        return JSONResponse({"id": item_id, "state": "approved", "job_id": job["id"], "delivery": "прогон поставлен в очередь"})
-    # approve: команда навыка (канал command) → в шину, исполнит коннектор-воркер
-    if payload.get("kind") == "command":
-        if not getattr(run_bus.bus(), "active", False):
-            raise HTTPException(503, "шина не подключена — команду некуда публиковать")
-        res = await run_bus.publish_command(str(payload.get("system") or ""), str(payload.get("type") or "command"),
-                                            payload.get("payload") if isinstance(payload.get("payload"), dict) else {},
-                                            actor=actor, trace_id=str(payload.get("trace_id") or obs.current_trace_id()))
-        await hitl_store.decide(item_id, "approved", actor, reason)
-        await hitl_store.update_payload(item_id, {"command_id": (res.get("command") or {}).get("id"), "topic": res.get("topic")})
-        await audit_store.record(actor, "hitl.approve", item_id, {"agent_id": item.get("agent_id"), "channel": "command",
-                                                                  "topic": res.get("topic"), "command_id": (res.get("command") or {}).get("id")})
-        obs.inc("abop_hitl_total", decision="approve")
-        resumed = await _resume_job_after_hitl(item_id, payload, "approve")
-        return JSONResponse({"id": item_id, "state": "approved", "delivery": "команда опубликована в " + str(res.get("topic")),
-                             "command_id": (res.get("command") or {}).get("id"), "resumed_job": resumed})
-    # approve → реальная отправка в канал
-    cfg = payload.get("cfg") or {}
-    out = await _send_channel(cfg, payload.get("agent_name"), payload.get("html") or "", real=True)
-    await hitl_store.decide(item_id, "approved", actor, reason)
-    await audit_store.record(actor, "hitl.approve", item_id,
-                             {"agent_id": item.get("agent_id"), "channel": item.get("channel"),
-                              "result": str(out)[:200]}, severity="info")
-    obs.inc("abop_hitl_total", decision="approve")
-    obs.log_event("info", "hitl.approved", item_id=item_id, channel=item.get("channel"))
-    resumed = await _resume_job_after_hitl(item_id, payload, "approve")
-    return JSONResponse({"id": item_id, "state": "approved", "delivery": str(out)[:400], "resumed_job": resumed})
 
 
-async def _resume_job_after_hitl(item_id: str, payload: dict, decision: str) -> str | None:
-    """Если заявка принадлежит заданию очереди, которое ждёт решения (цепочка на HITL-шаге) —
-    вернуть его в очередь; воркер продолжит со следующего шага с учётом решения."""
-    job = None
-    jid = payload.get("job_id")
-    if jid:
-        job = await run_queue.get(jid)
-    if not job or job.get("status") != "awaiting_hitl":
-        job = await run_queue.find_awaiting_by_hitl(item_id)
-    if not job:
-        return None
-    await run_queue.resume(job["id"], decision, item_id)
-    await run_bus.bus().publish_request(job, obs.current_trace_id())
-    obs.log_event("info", "run_queue.resumed", job_id=job["id"], hitl_id=item_id, decision=decision)
-    return job["id"]
+
+
 
 
 # ═══════════════ Статика: buildless-React фронт ABOP (webapp/) ═══════════════

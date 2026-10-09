@@ -18,6 +18,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from .. import audit_store, clients, reglament_store
 from ..deps import require_level, user
 
+from .. import findings
+from ..deps import user
+
 router = APIRouter()
 
 
@@ -142,3 +145,16 @@ async def reglament_list(tenant: str = "default", u: dict = Depends(user)) -> di
     reg = await reglament_store.all_for(tenant)
     return {"tenant": tenant, "chunks": [{"nsi_key": r["nsi_key"], "process": r["process"],
             "subprocess": r["subprocess"], "op": r["op"], "text": r["text"]} for r in reg]}
+
+
+@router.get("/api/audit1c/norms/{name}")
+async def audit1c_norm(name: str, u: dict = Depends(user)):
+    """Текст нормы из экспертного справочника demo/audit1c/norms (markdown) — источник «Чем грозит / Что проверить»."""
+    from fastapi.responses import PlainTextResponse
+    import re as _re
+    if not _re.match(r"^[\w\-]+\.md$", name):
+        raise HTTPException(404, "нет такой нормы")
+    p = findings.NORMS_DIR / name
+    if not p.exists():
+        raise HTTPException(404, "нет такой нормы")
+    return PlainTextResponse(p.read_text(encoding="utf-8"), media_type="text/markdown; charset=utf-8")

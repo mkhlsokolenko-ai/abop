@@ -16,18 +16,11 @@ from .. import agent_store, audit_store, contract_store, dlq_store, hitl_store
 from .. import observability as obs
 from .. import run_bus, skill_tools, systems_store, triggers
 from ..deps import require_level, user
+# Повтор задания из DLQ исполняет прогон и рендерит отчёт. Раньше это был поздний
+# импорт из web_api — записанный долг расщепления; слой исполнения вынесен, и долг
+# закрыт обычным импортом (ADR-052).
+from ..run_exec import _build_report_html, _html_to_text, execute_agent_run
 
-def _из_монолита(имя: str):
-    """Поздний импорт из web_api — единственное место, где это допущено, и вот почему.
-
-    Повтор задания из DLQ исполняет прогон (`execute_agent_run`) и рендерит отчёт
-    (`_build_report_html`). Оба живут в домене прогонов, который из монолита ещё не выехал.
-    Импортировать `web_api` наверху модуля нельзя — это циклический импорт и возврат монолита
-    через чёрный ход. Поздний импорт внутри вызова честнее: он виден, он один, и он исчезнет,
-    когда домен прогонов переедет следом. Пока не переехал — это записанный долг, а не привычка.
-    """
-    from .. import web_api
-    return getattr(web_api, имя)
 
 
 router = APIRouter()
@@ -82,7 +75,7 @@ async def bus_dlq(limit: int = 30, u: dict = Depends(user)) -> dict:
         # текст, а не разметка, иначе карточка DLQ забивается тегами и сути не видно
         _e = str(v.get("error") or (it.get("headers") or {}).get("error") or "")
         if "<" in _e and ">" in _e:
-            _e = _из_монолита("_html_to_text")(_e)
+            _e = _html_to_text(_e)
         out.append({**it, "key_id": k, "source_topic": src, "error": _e[:400],
                     "trace_id": v.get("trace_id") or (it.get("headers") or {}).get("x-trace-id") or "",
                     "replayable": src.endswith(".commands") and isinstance(v.get("payload"), dict) and bool((v.get("payload") or {}).get("system")),
@@ -170,7 +163,7 @@ async def bus_publish(body: dict, u: dict = Depends(user)) -> dict:
 
 async def _bus_event_handler(system_id: str, event: dict, headers: dict) -> None:
     await _on_command_result(system_id, event)
-    await triggers.on_bus_event(system_id, event, _из_монолита("execute_agent_run"), headers)
+    await triggers.on_bus_event(system_id, event, execute_agent_run, headers)
 
 
 async def _on_command_result(system_id: str, event: dict) -> None:
@@ -212,7 +205,7 @@ def _result_to_context(agent: dict, result: dict) -> str:
     if blocks:
         return "\n\n".join(blocks)[:12000]
     try:
-        return _из_монолита("_html_to_text")(_из_монолита("_build_report_html")(agent, result))[:6000]
+        return _html_to_text(_build_report_html(agent, result))[:6000]
     except Exception:  # noqa: BLE001
         return ""
 

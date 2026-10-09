@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import os
 
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from .. import admin_store, audit_store, cachebus, clients, dlq_store, hitl_store
@@ -25,7 +27,18 @@ from .. import observability as obs
 from .. import pipeline_store, rbac_map, run_bus, run_queue, run_store, runner
 from ..deps import _LEVELS, _role_level, require_level, user
 
+from cli import ape
+from .. import agent_store, assembly, audit_store, contract_store, ingress
+from ..deps import can_see_family, user
+from .agents import _resolve_role
+from .agents import _skills_reading_data
+
 router = APIRouter()
+
+
+_DEMO_DIR = Path(__file__).resolve().parents[1] / "demo"
+
+
 
 
 @router.get("/api/admin/llm")
@@ -371,3 +384,59 @@ async def run_limits_set(body: dict, u: dict = Depends(user)) -> dict:
     await audit_store.record(editor, "admin.run_limits", "runLimits", {"keys": sorted(clean)})
     obs.log_event("info", "run_limits.changed", editor=editor, keys=sorted(clean))
     return await run_limits_get(u)
+
+
+@router.post("/api/demo/prepare")
+async def demo_prepare(body: dict, u: dict = Depends(user)) -> dict:
+    """Один клик «Собрать и запустить»: идемпотентно готовит демо-сценарий к прогону —
+    ингест контракта + сохранение AgentVersion из demo/<key>/ (contract*.json + agent_body.json).
+    Возвращает {audit_id, agent_id, contract} для привязки на канве. Сценарий без демо-пакета → 404.
+
+    Закрывает разрыв UX: вкладка сценария на канве не привязывала контракт, поэтому «Запустить
+    прогон» молча ничего не делал. Теперь запуск из UI доступен в один клик (см. persistence-hole)."""
+    import json as _json
+    import glob as _glob
+    key = str((body or {}).get("scenario") or "").strip()
+    ddir = _DEMO_DIR / key
+    if not key or not ddir.is_dir():
+        raise HTTPException(404, f"нет демо-пакета для сценария «{key}»")
+    cfiles = sorted(_glob.glob(str(ddir / "contract*.json")))
+    bfile = ddir / "agent_body.json"
+    if not cfiles or not bfile.is_file():
+        raise HTTPException(404, f"демо-пакет «{key}» неполон (нужны contract*.json + agent_body.json)")
+    with open(cfiles[0], encoding="utf-8") as f:
+        contract = _json.load(f)
+    audit_id = ((contract.get("capability_request") or {}).get("audit_id") or "").strip()
+    if not audit_id:
+        raise HTTPException(422, "в контракте нет capability_request.audit_id")
+    actor = u.get("name") or u.get("sub") or "demo"
+    # 1) контракт — ингест, если ещё не принят (идемпотентно)
+    if not await contract_store.get(audit_id):
+        res = ingress.validate(contract)
+        if not res.accepted:
+            raise HTTPException(422, {"errors": res.errors})
+        await contract_store.save(contract, res.intake, ingested_by=actor)
+    cs = await contract_store.get(audit_id)
+    intake = cs.get("intake") or {}
+    # ABAC: пользователь должен иметь доступ к семье контракта (иначе чужой процесс не запустить)
+    if not can_see_family(u, intake.get("family")):
+        raise HTTPException(403, f"нет доступа к семье «{intake.get('family')}»")
+    # 2) агент — upsert draft из agent_body.json (идемпотентно: правки файла, вкл. OUT-узел,
+    #    подхватываются на следующем «Собрать и запустить», версии не плодятся — ADR-024).
+    with open(bfile, encoding="utf-8") as f:
+        body_data = _json.load(f)
+    graph = body_data.get("graph") or {}
+    check = assembly.check_graph(graph, intake, ape.skill_safety, reads_data=await _skills_reading_data())
+    if check["errors"]:
+        raise HTTPException(422, {"errors": check["errors"]})
+    fam = intake.get("family") or ""
+    saved = await agent_store.save_draft(
+        name=body_data.get("name") or key, audit_id=audit_id, graph=graph,
+        autonomy_max=check["autonomy_max"], created_by=actor,
+        family=fam, role=_resolve_role(fam, intake))
+    agent_id = saved["id"]
+    await audit_store.record(actor, "agent.save", agent_id,
+                             {"family": fam, "via": "demo.prepare", "scenario": key})
+    return {"audit_id": audit_id, "agent_id": agent_id,
+            "contract": {"audit_id": audit_id, "autonomy": intake.get("autonomy_ceiling"),
+                         "family": intake.get("family"), "skills": intake.get("skills") or []}}
