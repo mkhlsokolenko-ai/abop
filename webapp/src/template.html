@@ -1544,6 +1544,110 @@
                 <button sc-camel-on-click="{{ openReglament }}" style="padding: 20px; border-radius: 16px; border: 1px dashed rgba(234,179,8,.28); background: transparent; color: rgba(234,179,8,.75); font-size: 13.5px; font-weight: 600; min-height: 170px;" style-hover="border-color: #eab308; color: var(--ink);">＋ Регламент (нормы · sLAVA)</button><button sc-camel-on-click="{{ openImpact }}" style="padding: 20px; border-radius: 16px; border: 1px dashed rgba(52,211,153,.28); background: transparent; color: rgba(52,211,153,.8); font-size: 13.5px; font-weight: 600; min-height: 170px;" style-hover="border-color: #34d399; color: var(--ink);">📊 Анализ воздействия</button><button sc-camel-on-click="{{ openTplEditor }}" style="padding: 20px; border-radius: 16px; border: 1px dashed rgba(129,140,248,.3); background: transparent; color: rgba(199,210,254,.85); font-size: 13.5px; font-weight: 600; min-height: 170px;" style-hover="border-color: #818cf8; color: var(--ink);">🧩 Редактор шаблонов</button><button sc-camel-on-click="{{ openSysBind }}" style="padding: 20px; border-radius: 16px; border: 1px dashed rgba(52,211,153,.28); background: transparent; color: rgba(52,211,153,.8); font-size: 13.5px; font-weight: 600; min-height: 170px;" style-hover="border-color: #34d399; color: var(--ink);">🔌 Система рецепта</button>
               </div>
             </sc-if>
+            <sc-if value="{{ isRules }}" hint-placeholder-val="{{ false }}">
+              <sc-if value="{{ rulesListView }}" hint-placeholder-val="{{ true }}">
+                <div style="display: flex; flex-direction: column; gap: 14px;">
+                  <span style="font-size: 12.5px; color: var(--w55);">{{ rulesLibHint }}</span>
+                  <sc-if value="{{ rulesEmpty }}" hint-placeholder-val="{{ false }}"><div style="padding: 44px; border-radius: 16px; border: 1px dashed var(--w14); text-align: center; color: var(--w60); font-size: 13.5px;">Наборов правил нет — они приезжают с пакетом вертикали.</div></sc-if>
+                  <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px;">
+                    <sc-for list="{{ rulesCards }}" as="n" hint-placeholder-count="3">
+                      <div onClick="{{ n.open }}" style="padding: 20px; border-radius: 16px; background: var(--w5); border: 1px solid {{ n.border }}; display: flex; flex-direction: column; gap: 10px; cursor: pointer;" style-hover="transform: translateY(-3px); background: var(--w8);">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                          <span style="flex: 1; min-width: 0; font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ n.title }}</span>
+                          <span style="padding: 4px 10px; border-radius: 9999px; background: {{ n.sourceBg }}; color: {{ n.sourceFg }}; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; font-weight: 600; flex: none;">{{ n.source }}</span>
+                        </div>
+                        <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w42);">предмет: {{ n.subject }} · {{ n.count }}</span>
+                        <span style="font-size: 11.5px; color: var(--w50); line-height: 1.5; overflow: hidden; text-overflow: ellipsis;">{{ n.codes }}</span>
+                        <sc-if value="{{ n.bad }}" hint-placeholder-val="{{ false }}"><span style="padding: 7px 10px; border-radius: 9px; background: rgba(239,68,68,.12); border: 1px solid rgba(239,68,68,.35); color: var(--err-ink); font-size: 11.5px;">набор не пройдёт проверку: {{ n.badWhy }}</span></sc-if>
+                      </div>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ rulesEditView }}" hint-placeholder-val="{{ false }}">
+                <div style="display: flex; flex-direction: column; gap: 16px;">
+                  <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                    <button onClick="{{ closeRuleSet }}" style="padding: 8px 13px; border: 1px solid var(--w14); border-radius: 9px; background: var(--w5); color: var(--w70); font-size: 12px; font-weight: 600;">← к наборам</button>
+                    <span style="display: flex; flex-direction: column; gap: 2px;">
+                      <span style="font-size: 15px; font-weight: 700;">{{ ruleTitle }}</span>
+                      <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w45);">предмет: {{ ruleSubject }} · {{ ruleEditedLine }}</span>
+                    </span>
+                    <span style="margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap;">
+                      <button onClick="{{ dryRunRules }}" style="padding: 9px 15px; border: 1px solid rgba(129,140,248,.4); border-radius: 10px; background: rgba(99,102,241,.14); color: var(--acc-ink2); font-size: 12.5px; font-weight: 600;">{{ ruleDryLabel }}</button>
+                      <sc-if value="{{ ruleEdited }}" hint-placeholder-val="{{ false }}"><button onClick="{{ revertRuleSet }}" title="Снять правку: набор снова такой, каким приехал в пакете" style="padding: 9px 15px; border: 1px solid rgba(245,158,11,.4); border-radius: 10px; background: rgba(245,158,11,.12); color: var(--warn-ink); font-size: 12.5px; font-weight: 600;">Вернуть версию пакета</button></sc-if>
+                      <button onClick="{{ saveRuleSet }}" style="padding: 9px 16px; border: none; border-radius: 10px; background: {{ ruleSaveBg }}; color: {{ ruleSaveFg }}; font-size: 12.5px; font-weight: 600;">{{ ruleSaveLabel }}</button>
+                    </span>
+                  </div>
+
+                  <sc-if value="{{ ruleHasErr }}" hint-placeholder-val="{{ false }}"><div style="padding: 12px 14px; border-radius: 11px; background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.35); color: var(--err-ink); font-size: 12.5px; line-height: 1.5;">{{ ruleErr }}</div></sc-if>
+
+                  <sc-if value="{{ ruleDryDone }}" hint-placeholder-val="{{ false }}">
+                    <div style="display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: 13px; background: var(--w4); border: 1px solid var(--w10);">
+                      <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                        <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: 1px; text-transform: uppercase; color: var(--w45);">прогон на выборке</span>
+                        <span style="font-size: 12.5px; color: var(--ink);">{{ ruleDryLine }}</span>
+                        <span style="margin-left: auto; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w42);">{{ ruleDryRefs }}</span>
+                      </div>
+                      <sc-if value="{{ ruleDryHasSignals }}" hint-placeholder-val="{{ false }}">
+                        <div style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 10px; background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.3);">
+                          <span style="font-size: 12px; color: var(--err-ink);">Набор сломан: правила по нему не сработают, а записи выглядят чистыми.</span>
+                          <sc-for list="{{ ruleDrySignals }}" as="sg" hint-placeholder-count="1">
+                            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--err-ink);">{{ sg.код }} — {{ sg.сколько }}</span>
+                          </sc-for>
+                        </div>
+                      </sc-if>
+                      <sc-if value="{{ ruleFindingsEmpty }}" hint-placeholder-val="{{ false }}"><span style="font-size: 12px; color: var(--w60);">Ни одно правило не сработало на этой выборке. Это результат, а не ошибка: либо данные чистые, либо правило не о том.</span></sc-if>
+                      <sc-for list="{{ ruleFindings }}" as="f" hint-placeholder-count="3">
+                        <div style="display: flex; gap: 10px; padding: 8px 11px; border-radius: 9px; background: var(--w4); align-items: baseline; flex-wrap: wrap;">
+                          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600; color: var(--acc-ink2);">{{ f.код }}</span>
+                          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w45);">{{ f.запись }}</span>
+                          <span style="font-size: 12px; color: var(--ink);">{{ f.причина }}</span>
+                          <span style="flex: 1; min-width: 180px; font-size: 11.5px; color: var(--w55);">{{ f.доказательство }}</span>
+                        </div>
+                      </sc-for>
+                      <sc-if value="{{ ruleDryHasCut }}" hint-placeholder-val="{{ false }}"><span style="font-size: 11.5px; color: var(--w45);">{{ ruleDryCut }}</span></sc-if>
+                    </div>
+                  </sc-if>
+
+                  <sc-if value="{{ ruleRowsEmpty }}" hint-placeholder-val="{{ false }}"><div style="padding: 30px; border-radius: 14px; border: 1px dashed var(--w14); text-align: center; color: var(--w60); font-size: 13px;">В наборе нет правил. Добавьте первое — предикат с параметрами.</div></sc-if>
+
+                  <sc-for list="{{ ruleRows }}" as="r" hint-placeholder-count="2">
+                    <div style="display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 13px; background: var(--w4); border: 1px solid var(--w10);">
+                      <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                        <input value="{{ r.код }}" onChange="{{ r.setКод }}" placeholder="код находки" style="width: 150px; padding: 8px 10px; border: 1px solid var(--w12); border-radius: 9px; background: var(--w5); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 12px;" style-focus="border-color: #6366f1;">
+                        <select value="{{ r.предикат }}" onChange="{{ r.setПредикат }}" aria-label="Предикат правила" style="padding: 8px 10px; border: 1px solid var(--w12); border-radius: 9px; background: var(--s70); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+                          <sc-for list="{{ r.предикатОпции }}" as="o" hint-placeholder-count="4"><option value="{{ o.value }}">{{ o.label }}</option></sc-for>
+                        </select>
+                        <sc-if value="{{ r.aggregate }}" hint-placeholder-val="{{ false }}"><span title="Считает по всему набору записей, а не по одной" style="padding: 4px 9px; border-radius: 9999px; background: rgba(124,58,237,.18); color: var(--vio-ink); font-family: 'JetBrains Mono', monospace; font-size: 10.5px; font-weight: 600;">по набору</span></sc-if>
+                        <sc-if value="{{ r.естьСраб }}" hint-placeholder-val="{{ false }}"><span title="Сколько раз сработало на выборке" style="padding: 4px 10px; border-radius: 9999px; background: {{ r.срабBg }}; color: {{ r.срабFg }}; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600;">сработало: {{ r.сраб }}</span></sc-if>
+                        <button onClick="{{ r.удалить }}" title="Убрать правило из набора" style="margin-left: auto; padding: 7px 11px; border: 1px solid rgba(239,68,68,.3); border-radius: 9px; background: rgba(239,68,68,.08); color: var(--err-ink); font-size: 11.5px; font-weight: 600;">Убрать</button>
+                      </div>
+                      <span style="font-size: 11.5px; color: var(--w50);">{{ r.описание }}</span>
+                      <sc-if value="{{ r.badPredicate }}" hint-placeholder-val="{{ false }}"><span style="padding: 7px 10px; border-radius: 9px; background: rgba(239,68,68,.12); border: 1px solid rgba(239,68,68,.35); color: var(--err-ink); font-size: 11.5px;">Такого предиката в библиотеке нет — набор не сохранится. Выберите из списка.</span></sc-if>
+                      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px;">
+                        <sc-for list="{{ r.параметры }}" as="p" hint-placeholder-count="2">
+                          <label style="display: flex; flex-direction: column; gap: 4px;">
+                            <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: var(--w45);">{{ p.ключ }}</span>
+                            <input value="{{ p.значение }}" onChange="{{ p.set }}" placeholder="{{ p.подсказка }}" style="padding: 8px 10px; border: 1px solid var(--w12); border-radius: 9px; background: var(--w5); color: var(--ink); font-size: 12px;" style-focus="border-color: #6366f1;">
+                          </label>
+                        </sc-for>
+                      </div>
+                      <sc-if value="{{ r.естьЛишние }}" hint-placeholder-val="{{ false }}"><span style="font-size: 11.5px; color: var(--warn-ink);">Параметры не из схемы предиката: {{ r.лишние }} — предикат их не прочитает.</span></sc-if>
+                      <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                        <input value="{{ r.причина }}" onChange="{{ r.setПричина }}" placeholder="причина: что человек прочитает в находке" style="flex: 1; min-width: 220px; padding: 8px 10px; border: 1px solid var(--w12); border-radius: 9px; background: var(--w5); color: var(--ink); font-size: 12px;" style-focus="border-color: #6366f1;">
+                        <select value="{{ r.серьёзность }}" onChange="{{ r.setСерьёзность }}" aria-label="Серьёзность находки" style="padding: 8px 10px; border: 1px solid var(--w12); border-radius: 9px; background: var(--s70); color: var(--ink); font-size: 12px;">
+                          <sc-for list="{{ r.серьёзностьОпции }}" as="o" hint-placeholder-count="3"><option value="{{ o.value }}">{{ o.label }}</option></sc-for>
+                        </select>
+                      </div>
+                    </div>
+                  </sc-for>
+
+                  <button onClick="{{ addRuleRow }}" style="align-self: flex-start; padding: 11px 18px; border: 1px dashed var(--w18); border-radius: 11px; background: transparent; color: var(--w60); font-size: 13px; font-weight: 600;" style-hover="color: var(--ink); border-color: var(--w30);">＋ правило</button>
+                  <span style="font-size: 11.5px; color: var(--w42); line-height: 1.6;">Правило — это предикат с параметрами, и больше ничего. Нужна арифметика или обход связей — это новый предикат, его пишет разработчик с тестами (docs/PREDIKATY.md).</span>
+                </div>
+              </sc-if>
+            </sc-if>
           </div>
         </sc-if>
 
@@ -2540,7 +2644,7 @@ class Component extends DCLogic {
   dragging = null;
   dragKind = null;
   state = {
-    screen: this.props.startScreen ?? 'overview', me: null, userMenu: false, loginEmail: '', loginPass: '', loginJwt: '', toasts: [], hitlQueue: [], hitlPreview: null, pendingDelete: null, planWavesReal: null, dataView: null, adminTab: 'users', adminUsers: [], adminStaff: [], adminLoading: false, adminErr: '', paletteCollapsed: {}, scenPickerOpen: true, runsList: [], runsLoading: false, opsWide: false, settingsTab: 'Модели', dataTab: 'recipes', agentsList: [], limboList: [], showLimbo: false, agentDetail: null, agentDrawerName: '', familiesList: [], recipeHeaders: {}, recipeEntity: 'transaction', recipeRoot: '', srcColumns: [], skillSrcDraft: [], lineage: null,
+    screen: this.props.startScreen ?? 'overview', me: null, userMenu: false, loginEmail: '', loginPass: '', loginJwt: '', toasts: [], hitlQueue: [], hitlPreview: null, pendingDelete: null, planWavesReal: null, dataView: null, adminTab: 'users', adminUsers: [], adminStaff: [], adminLoading: false, adminErr: '', paletteCollapsed: {}, scenPickerOpen: true, runsList: [], runsLoading: false, opsWide: false, settingsTab: 'Модели', dataTab: 'recipes', rulesList: [], rulesLoading: false, rulePredicates: [], ruleSel: null, ruleDraft: null, ruleCard: null, ruleDry: null, ruleDirty: false, ruleBusy: false, ruleErr: '', agentsList: [], limboList: [], showLimbo: false, agentDetail: null, agentDrawerName: '', familiesList: [], recipeHeaders: {}, recipeEntity: 'transaction', recipeRoot: '', srcColumns: [], skillSrcDraft: [], lineage: null,
     playing: true, pct: 0, hitlResolved: false, stopped: false,
     modal: null, skillId: null, popNodeId: null,
     modeFilter: 'Все', familyFilter: 'Все', cmdkQuery: '',
@@ -2561,7 +2665,7 @@ class Component extends DCLogic {
     modelCfg: { research: { model: 'deepseek-v3', temp: '0.2' }, code: { model: 'gpt-oss-120b', temp: '0.0' }, perimeter: { model: 'local-qwen-32b', temp: '0.2' } },
     defaultProfile: 'research', connState: {}, tenantMode: { a: 'shared', b: 'byo' },
     quotaLimit: '4 000 ₽', quotaPolicy: 'ask', rightsAudit: '', billing: null, systemsList: [], modelsInfo: null, skillMeta: {}, skillList: SKILLS.map(k => Object.assign({}, k)), deletedSkills: [], newSourceName: '', newSourceAdapter: 'csv',
-    agentStatus: 'draft', savedAt: null, savedLocalAt: null, canvasDirty: false, confirmText: '', confirmKind: null, srcBind: null, rebindWarn: null,
+    agentStatus: 'draft', savedAt: null, savedLocalAt: null, canvasDirty: false, confirmText: '', confirmKind: null, pendingDelItem: null, srcBind: null, rebindWarn: null,
     runReadOnly: false, memory: (SEED_MEMORY['audit1c'] || []).map(x => Object.assign({}, x)),
     startedOnce: false, planOk: false, planChecking: false, planSteps: [],
     reglamentDraft: '', reglamentResult: null, reglamentBusy: false, reglamentMsg: '', conformance: null, reglGraph: null, reglShow: false, activeRecipe: null, activeConnector: null, connDraft: { title: '', adapter: 'csv', target: '', token: '', root: '' }, connTest: null,
@@ -2593,6 +2697,139 @@ class Component extends DCLogic {
     rollbackId: null, reviseOf: null, drainId: null, drainPct: 0, healthWindow: '7д',   // неделя: при суточном окне еженедельный агент выглядит «тихим»
     model: 'deepseek-v3', toast: null, toastLeft: 5, remediated: false, contracts: [], ingestBusy: false, ingestResult: null, contract: null, agentPassport: null, envSkillDraft: {}, lastRun: null
   };
+
+  // ── Данные → Правила: набор правил правится в интерфейсе, а не релизом ────────────────────
+  // Шаг 3 плана «правила — данные». До этого новая проверка означала правку файла в пакете
+  // вертикали и выкатку. Здесь методолог меняет правило, видит срабатывание на выборке и только
+  // потом сохраняет — порядок именно такой, потому что правило считает находки заказчику.
+  loadRules() {
+    var self = this;
+    self.setState({ rulesLoading: true });
+    fetch('/api/data/rules').then(function (r) { return r.json(); }).then(function (d) {
+      self.setState({ rulesList: d.наборы || [], rulesLoading: false });
+    }).catch(function () { self.setState({ rulesList: [], rulesLoading: false }); });
+    // Библиотека предикатов приходит с сервера: форма правила строится по ОБЪЯВЛЕННОЙ схеме
+    // параметров, а не по списку, переписанному во фронт руками (такой разойдётся через месяц).
+    fetch('/api/data/predicates').then(function (r) { return r.json(); }).then(function (d) {
+      self.setState({ rulePredicates: d.предикаты || [] });
+    }).catch(function () { self.setState({ rulePredicates: [] }); });
+  }
+
+  openRuleSet(id) {
+    var self = this;
+    self.setState({ ruleSel: id, ruleDraft: null, ruleCard: null, ruleDry: null, ruleDirty: false, ruleErr: '' });
+    fetch('/api/data/rules/' + encodeURIComponent(id)).then(function (r) { return r.json(); }).then(function (d) {
+      self.setState({ ruleDraft: d.набор || null, ruleCard: d });
+    }).catch(function () { self.showToast('Не удалось открыть набор правил'); });
+  }
+
+  closeRuleSet() {
+    this.setState({ ruleSel: null, ruleDraft: null, ruleCard: null, ruleDry: null, ruleDirty: false, ruleErr: '' });
+  }
+
+  _правкаНабора(изменить) {
+    var черновик = JSON.parse(JSON.stringify(this.state.ruleDraft || {}));
+    изменить(черновик);
+    // Прежний результат прогона после правки — ложь: он посчитан по другому набору. Сбрасываем.
+    this.setState({ ruleDraft: черновик, ruleDirty: true, ruleDry: null, ruleErr: '' });
+  }
+
+  _значениеПараметра(сырое) {
+    var t = String(сырое === undefined || сырое === null ? '' : сырое).trim();
+    if (t === '') return '';
+    if (t[0] === '[' || t[0] === '{') { try { return JSON.parse(t); } catch (e) { return сырое; } }
+    if (t === 'true') return true;
+    if (t === 'false') return false;
+    if (/^-?\d+(\.\d+)?$/.test(t)) return Number(t);
+    return сырое;
+  }
+
+  addRuleRow() {
+    var первый = ((this.state.rulePredicates || [])[0] || {}).имя || 'поле_обязательно';
+    this._правкаНабора(function (d) {
+      d.правила = (d.правила || []).concat([{
+        код: 'НОВОЕ_' + ((d.правила || []).length + 1), предикат: первый, параметры: {},
+        причина: '', серьёзность: 'средняя', чинится: 'человеком'
+      }]);
+    });
+  }
+
+  removeRuleRow(i) {
+    this._правкаНабора(function (d) {
+      d.правила = (d.правила || []).filter(function (_, j) { return j !== i; });
+    });
+  }
+
+  setRuleField(i, ключ, значение) {
+    this._правкаНабора(function (d) {
+      var п = {}; п[ключ] = значение;
+      d.правила[i] = Object.assign({}, d.правила[i], п);
+    });
+  }
+
+  setRulePredicate(i, имя) {
+    // Смена предиката обнуляет параметры: у каждого предиката СВОЯ схема, и чужие значения
+    // пройдут валидацию набора, но правило по ним молча не сработает.
+    this._правкаНабора(function (d) {
+      d.правила[i] = Object.assign({}, d.правила[i], { предикат: имя, параметры: {} });
+    });
+  }
+
+  setRuleParam(i, ключ, сырое) {
+    var значение = this._значениеПараметра(сырое);
+    var пусто = String(сырое || '').trim() === '';
+    this._правкаНабора(function (d) {
+      var пар = Object.assign({}, d.правила[i].параметры || {});
+      if (пусто) { delete пар[ключ]; } else { пар[ключ] = значение; }
+      d.правила[i] = Object.assign({}, d.правила[i], { параметры: пар });
+    });
+  }
+
+  dryRunRules() {
+    var self = this, id = this.state.ruleSel;
+    if (!id) return;
+    self.setState({ ruleBusy: true, ruleErr: '' });
+    fetch('/api/data/rules/' + encodeURIComponent(id) + '/dryrun', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ набор: self.state.ruleDraft, лимит: 20 })
+    }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); }).then(function (res) {
+      if (!res.ok) { self.setState({ ruleBusy: false, ruleErr: String((res.j && res.j.detail) || 'прогон не вышел') }); return; }
+      self.setState({ ruleBusy: false, ruleDry: res.j });
+    }).catch(function () { self.setState({ ruleBusy: false, ruleErr: 'ABOP недоступен' }); });
+  }
+
+  saveRuleSet() {
+    if (!this._canMutate()) { this.showToast('Только чтение — недостаточно прав'); return; }
+    var self = this, id = this.state.ruleSel;
+    self.setState({ ruleBusy: true, ruleErr: '' });
+    fetch('/api/data/rules/' + encodeURIComponent(id), {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ набор: self.state.ruleDraft })
+    }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); }).then(function (res) {
+      if (!res.ok) {
+        // Невалидный набор не сохраняется — и причина показывается целиком: «правило не сработает»
+        // человек должен прочитать здесь, а не узнать по пустому прогону через неделю.
+        self.setState({ ruleBusy: false, ruleErr: String((res.j && res.j.detail) || 'набор не сохранён') });
+        return;
+      }
+      self.setState({ ruleBusy: false, ruleDirty: false, ruleCard: res.j, ruleDraft: res.j.набор });
+      self.showToast('Правка набора сохранена · версия ' + res.j.версия_правки);
+      self.loadRules();
+    }).catch(function () { self.setState({ ruleBusy: false, ruleErr: 'ABOP недоступен' }); });
+  }
+
+  revertRuleSet() {
+    if (!this._canMutate()) { this.showToast('Только чтение — недостаточно прав'); return; }
+    var self = this, id = this.state.ruleSel;
+    self.setState({ ruleBusy: true, ruleErr: '' });
+    fetch('/api/data/rules/' + encodeURIComponent(id) + '/revert', { method: 'POST' })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); }).then(function (res) {
+        if (!res.ok) { self.setState({ ruleBusy: false, ruleErr: String((res.j && res.j.detail) || 'не вышло') }); return; }
+        self.setState({ ruleBusy: false, ruleDirty: false, ruleDry: null, ruleCard: res.j, ruleDraft: res.j.набор });
+        self.showToast(res.j.снято ? 'Вернули версию пакета' : 'Правок не было — набор уже поставочный');
+        self.loadRules();
+      }).catch(function () { self.setState({ ruleBusy: false, ruleErr: 'ABOP недоступен' }); });
+  }
 
   loadBackend() {
     var self = this;
@@ -2756,7 +2993,7 @@ class Component extends DCLogic {
       }).catch(function(){ self.showToast('ABOP недоступен'); });
   }
 
-  openSkill(id) { var self = this; this.setState({ modal: 'drawer', skillId: id, skillTpl: null }); this.loadEntities(); this.loadSkillTemplate(id); fetch('/api/skills/' + encodeURIComponent(id)).then(function(r){ return r.json(); }).then(function(d){ self.setState({ skillSrcDraft: (d.datasources || []).map(function(x){ return { entity: x.entity, fields: x.fields || [], kind: x.kind, note: x.note }; }) }); }).catch(function(){}); } saveSkillSources() { if(!this._canMutate()){ this.showToast('Только чтение — недостаточно прав'); return; }  var self = this, sid = this.state.skillId; fetch('/api/skills/' + encodeURIComponent(sid) + '/datasources', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ datasources: this.state.skillSrcDraft }) }).then(function(r){ return r.json(); }).then(function(d){ self.setState({ skillSrcDraft: d.datasources || [] }); self.showToast('Источники навыка сохранены'); self.loadBackend(); }).catch(function(){ self.showToast('Не удалось сохранить источники'); }); } reloadAgents() { var self = this; self.setState({ agentsLoading: true }); fetch('/api/agents').then(function(r){return r.json();}).then(function(d){ self.setState({ agentsList: d.agents || [], agentsLoading: false }); }).catch(function(){ self.setState({ agentsLoading: false }); }); fetch('/api/agents?archived=1').then(function(r){return r.json();}).then(function(d){ self.setState({ limboList: d.agents || [] }); }).catch(function(){}); } openAgent(a) { var self = this; if (!a || !a.family) { this.setState({ agentDetail: null, agentDrawerName: (a && a.name) || '', modal: 'agentModal' }); return; } fetch('/api/agents/spec?family=' + encodeURIComponent(a.family) + '&member=' + encodeURIComponent(a.role || '')).then(function(r){ return r.json(); }).then(function(d){ self.setState({ agentDetail: d, agentDrawerName: a.name, modal: 'agentModal' }); }).catch(function(){ self.setState({ agentDetail: null, agentDrawerName: a.name, modal: 'agentModal' }); }); } retireAgent(id) { if(!this._canMutate()){ this.showToast('Только чтение — недостаточно прав'); return; }  var self = this; fetch('/api/agents/'+encodeURIComponent(id)+'/retire',{method:'POST'}).then(function(){ self.reloadAgents(); self.showToast('Агент отправлен в Лимб (архив)'); }).catch(function(){ self.showToast('Не удалось'); }); } restoreAgent(id) { if(!this._canMutate()){ this.showToast('Только чтение — недостаточно прав'); return; }  var self = this; fetch('/api/agents/'+encodeURIComponent(id)+'/restore',{method:'POST'}).then(function(){ self.reloadAgents(); self.showToast('Агент восстановлен из Лимба'); }).catch(function(){ self.showToast('Не удалось'); }); } deleteAgent(id, name) { if(!this._canMutate()){ this.showToast('Только чтение — недостаточно прав'); return; } this.setState({ modal: 'confirm', confirmKind: 'deleteAgent', drainId: id, pendingDeleteName: name || id, confirmText: '' }); } deleteAgentNow(id) { var self = this; fetch('/api/agents/'+encodeURIComponent(id),{method:'DELETE'}).then(function(r){ if(!r.ok){ return r.json().then(function(j){ self.showToast('Не удалось удалить: '+((j&&j.detail)||r.status)); }); } self.reloadAgents(); self.showToast('Агент удалён навсегда'); }).catch(function(){ self.showToast('ABOP недоступен'); }); }   loadData() { var self = this; self.setState({ dataLoading: true }); this.reloadAgents(); fetch('/api/data/lineage').then(function(r){ return r.json(); }).then(function(d){ self.setState({ lineage: d }); }).catch(function(){}); fetch('/api/families').then(function(r){ return r.json(); }).then(function(d){ if (d.families) self.setState({ familiesList: d.families }); }).catch(function(){}); fetch('/api/data/adapters').then(function(r){ return r.json(); }).then(function(d){ var cat = d.catalog || []; if (cat.length) { self.setState({ adaptersList: cat.map(function(a){ var f = (a.src_fields && a.src_fields[0]) || {}; return { id: a.kind, label: a.label + (a.available ? '' : ' (нет библиотеки)'), srcLabel: f.label || 'источник', value: f.placeholder || '', note: a.badge || '', noteColor: a.egress === 'external' ? 'var(--warn-ink)' : 'var(--w45)', category: a.category, available: a.available }; }) }); } }).catch(function(){}); fetch('/api/data/recipes').then(function(r){ return r.json(); }).then(function(d){ if (d.recipes && d.recipes.length) self.setState({ recipesList: d.recipes }); }).catch(function(){}); fetch('/api/data/connectors').then(function(r){ return r.json(); }).then(function(d){ if (d.connectors && d.connectors.length) self.setState({ connectorsList: d.connectors, dataLoading: false }); else self.setState({ dataLoading: false }); }).catch(function(){ self.setState({ dataLoading: false }); }); } loadPassport() {
+  openSkill(id) { var self = this; this.setState({ modal: 'drawer', skillId: id, skillTpl: null }); this.loadEntities(); this.loadSkillTemplate(id); fetch('/api/skills/' + encodeURIComponent(id)).then(function(r){ return r.json(); }).then(function(d){ self.setState({ skillSrcDraft: (d.datasources || []).map(function(x){ return { entity: x.entity, fields: x.fields || [], kind: x.kind, note: x.note }; }) }); }).catch(function(){}); } saveSkillSources() { if(!this._canMutate()){ this.showToast('Только чтение — недостаточно прав'); return; }  var self = this, sid = this.state.skillId; fetch('/api/skills/' + encodeURIComponent(sid) + '/datasources', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ datasources: this.state.skillSrcDraft }) }).then(function(r){ return r.json(); }).then(function(d){ self.setState({ skillSrcDraft: d.datasources || [] }); self.showToast('Источники навыка сохранены'); self.loadBackend(); }).catch(function(){ self.showToast('Не удалось сохранить источники'); }); } reloadAgents() { var self = this; self.setState({ agentsLoading: true }); fetch('/api/agents').then(function(r){return r.json();}).then(function(d){ self.setState({ agentsList: d.agents || [], agentsLoading: false }); }).catch(function(){ self.setState({ agentsLoading: false }); }); fetch('/api/agents?archived=1').then(function(r){return r.json();}).then(function(d){ self.setState({ limboList: d.agents || [] }); }).catch(function(){}); } openAgent(a) { var self = this; if (!a || !a.family) { this.setState({ agentDetail: null, agentDrawerName: (a && a.name) || '', modal: 'agentModal' }); return; } fetch('/api/agents/spec?family=' + encodeURIComponent(a.family) + '&member=' + encodeURIComponent(a.role || '')).then(function(r){ return r.json(); }).then(function(d){ self.setState({ agentDetail: d, agentDrawerName: a.name, modal: 'agentModal' }); }).catch(function(){ self.setState({ agentDetail: null, agentDrawerName: a.name, modal: 'agentModal' }); }); } retireAgent(id) { if(!this._canMutate()){ this.showToast('Только чтение — недостаточно прав'); return; }  var self = this; fetch('/api/agents/'+encodeURIComponent(id)+'/retire',{method:'POST'}).then(function(){ self.reloadAgents(); self.showToast('Агент отправлен в Лимб (архив)'); }).catch(function(){ self.showToast('Не удалось'); }); } restoreAgent(id) { if(!this._canMutate()){ this.showToast('Только чтение — недостаточно прав'); return; }  var self = this; fetch('/api/agents/'+encodeURIComponent(id)+'/restore',{method:'POST'}).then(function(){ self.reloadAgents(); self.showToast('Агент восстановлен из Лимба'); }).catch(function(){ self.showToast('Не удалось'); }); } deleteAgent(id, name) { if(!this._canMutate()){ this.showToast('Только чтение — недостаточно прав'); return; } this.setState({ modal: 'confirm', confirmKind: 'deleteAgent', drainId: id, pendingDeleteName: name || id, confirmText: '' }); } deleteAgentNow(id) { var self = this; fetch('/api/agents/'+encodeURIComponent(id),{method:'DELETE'}).then(function(r){ if(!r.ok){ return r.json().then(function(j){ self.showToast('Не удалось удалить: '+((j&&j.detail)||r.status)); }); } self.reloadAgents(); self.showToast('Агент удалён навсегда'); }).catch(function(){ self.showToast('ABOP недоступен'); }); }   loadData() { var self = this; self.setState({ dataLoading: true }); this.reloadAgents(); this.loadRules(); fetch('/api/data/lineage').then(function(r){ return r.json(); }).then(function(d){ self.setState({ lineage: d }); }).catch(function(){}); fetch('/api/families').then(function(r){ return r.json(); }).then(function(d){ if (d.families) self.setState({ familiesList: d.families }); }).catch(function(){}); fetch('/api/data/adapters').then(function(r){ return r.json(); }).then(function(d){ var cat = d.catalog || []; if (cat.length) { self.setState({ adaptersList: cat.map(function(a){ var f = (a.src_fields && a.src_fields[0]) || {}; return { id: a.kind, label: a.label + (a.available ? '' : ' (нет библиотеки)'), srcLabel: f.label || 'источник', value: f.placeholder || '', note: a.badge || '', noteColor: a.egress === 'external' ? 'var(--warn-ink)' : 'var(--w45)', category: a.category, available: a.available }; }) }); } }).catch(function(){}); fetch('/api/data/recipes').then(function(r){ return r.json(); }).then(function(d){ if (d.recipes && d.recipes.length) self.setState({ recipesList: d.recipes }); }).catch(function(){}); fetch('/api/data/connectors').then(function(r){ return r.json(); }).then(function(d){ if (d.connectors && d.connectors.length) self.setState({ connectorsList: d.connectors, dataLoading: false }); else self.setState({ dataLoading: false }); }).catch(function(){ self.setState({ dataLoading: false }); }); } loadPassport() {
     var self=this, c=this.state.contract; if(!c||!c.audit_id){ this.setState({agentPassport:null}); return; }
     fetch('/api/agents?contract='+encodeURIComponent(c.audit_id)).then(function(r){return r.json();}).then(function(d){
       var list=d.agents||[]; if(!list.length){ self.setState({agentPassport:null}); return; }
@@ -3642,7 +3879,30 @@ class Component extends DCLogic {
 
     const preflightNeedsExternal = mapCtx.kind === 'hitl' || mapCtx.kind === 'out';
     const drainDep = s.deployments.find(d => d.id === s.drainId) || {};
-    const confirmSpec = s.confirmKind === 'deleteAgent'
+    // Что отвалится, если удалить рецепт: сущность без наполнения и навыки, которые её читают.
+    const удаляемый = s.pendingDelItem || {};
+    const узелСущности = (((s.lineage || {}).entities) || [])
+      .find(e => e.entity === удаляемый.entity) || null;
+    const потребители = ((узелСущности || {}).consumers || []).map(c => c.title).filter(Boolean);
+    const другиеРецепты = ((узелСущности || {}).recipes || [])
+      .map(r => r.id).filter(id => id && id !== удаляемый.id);
+    const последствия = удаляемый.entity
+      ? ('Сущность «' + удаляемый.entity + '»'
+         + (другиеРецепты.length
+            ? (' останется с рецептами: ' + другиеРецепты.join(', ') + '.')
+            : ' останется БЕЗ НАПОЛНЕНИЯ — других рецептов у неё нет.')
+         + (потребители.length
+            ? (' Её читают навыки: ' + потребители.join(', ') + '.')
+            : ' Навыки её пока не читают.')
+         + ' Уже записанные записи не удаляются — пропадёт только правило наполнения.')
+      : 'Коннектор отключится; рецепты, которые на него ссылаются, перестанут наполнять свои сущности.';
+    const confirmSpec = s.confirmKind === 'deleteRecipe'
+      ? { title: 'Удалить рецепт «' + (s.pendingDeleteName || '') + '»?', note: последствия,
+          word: 'УДАЛИТЬ', btn: 'Удалить рецепт' }
+      : s.confirmKind === 'deleteConnector'
+      ? { title: 'Удалить коннектор «' + (s.pendingDeleteName || '') + '»?', note: последствия,
+          word: 'УДАЛИТЬ', btn: 'Удалить коннектор' }
+      : s.confirmKind === 'deleteAgent'
       ? { title: 'Удалить агента навсегда?', note: 'Будут удалены все версии агента «' + (s.pendingDeleteName || '') + '». Расписания и цепочки с ним перестанут работать. Отменить нельзя — обратимый вариант: «В Лимб».', word: 'УДАЛИТЬ', btn: 'Удалить навсегда' }
       : s.confirmKind === 'retireAgent'
       ? { title: 'Вывести агента «' + ((s.agentPassport||{}).name || (s.agentPassport||{}).family || 'агент') + '» в Лимб?', note: 'Агент перестанет запускаться и уйдёт в архив. Обратимо: «Восстановить» на экране Агенты.', word: 'В ЛИМБ', btn: 'В Лимб' }
@@ -4667,6 +4927,13 @@ class Component extends DCLogic {
       confirmBtnFg: confirmOk ? '#1c1917' : 'var(--w40)',
       confirmDo: () => {
         if (!confirmOk) { this.showToast('Введите «' + confirmSpec.word + '» для подтверждения'); return; }
+        if (s.confirmKind === 'deleteRecipe' || s.confirmKind === 'deleteConnector') {
+          const _it = s.pendingDelItem, _k = s.confirmKind === 'deleteRecipe' ? 'recipe' : 'connector';
+          this.setState({ modal: null, confirmText: '', pendingDelItem: null, pendingDeleteName: '' });
+          // Пятисекундная отмена остаётся: подтверждение и возможность передумать не спорят.
+          if (_it) this.scheduleDelete(_k, _it);
+          return;
+        }
         if (s.confirmKind === 'deleteAgent') { const _id = s.drainId; this.setState({ modal: null, confirmText: '', pendingDeleteName: '' }); this.deleteAgentNow(_id); return; }
         if (s.confirmKind === 'retireAgent') { const _id2 = s.drainId; this.setState({ modal: null, confirmText: '' }); this.retireAgent(_id2); setTimeout(() => this.loadPassport(), 600); return; }
         if (s.confirmKind === 'retire') {
@@ -5070,7 +5337,7 @@ class Component extends DCLogic {
       addToCanvas: () => { this.setState({ modal: null, screen: 'canvas' }); this.route('canvas'); this.addCanvasNode({ kind: 'skill', label: sk.id }, 300, 420); },
       testInRun: () => { this.setState({ modal: null, screen: 'runs' }); this.route('canvas'); this.showToast('Прогон-тест навыка запущен'); },
 
-      dataTabs: [['recipes', 'Рецепты'], ['connectors', 'Коннекторы'], ['lineage', 'Карта']].map(([id, label]) => ({
+      dataTabs: [['recipes', 'Рецепты'], ['connectors', 'Коннекторы'], ['rules', 'Правила'], ['lineage', 'Карта']].map(([id, label]) => ({
         label, pick: () => this.setState({ dataTab: id }),
         bg: s.dataTab === id ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : 'transparent',
         fg: s.dataTab === id ? 'var(--ink)' : 'var(--w55)'
@@ -5254,9 +5521,113 @@ class Component extends DCLogic {
       runPreview: () => { if (s.previewState === 'loading') return; var self = this; this.setState({ previewState: 'loading' }); var spec = { source: { kind: s.adapter, target: s.sourceValue, headers: s.recipeHeaders || {}, root: s.recipeRoot || 'items' }, entity: s.recipeEntity || 'transaction', map_rows: s.mapRows, rules: s.rules, limit: 20 }; fetch('/api/data/recipe/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(spec) }).then(function(r){ return r.json().then(function(d){ return { ok: r.ok, d: d }; }); }).then(function(x){ if (!x.ok) { self.setState({ previewState: 'error', previewErr: (x.d && x.d.detail) || 'ошибка адаптера' }); return; } self.setState({ previewState: 'done', previewResult: x.d, previewErr: '' }); }).catch(function(){ self.setState({ previewState: 'error', previewErr: 'сеть недоступна' }); }); },
       saveRecipe: () => { if(!this._canMutate()){ this.showToast('Только чтение — недостаточно прав'); return; }  var self = this; var _t = String(((s.recipesList.find(function(x){ return x.id === s.activeRecipe; }) || {}).title || s.newSourceName || '')).trim(); var _slug = _t.toLowerCase().replace(/[^a-z0-9а-яё_]+/gi, '_').replace(/^_+|_+$/g, '').slice(0, 48); var name = s.activeRecipe || _slug || ('recipe_' + (s.recipesList.length + 1)); var spec = { recipe: name, source: { kind: s.adapter, target: s.sourceValue, headers: s.recipeHeaders || {}, root: s.recipeRoot || 'items' }, entity: s.recipeEntity || 'transaction', map_rows: s.mapRows, rules: s.rules, status: 'опубликован', ok: true }; fetch('/api/data/recipes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(spec) }).then(function(r){ return r.json(); }).then(function(){ self.setState({ modal: null }); self.loadData(); self.showToast('Рецепт сохранён в Data Plane'); }).catch(function(){ self.showToast('Не удалось сохранить рецепт'); }); },
       previewOkCount: (s.previewResult && s.previewResult.written) || 0, previewInvalidCount: (s.previewResult && s.previewResult.invalid) || 0, previewErr: s.previewErr || 'источник недоступен или неверный map/rules', previewRecords: ((s.previewResult && s.previewResult.records) || []).map(function(r){ var ent = r.schema || 'entity'; var body = Object.keys(r).filter(function(k){ return ['schema','schema_version','provenance','ttl_sec','id'].indexOf(k) < 0; }).map(function(k){ return k + ': ' + JSON.stringify(r[k]); }).join(', '); var pv = r.provenance || {}; return { head: '{ id: ' + JSON.stringify(r.id||'') + ', entity: ' + JSON.stringify(ent), body: '  ' + body, prov: '  provenance: ' + (pv.recipe||'') + ' row ' + (pv.row!=null?pv.row:'?') + ' ttl ' + (r.ttl_sec||0) + 's }' }; }),
+      // ── Данные → Правила ──────────────────────────────────────────────────────────────────
+      isRules: s.dataTab === 'rules',
+      rulesListView: s.dataTab === 'rules' && !s.ruleSel,
+      rulesEditView: s.dataTab === 'rules' && !!s.ruleSel,
+      rulesEmpty: !(s.rulesList || []).length && !s.rulesLoading,
+      rulesCards: (s.rulesList || []).map(н => ({
+        id: н.id, title: н.название, subject: н.предмет || '—',
+        count: н.правил + ' ' + (н.правил === 1 ? 'правило' : (н.правил < 5 ? 'правила' : 'правил')),
+        codes: (н.коды || []).join(' · ') || '— правил нет',
+        source: н.правка ? ('правка v' + н.версия_правки + (н.кто ? ' · ' + н.кто : '')) : ('пакет' + (н.пакет ? ' ' + н.пакет : '')),
+        sourceBg: н.правка ? 'rgba(99,102,241,.16)' : 'var(--w6)',
+        sourceFg: н.правка ? 'var(--acc-ink2)' : 'var(--w55)',
+        // Невалидный набор не «почти работает»: правила по нему молча не сработают, и записи
+        // окажутся «чистыми». Поэтому это красная плашка в списке, а не мелкая пометка внутри.
+        bad: !н.валиден, badWhy: (н.ошибки || []).join('; '),
+        border: н.валиден ? 'var(--w10)' : 'rgba(239,68,68,.45)',
+        open: () => this.openRuleSet(н.id)
+      })),
+      rulesLibHint: 'в библиотеке ' + (s.rulePredicates || []).length + ' предикатов — правило это предикат с параметрами',
+
+      ruleTitle: ((s.ruleDraft || {}).название) || s.ruleSel || '',
+      ruleSubject: ((s.ruleDraft || {}).предмет) || '—',
+      ruleSource: ((s.ruleDraft || {}).источник) || '',
+      ruleEdited: !!(s.ruleCard || {}).правка,
+      ruleEditedLine: (s.ruleCard || {}).правка
+        ? ('правка v' + (s.ruleCard || {}).версия_правки + ' · ' + (((s.ruleCard || {}).кто) || '—')
+           + ' · ' + String(((s.ruleCard || {}).когда) || '').slice(0, 16).replace('T', ' '))
+        : 'поставочный набор из пакета вертикали',
+      ruleDirty: !!s.ruleDirty,
+      ruleBusy: !!s.ruleBusy,
+      ruleErr: s.ruleErr || '',
+      ruleHasErr: !!s.ruleErr,
+      ruleSaveLabel: s.ruleBusy ? 'сохраняю…' : (s.ruleDirty ? 'Сохранить правку' : 'Нет несохранённых правок'),
+      ruleSaveBg: s.ruleDirty ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : 'var(--w7)',
+      ruleSaveFg: s.ruleDirty ? 'var(--ink)' : 'var(--w40)',
+      ruleRows: (((s.ruleDraft || {}).правила) || []).map((п, i) => {
+        const спека = (s.rulePredicates || []).find(x => x.имя === п.предикат) || null;
+        const сраб = ((s.ruleDry || {}).по_правилу || {})[String(п.код || '')];
+        return {
+          код: п.код || '', предикат: п.предикат || '',
+          // Описание берём из библиотеки: если предиката там нет — так и говорим, а не молчим.
+          описание: спека ? спека.описание : 'предиката нет в библиотеке — правило не сработает',
+          aggregate: !!(спека && спека.по_набору),
+          badPredicate: !спека,
+          предикатОпции: (s.rulePredicates || []).map(x => ({ value: x.имя, label: x.имя })),
+          параметры: Object.keys((спека && спека.параметры) || {}).map(ключ => {
+            const v = (п.параметры || {})[ключ];
+            return {
+              ключ, подсказка: ((спека && спека.параметры) || {})[ключ] || '',
+              значение: (v === undefined || v === null) ? ''
+                : (typeof v === 'object' ? JSON.stringify(v, null, 0) : String(v)),
+              set: (e) => this.setRuleParam(i, ключ, e.target.value)
+            };
+          }),
+          лишние: Object.keys(п.параметры || {})
+            .filter(k => !((спека && спека.параметры) || {})[k]).join(', '),
+          естьЛишние: Object.keys(п.параметры || {})
+            .some(k => !((спека && спека.параметры) || {})[k]),
+          причина: п.причина || (п.вывод && п.вывод.проверка) || '',
+          серьёзность: п.серьёзность || 'средняя',
+          серьёзностьОпции: ['высокая', 'средняя', 'низкая'].map(x => ({ value: x, label: x })),
+          // Нуль у правила — такой же результат, как сотня: он показывается, а не прячется.
+          сраб: сраб === undefined ? '' : String(сраб),
+          срабBg: сраб === undefined ? 'transparent' : (сраб ? 'rgba(16,185,129,.14)' : 'rgba(245,158,11,.12)'),
+          срабFg: сраб ? 'var(--ok-ink)' : 'var(--warn-ink)',
+          естьСраб: сраб !== undefined,
+          setКод: (e) => this.setRuleField(i, 'код', e.target.value),
+          setПредикат: (e) => this.setRulePredicate(i, e.target.value),
+          setПричина: (e) => this.setRuleField(i, 'причина', e.target.value),
+          setСерьёзность: (e) => this.setRuleField(i, 'серьёзность', e.target.value),
+          удалить: () => this.removeRuleRow(i)
+        };
+      }),
+      ruleRowsEmpty: !(((s.ruleDraft || {}).правила) || []).length,
+      addRuleRow: () => this.addRuleRow(),
+      saveRuleSet: () => this.saveRuleSet(),
+      revertRuleSet: () => this.revertRuleSet(),
+      dryRunRules: () => this.dryRunRules(),
+      closeRuleSet: () => this.closeRuleSet(),
+      ruleDryLabel: s.ruleBusy ? 'гоняю…' : '▷ Прогнать на выборке',
+      ruleDryDone: !!s.ruleDry,
+      ruleDryLine: s.ruleDry
+        ? ('записей ' + s.ruleDry.записей + ' из предмета «' + s.ruleDry.предмет + '» · находок '
+           + s.ruleDry.находок + (s.ruleDry.черновик ? ' · по черновику, он не сохранён' : ''))
+        : '',
+      ruleDryRefs: s.ruleDry
+        ? (Object.keys(s.ruleDry.справочники || {}).map(k => k + ': ' + s.ruleDry.справочники[k]).join(' · ') || 'справочники не нужны')
+        : '',
+      // Сигналы движка (`КОНТЕКСТ_НЕ_РАЗРЕШЁН`) — это не находка по предмету, а поломка набора:
+      // ровно такая опечатка однажды уронила полноту с 74 % до 20 % при «чистых» карточках.
+      ruleDrySignals: Object.keys(((s.ruleDry || {}).служебные) || {}).map(k => ({
+        код: k, сколько: String((s.ruleDry.служебные || {})[k])
+      })),
+      ruleDryHasSignals: !!Object.keys(((s.ruleDry || {}).служебные) || {}).length,
+      ruleFindings: (((s.ruleDry || {}).находки) || []).slice(0, 12).map(н => ({
+        код: String(н.код || ''), запись: String(н.id || н.запись || '—'),
+        причина: String(н.причина || н.проверка || ''),
+        доказательство: String(н.доказательство || '')
+      })),
+      ruleFindingsEmpty: !!s.ruleDry && !(((s.ruleDry || {}).находки) || []).length,
+      ruleDryCut: ((s.ruleDry || {}).обрезано) ? ('показаны первые 12 из ' + s.ruleDry.находок) : '',
+      ruleDryHasCut: !!((s.ruleDry || {}).обрезано),
       dataSubtitle: s.dataTab === 'recipes'
         ? 'Рецепты «источник → каноническая сущность»: плитка — один рецепт, клик открывает настройку.'
-        : 'Коннекторы к источникам: креды живут в шлюзе, egress — через прокси sLAVA.',
+        : (s.dataTab === 'rules'
+          ? 'Наборы правил: что считается нарушением. Правило — предикат с параметрами, прогон на выборке — до сохранения.'
+          : 'Коннекторы к источникам: креды живут в шлюзе, egress — через прокси sLAVA.'),
       recipeTiles: s.recipesList.map(r => ({
         abbr: r.adapter.slice(0, 4).toUpperCase(), title: r.title, target: r.adapter + ' · ' + r.target,
         iconBg: r.ok ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : 'linear-gradient(135deg,#f59e0b,#f97316)',
@@ -5267,7 +5638,7 @@ class Component extends DCLogic {
         open: () => this.openRecipe(r.id),
         run: (e) => { if (e && e.stopPropagation) e.stopPropagation(); this.showToast('Прогон «' + r.title + '»...'); fetch('/api/data/recipes/' + encodeURIComponent(r.id) + '/run', { method: 'POST', headers: { 'Content-Type': 'application/json' } }).then(x => x.json()).then(d => this.showToast('«' + r.title + '» → ' + d.entity + ': записано ' + d.written + ', отброшено ' + d.dropped + ', невалидно ' + d.invalid)).catch(() => this.showToast('Ошибка прогона рецепта')); },
         viewData: (e) => { if (e && e.stopPropagation) e.stopPropagation(); fetch('/api/data/query/' + encodeURIComponent(r.entity) + '?limit=50').then(x => x.json()).then(d => { var recs = d.records || []; var cols = recs.length ? Object.keys(recs[0]).filter(k => ['provenance','schema_version'].indexOf(k) < 0).slice(0, 8) : []; var pv = recs.length && recs[0].provenance ? recs[0].provenance : null; this.setState({ modal: 'dataView', dataView: { entity: r.entity, cols: cols, rows: recs, total: (d.total != null ? d.total : recs.length), prov: pv ? ('провенанс первой записи: ' + JSON.stringify(pv).slice(0, 180)) : 'провенанс хранится в каждой записи (поле provenance)' } }); }).catch(() => this.showToast('Не удалось прочитать сущность')); },
-        remove: (e) => { if (e && e.stopPropagation) e.stopPropagation(); this.scheduleDelete('recipe', r); }
+        remove: (e) => { if (e && e.stopPropagation) e.stopPropagation(); this.askDelete('recipe', r); }
       })),
       connectorTiles: s.connectorsList.map(k => ({
         abbr: k.adapter.slice(0, 4).toUpperCase(), title: k.title, target: k.target,
@@ -5278,7 +5649,7 @@ class Component extends DCLogic {
         border: k.ok ? 'var(--w10)' : 'rgba(245,158,11,.28)',
         open: () => this.openConnectorEdit(k.id),
         test: (e) => { if (e && e.stopPropagation) e.stopPropagation(); this.showToast('Проверяю «' + k.title + '»…'); fetch('/api/data/connectors/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ adapter: k.adapter, target: k.target, headers: k.headers || {}, root: k.root || '' }) }).then(x => x.json().then(d => ({ ok: x.ok, d: d }))).then(res => { const d = res.d || {}; this.showToast(res.ok && d.ok !== false ? (k.adapter + ': источник читается' + (d.columns ? ' · полей: ' + d.columns.length : '') + (d.rows != null ? ' · строк: ' + d.rows : '')) : (k.adapter + ': ' + (d.error || d.detail || 'не удалось'))); }).catch(() => this.showToast('ABOP недоступен')); },
-        remove: (e) => { if (e && e.stopPropagation) e.stopPropagation(); this.scheduleDelete('connector', k); }
+        remove: (e) => { if (e && e.stopPropagation) e.stopPropagation(); this.askDelete('connector', k); }
       })),
       recipeModal: s.modal === 'recipe',
       recipeStatus: (s.recipesList.find(r => r.id === s.activeRecipe) || { status: 'новый' }).status,
@@ -5286,7 +5657,7 @@ class Component extends DCLogic {
       recipeEntity: ((s.recipesList.find(r => r.id === s.activeRecipe) || { title: 'entity' }).title || 'entity').replace(/s$/, ''),
       setRecipeTitle: (e) => { const v = e.target.value; this.setState({ recipesList: s.recipesList.map(r => r.id === s.activeRecipe ? Object.assign({}, r, { title: v }) : r) }); },
       openNewRecipe: () => this.openRecipe(null),
-      deleteActiveRecipe: () => { const _r = s.recipesList.find(r => r.id === s.activeRecipe); this.setState({ modal: null }); if (_r) this.scheduleDelete('recipe', _r); },
+      deleteActiveRecipe: () => { const _r = s.recipesList.find(r => r.id === s.activeRecipe); this.setState({ modal: null }); if (_r) this.askDelete('recipe', _r); },
       openConnector: () => this.openConnectorEdit(null),
       connectorModal: s.modal === 'connector',
       connectorModalTitle: s.activeConnector ? 'Настройка коннектора' : 'Подключить источник',
@@ -7047,6 +7418,21 @@ class Component extends DCLogic {
     if (this._srvErrAt && Date.now() - this._srvErrAt < 5000) return;
     this._srvErrAt = Date.now();
     this.showToast('Сервер ABOP ответил ошибкой ' + st + ' — повторите позже');
+  }
+
+  // ── Удаление рецепта/коннектора: сначала спросить, потом удалять ──────────────────────────
+  // Отменяемый тост на пять секунд оказался недостаточной защитой: рецепт `omninet_rejects`
+  // удалили по ошибке, заметили позже, и восстанавливать пришлось руками из пакета вертикали.
+  // Поэтому сначала модалка — и в ней не только «вы уверены», а что именно отвалится: какая
+  // сущность останется без наполнения и какие навыки её потребляют. Это тот самый анализ
+  // воздействия, но в момент, когда он нужен, а не отдельным экраном.
+  askDelete(kind, item) {
+    if (!this._canMutate()) { this.showToast('Только чтение — недостаточно прав'); return; }
+    if (!item || !item.id) { this.showToast('Нечего удалять'); return; }
+    this.setState({
+      modal: 'confirm', confirmKind: kind === 'recipe' ? 'deleteRecipe' : 'deleteConnector',
+      pendingDelItem: item, pendingDeleteName: item.title || item.id, confirmText: ''
+    });
   }
 
   // ── отложенное удаление с отменой (W-H5): рецепты/коннекторы реально удаляются на сервере ──
