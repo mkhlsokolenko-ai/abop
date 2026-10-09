@@ -166,7 +166,8 @@ def test_рантайм_получает_только_разрешённые_о�
     src = inspect.getsource(runner.run_live)
     assert "long_boards" in src, "прогон не принимает долгие области"
     assert "board_keys_scoped" in src and "block_of" in src
-    api = (ROOT / "server" / "web_api.py").read_text(encoding="utf-8")
+    from http_layer import исходник
+    api = исходник()
     i = api.index("_long_boards: dict = {}")
     body = api[i:i + 1200]
     assert "user_scope(started_by_sub)" in body, "личная доска читается не по владельцу"

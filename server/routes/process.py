@@ -21,15 +21,8 @@ from .. import reglament_store
 from .. import observability as obs
 from .. import process_deploy, process_store, run_store, slava
 from ..deps import _sub, can_see_family, require_level, user
+from ..vectors import cosine as _cosine
 
-
-def _cosine(a, b) -> float:
-    """Косинус двух векторов. Копия из web_api намеренно не делалась: функция чистая и
-    крошечная, а тянуть ради неё приложение в модуль маршрутов значило бы вернуть монолит."""
-    s = sum(x * y for x, y in zip(a, b))
-    na = sum(x * x for x in a) ** 0.5
-    nb = sum(y * y for y in b) ** 0.5
-    return (s / (na * nb)) if na and nb else 0.0
 
 router = APIRouter()
 

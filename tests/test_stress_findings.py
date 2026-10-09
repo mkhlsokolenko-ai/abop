@@ -34,7 +34,8 @@ def test_сводка_строится_на_обычном_прогоне():
     """№4. Строки «что сказал прогон» собирались ТОЛЬКО при попадании в кэш. На обычном прогоне
     карточка показывала «находок 7» и ни слова о том, что нашли, — при 3–6 тысячах знаков у каждого
     навыка."""
-    src = (ROOT / "server" / "web_api.py").read_text(encoding="utf-8")
+    from http_layer import исходник
+    src = исходник()
     assert src.count('result["summary_lines"] = run_summary(result)') == 2, \
         "сводка снова строится только на одном из путей"
     i = src.index("_entries = result.pop(\"board_entries\"")

@@ -26,7 +26,9 @@ os.environ["ABOP_DEV_AUTH"] = "1"
 from server import web_api  # noqa: E402
 
 CHAT = (ROOT / "desktop" / "ui" / "modules" / "chat" / "panel.js").read_text(encoding="utf-8")
-SRC = (ROOT / "server" / "web_api.py").read_text(encoding="utf-8")
+from http_layer import исходник  # noqa: E402
+
+SRC = исходник()
 
 
 def test_рамка_запрещает_отчитываться_за_систему():

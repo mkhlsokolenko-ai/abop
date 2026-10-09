@@ -57,7 +57,8 @@ def test_ссылочный_блок_прозы_работает_как_преж
 
 def test_в_выходы_прогона_идут_все_навыки():
     import pathlib
-    src = (pathlib.Path(__file__).resolve().parents[1] / "server" / "web_api.py").read_text(encoding="utf-8")
+    from http_layer import исходник
+    src = исходник()
     i = src.index('result["skill_outputs"] = [')
     body = src[i:i + 900]
     assert '"text": str(f.get("text")' in body, "текст навыка не сохраняется — отчёту нечем наполняться"

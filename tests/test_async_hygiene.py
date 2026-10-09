@@ -14,8 +14,9 @@ import pathlib
 # отчёта, теперь живёт там. Проверять только монолит значило бы перестать видеть ровно те вызовы,
 # которые переехали, — проверка молча ослабла бы при переносе.
 СЕРВЕР = pathlib.Path(__file__).resolve().parents[1] / "server"
-ФАЙЛЫ = [СЕРВЕР / "web_api.py"] + sorted(
-    p for p in (СЕРВЕР / "routes").glob("*.py") if p.name != "__init__.py")
+from http_layer import ФАЙЛЫ_СЛОЯ  # noqa: E402
+
+ФАЙЛЫ = [p for p in ФАЙЛЫ_СЛОЯ if p.exists()]
 ДЕРЕВЬЯ = [(f, ast.parse(f.read_text(encoding="utf-8"))) for f in ФАЙЛЫ]
 
 # Синхронные функции, которые ходят на диск: в async-обработчике только через to_thread.
