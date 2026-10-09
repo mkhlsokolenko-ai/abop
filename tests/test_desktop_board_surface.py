@@ -20,7 +20,9 @@ ROOT = Path(__file__).resolve().parents[1]
 CHAT = (ROOT / "desktop" / "ui" / "modules" / "chat" / "panel.js").read_text(encoding="utf-8")
 SIDE = (ROOT / "desktop" / "sidecar" / "modules" / "agents" / "module.py").read_text(encoding="utf-8")
 CLIENT = (ROOT / "desktop" / "sidecar" / "abop_client.py").read_text(encoding="utf-8")
-WEBAPI = (ROOT / "server" / "web_api.py").read_text(encoding="utf-8")
+from http_layer import исходник as _слой  # noqa: E402
+
+WEBAPI = _слой()
 
 
 def test_доска_читается_с_сервера():
@@ -54,7 +56,9 @@ def test_кнопка_на_доску_имеет_маршрут():
     assert '@router.post("/board/from-run/{run_id}")' in SIDE, "сайдкар не проксирует вынос на доску"
     assert "def board_from_run(" in CLIENT and "to-board" in CLIENT, \
         "клиент сайдкара не умеет выносить прогон на доску"
-    assert '@app.post("/api/runs/{run_id}/to-board")' in WEBAPI, "серверной ручки выноса нет"
+    # Домен прогонов уехал в server/routes/runs.py (ADR-052): декоратор там `@router`,
+    # путь тот же. Проверяем путь, а не файл, в котором он сегодня объявлен.
+    assert '"/api/runs/{run_id}/to-board"' in WEBAPI, "серверной ручки выноса нет"
 
 
 def test_снятие_факта_спрашивает_подтверждение():

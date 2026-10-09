@@ -28,7 +28,11 @@ os.environ["ABOP_RUN_WORKERS"] = "0"
 
 from server import run_queue, run_store, web_api  # noqa: E402
 
-ИСХОДНИК = (КОРЕНЬ / "server" / "web_api.py").read_text(encoding="utf-8")
+from http_layer import исходник as _слой  # noqa: E402
+
+# Домен прогонов уехал в server/routes/runs.py (ADR-052): правило про стрим читаем по слою.
+ИСХОДНИК = _слой()
+ШАПКА_ПРИЛОЖЕНИЯ = (КОРЕНЬ / "server" / "web_api.py").read_text(encoding="utf-8")
 
 
 @pytest.fixture()
@@ -58,7 +62,7 @@ def test_заглушек_в_api_больше_нет():
 
 
 def test_шапка_модуля_не_обещает_501():
-    шапка = ИСХОДНИК[:ИСХОДНИК.index('from __future__')]
+    шапка = ШАПКА_ПРИЛОЖЕНИЯ[:ШАПКА_ПРИЛОЖЕНИЯ.index('from __future__')]
     assert "501" not in шапка, "описание модуля снова разошлось с реализацией"
 
 
