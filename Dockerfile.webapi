@@ -24,6 +24,8 @@ COPY desktop/ui ./desktop/ui
 # администратора зовёт их как `docker exec abop-webapi python scripts/...` — без этой строки
 # документ обещал то, чего в образе нет.
 COPY scripts ./scripts
+# ops-инструменты засева демо-стендов: руководства и демо-гиды зовут их по имени
+COPY ops ./ops
 # руководства поставки — отдаются по /guide и открываются из «Помощи»
 COPY docs/guide ./docs/guide
 

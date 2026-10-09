@@ -48,6 +48,7 @@ def test_образ_несёт_ops_скрипты():
     корень = pathlib.Path(__file__).resolve().parents[1]
     dockerfile = (корень / "Dockerfile.webapi").read_text(encoding="utf-8")
     assert re.search(r"^COPY\s+scripts\s", dockerfile, re.M), "образ не несёт scripts/"
+    assert re.search(r"^COPY\s+ops\s", dockerfile, re.M), "образ не несёт ops/ (засев демо-стендов)"
     админ = (корень / "docs" / "guide" / "RUKOVODSTVO_ADMINISTRATORA.html").read_text(encoding="utf-8")
     for имя in re.findall(r"python (scripts/[\w./-]+\.py)", админ):
         assert (корень / имя).exists(), f"руководство зовёт {имя}, которого нет в репозитории"
