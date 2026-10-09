@@ -5,16 +5,33 @@
     "segment": "Карточка товара для витрины партнёра (открытая e-com-платформа)",
     "family": "audit",
     "skills": [
-      { "id": "feed-checks" },
-      { "id": "feed-fix" },
-      { "id": "feed-scorecard" }
+      {
+        "id": "feed-checks"
+      },
+      {
+        "id": "feed-fix"
+      },
+      {
+        "id": "feed-scorecard"
+      }
     ],
     "modules": [
-      { "id": "Фид поставщика · feed_card", "access": "read" },
-      { "id": "Требования витрины · showcase_rule / category_map", "access": "read" },
-      { "id": "Лог отказов витрины · showcase_reject", "access": "read" }
+      {
+        "id": "Фид поставщика · feed_card",
+        "access": "read"
+      },
+      {
+        "id": "Требования витрины · showcase_rule / category_map",
+        "access": "read"
+      },
+      {
+        "id": "Лог отказов витрины · showcase_reject",
+        "access": "read"
+      }
     ],
-    "evidence": ["ev:omninet-feed-2026-09"]
+    "evidence": [
+      "ev:a6184b48ec"
+    ]
   },
   "deployment_contract": {
     "schema": "luda.deployment_contract/1.0",
@@ -24,19 +41,39 @@
     "limiting_axis": "публикация карточки на чужой витрине: ошибка видна покупателю и возвращается рекламацией",
     "criticality": "T3",
     "hitl_points": [
-      { "id": "контент-менеджер-подтверждает-отправку" }
+      {
+        "id": "контент-менеджер-подтверждает-отправку"
+      }
     ],
-    "data_residency": { "zone": "on-prem", "egress": "по протоколу витрины, после подтверждения" },
-    "acceptance": { "first_time_right": 0.85, "escalation_rate": 0.3 }
+    "data_residency": {
+      "zone": "on-prem",
+      "egress": "по протоколу витрины, после подтверждения"
+    },
+    "acceptance": {
+      "first_time_right": 0.85,
+      "escalation_rate": 0.3
+    }
   },
   "baseline_measurement": {
     "schema": "luda.baseline_measurement/1.0",
     "audit_id": "omninet-showcase-2026",
     "methodology_version": "1.0",
     "metrics": {
-      "first_time_right": { "value": 0.6, "evidence": ["ev:omninet-feed-2026-09"] },
-      "escalation_rate": { "value": 0.4, "evidence": ["ev:omninet-feed-2026-09"] }
+      "first_time_right": {
+        "value": 0.6,
+        "evidence": [
+          "ev:a6184b48ec"
+        ]
+      },
+      "escalation_rate": {
+        "value": 0.4,
+        "evidence": [
+          "ev:a6184b48ec"
+        ]
+      }
     }
   },
-  "evidence_pack": ["0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"]
+  "evidence_pack": [
+    "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0"
+  ]
 }
