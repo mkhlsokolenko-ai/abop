@@ -1589,6 +1589,14 @@
                         <span style="font-size: 12.5px; color: var(--ink);">{{ ruleDryLine }}</span>
                         <span style="margin-left: auto; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w42);">{{ ruleDryRefs }}</span>
                       </div>
+                      <sc-if value="{{ ruleDryHasContext }}" hint-placeholder-val="{{ false }}">
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+                          <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--w40);">из блока «контекст»</span>
+                          <sc-for list="{{ ruleDryContext }}" as="cx" hint-placeholder-count="1">
+                            <span style="padding: 4px 10px; border-radius: 9999px; background: var(--w6); border: 1px solid var(--w12); font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w70);">{{ cx.код }}: {{ cx.сколько }}</span>
+                          </sc-for>
+                        </div>
+                      </sc-if>
                       <sc-if value="{{ ruleDryHasSignals }}" hint-placeholder-val="{{ false }}">
                         <div style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 10px; background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.3);">
                           <span style="font-size: 12px; color: var(--err-ink);">Набор сломан: правила по нему не сработают, а записи выглядят чистыми.</span>
@@ -5609,8 +5617,15 @@ class Component extends DCLogic {
       ruleDryRefs: s.ruleDry
         ? (Object.keys(s.ruleDry.справочники || {}).map(k => k + ': ' + s.ruleDry.справочники[k]).join(' · ') || 'справочники не нужны')
         : '',
-      // Сигналы движка (`КОНТЕКСТ_НЕ_РАЗРЕШЁН`) — это не находка по предмету, а поломка набора:
-      // ровно такая опечатка однажды уронила полноту с 74 % до 20 % при «чистых» карточках.
+      // Связь, которая ничего не нашла, — находка ПО СУЩЕСТВУ, если набор объявил её в `если_нет`
+      // («категория поставщика не сопоставлена»). Такие идут обычной графой: правило сработало
+      // именно так, как написано, и красить это в «набор сломан» — ложная тревога.
+      ruleDryContext: Object.keys(((s.ruleDry || {}).по_контексту) || {}).map(k => ({
+        код: k, сколько: String((s.ruleDry.по_контексту || {})[k])
+      })),
+      ruleDryHasContext: !!Object.keys(((s.ruleDry || {}).по_контексту) || {}).length,
+      // А вот сигналы движка (`КОНТЕКСТ_НЕ_РАЗРЕШЁН`) — это правда поломка набора: ровно такая
+      // опечатка однажды уронила полноту с 74 % до 20 % при «чистых» карточках.
       ruleDrySignals: Object.keys(((s.ruleDry || {}).служебные) || {}).map(k => ({
         код: k, сколько: String((s.ruleDry.служебные || {})[k])
       })),
