@@ -128,6 +128,19 @@ def test_демо_пакет_на_месте():
     assert наружу and наружу[0]["out"]["hitl"] is True, "отправка наружу без подтверждения человека"
 
 
+def test_контракт_проходит_приёмку():
+    """Contract Ingress проверяет провенанс на границе: ссылка ev:<10hex> обязана совпадать с
+    первыми знаками пакета свидетельств. Пакет, который не принимается, превращает кнопку
+    «Собрать и запустить» в аккуратный 422 — проверено на проде."""
+    sys.path.insert(0, str(КОРЕНЬ))
+    from server import ingress
+
+    пакет = json.loads((КОРЕНЬ / "demo" / "omninet" / "contract_omninet.json")
+                       .read_text(encoding="utf-8"))
+    r = ingress.validate(пакет)
+    assert r.accepted, f"контракт кейса не проходит приёмку: {r.errors}"
+
+
 def test_рецепты_покрывают_все_сущности_кейса():
     рецепты = sorted((КОРЕНЬ / "demo" / "omninet" / "recipes").glob("*.json"))
     сущности = {json.loads(p.read_text(encoding="utf-8"))["entity"] for p in рецепты}
