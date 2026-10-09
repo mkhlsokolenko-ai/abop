@@ -78,6 +78,11 @@ def собрать():
     from cli import ape
 
     from . import process_store, skill_tools, web_api
+    # Домены уезжают из монолита (ADR-052). Ручки карты уже там, и звать их надо по новому
+    # адресу: `web_api.process_coverage` перестал существовать молча — вызов инструмента падал,
+    # а статическая проверка имён этого не видела, потому что обращение идёт через точку к
+    # чужому модулю. Теперь импорт явный, и его сторожит тест, который инструменты ВЫЗЫВАЕТ.
+    from .routes import process as _процесс
 
     mcp = FastMCP("ABOP")
 
@@ -125,7 +130,7 @@ def собрать():
         from fastapi import Response
         u = _кто()
         окно = str((args or {}).get("window") or "7d")
-        данные = await web_api.process_liveness(Response(), окно, u)
+        данные = await _процесс.process_liveness(Response(), окно, u)
         _лог("mcp.tool", tool="process_liveness", actor=u.get("name") or u.get("sub"), window=окно)
         return _ответ(данные)
 
@@ -137,7 +142,7 @@ def собрать():
         from fastapi import Response
         u = _кто()
         окно = str((args or {}).get("window") or "7d")
-        данные = await web_api.process_coverage(Response(), окно, u)
+        данные = await _процесс.process_coverage(Response(), окно, u)
         _лог("mcp.tool", tool="process_coverage", actor=u.get("name") or u.get("sub"))
         return _ответ(данные)
 
@@ -158,7 +163,7 @@ def собрать():
                           'графа у ABOP нет, автоматически он не проверяется')
     async def register_agent(args: dict | None = None) -> str:
         u = _кто()
-        данные = await web_api.agents_register_external(dict(args or {}), u)
+        данные = await _процесс.agents_register_external(dict(args or {}), u)
         _лог("mcp.tool", tool="register_agent", actor=u.get("name") or u.get("sub"))
         return _ответ(данные)
 
@@ -169,7 +174,7 @@ def собрать():
                           'участок помечается «со слов агента»')
     async def report_run(args: dict | None = None) -> str:
         u = _кто()
-        данные = await web_api.runs_report_external(dict(args or {}), u)
+        данные = await _процесс.runs_report_external(dict(args or {}), u)
         _лог("mcp.tool", tool="report_run", actor=u.get("name") or u.get("sub"))
         return _ответ(данные)
 
