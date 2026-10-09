@@ -1,0 +1,36 @@
+{
+  "recipe": "omninet_rejects",
+  "version": 1,
+  "status": "опубликован",
+  "source": {
+    "kind": "json",
+    "path": "~/.ape/files/omninet/showcase_rejects.json"
+  },
+  "entity": "showcase_reject",
+  "map": {
+    "id": {
+      "col": "id"
+    },
+    "карточка": {
+      "col": "карточка"
+    },
+    "витрина": {
+      "col": "витрина"
+    },
+    "код": {
+      "col": "код"
+    },
+    "причина": {
+      "col": "причина"
+    },
+    "дата": {
+      "col": "дата"
+    }
+  },
+  "rules": [],
+  "emit": {
+    "schema": "showcase_reject",
+    "schema_version": "1.0",
+    "ttl_sec": 604800
+  }
+}

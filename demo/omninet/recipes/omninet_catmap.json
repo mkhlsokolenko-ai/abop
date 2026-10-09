@@ -1,0 +1,33 @@
+{
+  "recipe": "omninet_catmap",
+  "version": 1,
+  "status": "опубликован",
+  "source": {
+    "kind": "json",
+    "path": "~/.ape/files/omninet/category_map.json"
+  },
+  "entity": "category_map",
+  "map": {
+    "id": {
+      "col": "id"
+    },
+    "витрина": {
+      "col": "витрина"
+    },
+    "категория_поставщика": {
+      "col": "категория_поставщика"
+    },
+    "категория_витрины": {
+      "col": "категория_витрины"
+    },
+    "источник": {
+      "col": "источник"
+    }
+  },
+  "rules": [],
+  "emit": {
+    "schema": "category_map",
+    "schema_version": "1.0",
+    "ttl_sec": 604800
+  }
+}

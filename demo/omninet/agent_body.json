@@ -1,0 +1,20 @@
+{
+  "name": "Контролёр витрины",
+  "contract_audit_id": "omninet-showcase-2026",
+  "graph": {
+    "nodes": [
+      { "id": "feed-checks", "kind": "skill", "skill": "feed-checks", "autonomy": "A1", "hitl": false },
+      { "id": "feed-fix", "kind": "skill", "skill": "feed-fix", "autonomy": "A2", "hitl": false },
+      { "id": "feed-scorecard", "kind": "skill", "skill": "feed-scorecard", "autonomy": "A1", "hitl": true },
+      { "id": "out", "kind": "out", "title": "Отчёт → контент-менеджеру",
+        "out": { "channel": "email", "to": "content@demo.local",
+                 "subject": "Карточки для витрины: что развернут и почему",
+                 "format": "pdf", "run": false, "hitl": true } }
+    ],
+    "edges": [
+      { "from": "feed-checks", "to": "feed-fix" },
+      { "from": "feed-fix", "to": "feed-scorecard" },
+      { "from": "feed-scorecard", "to": "out" }
+    ]
+  }
+}
