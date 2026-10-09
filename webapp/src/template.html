@@ -3355,8 +3355,16 @@ class Component extends DCLogic {
       (s.modeFilter === 'Все' || k.mode === s.modeFilter) &&
       (s.familyFilter === 'Все' || k.families.includes(s.familyFilter))
     );
+    // Чип безопасности рисуется ПО КЛЮЧУ из карточки навыка, а ключ приходит и из каталога, и из
+    // правок в UI. Значение вне словаря (приехало mode: "create") делало CHIP[k.mode] пустым —
+    // и чтение .label роняло рут-рендер: белый экран на всём приложении из-за одного навыка.
+    // Теперь неизвестный ключ виден как ошибка и не прячется, но страница жива.
+    const chip = (key) => CHIP[key] || {
+      label: (key == null || key === '' ? 'не задан' : String(key)) + ' · вне словаря',
+      bg: 'rgba(239,68,68,.12)', border: 'rgba(239,68,68,.4)', fg: 'var(--err-ink)'
+    };
     const chipsFor = (k) => {
-      const arr = [CHIP[k.mode], CHIP[k.egress]];
+      const arr = [chip(k.mode), chip(k.egress)];
       if (k.cite) arr.push(CHIP.cite);
       return arr.map(c => ({ label: c.label, bg: c.bg, border: c.border, fg: c.fg }));
     };
@@ -3405,7 +3413,8 @@ class Component extends DCLogic {
       cite: 'Числа только из источника. Нет данных — так и скажет.'
     };
     const drawerSafety = [sk.mode, sk.egress].concat(sk.cite ? ['cite'] : []).map(key => ({
-      label: CHIP[key].label, bg: CHIP[key].bg, border: CHIP[key].border, fg: CHIP[key].fg, note: safetyNotes[key]
+      label: chip(key).label, bg: chip(key).bg, border: chip(key).border, fg: chip(key).fg,
+      note: safetyNotes[key] || 'Значение вне словаря безопасности (read/write/action, internal/external) — карточку навыка надо поправить.'
     }));
 
     const ADP = (s.adaptersList && s.adaptersList.length) ? s.adaptersList : ADAPTERS; const adapter = ADP.find(a => a.id === s.adapter) || ADP[0];

@@ -603,6 +603,12 @@ def skills_system(base: str) -> str:
 #         action — пишет/шлёт во ВНЕШНЮЮ систему (почта/трекер) → ТОЛЬКО dry_run + подтверждение человека (HITL)
 # egress: internal | external — внешний контент на входе/выходе → injection-guard + PII-маскирование на границе
 # cite:   True — числа/факты ТОЛЬКО из источника (анти-галлюцинация), выдумывать запрещено
+# Словарь governance-полей — ОДИН на код, тесты и редактор навыка во фронте. Значение вне
+# словаря не «почти верное»: чип безопасности рисуется по ключу, и однажды приехавший
+# mode "create" уронил рут-рендер веб-клиента целиком. Проверяет tests/test_skill_safety.py.
+РЕЖИМЫ_НАВЫКА = ("read", "write", "action")
+ВЫХОДЫ_НАВЫКА = ("internal", "external")
+ФОРМАТЫ_ВЫВОДА = ("structured", "freeform")
 _SAFE_DEFAULT = {"mode": "read", "egress": "internal", "cite": False, "output": "structured"}
 SKILL_SAFETY = {
     # финансы/аналитика — числа только из источника (cite), egress наружу закрыт
@@ -651,7 +657,7 @@ SKILL_SAFETY = {
     "audit1c-match-weak": {"mode": "read", "egress": "internal", "cite": True},         # гипотезы, не факты
     "audit1c-checks": {"mode": "read", "egress": "internal", "cite": True},             # находки считает код
     "feed-checks": {"mode": "read", "egress": "internal", "cite": True},               # нарушения считает код
-    "feed-fix": {"mode": "create", "egress": "internal", "cite": True},                # кандидат, не отправка
+    "feed-fix": {"mode": "write", "egress": "internal", "cite": True},                 # кандидат, не отправка
     "feed-scorecard": {"mode": "read", "egress": "internal", "cite": True},            # метрика из лога отказов
     "audit1c-root-cause": {"mode": "read", "egress": "internal", "cite": True},
     "audit1c-rank": {"mode": "read", "egress": "internal", "cite": True},
