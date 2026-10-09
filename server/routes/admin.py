@@ -36,7 +36,11 @@ from .agents import _skills_reading_data
 router = APIRouter()
 
 
-_DEMO_DIR = Path(__file__).resolve().parents[1] / "demo"
+# Каталог демо-пакетов считается от КОРНЯ репозитория. При расщеплении монолита этот код
+# уехал на уровень глубже (server/ → server/routes/), и `parents[1]` стал указывать в
+# server/demo: «Собрать и запустить» молча отвечало «нет демо-пакета». Путь от корня
+# пакета, а не от файла, — и тест, который это сторожит.
+_DEMO_DIR = Path(__file__).resolve().parents[2] / "demo"
 
 
 
