@@ -115,6 +115,7 @@ def собрать():
     # адресу: `web_api.process_coverage` перестал существовать молча — вызов инструмента падал,
     # а статическая проверка имён этого не видела, потому что обращение идёт через точку к
     # чужому модулю. Теперь импорт явный, и его сторожит тест, который инструменты ВЫЗЫВАЕТ.
+    from .routes import agents as _агенты
     from .routes import process as _процесс
 
     mcp = FastMCP("ABOP")
@@ -184,7 +185,7 @@ def собрать():
                           "автономия, статус развёртывания")
     async def agents_list(args: dict | None = None) -> str:
         u = _кто()
-        данные = await web_api.agents_list("", False, u)   # ABAC по отделу — внутри ручки
+        данные = await _агенты.agents_list("", False, u)   # ABAC по отделу — внутри ручки
         _лог("mcp.tool", tool="agents_list", actor=u.get("name") or u.get("sub"))
         return _ответ(данные)
 
