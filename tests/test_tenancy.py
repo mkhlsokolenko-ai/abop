@@ -521,3 +521,16 @@ def test_свой_арендатор_не_пишется_в_журнал():
     прогнать(deps._записать_переход({"sub": "u9", "name": "кто-то", "level": "manager",
                                      "tenant_own": "acme", "tenant_active": "acme"}))
     assert len(прогнать(audit_store.list_events(limit=200))) == до
+
+
+def test_переход_помечен_как_значимое_событие():
+    """Чтение данных чужой компании должно выделяться в журнале, который читают глазами."""
+    from server import audit_store
+
+    deps._ПЕРЕХОДЫ.clear()
+    прогнать(deps._записать_переход({"sub": "u10", "name": "qa.support", "level": "support",
+                                     "tenant_own": "default", "tenant_active": "acme"}))
+    события = прогнать(audit_store.list_events(limit=50))
+    запись = [e for e in события if e.get("action") == "tenant.switch"][0]
+    assert запись.get("severity") == "warning", запись
+    assert запись.get("actor") == "qa.support" and запись.get("target") == "acme"

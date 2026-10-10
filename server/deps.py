@@ -224,7 +224,10 @@ async def _записать_переход(u: dict) -> None:
         from . import audit_store
         await audit_store.record(str(u.get("name") or u.get("sub") or "?"),
                                  "tenant.switch", действует,
-                                 {"from": свой, "level": u.get("level")})
+                                 {"from": свой, "level": u.get("level")},
+                                 # не «info»: чтение данных чужой компании должно выделяться
+                                 # в журнале, который читают глазами
+                                 severity="warning")
     except Exception:  # noqa: BLE001 — журнал не должен ронять запрос, но и молчать не должен
         from . import observability as _obs
         _obs.log_event("error", "tenant.switch.audit_failed", to_tenant=действует)
