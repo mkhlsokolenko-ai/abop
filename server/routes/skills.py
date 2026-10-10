@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from cli import ape
 
+from .. import dataplane_records
 from .. import audit_store, cachebus, families_store, schema_store, skill_contract, skill_store
 from .. import skill_tools
 
@@ -34,8 +35,9 @@ _SKILL_SAFETY_FIELDS = ("mode", "egress", "cite", "output", "schema_template_id"
 async def _refresh_skill_ds_cache() -> None:
     """Подтянуть data-need + флаг формата вывода (output) оверрайды из Postgres → инжект в ape."""
     try:
-        ape.set_skill_ds_overrides(await skill_store.datasources_map())
-        ape.set_skill_output_overrides(await skill_store.output_map())
+        # ЧИТАТЕЛИ, а не снимки: правка навыка принадлежит арендатору (см. рецепты и ADR-055).
+        ape.set_skill_ds_overrides(dataplane_records.правки_источников)
+        ape.set_skill_output_overrides(dataplane_records.правки_вывода)
     except Exception:  # noqa: BLE001
         pass
 

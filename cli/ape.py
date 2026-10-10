@@ -678,16 +678,26 @@ SKILL_SAFETY = {
 _SKILL_OUTPUT_OVERRIDES: dict = {}   # {sid: "structured"|"freeform"} — правки формата вывода из UI (PG)
 
 
-def set_skill_output_overrides(overrides: dict | None) -> None:
-    """Сервер инжектит {sid: output} из Postgres (правка флага «формат вывода» в UI навыка)."""
+def set_skill_output_overrides(overrides) -> None:
+    """Сервер инжектит {sid: output}: ФУНКЦИЮ-читатель либо словарь.
+
+    Функция — потому что правка навыка принадлежит арендатору: готовый снимок про него не знает,
+    и правка одной компании меняла бы карточку навыка у другой. Словарь остаётся для CLI/тестов.
+    """
     global _SKILL_OUTPUT_OVERRIDES
-    _SKILL_OUTPUT_OVERRIDES = dict(overrides or {})
+    _SKILL_OUTPUT_OVERRIDES = overrides if callable(overrides) else dict(overrides or {})
+
+
+def _правки_вывода() -> dict:
+    о = _SKILL_OUTPUT_OVERRIDES
+    return dict(о() or {}) if callable(о) else о
 
 
 def skill_safety(sid: str) -> dict:
     sf = {**_SAFE_DEFAULT, **SKILL_SAFETY.get(sid, {})}
-    if sid in _SKILL_OUTPUT_OVERRIDES:           # UI-правка формата вывода перекрывает дефолт кода
-        sf["output"] = _SKILL_OUTPUT_OVERRIDES[sid]
+    _прв = _правки_вывода()
+    if sid in _прв:                              # UI-правка формата вывода перекрывает дефолт кода
+        sf["output"] = _прв[sid]
     return sf
 
 
@@ -919,17 +929,23 @@ def _load_skill_ds_override() -> dict:
 _SKILL_DS_OVERRIDES: dict = {}
 
 
-def set_skill_ds_overrides(overrides: dict | None) -> None:
-    """Сервер инжектит {sid: datasources[]} из Postgres. §БД-фаза (persistence-localstorage-hole)."""
+def set_skill_ds_overrides(overrides) -> None:
+    """Сервер инжектит {sid: datasources[]}: ФУНКЦИЮ-читатель либо словарь (см. арендаторов)."""
     global _SKILL_DS_OVERRIDES
-    _SKILL_DS_OVERRIDES = dict(overrides or {})
+    _SKILL_DS_OVERRIDES = overrides if callable(overrides) else dict(overrides or {})
+
+
+def _правки_источников() -> dict:
+    о = _SKILL_DS_OVERRIDES
+    return dict(о() or {}) if callable(о) else о
 
 
 def skill_datasources(sid: str) -> list:
     """Источники данных навыка (data-need, связка §4 конверт↔данные): PG-оверрайд → файл → дефолт кода.
     Нет записи ⇒ навык без внешних источников."""
-    if sid in _SKILL_DS_OVERRIDES:
-        return _SKILL_DS_OVERRIDES[sid]
+    _прв = _правки_источников()
+    if sid in _прв:
+        return _прв[sid]
     ov = _load_skill_ds_override()
     if sid in ov:
         return ov[sid]
@@ -3035,15 +3051,36 @@ _CONNECTOR_STORE: list | None = None
 
 
 def set_recipe_store(recipes) -> None:
-    """Сервер инжектит рецепты (list canonical-специй) из Postgres. None — вернуть файловый режим."""
+    """Сервер инжектит рецепты: ФУНКЦИЮ-читатель либо список. None — вернуть файловый режим.
+
+    Функция, а не список, — потому что рецепты принадлежат арендатору, а готовый снимок про
+    арендатора не знает: вендор, открывший данные клиента, видел бы рецепты своего. Список
+    остаётся для CLI и тестов, где арендатор один.
+    """
     global _RECIPE_STORE
-    _RECIPE_STORE = None if recipes is None else {r.get("recipe"): r for r in recipes if r.get("recipe")}
+    _RECIPE_STORE = recipes if (recipes is None or callable(recipes)) else {
+        r.get("recipe"): r for r in recipes if r.get("recipe")}
 
 
 def set_connector_store(connectors) -> None:
-    """Сервер инжектит коннекторы (list карточек) из Postgres. None — файловый режим."""
+    """Сервер инжектит коннекторы: ФУНКЦИЮ-читатель либо список. None — файловый режим."""
     global _CONNECTOR_STORE
-    _CONNECTOR_STORE = None if connectors is None else list(connectors)
+    _CONNECTOR_STORE = connectors if (connectors is None or callable(connectors)) else list(connectors)
+
+
+def _рецепты_стор() -> dict | None:
+    """Рецепты как {имя: рецепт} — читая по месту, если инжектирована функция."""
+    if _RECIPE_STORE is None:
+        return None
+    if callable(_RECIPE_STORE):
+        return {r.get("recipe"): r for r in (_RECIPE_STORE() or []) if r.get("recipe")}
+    return _RECIPE_STORE
+
+
+def _коннекторы_стор() -> list | None:
+    if _CONNECTOR_STORE is None:
+        return None
+    return list(_CONNECTOR_STORE() or []) if callable(_CONNECTOR_STORE) else list(_CONNECTOR_STORE)
 
 
 # Канонические ЗАПИСИ (не определения) — последний файловый слой Data Plane. Пока они лежали в
@@ -3060,14 +3097,16 @@ def set_record_store(store) -> None:
 
 
 def data_recipes() -> list:
-    if _RECIPE_STORE is not None:
-        return sorted(_RECIPE_STORE.keys())
+    стор = _рецепты_стор()
+    if стор is not None:
+        return sorted(стор.keys())
     return sorted(f[:-5] for f in os.listdir(_recipes_dir()) if f.endswith(".json"))
 
 
 def data_load_recipe(name: str) -> dict:
-    if _RECIPE_STORE is not None:
-        r = _RECIPE_STORE.get(name)
+    стор = _рецепты_стор()
+    if стор is not None:
+        r = стор.get(name)
         if r is None:
             raise OSError(f"нет рецепта {name}")
         return r
@@ -3377,9 +3416,10 @@ def data_connectors() -> list:
     """Список подключённых коннекторов (инстансы источников): id/title/adapter/target/headers/root/badge/ok.
     ok=None означает «не проверялся» (честно) — реальную доступность даёт ТЕСТ (data_test_connector),
     т.к. авторизованный источник без валидного токена вернёт 401 (нельзя судить по наличию адаптера)."""
-    if _CONNECTOR_STORE is not None:   # серверный режим: коннекторы из Postgres
+    _конн = _коннекторы_стор()
+    if _конн is not None:              # серверный режим: коннекторы из Postgres (по арендатору)
         out = []
-        for c in _CONNECTOR_STORE:
+        for c in _конн:
             c = dict(c)
             c.setdefault("badge", _connector_badge(c.get("adapter", "")))
             c.setdefault("ok", None)

@@ -342,3 +342,99 @@ def test_переключатель_только_у_вендора():
 def test_бандл_собран_с_арендатором():
     бандл = (КОРЕНЬ / "webapp" / "index.html").read_text(encoding="utf-8")
     assert "X-ABOP-Tenant" in бандл, "бандл не пересобран после правки исходников"
+
+
+# ── кэши ядра: дыра, которую статический сторож не видит ──────────────────────────────────────
+
+def test_определения_data_plane_читаются_по_арендатору():
+    """Поймано живой проверкой на проде, а не тестом.
+
+    Сервер инжектил в ядро ГОТОВЫЙ СПИСОК рецептов — и список не знал про арендатора: вендор,
+    открывший данные клиента, видел рецепты своего. Статический сторож таких дыр не видит:
+    данные приходят не из запроса, а из кэша процесса.
+
+    Закономерность, которую сторожим: **инъекция функцией знает арендатора, инъекция снимком —
+    нет**. Поэтому сервер обязан инжектить читателя, а не список.
+    """
+    from cli import ape
+    from server import dataplane_records as dr
+
+    было_r, было_c = ape._RECIPE_STORE, ape._CONNECTOR_STORE
+    ape.set_recipe_store(dr.рецепты)
+    ape.set_connector_store(dr.коннекторы)
+    try:
+        with tenancy.с_арендатором("acme"):
+            прогнать(dataplane_store.save_recipe("omninet_feed", {"recipe": "omninet_feed",
+                                                                  "entity": "feed_card"}))
+            assert ape.data_recipes() == ["omninet_feed"]
+        with tenancy.с_арендатором("beta"):
+            assert ape.data_recipes() == [], "ядро отдаёт рецепты чужого арендатора"
+            assert ape.data_connectors() == []
+    finally:
+        ape.set_recipe_store(было_r)
+        ape.set_connector_store(было_c)
+
+
+def test_сервер_инжектит_читателя_а_не_снимок():
+    """Статический сторож именно для этой закономерности: снимок про арендатора не знает."""
+    слой = (КОРЕНЬ / "server" / "routes" / "data.py").read_text(encoding="utf-8")
+    блок = слой[слой.index("async def _refresh_dataplane_cache"):][:900]
+    assert "ape.set_recipe_store(dataplane_records.рецепты)" in блок, блок[:400]
+    assert "recipes_all()" not in блок, (
+        "сервер снова инжектит готовый список — он не знает про арендатора")
+
+
+def test_правка_навыка_не_меняет_карточку_соседу():
+    """Стор правок писался, когда компания была одна: правки честно звались «ОБЩИЕ для всех».
+
+    В многоарендной системе это значит: методолог компании А меняет формат вывода навыка — и он
+    меняется у компании Б. Не утечка данных, но чужая конфигурация, и чинится тем же приёмом.
+    """
+    from cli import ape
+    from server import dataplane_records as dr
+    from server import skill_store
+
+    skill_store._MEM.clear()
+    было_ds, было_out = ape._SKILL_DS_OVERRIDES, ape._SKILL_OUTPUT_OVERRIDES
+    ape.set_skill_ds_overrides(dr.правки_источников)
+    ape.set_skill_output_overrides(dr.правки_вывода)
+    try:
+        with tenancy.с_арендатором("acme"):
+            прогнать(skill_store.save_patch("dcf-valuation", {"output": "freeform"},
+                                            editor="acme"))
+            прогнать(skill_store.save_datasources("dcf-valuation",
+                                                  [{"entity": "transaction"}], editor="acme"))
+            assert ape.skill_safety("dcf-valuation")["output"] == "freeform"
+            assert ape.skill_datasources("dcf-valuation") == [{"entity": "transaction"}]
+        with tenancy.с_арендатором("beta"):
+            assert ape.skill_safety("dcf-valuation")["output"] == "structured", (
+                "правка формата вывода у соседа изменила карточку навыка")
+            assert прогнать(skill_store.get("dcf-valuation")) is None
+    finally:
+        ape.set_skill_ds_overrides(было_ds)
+        ape.set_skill_output_overrides(было_out)
+        skill_store._MEM.clear()
+
+
+def test_инъекции_в_ядро_знают_арендатора():
+    """Закономерность целиком: что инжектится в ядро и принадлежит арендатору — только читателем.
+
+    Снимок (dict/list) про арендатора не знает по определению. Это та дыра, которую не видит ни
+    статический сторож SQL, ни поведенческий тест конкретной ручки — её нашла живая проверка на
+    проде. Поэтому закономерность зафиксирована отдельно.
+    """
+    ядро = (КОРЕНЬ / "cli" / "ape.py").read_text(encoding="utf-8")
+    for сеттер in ("set_recipe_store", "set_connector_store",
+                   "set_skill_ds_overrides", "set_skill_output_overrides"):
+        блок = ядро[ядро.index("def " + сеттер + "("):][:700]
+        assert "callable(" in блок, f"{сеттер} не принимает читателя — снимок не знает арендатора"
+    for слой, сеттеры in (
+        ("server/routes/data.py", ("set_recipe_store", "set_connector_store")),
+        ("server/routes/skills.py", ("set_skill_ds_overrides", "set_skill_output_overrides")),
+    ):
+        текст = (КОРЕНЬ / слой).read_text(encoding="utf-8")
+        for сеттер in сеттеры:
+            i = текст.index("ape." + сеттер + "(")
+            вызов = текст[i:текст.index(")", i) + 1]
+            assert "dataplane_records." in вызов and "await" not in вызов, (
+                f"{слой}: {вызов} — инжектируется снимок, а не читатель")

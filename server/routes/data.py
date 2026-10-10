@@ -187,8 +187,11 @@ def data_schema(entity: str, u: dict = Depends(user)) -> dict:
 async def _refresh_dataplane_cache() -> None:
     """Подтянуть рецепты/коннекторы из Postgres и инжектнуть в ape (общие для всех, переживают перенакат)."""
     try:
-        ape.set_recipe_store(await dataplane_store.recipes_all())
-        ape.set_connector_store(await dataplane_store.connectors_all())
+        # ФУНКЦИЯ, а не снимок: рецепты и коннекторы принадлежат арендатору, и готовый список
+        # про него не знает. Поймано живой проверкой на проде: вендор, открывший данные клиента,
+        # видел рецепты своего арендатора.
+        ape.set_recipe_store(dataplane_records.рецепты)
+        ape.set_connector_store(dataplane_records.коннекторы)
     except Exception:  # noqa: BLE001
         pass
 

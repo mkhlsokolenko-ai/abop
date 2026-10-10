@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 
+from . import tenancy
 from .config import settings
 
 SCHEMA = """
@@ -25,6 +26,9 @@ CREATE TABLE IF NOT EXISTS skill_overrides (
     updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 """
+# Арендатор в ПЕРВИЧНОМ ключе: карточку навыка правят у себя все, кто его использует, и правка
+# компании А не должна менять навык у компании Б.
+SCHEMA += tenancy.миграция_ключа("skill_overrides", "sid")
 
 _MEM: dict[str, dict] = {}
 
@@ -63,12 +67,13 @@ def _row(sid: str, r: dict) -> dict:
 
 async def get(sid: str) -> dict | None:
     if not _has_pg():
-        r = _MEM.get(sid)
+        r = _MEM.get(tenancy.ключ_памяти(sid))
         return _row(sid, r) if r else None
     from .db import _conn
     async with _conn() as conn:
         cur = await conn.execute(
-            "SELECT sid,patch,datasources,version,editor,updated_at FROM skill_overrides WHERE sid=%s", (sid,))
+            "SELECT sid,patch,datasources,version,editor,updated_at FROM skill_overrides "
+            "WHERE sid=%s AND tenant=%s", (sid, tenancy.текущий()))
         r = await cur.fetchone()
     if not r:
         return None
@@ -79,11 +84,14 @@ async def get(sid: str) -> dict | None:
 async def all() -> dict[str, dict]:
     """Все оверрайды: sid → {patch, datasources, version, editor, updated_at}. Для оверлея каталога."""
     if not _has_pg():
-        return {sid: _row(sid, r) for sid, r in _MEM.items()}
+        префикс = tenancy.ключ_памяти("")
+        return {k[len(префикс):]: _row(k[len(префикс):], r) for k, r in _MEM.items()
+                if k.startswith(префикс)}
     from .db import _conn
     async with _conn() as conn:
         cur = await conn.execute(
-            "SELECT sid,patch,datasources,version,editor,updated_at FROM skill_overrides")
+            "SELECT sid,patch,datasources,version,editor,updated_at FROM skill_overrides "
+            "WHERE tenant=%s", (tenancy.текущий(),))
         rows = await cur.fetchall()
     return {r[0]: {"sid": r[0], "patch": r[1] or {}, "datasources": r[2], "version": r[3],
                    "editor": r[4], "updated_at": r[5].isoformat() if r[5] else None} for r in rows}
@@ -117,18 +125,20 @@ async def _upsert(sid: str, *, patch=None, datasources="__keep__", editor: str =
     version = _bump(cur.get("version"))
     ts = _now_iso()
     if not _has_pg():
-        _MEM[sid] = {"patch": new_patch, "datasources": new_ds, "version": version,
-                     "editor": editor, "updated_at": ts}
-        return _row(sid, _MEM[sid])
+        _MEM[tenancy.ключ_памяти(sid)] = {
+            "patch": new_patch, "datasources": new_ds, "version": version,
+            "editor": editor, "updated_at": ts}
+        return _row(sid, _MEM[tenancy.ключ_памяти(sid)])
     from .db import _conn
     async with _conn() as conn:
         await conn.execute(
-            "INSERT INTO skill_overrides (sid,patch,datasources,version,editor,updated_at) "
-            "VALUES (%s,%s,%s,%s,%s,now()) "
-            "ON CONFLICT (sid) DO UPDATE SET patch=EXCLUDED.patch, datasources=EXCLUDED.datasources, "
+            "INSERT INTO skill_overrides (sid,patch,datasources,version,editor,updated_at,tenant) "
+            "VALUES (%s,%s,%s,%s,%s,now(),%s) "
+            "ON CONFLICT (tenant, sid) DO UPDATE SET patch=EXCLUDED.patch, datasources=EXCLUDED.datasources, "
             "version=EXCLUDED.version, editor=EXCLUDED.editor, updated_at=now()",
             (sid, json.dumps(new_patch),
-             None if new_ds is None else json.dumps(new_ds), version, editor))
+             None if new_ds is None else json.dumps(new_ds), version, editor,
+             tenancy.текущий()))
     return await get(sid)
 
 

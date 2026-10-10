@@ -218,3 +218,65 @@ def _сброс_для_тестов() -> None:
     if _has_pg() and _pool is not None:
         with _pool.connection() as conn:
             conn.execute("TRUNCATE dp_records")
+
+
+# ── Определения Data Plane синхронно: рецепты и коннекторы по арендатору ─────────────────────────
+# Ядро (`cli/ape.py`) синхронно, а рецепты ему нужны на каждом прогоне. Раньше сервер инжектил в
+# него ГОТОВЫЙ СПИСОК на старте — и этот список не знал про арендатора: вендор, открывший данные
+# клиента, видел рецепты своего. Поймано живой проверкой на проде, а не тестом: статический сторож
+# таких дыр не видит, потому что данные приходят не из запроса, а из кэша процесса.
+#
+# Закономерность, которую стоит помнить: **инъекция объектом знает арендатора, инъекция готовым
+# списком — нет**. Поэтому здесь не кэш, а чтение по месту — через тот же синхронный пул.
+
+def _из_памяти(какие: str) -> list[dict]:
+    from . import dataplane_store as _ds
+    склад = _ds._MEM_RECIPES if какие == "recipes" else _ds._MEM_CONNECTORS
+    префикс = tenancy.ключ_памяти("")
+    return [v for k, v in склад.items() if k.startswith(префикс)]
+
+
+def рецепты() -> list[dict]:
+    """Рецепты текущего арендатора. Синхронно — для ядра."""
+    if not _has_pg():
+        return _из_памяти("recipes")
+    with _pool.connection() as conn:
+        cur = conn.execute("SELECT spec FROM dp_recipes WHERE tenant=%s", (tenancy.текущий(),))
+        return [_строка(r[0]) for r in cur.fetchall()]
+
+
+def коннекторы() -> list[dict]:
+    """Коннекторы текущего арендатора. Синхронно — для ядра."""
+    if not _has_pg():
+        return _из_памяти("connectors")
+    with _pool.connection() as conn:
+        cur = conn.execute("SELECT spec FROM dp_connectors WHERE tenant=%s", (tenancy.текущий(),))
+        return [_строка(r[0]) for r in cur.fetchall()]
+
+
+def _правки_навыков() -> list[tuple[str, dict]]:
+    """Правки карточек навыков текущего арендатора — синхронно, для ядра."""
+    if not _has_pg():
+        from . import skill_store as _ss
+        префикс = tenancy.ключ_памяти("")
+        return [(k[len(префикс):], v) for k, v in _ss._MEM.items() if k.startswith(префикс)]
+    with _pool.connection() as conn:
+        cur = conn.execute("SELECT sid, patch, datasources FROM skill_overrides WHERE tenant=%s",
+                           (tenancy.текущий(),))
+        return [(r[0], {"patch": r[1] or {}, "datasources": r[2]}) for r in cur.fetchall()]
+
+
+def правки_источников() -> dict:
+    """{sid: datasources[]} арендатора — data-need навыка, настроенный в его интерфейсе."""
+    return {sid: (r.get("datasources") or []) for sid, r in _правки_навыков()
+            if r.get("datasources") is not None}
+
+
+def правки_вывода() -> dict:
+    """{sid: output} арендатора — флаг «структура или документ» из карточки навыка."""
+    out = {}
+    for sid, r in _правки_навыков():
+        формат = (r.get("patch") or {}).get("output")
+        if формат:
+            out[sid] = формат
+    return out
