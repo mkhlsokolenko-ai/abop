@@ -134,8 +134,8 @@ def _применить_арендатора(request: Request, ident: dict) -> d
     return {**ident, "tenant_active": действует}
 
 
-def user(request: Request) -> dict:
-    """Текущий пользователь из Bearer-JWT (roles + department → level + ABAC-область + арендатор).
+def личность(request: Request) -> dict:
+    """Разбор Bearer-JWT: кто это и какой у него арендатор. Контекст НЕ ставит.
     Bearer есть → декодируем (JWKS-верификация если настроена, иначе decode для демо-переключателя).
     Bearer нет: без JWKS — dev-admin; с JWKS — 401."""
     auth = request.headers.get("Authorization", "")
@@ -180,6 +180,19 @@ def user(request: Request) -> dict:
     return _применить_арендатора(request, _identity(
         {"sub": "dev", "preferred_username": "dev (admin)",
          "realm_access": {"roles": ["admin"]}, "department": "*"}, dev=True))
+
+
+async def user(request: Request) -> dict:
+    """Зависимость маршрутов: кто пользователь И какой арендатор действует в этом запросе.
+
+    **Асинхронная намеренно.** Синхронную зависимость FastAPI исполняет в пуле потоков, и
+    `contextvars`, выставленный там, в задачу запроса НЕ возвращается: арендатор терялся, `/api/me`
+    показывал переключение, а сторы читали арендатора по умолчанию. Поймано живой проверкой на
+    проде, а не тестом, — поэтому порядок сторожит `tests/test_tenancy.py`.
+    """
+    u = личность(request)
+    tenancy.установить(u.get("tenant_active") or u.get("tenant"))
+    return u
 
 
 def can_see_family(u: dict, family: str) -> bool:

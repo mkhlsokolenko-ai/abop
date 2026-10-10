@@ -58,6 +58,7 @@ from .report_context import (  # noqa: E402
 import hashlib as _hashlib  # noqa: E402
 
 from .deps import (  # noqa: E402
+    личность,
     _client, _extra_issuers, _identity, _jwks_url, _jwt_cache_get, _jwt_cache_put,
     _LEVELS, _role_level, _sub, _uid_of, can_see_family, require_level, user)
 
