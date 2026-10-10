@@ -2501,7 +2501,7 @@ const SETTINGS = {
     { label: 'Общие креды', value: 'используются 2 арендаторами', badge: 'shared', ok: false },
     { label: 'BYO-креды', value: 'arendator-b · собственный ERP', badge: 'BYO', ok: true }
   ],
-  'Память': [], 'Подбор': [], 'Прогон': [], 'Шина': [], 'Биллинг': [
+  'Вертикали': [], 'Память': [], 'Подбор': [], 'Прогон': [], 'Шина': [], 'Биллинг': [
     { label: 'Недельная квота', value: '1 240 ₽ из 4 000 ₽', badge: '31%', ok: true },
     { label: 'Дороже всех', value: 'dcf-valuation · 0.14 ₽ за вызов', badge: 'per-node', ok: false },
     { label: 'Аудит-след', value: '100% перешагов с провенансом', badge: 'полный', ok: true }
@@ -2655,7 +2655,7 @@ class Component extends DCLogic {
   dragging = null;
   dragKind = null;
   state = {
-    screen: this.props.startScreen ?? 'overview', me: null, userMenu: false, loginEmail: '', loginPass: '', loginJwt: '', toasts: [], hitlQueue: [], hitlPreview: null, pendingDelete: null, planWavesReal: null, dataView: null, adminTab: 'users', adminUsers: [], adminStaff: [], adminLoading: false, adminErr: '', paletteCollapsed: {}, scenPickerOpen: true, runsList: [], runsLoading: false, opsWide: false, settingsTab: 'Модели', dataTab: 'recipes', rulesList: [], rulesLoading: false, rulePredicates: [], ruleSel: null, ruleDraft: null, ruleCard: null, ruleDry: null, ruleDirty: false, ruleBusy: false, ruleErr: '', agentsList: [], limboList: [], showLimbo: false, agentDetail: null, agentDrawerName: '', familiesList: [], recipeHeaders: {}, recipeEntity: 'transaction', recipeRoot: '', srcColumns: [], skillSrcDraft: [], lineage: null,
+    screen: this.props.startScreen ?? 'overview', me: null, userMenu: false, loginEmail: '', loginPass: '', loginJwt: '', toasts: [], hitlQueue: [], hitlPreview: null, pendingDelete: null, planWavesReal: null, dataView: null, adminTab: 'users', adminUsers: [], adminStaff: [], adminLoading: false, adminErr: '', paletteCollapsed: {}, scenPickerOpen: true, runsList: [], runsLoading: false, opsWide: false, settingsTab: 'Модели', dataTab: 'recipes', verticalsList: [], verticalsLoading: false, vtBusy: false, vtErr: '', vtReport: [], vtReportFor: '', rulesList: [], rulesLoading: false, rulePredicates: [], ruleSel: null, ruleDraft: null, ruleCard: null, ruleDry: null, ruleDirty: false, ruleBusy: false, ruleErr: '', agentsList: [], limboList: [], showLimbo: false, agentDetail: null, agentDrawerName: '', familiesList: [], recipeHeaders: {}, recipeEntity: 'transaction', recipeRoot: '', srcColumns: [], skillSrcDraft: [], lineage: null,
     playing: true, pct: 0, hitlResolved: false, stopped: false,
     modal: null, skillId: null, popNodeId: null,
     modeFilter: 'Все', familyFilter: 'Все', cmdkQuery: '',
@@ -2713,6 +2713,40 @@ class Component extends DCLogic {
   // Шаг 3 плана «правила — данные». До этого новая проверка означала правку файла в пакете
   // вертикали и выкатку. Здесь методолог меняет правило, видит срабатывание на выборке и только
   // потом сохраняет — порядок именно такой, потому что правило считает находки заказчику.
+  // ── Вертикали: список и установка ─────────────────────────────────────────────────────────
+  // Пакет вертикали — единица поставки (шаг 4). Ставится одной операцией и отчитывается, что
+  // именно изменила в системе: молча установка не делает ничего.
+  loadVerticals() {
+    var self = this;
+    self.setState({ verticalsLoading: true });
+    fetch('/api/verticals').then(function (r) { return r.json(); }).then(function (d) {
+      self.setState({ verticalsList: d.вертикали || [], verticalsLoading: false });
+    }).catch(function () { self.setState({ verticalsList: [], verticalsLoading: false }); });
+  }
+
+  installVertical(id, overwrite) {
+    if (!this._canMutate()) { this.showToast('Только чтение — недостаточно прав'); return; }
+    var self = this;
+    self.setState({ vtBusy: true, vtErr: '', vtReport: [], vtReportFor: id });
+    fetch('/api/verticals/' + encodeURIComponent(id) + '/install', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ перезаписать_правки: !!overwrite })
+    }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (!res.ok) {
+          // Отказ установки показывается целиком: «в системе нет навыка X» — это инструкция
+          // к действию, а не повод написать «не удалось».
+          var d = (res.j && res.j.detail) || 'установка не прошла';
+          self.setState({ vtBusy: false, vtErr: typeof d === 'string' ? d : JSON.stringify(d) });
+          return;
+        }
+        self.setState({ vtBusy: false, vtReport: res.j.отчёт || [] });
+        self.showToast('Вертикаль «' + (res.j.название || id) + '» поставлена');
+        self.loadVerticals();
+        self.loadData();          // рецепты и наборы правил изменились — список не должен врать
+      }).catch(function () { self.setState({ vtBusy: false, vtErr: 'ABOP недоступен' }); });
+  }
+
   loadRules() {
     var self = this;
     self.setState({ rulesLoading: true });
@@ -6234,6 +6268,53 @@ class Component extends DCLogic {
         ackFg: ack ? 'var(--ok-ink)' : 'var(--warn-ink)', canReplay: !!m.replayable && !ack, canAck: !ack,
         replay: () => this.dlqAct('replay', m), ack: () => this.dlqAct('ack', m) }; }),
       busDlqEmpty: !!s.busDlq && !((s.busDlq.items || []).length),
+      // ── Админка → Вертикали: поставка, которую ставят, а не собирают руками ────────────────
+      isVerticalsTab: s.settingsTab === 'Вертикали',
+      vtRows: (s.verticalsList || []).map(в => ({
+        id: в.id, title: в.название, version: в.версия, area: в.область || '—',
+        desc: в.описание || '',
+        source: в.источник ? ('источник: ' + в.источник) : '',
+        metric: (в.метрика || {}).как ? ('метрика: ' + в.метрика.как) : '',
+        // «Установлена» — вопрос факта, а не отметки: контракт принят и рецепты лежат в системе.
+        state: в.установлена ? 'установлена' : (в.годен ? 'готова к установке' : 'не годна'),
+        stateBg: в.установлена ? 'rgba(16,185,129,.14)'
+          : (в.годен ? 'rgba(99,102,241,.16)' : 'rgba(239,68,68,.12)'),
+        stateFg: в.установлена ? 'var(--ok-ink)'
+          : (в.годен ? 'var(--acc-ink2)' : 'var(--err-ink)'),
+        border: в.годен ? 'var(--w10)' : 'rgba(239,68,68,.4)',
+        rules: (в.наборы || []).map(н => н.id + ' · ' + н.правил
+          + (н.правка_в_системе ? ' (правка в системе)' : '')).join(' · ') || '—',
+        recipes: (в.рецепты || []).map(р => р.id + ' → ' + р.сущность
+          + (р.есть_в_системе ? '' : ' (нет)')).join(' · ') || '—',
+        needs: [].concat(((в.требует || {}).навыки || []).length
+                 ? ['навыки: ' + (в.требует.навыки || []).join(', ')] : [],
+               ((в.требует || {}).адаптеры || []).length
+                 ? ['адаптеры: ' + (в.требует.адаптеры || []).join(', ')] : []).join(' · ') || '—',
+        // Чего в системе нет — отдельной красной строкой: пакет это НЕ привозит с собой.
+        missing: Object.keys(в.чего_нет || {})
+          .filter(k => ((в.чего_нет || {})[k] || []).length)
+          .map(k => k + ': ' + в.чего_нет[k].join(', ')).join(' · '),
+        hasMissing: Object.keys(в.чего_нет || {}).some(k => ((в.чего_нет || {})[k] || []).length),
+        errors: (в.ошибки || []).join('; '),
+        hasErrors: !!(в.ошибки || []).length,
+        canInstall: !!в.годен,
+        install: () => this.installVertical(в.id, false),
+        reinstall: () => this.installVertical(в.id, true),
+        // Переустановка с перезаписью предлагается ТОЛЬКО когда правка есть: иначе кнопка
+        // «снести правки» стоит там, где сносить нечего, и однажды снесёт нужное.
+        hasEdits: (в.наборы || []).some(н => н.правка_в_системе)
+      })),
+      vtEmpty: !(s.verticalsList || []).length && !s.verticalsLoading,
+      vtBusy: !!s.vtBusy,
+      vtReport: (s.vtReport || []).map(стр => ({
+        line: стр.итог + '  ' + стр.что + '  ' + стр.id + (стр.почему ? ' — ' + стр.почему : ''),
+        fg: стр.итог === 'поставлен' ? 'var(--ok-ink)'
+          : (стр.итог === 'обновлён' ? 'var(--acc-ink2)' : 'var(--w50)')
+      })),
+      vtReportFor: s.vtReportFor || '',
+      vtHasReport: !!(s.vtReport || []).length,
+      vtErr: s.vtErr || '',
+      vtHasErr: !!s.vtErr,
       isTenantTab: s.settingsTab === 'Арендаторы',
       isBillTab: s.settingsTab === 'Биллинг',
       modelRows: [
@@ -7679,6 +7760,7 @@ class Component extends DCLogic {
   }
   loadSystems() {
     var self = this;
+    this.loadVerticals();
     fetch('/api/systems').then(function(r){ return r.ok ? r.json() : null; }).then(function(d){ if (d && d.systems) self.setState({ systemsList: d.systems }); }).catch(function(){});
     self.loadModels();
   }

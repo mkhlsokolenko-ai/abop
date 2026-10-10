@@ -75,7 +75,7 @@
 # 1. данные
 docker exec abop-webapi python ops/seed_omninet.py --out /root/.ape/files/omninet
 
-# 2. рецепты (через API, manager+): demo/omninet/recipes/*.json → POST /api/data/recipes
+# 2. рецепты (через API, manager+): verticals/omninet/recipes/*.json → POST /api/data/recipes
 #    затем POST /api/data/recipes/<имя>/run {"reset": true}
 
 # 3. агент из демо-пакета

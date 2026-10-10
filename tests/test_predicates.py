@@ -154,7 +154,7 @@ def test_набор_витрины_валиден():
     """Поставочный набор вертикали обязан проходить статическую проверку."""
     import json
 
-    набор = json.loads((КОРЕНЬ / "demo" / "omninet" / "rules" / "showcase-b.json")
+    набор = json.loads((КОРЕНЬ / "verticals" / "omninet" / "rules" / "showcase-b.json")
                        .read_text(encoding="utf-8"))
     assert checks.проверить_набор(набор) == []
     assert набор["предмет"] == "feed_card"

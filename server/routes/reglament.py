@@ -149,7 +149,7 @@ async def reglament_list(tenant: str = "default", u: dict = Depends(user)) -> di
 
 @router.get("/api/audit1c/norms/{name}")
 async def audit1c_norm(name: str, u: dict = Depends(user)):
-    """Текст нормы из экспертного справочника demo/audit1c/norms (markdown) — источник «Чем грозит / Что проверить»."""
+    """Текст нормы из экспертного справочника verticals/audit1c/norms (markdown) — источник «Чем грозит / Что проверить»."""
     from fastapi.responses import PlainTextResponse
     import re as _re
     if not _re.match(r"^[\w\-]+\.md$", name):

@@ -205,14 +205,14 @@ audit1c-extract → audit1c-graph-build → invest1c-trace → invest1c-verdict 
 invest1c **переиспользует канонический снимок 1С кейса audit1c** (сущности `doc1c`/`ref1c`). Данные
 приходят рецептами:
 
-- `demo/audit1c/recipes/audit1c_docs.json` → `doc1c` (источник `http://201.51.5.24:8092/audit-data/dump.json`, секция `documents`);
-- `demo/audit1c/recipes/audit1c_refs.json` → `ref1c` (та же URL, секция `catalogs`).
+- `verticals/audit1c/recipes/audit1c_docs.json` → `doc1c` (источник `http://201.51.5.24:8092/audit-data/dump.json`, секция `documents`);
+- `verticals/audit1c/recipes/audit1c_refs.json` → `ref1c` (та же URL, секция `catalogs`).
 
 Ключевые поля `doc1c`: `СуммаДокумента`, `СуммаНДС`, **`Основание_uuid`** (ДокументОснование — ключ
 цепочки), `Основание_тип`. Типы, которые ищет расследование: `РеализацияТоваровУслуг`,
 `СчётФактураВыданный`, `ПоступлениеНаРасчётныйСчёт`.
 
-**Нормы для RAG-вердикта** (корпус `slava_audit1c_norms`) — из `demo/audit1c/norms/*.md`:
+**Нормы для RAG-вердикта** (корпус `slava_audit1c_norms`) — из `verticals/audit1c/norms/*.md`:
 `01_nds_scheta_faktury.md` (ст. 168/169/171/172 НК), `05_deb_kred_raschety.md` (сч. 60/62),
 `06_period_cutoff.md` (cut-off), `03_vgo_konsolidatsiya.md` (ВГО).
 

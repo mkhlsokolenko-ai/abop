@@ -1721,6 +1721,60 @@ def cmd_rag(a):
             print(txt[:500])
 
 
+def cmd_verticals(a):
+    """Пакеты вертикалей: список и установка через API сервера.
+
+    Партнёр-внедренец ставит вертикаль заказчику без интерфейса — но ТЕМ ЖЕ путём, что из UI:
+    через ручку сервера. Отдельного пути установки быть не должно, иначе он разойдётся с
+    проверками (сверка манифеста, требуемые навыки, бережное отношение к правкам методолога).
+    """
+    база = (os.getenv("ABOP_API") or "http://127.0.0.1:8091").rstrip("/")
+    токен = os.getenv("ABOP_TOKEN") or ""
+    заголовки = {"Authorization": "Bearer " + токен} if токен else {}
+
+    def _зов(путь, метод="GET", тело=None):
+        данные = json.dumps(тело or {}).encode() if метод == "POST" else None
+        req = urllib.request.Request(база + путь, data=данные, method=метод,
+                                     headers={**заголовки, "Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=120) as r:
+                return json.loads(r.read().decode("utf-8"))
+        except urllib.error.HTTPError as ex:
+            тело_ошибки = ex.read().decode("utf-8", "replace")
+            print(col(f"  сервер отказал ({ex.code}): {тело_ошибки[:400]}", "red"))
+            return None
+        except Exception as ex:  # noqa: BLE001
+            print(col(f"  ABOP недоступен по {база}: {ex}", "red"))
+            return None
+
+    if getattr(a, "vertical_id", None):
+        res = _зов(f"/api/verticals/{a.vertical_id}/install", "POST",
+                   {"перезаписать_правки": bool(getattr(a, "overwrite", False))})
+        if not res:
+            sys.exit(1)
+        print(col(f"Установлено: {res.get('название')} {res.get('версия')}", "bold"))
+        for строка in res.get("отчёт") or []:
+            цвет = {"поставлен": "gr", "обновлён": "cy", "пропущен": "gray"}.get(строка["итог"], "")
+            print(col(f"  {строка['итог']:<10} {строка['что']:<9} {строка['id']}"
+                      + (f"  — {строка['почему']}" if строка.get("почему") else ""), цвет))
+        print(col("  агента нужно посадить на участок карты отдельно", "gray"))
+        return
+
+    res = _зов("/api/verticals")
+    if not res:
+        sys.exit(1)
+    print(col("Пакеты вертикалей", "bold"))
+    for в in res.get("вертикали") or []:
+        метка = "установлена" if в["установлена"] else ("годна" if в["годен"] else "НЕ ГОДНА")
+        print(f"  {в['id']:<12} {в['версия']:<8} {метка:<12} {в['название']}")
+        for о in в.get("ошибки") or []:
+            print(col("      " + о, "red"))
+        нет = {к: v for к, v in (в.get("чего_нет") or {}).items() if v}
+        for к, v in нет.items():
+            print(col(f"      в системе нет: {к} — {', '.join(v)}", "red"))
+    print(col("  установить: ape verticals <id>   (адрес — ABOP_API, токен — ABOP_TOKEN)", "gray"))
+
+
 def cmd_usage(a):
     res = _mcp_call("my_usage", {"session_id": _session_id()})
     wk = res.get("week", {})
@@ -1789,6 +1843,12 @@ def build_parser() -> argparse.ArgumentParser:
     rs.add_argument("query")
     rs.add_argument("--top-k", type=int, default=5, dest="top_k")
     rg.set_defaults(func=cmd_rag)
+
+    vt = sub.add_parser("verticals", help="пакеты вертикалей: список и установка")
+    vt.add_argument("vertical_id", nargs="?", help="id пакета — установить (без него: список)")
+    vt.add_argument("--overwrite", action="store_true",
+                    help="снять правки методолога и вернуть версию пакета")
+    vt.set_defaults(func=cmd_verticals)
 
     sub.add_parser("usage", help="расход и квота").set_defaults(func=cmd_usage)
     sub.add_parser("whoami", help="кто я").set_defaults(func=cmd_whoami)
@@ -4214,7 +4274,7 @@ def set_rule_store(store) -> None:
 
 
 def наборы_из_пакетов() -> dict:
-    """Поставочные наборы из пакетов вертикалей: `demo/*/rules/*.json` → {id: набор}.
+    """Поставочные наборы из пакетов вертикалей: `verticals/*/rules/*.json` → {id: набор}.
 
     Это НЕИЗМЕНЯЕМАЯ часть: что приехало с пакетом. Правка методолога живёт в сторе и ложится
     поверх — чтобы «вернуть версию пакета» всегда было чем.
@@ -4222,7 +4282,7 @@ def наборы_из_пакетов() -> dict:
     if _НАБОРЫ_КЭШ:
         return _НАБОРЫ_КЭШ
     корень = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    for путь in sorted(glob.glob(os.path.join(корень, "demo", "*", "rules", "*.json"))):
+    for путь in sorted(glob.glob(os.path.join(корень, "verticals", "*", "rules", "*.json"))):
         try:
             with open(путь, encoding="utf-8") as f:
                 набор = json.load(f)

@@ -195,7 +195,7 @@ curl -s -XPOST http://127.0.0.1:8091/api/runs -H "Authorization: Bearer $TOKEN" 
 curl -s -XPOST 'http://127.0.0.1:8091/api/runs?async=1' -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' -d '{"agent_id":"audit1c-holding-2026.v1"}'
 ```
-Демо-пакеты: `demo/audit1c/`, `demo/invest1c/`, `demo/fin/` (contract*.json + agent_body.json). Требуют наполненного Data Plane (§4). Результат аудитора с шаблонами доставки (`audit1c-explain`, `audit1c-rank`) создаёт HITL-заявки с превью задач Redmine — подтверждение в чате десктопа или в очереди HITL веба.
+Демо-пакеты: `verticals/audit1c/`, `demo/invest1c/`, `demo/fin/` (contract*.json + agent_body.json). Требуют наполненного Data Plane (§4). Результат аудитора с шаблонами доставки (`audit1c-explain`, `audit1c-rank`) создаёт HITL-заявки с превью задач Redmine — подтверждение в чате десктопа или в очереди HITL веба.
 
 ---
 

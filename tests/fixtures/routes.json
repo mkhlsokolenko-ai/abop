@@ -445,6 +445,14 @@
  ],
  [
   "GET",
+  "/api/verticals"
+ ],
+ [
+  "GET",
+  "/api/verticals/{vid}"
+ ],
+ [
+  "GET",
   "/desktop-ui-bundle"
  ],
  [
@@ -842,6 +850,10 @@
  [
   "POST",
   "/api/triggers/{agent_id}/{trigger_id}/fire"
+ ],
+ [
+  "POST",
+  "/api/verticals/{vid}/install"
  ],
  [
   "PUT",

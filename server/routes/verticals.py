@@ -1,0 +1,289 @@
+# -*- coding: utf-8 -*-
+"""Вертикали: пакет, который можно поставить, а не репозиторий, который надо собрать.
+
+Шаг 4 плана «правила — данные». До этого вертикаль была соглашением: папка в репозитории, из
+которой человек руками раскладывал контракт, агента, рецепты и правила. Поставить её заказчику
+означало повторить эти шаги и ничего не забыть. Здесь вертикаль становится **единицей поставки**:
+манифест `vertical.json` плюс содержимое, и одна операция установки.
+
+Три правила, без которых формат был бы бумажкой.
+
+* **Манифест не имеет права врать о содержимом.** Что объявлено в `содержит`, то и должно лежать
+  в папке — и наоборот. Расхождение означает, что человек поставит не то, что прочитал в
+  описании, и это отказ установки, а не предупреждение.
+* **Чего пакет не несёт — то должно быть в системе заранее.** Навыки и адаптеры объявляются в
+  `требует`; нет навыка в каталоге — установка не идёт. Пакет НЕ несёт чужой Python: это не
+  ограничение лицензии, а условие периметра (см. docs/PREDIKATY.md, docs/MONETIZATION.md).
+* **Установка идемпотентна и говорит, что сделала.** Повторная установка не плодит версии и не
+  затирает правки методолога без спроса: набор правил, который правили в интерфейсе, остаётся
+  как есть, и это **названо** в отчёте установки, а не решено молча.
+"""
+from __future__ import annotations
+
+import asyncio as _asyncio
+import json
+import pathlib
+
+from fastapi import APIRouter, Depends, HTTPException
+
+from cli import ape
+
+from . import agents as _agents
+from .. import agent_store, assembly, audit_store, cachebus, contract_store
+from .. import dataplane_store, ingress, rules_store
+from ..deps import can_see_family, require_level, user
+
+router = APIRouter()
+
+КАТАЛОГ = pathlib.Path(__file__).resolve().parents[2] / "verticals"
+
+
+def _каталог(vid: str) -> pathlib.Path:
+    """Папка пакета. Имя — один сегмент: подниматься вверх по дереву нельзя."""
+    имя = (vid or "").strip()
+    if not имя or "/" in имя or "\\" in имя or имя.startswith("."):
+        raise HTTPException(422, f"недопустимый идентификатор вертикали «{vid}»")
+    путь = КАТАЛОГ / имя
+    if not путь.is_dir():
+        raise HTTPException(404, f"нет пакета вертикали «{имя}»")
+    return путь
+
+
+def _манифест(путь: pathlib.Path) -> dict:
+    файл = путь / "vertical.json"
+    if not файл.is_file():
+        raise HTTPException(422, f"в пакете «{путь.name}» нет манифеста vertical.json")
+    try:
+        return json.loads(файл.read_text(encoding="utf-8"))
+    except Exception as ex:  # noqa: BLE001
+        raise HTTPException(422, f"манифест «{путь.name}» не читается: {ex}")
+
+
+def _наборы(путь: pathlib.Path) -> dict[str, dict]:
+    out = {}
+    for f in sorted((путь / "rules").glob("*.json")):
+        набор = json.loads(f.read_text(encoding="utf-8"))
+        out[набор.get("id") or f.stem] = набор
+    return out
+
+
+def _рецепты(путь: pathlib.Path) -> dict[str, dict]:
+    out = {}
+    for f in sorted((путь / "recipes").glob("*.json")):
+        рец = json.loads(f.read_text(encoding="utf-8"))
+        out[рец.get("recipe") or f.stem] = рец
+    return out
+
+
+def _сверить(путь: pathlib.Path, манифест: dict) -> list[str]:
+    """Манифест против содержимого папки. Расхождение в любую сторону — ошибка.
+
+    Пакет читают глазами по манифесту, а ставят по файлам. Если они разошлись, человек поставит
+    не то, что прочитал, — и узнает об этом на прогоне у заказчика.
+    """
+    ошибки: list[str] = []
+    содержит = манифест.get("содержит") or {}
+
+    for поле, фактические, что in (("правила", set(_наборы(путь)), "набор правил"),
+                                   ("рецепты", set(_рецепты(путь)), "рецепт")):
+        объявлены = set(содержит.get(поле) or [])
+        for лишний in sorted(объявлены - фактические):
+            ошибки.append(f"манифест обещает {что} «{лишний}», файла нет")
+        for незаявленный in sorted(фактические - объявлены):
+            ошибки.append(f"в пакете есть {что} «{незаявленный}», в манифесте не объявлен")
+
+    for поле, имя in (("контракт", содержит.get("контракт")), ("агент", содержит.get("агент"))):
+        if not имя:
+            ошибки.append(f"манифест не объявляет {поле}")
+        elif not (путь / имя).is_file():
+            ошибки.append(f"манифест обещает {поле} «{имя}», файла нет")
+
+    for поле in ("id", "название", "версия"):
+        if not манифест.get(поле):
+            ошибки.append(f"в манифесте не заполнено «{поле}»")
+    if манифест.get("id") and манифест["id"] != путь.name:
+        ошибки.append(f"id манифеста «{манифест['id']}» не совпадает с папкой «{путь.name}»")
+
+    for набор in _наборы(путь).values():
+        for о in ape.checks.проверить_набор(набор):
+            ошибки.append(f"набор «{набор.get('id')}»: {о}")
+    return ошибки
+
+
+def _чего_нет(манифест: dict) -> dict[str, list[str]]:
+    """Что пакет требует, но в системе этого нет. Пакет такое НЕ привозит с собой."""
+    требует = манифест.get("требует") or {}
+    нет_навыков = [s for s in (требует.get("навыки") or []) if s not in ape.SKILLS]
+    нет_адаптеров = [a for a in (требует.get("адаптеры") or []) if a not in ape.SOURCE_ADAPTERS]
+    нет_сущностей = [e for e in (требует.get("сущности") or [])
+                     if e not in ape.CANONICAL_SCHEMAS]
+    return {"навыки": нет_навыков, "адаптеры": нет_адаптеров, "сущности": нет_сущностей}
+
+
+def _карточка(путь: pathlib.Path, правки: set[str], рецепты_в_системе: set[str],
+              контракты: set[str]) -> dict:
+    манифест = _манифест(путь)
+    наборы, рецепты = _наборы(путь), _рецепты(путь)
+    ошибки = _сверить(путь, манифест)
+    нет = _чего_нет(манифест)
+    cr = {}
+    контракт = путь / (манифест.get("содержит", {}).get("контракт") or "contract.json")
+    if контракт.is_file():
+        try:
+            cr = (json.loads(контракт.read_text(encoding="utf-8"))
+                  .get("capability_request") or {})
+        except Exception:  # noqa: BLE001 — битый контракт уже назван в ошибках сверки
+            cr = {}
+    audit_id = str(cr.get("audit_id") or "")
+    return {
+        "id": путь.name,
+        "название": манифест.get("название") or путь.name,
+        "версия": манифест.get("версия") or "",
+        "область": манифест.get("область") or "",
+        "описание": манифест.get("описание") or "",
+        "автор": манифест.get("автор") or "",
+        "источник": манифест.get("источник") or "",
+        "метрика": манифест.get("метрика") or {},
+        "требует": манифест.get("требует") or {},
+        "наборы": [{"id": i, "предмет": н.get("предмет"), "правил": len(н.get("правила") or []),
+                    "правка_в_системе": i in правки} for i, н in наборы.items()],
+        "рецепты": [{"id": i, "сущность": р.get("entity"),
+                     "есть_в_системе": i in рецепты_в_системе} for i, р in рецепты.items()],
+        "контракт": {"audit_id": audit_id, "семья": cr.get("family"),
+                     "принят": audit_id in контракты},
+        "ошибки": ошибки,
+        "годен": not ошибки and not any(нет.values()),
+        "чего_нет": нет,
+        # Установлена ли вертикаль — вопрос факта, а не отметки: контракт принят И рецепты лежат.
+        "установлена": bool(audit_id and audit_id in контракты
+                            and set(рецепты) <= рецепты_в_системе),
+    }
+
+
+async def _состояние_системы() -> tuple[set[str], set[str], set[str]]:
+    правки = {r["id"] for r in await rules_store.all()}
+    рецепты = {str(r.get("recipe") or r.get("id")) for r in await dataplane_store.recipes_all()}
+    контракты = {str(c.get("audit_id")) for c in await contract_store.list_all(limit=500)}
+    return правки, рецепты, контракты
+
+
+@router.get("/api/verticals")
+async def verticals_list(u: dict = Depends(user)) -> dict:
+    """Какие вертикали есть в поставке и что из них уже стоит в этой системе."""
+    правки, рецепты, контракты = await _состояние_системы()
+    пакеты = []
+    if КАТАЛОГ.is_dir():
+        for путь in sorted(p for p in КАТАЛОГ.iterdir() if p.is_dir()):
+            if not (путь / "vertical.json").is_file():
+                continue
+            пакеты.append(await _asyncio.to_thread(_карточка, путь, правки, рецепты, контракты))
+    return {"вертикали": пакеты, "каталог": str(КАТАЛОГ.name)}
+
+
+@router.get("/api/verticals/{vid}")
+async def vertical_get(vid: str, u: dict = Depends(user)) -> dict:
+    """Карточка пакета: состав, требования, сверка манифеста с содержимым."""
+    путь = _каталог(vid)
+    правки, рецепты, контракты = await _состояние_системы()
+    return await _asyncio.to_thread(_карточка, путь, правки, рецепты, контракты)
+
+
+@router.post("/api/verticals/{vid}/install")
+async def vertical_install(vid: str, body: dict | None = None,
+                           u: dict = Depends(user)) -> dict:
+    """Поставить вертикаль: контракт, агент, рецепты, наборы правил. Идемпотентно.
+
+    Отчёт перечисляет каждое действие словом «поставлен / обновлён / пропущен» с причиной. Молча
+    установка не делает ничего: заказчик должен видеть, что именно изменилось в его системе.
+    """
+    require_level(u, "manager")
+    путь = _каталог(vid)
+    манифест = _манифест(путь)
+    ошибки = await _asyncio.to_thread(_сверить, путь, манифест)
+    if ошибки:
+        raise HTTPException(422, "пакет не прошёл сверку: " + "; ".join(ошибки[:8]))
+    нет = _чего_нет(манифест)
+    if any(нет.values()):
+        # Пакет не привозит навыки и адаптеры — их ставит вендор. Честный отказ лучше установки,
+        # которая «прошла», а прогон потом падает на отсутствующем навыке.
+        части = [f"{к}: {', '.join(v)}" for к, v in нет.items() if v]
+        raise HTTPException(422, "в системе нет требуемого — " + "; ".join(части))
+
+    кто = u.get("name") or u.get("sub") or "dev"
+    перезаписать = bool((body or {}).get("перезаписать_правки"))
+    отчёт: list[dict] = []
+
+    # ── 1. контракт ────────────────────────────────────────────────────────────────────────
+    контракт = json.loads((путь / манифест["содержит"]["контракт"]).read_text(encoding="utf-8"))
+    audit_id = ((контракт.get("capability_request") or {}).get("audit_id") or "").strip()
+    if not audit_id:
+        raise HTTPException(422, "в контракте пакета нет capability_request.audit_id")
+    if await contract_store.get(audit_id):
+        отчёт.append({"что": "контракт", "id": audit_id, "итог": "пропущен",
+                      "почему": "уже принят ранее"})
+    else:
+        res = ingress.validate(контракт)
+        if not res.accepted:
+            raise HTTPException(422, {"errors": res.errors})
+        await contract_store.save(контракт, res.intake, ingested_by=кто)
+        отчёт.append({"что": "контракт", "id": audit_id, "итог": "поставлен"})
+    cs = await contract_store.get(audit_id)
+    intake = cs.get("intake") or {}
+    if not can_see_family(u, intake.get("family")):
+        raise HTTPException(403, f"нет доступа к семье «{intake.get('family')}»")
+
+    # ── 2. наборы правил ──────────────────────────────────────────────────────────────────
+    # Поставочный набор читается прямо из пакета (ape.наборы_из_пакетов), поэтому «установить»
+    # его в стор не нужно. В стор пишем только то, что заказчик правил, — и правку чужой
+    # установкой не затираем без явного согласия.
+    ape.set_rule_store(None)
+    ape._НАБОРЫ_КЭШ.clear()                      # пакет мог приехать уже после старта процесса
+    ape.set_rule_store(rules_store.ЭФФЕКТИВНЫЕ)
+    for ид, набор in (await _asyncio.to_thread(_наборы, путь)).items():
+        правка = await rules_store.get(ид)
+        if правка and not перезаписать:
+            отчёт.append({"что": "правила", "id": ид, "итог": "пропущен",
+                          "почему": f"в системе есть правка v{правка.get('версия')} "
+                                    f"({правка.get('кто')}) — установка её не трогает"})
+        elif правка:
+            await rules_store.revert(ид)
+            отчёт.append({"что": "правила", "id": ид, "итог": "обновлён",
+                          "почему": "правка снята по запросу, действует версия пакета"})
+        else:
+            отчёт.append({"что": "правила", "id": ид, "итог": "поставлен",
+                          "почему": f"{len(набор.get('правила') or [])} правил из пакета"})
+    await rules_store.refresh()
+
+    # ── 3. рецепты ────────────────────────────────────────────────────────────────────────
+    было = {str(r.get("recipe") or r.get("id")) for r in await dataplane_store.recipes_all()}
+    for ид, рец in (await _asyncio.to_thread(_рецепты, путь)).items():
+        норм = await _asyncio.to_thread(ape.normalize_recipe, ид, рец)
+        await dataplane_store.save_recipe(норм["recipe"], норм, editor=кто)
+        отчёт.append({"что": "рецепт", "id": ид, "итог": "обновлён" if ид in было else "поставлен",
+                      "почему": f"наполняет «{норм.get('entity')}»"})
+
+    # ── 4. агент ──────────────────────────────────────────────────────────────────────────
+    тело = json.loads((путь / манифест["содержит"]["агент"]).read_text(encoding="utf-8"))
+    graph = тело.get("graph") or {}
+    проверка = assembly.check_graph(graph, intake, ape.skill_safety,
+                                    reads_data=await _agents._skills_reading_data())
+    if проверка["errors"]:
+        raise HTTPException(422, {"errors": проверка["errors"]})
+    fam = intake.get("family") or ""
+    сохранён = await agent_store.save_draft(
+        name=тело.get("name") or vid, audit_id=audit_id, graph=graph,
+        autonomy_max=проверка["autonomy_max"], created_by=кто,
+        family=fam, role=_agents._resolve_role(fam, intake))
+    отчёт.append({"что": "агент", "id": сохранён["id"], "итог": "поставлен",
+                  "почему": f"черновик {сохранён.get('version')}, семья «{fam}» — "
+                            "посадить на участок карты нужно отдельно"})
+
+    await cachebus.notify("dataplane")
+    await cachebus.notify("rules")
+    await audit_store.record(кто, "vertical.install", vid,
+                             {"версия": манифест.get("версия"),
+                              "правил": len(манифест.get("содержит", {}).get("правила") or []),
+                              "рецептов": len(манифест.get("содержит", {}).get("рецепты") or [])})
+    правки, рецепты, контракты = await _состояние_системы()
+    карточка = await _asyncio.to_thread(_карточка, путь, правки, рецепты, контракты)
+    return {**карточка, "отчёт": отчёт, "агент": сохранён["id"], "audit_id": audit_id}

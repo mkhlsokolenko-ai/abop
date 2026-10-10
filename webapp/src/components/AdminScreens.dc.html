@@ -107,6 +107,46 @@
                 </div>
               </sc-if>
 
+              <sc-if value="{{ adm.isVerticalsTab }}" hint-placeholder-val="{{ false }}">
+                <div style="display: flex; flex-direction: column; gap: 12px;">
+                  <div style="font-size: 12.5px; line-height: 1.55; color: var(--w55);">Вертикаль — единица поставки: манифест, наборы правил, рецепты, контракт и агент. Установка идемпотентна и отчитывается за каждое действие. Правки методолога в наборах правил она не трогает — снять их можно только переустановкой с перезаписью.</div>
+                  <sc-if value="{{ adm.vtEmpty }}" hint-placeholder-val="{{ false }}"><div style="padding: 32px; border-radius: 12px; border: 1px dashed var(--w14); text-align: center; color: var(--w60); font-size: 13px;">Пакетов вертикалей нет — каталог verticals/ пуст.</div></sc-if>
+                  <sc-if value="{{ adm.vtHasErr }}" hint-placeholder-val="{{ false }}"><div style="padding: 12px 14px; border-radius: 11px; background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.35); color: var(--err-ink); font-size: 12.5px; line-height: 1.5;">{{ adm.vtErr }}</div></sc-if>
+                  <sc-for list="{{ adm.vtRows }}" as="v" hint-placeholder-count="2">
+                    <div style="display: flex; flex-direction: column; gap: 9px; padding: 16px; border-radius: 12px; background: var(--s50); border: 1px solid {{ v.border }};">
+                      <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                        <span style="font-size: 13.5px; font-weight: 700;">{{ v.title }}</span>
+                        <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w45);">{{ v.id }} · {{ v.version }} · {{ v.area }}</span>
+                        <span style="padding: 4px 10px; border-radius: 9999px; background: {{ v.stateBg }}; color: {{ v.stateFg }}; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; font-weight: 600;">{{ v.state }}</span>
+                        <span style="margin-left: auto; display: flex; gap: 7px;">
+                          <sc-if value="{{ v.canInstall }}" hint-placeholder-val="{{ true }}"><button onClick="{{ v.install }}" style="padding: 8px 14px; border: none; border-radius: 9px; background: linear-gradient(135deg,#6366f1,#8b5cf6); color: var(--ink); font-size: 12px; font-weight: 600;">Поставить</button></sc-if>
+                          <sc-if value="{{ v.hasEdits }}" hint-placeholder-val="{{ false }}"><button onClick="{{ v.reinstall }}" title="Снять правки методолога и вернуть версию пакета" style="padding: 8px 14px; border: 1px solid rgba(245,158,11,.4); border-radius: 9px; background: rgba(245,158,11,.12); color: var(--warn-ink); font-size: 12px; font-weight: 600;">Поставить с перезаписью правок</button></sc-if>
+                        </span>
+                      </div>
+                      <span style="font-size: 12.5px; line-height: 1.5; color: var(--w60);">{{ v.desc }}</span>
+                      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px;">
+                        <span style="font-size: 11.5px; color: var(--w50);">правила: {{ v.rules }}</span>
+                        <span style="font-size: 11.5px; color: var(--w50);">рецепты: {{ v.recipes }}</span>
+                        <span style="font-size: 11.5px; color: var(--w50);">требует: {{ v.needs }}</span>
+                      </div>
+                      <sc-if value="{{ v.metric }}" hint-placeholder-val="{{ true }}"><span style="font-size: 11.5px; color: var(--w42);">{{ v.metric }}</span></sc-if>
+                      <sc-if value="{{ v.source }}" hint-placeholder-val="{{ true }}"><span style="font-size: 11.5px; color: var(--w42);">{{ v.source }}</span></sc-if>
+                      <sc-if value="{{ v.hasMissing }}" hint-placeholder-val="{{ false }}"><span style="padding: 8px 11px; border-radius: 9px; background: rgba(239,68,68,.12); border: 1px solid rgba(239,68,68,.35); color: var(--err-ink); font-size: 11.5px; line-height: 1.5;">В системе нет требуемого — {{ v.missing }}. Пакет это не привозит: навыки и адаптеры ставит вендор.</span></sc-if>
+                      <sc-if value="{{ v.hasErrors }}" hint-placeholder-val="{{ false }}"><span style="padding: 8px 11px; border-radius: 9px; background: rgba(239,68,68,.12); border: 1px solid rgba(239,68,68,.35); color: var(--err-ink); font-size: 11.5px; line-height: 1.5;">Пакет не прошёл сверку: {{ v.errors }}</span></sc-if>
+                    </div>
+                  </sc-for>
+                  <sc-if value="{{ adm.vtHasReport }}" hint-placeholder-val="{{ false }}">
+                    <div style="display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; border-radius: 12px; background: var(--w4); border: 1px solid var(--w10);">
+                      <span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: 1px; text-transform: uppercase; color: var(--w45);">что сделала установка · {{ adm.vtReportFor }}</span>
+                      <sc-for list="{{ adm.vtReport }}" as="rp" hint-placeholder-count="3">
+                        <span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: {{ rp.fg }}; line-height: 1.5;">{{ rp.line }}</span>
+                      </sc-for>
+                      <span style="font-size: 11.5px; color: var(--w42);">Агент поставлен черновиком — посадить его на участок карты нужно отдельно, на экране «Строю».</span>
+                    </div>
+                  </sc-if>
+                </div>
+              </sc-if>
+
               <sc-if value="{{ adm.isTenantTab }}" hint-placeholder-val="{{ false }}">
                 <div style="display: flex; flex-direction: column; gap: 12px;">
                   <div style="font-size: 12.5px; line-height: 1.55; color: var(--w55);">Общие креды дешевле, но смешивают ответственность между арендаторами. Свои креды (BYO) изолируют доступ и аудит.</div>

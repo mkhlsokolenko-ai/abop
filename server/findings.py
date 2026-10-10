@@ -3,7 +3,7 @@
 
 Источник фактов — детерминированный движок проверок (`cli/ape.py: audit1c_run_checks/trace_chains`);
 здесь ничего не «находится» заново — только раскладывается по участкам, дополняется нормой из
-`demo/audit1c/norms/*.md` (написано экспертом один раз, не RAG «на лету») и последствиями
+`verticals/audit1c/norms/*.md` (написано экспертом один раз, не RAG «на лету») и последствиями
 (уточнённые декларации, элиминация, договорные условия — замечания эксперта владельца 2026-09-15).
 """
 from __future__ import annotations
@@ -13,7 +13,7 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
-NORMS_DIR = Path(__file__).resolve().parent.parent / "demo" / "audit1c" / "norms"
+NORMS_DIR = Path(__file__).resolve().parent.parent / "verticals" / "audit1c" / "norms"
 ONE_C_WEB = (os.getenv("ABOP_1C_WEB_URL") or "http://201.51.5.24:8092/audit/").rstrip("/") + "/"
 
 # проверка → участки, тип расхождения, файл нормы + ключ секции, шаблон цепочки, последствия

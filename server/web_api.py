@@ -381,9 +381,13 @@ from .routes import data as _routes_data  # noqa: E402
 # Наборы правил — свой домен: правило правится в интерфейсе и живёт в сторе, а не в файле
 # пакета вертикали (шаг 3 плана «правила — данные»).
 from .routes import rules as _routes_rules  # noqa: E402
+# Вертикаль — единица поставки (шаг 4): манифест + правила + рецепты + контракт + агент,
+# ставится одной операцией и отчитывается, что именно изменила в системе.
+from .routes import verticals as _routes_verticals  # noqa: E402
 
 app.include_router(_routes_data.router)
 app.include_router(_routes_rules.router)
+app.include_router(_routes_verticals.router)
 
 # Инъекция рецептов и коннекторов в ядро `ape` — забота СТАРТА, а не маршрута, но живёт она
 # рядом с доменом данных. Берём оттуда по имени: дублировать функцию ради чистоты импорта значило

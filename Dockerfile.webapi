@@ -19,6 +19,8 @@ COPY skills ./skills
 COPY reports ./reports
 COPY webapp ./webapp
 COPY demo ./demo
+# Пакеты вертикалей — поставка: без них нет ни правил, ни рецептов, ни норм в образе.
+COPY verticals ./verticals
 COPY desktop/ui ./desktop/ui
 # Ops-скрипты (перенос карты, чистка мёртвых настроек, проверка шаблонов): руководство
 # администратора зовёт их как `docker exec abop-webapi python scripts/...` — без этой строки

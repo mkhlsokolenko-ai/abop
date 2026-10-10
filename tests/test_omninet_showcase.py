@@ -116,8 +116,8 @@ def test_пустой_стенд_говорит_что_он_пуст():
 
 def test_демо_пакет_на_месте():
     """`/api/demo/prepare` ждёт пару контракт + тело агента: без них «Запустить» ничего не делает."""
-    пакет = КОРЕНЬ / "demo" / "omninet"
-    контракт = json.loads((пакет / "contract_omninet.json").read_text(encoding="utf-8"))
+    пакет = КОРЕНЬ / "verticals" / "omninet"
+    контракт = json.loads((пакет / "contract.json").read_text(encoding="utf-8"))
     тело = json.loads((пакет / "agent_body.json").read_text(encoding="utf-8"))
     assert контракт["capability_request"]["audit_id"] == тело["contract_audit_id"]
     навыки = {s["id"] for s in контракт["capability_request"]["skills"]}
@@ -135,14 +135,14 @@ def test_контракт_проходит_приёмку():
     sys.path.insert(0, str(КОРЕНЬ))
     from server import ingress
 
-    пакет = json.loads((КОРЕНЬ / "demo" / "omninet" / "contract_omninet.json")
+    пакет = json.loads((КОРЕНЬ / "verticals" / "omninet" / "contract.json")
                        .read_text(encoding="utf-8"))
     r = ingress.validate(пакет)
     assert r.accepted, f"контракт кейса не проходит приёмку: {r.errors}"
 
 
 def test_рецепты_покрывают_все_сущности_кейса():
-    рецепты = sorted((КОРЕНЬ / "demo" / "omninet" / "recipes").glob("*.json"))
+    рецепты = sorted((КОРЕНЬ / "verticals" / "omninet" / "recipes").glob("*.json"))
     сущности = {json.loads(p.read_text(encoding="utf-8"))["entity"] for p in рецепты}
     assert сущности == {"feed_card", "showcase_rule", "category_map", "showcase_reject"}
     for p in рецепты:

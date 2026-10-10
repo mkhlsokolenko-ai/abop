@@ -207,4 +207,4 @@
   `abop.<система>.commands` → коннектор-воркер на сервере-2 → `command.done|failed` → ссылка в карточке.
   Покрыто: Аудитор 1С (Redmine); остальные кейсы — в плане (инвест → BookStack, дайджест → письмо, БФТ → задача).
 - LLM — self-host Qwen3-30B-A3B (vLLM, `local/qwen3-30b-a3b`, 0 ₽), каскад на облако при недоступности.
-- Демо-пакеты: `demo/audit1c/`, `demo/invest1c/`, `demo/mailtasks/`, `demo/bft/` (контракт + тело агента).
+- Демо-пакеты: `verticals/audit1c/`, `demo/invest1c/`, `demo/mailtasks/`, `demo/bft/` (контракт + тело агента).

@@ -191,7 +191,7 @@
 | DELETE | `/api/runs/{run_id}/findings/{finding_id}/label` | Снять экспертную разметку (ошибочная метка не искажает метрики пилота) | manager+ |
 | DELETE | `/api/runs/{run_id}/findings/{finding_id}/label` | Снять разметку | user |
 | GET | `/api/findings?limit=&runs=&agent_id=` | Журнал пилота по последним прогонам аудитора/следователя + метрики | user/ABAC |
-| GET | `/api/audit1c/norms/{name}` | Текст нормы из справочника `demo/audit1c/norms` | user |
+| GET | `/api/audit1c/norms/{name}` | Текст нормы из справочника `verticals/audit1c/norms` | user |
 
 ### 2.11 Data Plane (рецепты/коннекторы/данные/расчёты)
 | Метод | Путь | Назначение | Доступ |
