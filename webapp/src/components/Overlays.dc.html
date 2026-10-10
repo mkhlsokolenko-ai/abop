@@ -175,6 +175,13 @@
               <sc-if value="{{ ov.adapterNote }}" hint-placeholder-val="{{ true }}">
                 <div style="font-size: 11.5px; color: {{ ov.adapterNoteColor }};">{{ ov.adapterNote }}</div>
               </sc-if>
+              <label style="display: flex; flex-direction: column; gap: 6px; margin-top: 2px;">
+                <span style="font-size: 11.5px; color: var(--w66);">система из реестра</span>
+                <select value="{{ ov.recipeSystem }}" onChange="{{ ov.setRecipeSystem }}" aria-label="Система реестра для рецепта" style="padding: 11px 13px; border-radius: 12px; border: 2px solid {{ ov.recipeSystemBorder }}; background: var(--s60); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 12.5px;">
+                  <sc-for list="{{ ov.recipeSystemOptions }}" as="o" hint-placeholder-count="3"><option value="{{ o.value }}">{{ o.label }}</option></sc-for>
+                </select>
+                <span style="font-size: 11.5px; color: {{ ov.recipeSystemHintColor }}; line-height: 1.5;">{{ ov.recipeSystemHint }}</span>
+              </label>
               <button onClick="{{ ov.discoverSource }}" style="align-self: flex-start; padding: 7px 13px; border: 1px solid rgba(129,140,248,.5); border-radius: 9px; background: rgba(99,102,241,.12); color: var(--acc-ink); font-size: 12px; font-weight: 600;" style-hover="background: rgba(99,102,241,.2);">🔎 Показать поля источника</button>
               <sc-if value="{{ ov.hasCols }}" hint-placeholder-val="{{ false }}">
                 <div style="display: flex; flex-direction: column; gap: 6px;">
