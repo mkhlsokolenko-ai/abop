@@ -11,11 +11,12 @@ import sys
 
 HERE = pathlib.Path(__file__).resolve().parent
 DOCS = [("RUKOVODSTVO_POLZOVATELYA.html", "ABOP · Руководство пользователя"),
-        ("RUKOVODSTVO_ADMINISTRATORA.html", "ABOP · Руководство администратора")]
+        ("RUKOVODSTVO_ADMINISTRATORA.html", "ABOP · Руководство администратора"),
+        ("RUKOVODSTVO_RAZRABOTCHIKA.html", "ABOP · Руководство разработчика")]
 
 HEADER = """<div style="font:9px 'Segoe UI',system-ui,sans-serif;color:#767C86;width:100%;
  padding:0 16mm;display:flex;justify-content:space-between;">
- <span>{title}</span><span>версия 1.3 · 08.10.2026</span></div>"""
+ <span>{title}</span><span>версия 1.4 · 10.10.2026</span></div>"""
 FOOTER = """<div style="font:9px 'Segoe UI',system-ui,sans-serif;color:#767C86;width:100%;
  padding:0 16mm;text-align:right;"><span class="pageNumber"></span> / <span class="totalPages"></span></div>"""
 
