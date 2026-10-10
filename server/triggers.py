@@ -19,6 +19,7 @@ import datetime as dt
 import os
 import re
 
+from . import tenancy
 from . import access, agent_store, contract_store, hitl_store, observability as obs, systems_store, trigger_store
 
 A_LEVELS = ["A0", "A1", "A2", "A3", "A4"]
@@ -223,6 +224,18 @@ async def list_triggers() -> list[dict]:
 
 
 async def _tick(run_executor) -> None:
+    """Обход расписаний — по КАЖДОМУ арендатору отдельно.
+
+    Планировщик живёт вне запроса: контекста арендатора у него нет. Без этого обхода он читал бы
+    агентов арендатора по умолчанию, и расписания остальных компаний молча не запускались бы —
+    худший вид поломки, потому что её никто не заметит.
+    """
+    for _tid in await agent_store.арендаторы():
+        with tenancy.с_арендатором(_tid):
+            await _tick_арендатора(run_executor)
+
+
+async def _tick_арендатора(run_executor) -> None:
     fired = 0
     for a in await _latest_versions():   # только последние версии — старые не фаерят (нет дублей)
         if fired >= MAX_FIRES_PER_TICK:

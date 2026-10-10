@@ -27,6 +27,10 @@ web_api НЕ дублирует логику — только выставляе
 
 ## 1. Аутентификация
 
+- **Арендатор** (шаг 5): из заявки `tenant`/`org` токена; фильтруют по нему ХРАНИЛИЩА, не
+  маршруты, поэтому ручка не может прочитать чужое. Чужое отвечает «нет такого», а не 403.
+  Заголовок `X-ABOP-Tenant` открывает данные арендатора — только для `admin`/`support`, и
+  переход пишется в журнал (`tenant.switch`). Подробно: `docs/ARENDATORY.md`, ADR-055.
 - Заголовок `Authorization: Bearer <JWT>` (Keycloak realm курса). Проверка подписи по JWKS, issuer/audience из env (`KEYCLOAK_JWKS_URI`/`KEYCLOAK_ISSUER`/`KEYCLOAK_AUDIENCE`).
 - Без `KEYCLOAK_JWKS_URI` — **dev-режим**: все запросы как `dev`/роль `developer` (для локальной разработки фронта).
 - Роли (realm_access.roles): `developer` (авторинг), `operator` (HITL), `viewer`, `admin`.

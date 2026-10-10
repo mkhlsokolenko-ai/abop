@@ -839,8 +839,27 @@
     </button>
 
     <div id="abopProfile" style="position: relative;">
+      <sc-if value="{{ tenantForeign }}" hint-placeholder-val="{{ false }}">
+        <div role="status" style="position: fixed; top: 0; left: 0; right: 0; z-index: 90; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 7px 14px; background: rgba(245,158,11,.92); color: #1c1917; font-size: 12.5px; font-weight: 600;">
+          <span>{{ tenantForeignLine }}</span>
+          <button sc-camel-on-click="{{ resetTenantView }}" style="padding: 4px 11px; border: 1px solid rgba(28,25,23,.35); border-radius: 8px; background: rgba(255,255,255,.35); color: #1c1917; font-size: 11.5px; font-weight: 700;">Вернуться к своему</button>
+        </div>
+      </sc-if>
       <sc-if value="{{ userMenu }}" hint-placeholder-val="{{ false }}">
       <div style="position: absolute; bottom: calc(100% + 8px); left: 0; right: 0; z-index: 40; display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--w12); border-radius: 14px; background: var(--p98); box-shadow: 0 18px 50px var(--sh55); backdrop-filter: blur(18px); min-width: 260px;">
+        <div style="display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 10px; background: var(--w4);">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w60);">{{ meTenantLine }}</span>
+        </div>
+        <sc-if value="{{ canSwitchTenant }}" hint-placeholder-val="{{ false }}">
+          <div style="display: flex; flex-direction: column; gap: 6px; padding: 9px 10px; border-radius: 10px; background: rgba(245,158,11,.08); border: 1px solid rgba(245,158,11,.28);">
+            <span style="font-size: 11px; color: var(--warn-ink); line-height: 1.45;">Вендорская поддержка: открыть данные арендатора. Переход пишется в журнал.</span>
+            <div style="display: flex; gap: 6px;">
+              <input value="{{ tenantViewVal }}" onChange="{{ setTenantViewVal }}" placeholder="id арендатора" style="flex: 1; min-width: 0; padding: 6px 9px; border: 1px solid var(--w12); border-radius: 8px; background: var(--w5); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 11.5px;">
+              <button sc-camel-on-click="{{ applyTenantView }}" style="padding: 6px 10px; border: 1px solid rgba(245,158,11,.4); border-radius: 8px; background: rgba(245,158,11,.14); color: var(--warn-ink); font-size: 11.5px; font-weight: 600;">Открыть</button>
+              <button sc-camel-on-click="{{ resetTenantView }}" title="Вернуться к своему арендатору" style="padding: 6px 10px; border: 1px solid var(--w12); border-radius: 8px; background: var(--w4); color: var(--w60); font-size: 11.5px;">Свой</button>
+            </div>
+          </div>
+        </sc-if>
         <button sc-camel-on-click="{{ toggleTheme }}" title="Переключить светлую/тёмную тему" style="display: flex; align-items: center; gap: 8px; padding: 9px 12px; border: 1px solid var(--w12); border-radius: 10px; background: var(--w4); color: var(--ink); font-size: 12.5px; font-weight: 600; text-align: left;" style-hover="background: var(--w8);">{{ themeLabel }}</button>
         <button sc-camel-on-click="{{ goLk }}" style="display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--w10); border-radius: 10px; background: var(--w4); color: var(--ink); font-size: 12.5px; text-align: left;" style-hover="background: var(--w8);"><span style="width: 7px; height: 7px; border-radius: 9999px; background: #818cf8;"></span>Личный кабинет</button>
         <sc-if value="{{ isAdmin }}" hint-placeholder-val="{{ true }}">
@@ -2209,7 +2228,11 @@ window.__abopRefresh=function(){ if(window.__abopRefreshing) return window.__abo
   return window.__abopRefreshing; };
 setInterval(function(){ var exp=0; try{ exp=Number(localStorage.getItem('abop.token_exp')||0); }catch(e){}
   if(exp && Date.now() > exp-45000) window.__abopRefresh(); }, 30000);
-window.fetch=function(url,opts){ opts=opts||{}; try{ var t=localStorage.getItem('abop.token'); if(t && typeof url==='string' && url.indexOf('/api/')===0){ var h={}; var src=opts.headers||{}; for(var k in src){ if(src.hasOwnProperty(k)) h[k]=src[k]; } if(!h.Authorization && !h.authorization) h.Authorization='Bearer '+t; opts.headers=h; } }catch(e){} var _m=(opts.method||'GET').toUpperCase(); var _k=(typeof url==='string' && _m==='GET' && url.indexOf('/api/')===0) ? url : null; if(_k && window.__abopInflight && window.__abopInflight[_k]){ return window.__abopInflight[_k].then(function(r){ return r.clone(); }); } var p=_f(url,opts); if(_k){ window.__abopInflight=window.__abopInflight||{}; window.__abopInflight[_k]=p; p.then(function(){ setTimeout(function(){ delete window.__abopInflight[_k]; }, 1500); }, function(){ delete window.__abopInflight[_k]; }); p=p.then(function(r){ return r.clone(); }); } if(typeof url==='string' && url.indexOf('/api/')===0){
+window.fetch=function(url,opts){ opts=opts||{}; try{ var t=localStorage.getItem('abop.token'); if(t && typeof url==='string' && url.indexOf('/api/')===0){ var h={}; var src=opts.headers||{}; for(var k in src){ if(src.hasOwnProperty(k)) h[k]=src[k]; } if(!h.Authorization && !h.authorization) h.Authorization='Bearer '+t;
+      /* Вендорский просмотр чужого арендатора: заголовок едет со КАЖДЫМ запросом, иначе часть
+         экрана показывала бы своего арендатора, а часть — клиента, и спутать их было бы легко.
+         Сервер пустит переход только admin/support и запишет его в журнал. */
+      try{ var _tn=localStorage.getItem('abop.tenant'); if(_tn) h['X-ABOP-Tenant']=_tn; }catch(e){} opts.headers=h; } }catch(e){} var _m=(opts.method||'GET').toUpperCase(); var _k=(typeof url==='string' && _m==='GET' && url.indexOf('/api/')===0) ? url : null; if(_k && window.__abopInflight && window.__abopInflight[_k]){ return window.__abopInflight[_k].then(function(r){ return r.clone(); }); } var p=_f(url,opts); if(_k){ window.__abopInflight=window.__abopInflight||{}; window.__abopInflight[_k]=p; p.then(function(){ setTimeout(function(){ delete window.__abopInflight[_k]; }, 1500); }, function(){ delete window.__abopInflight[_k]; }); p=p.then(function(r){ return r.clone(); }); } if(typeof url==='string' && url.indexOf('/api/')===0){
   // 401 → одна попытка обновить сессию и повторить запрос; не вышло — говорим «нужно войти»
   p = p.then(function(r){
     if(r.status!==401 || url.indexOf('/api/auth/')===0 || opts.__retried) return r;
@@ -2655,7 +2678,7 @@ class Component extends DCLogic {
   dragging = null;
   dragKind = null;
   state = {
-    screen: this.props.startScreen ?? 'overview', me: null, userMenu: false, loginEmail: '', loginPass: '', loginJwt: '', toasts: [], hitlQueue: [], hitlPreview: null, pendingDelete: null, planWavesReal: null, dataView: null, adminTab: 'users', adminUsers: [], adminStaff: [], adminLoading: false, adminErr: '', paletteCollapsed: {}, scenPickerOpen: true, runsList: [], runsLoading: false, opsWide: false, settingsTab: 'Модели', dataTab: 'recipes', verticalsList: [], verticalsLoading: false, vtBusy: false, vtErr: '', vtReport: [], vtReportFor: '', rulesList: [], rulesLoading: false, rulePredicates: [], ruleSel: null, ruleDraft: null, ruleCard: null, ruleDry: null, ruleDirty: false, ruleBusy: false, ruleErr: '', agentsList: [], limboList: [], showLimbo: false, agentDetail: null, agentDrawerName: '', familiesList: [], recipeHeaders: {}, recipeEntity: 'transaction', recipeRoot: '', srcColumns: [], skillSrcDraft: [], lineage: null,
+    screen: this.props.startScreen ?? 'overview', me: null, userMenu: false, tenantView: (function(){ try{ return localStorage.getItem('abop.tenant')||''; }catch(e){ return ''; } })(), loginEmail: '', loginPass: '', loginJwt: '', toasts: [], hitlQueue: [], hitlPreview: null, pendingDelete: null, planWavesReal: null, dataView: null, adminTab: 'users', adminUsers: [], adminStaff: [], adminLoading: false, adminErr: '', paletteCollapsed: {}, scenPickerOpen: true, runsList: [], runsLoading: false, opsWide: false, settingsTab: 'Модели', dataTab: 'recipes', verticalsList: [], verticalsLoading: false, vtBusy: false, vtErr: '', vtReport: [], vtReportFor: '', rulesList: [], rulesLoading: false, rulePredicates: [], ruleSel: null, ruleDraft: null, ruleCard: null, ruleDry: null, ruleDirty: false, ruleBusy: false, ruleErr: '', agentsList: [], limboList: [], showLimbo: false, agentDetail: null, agentDrawerName: '', familiesList: [], recipeHeaders: {}, recipeEntity: 'transaction', recipeRoot: '', srcColumns: [], skillSrcDraft: [], lineage: null,
     playing: true, pct: 0, hitlResolved: false, stopped: false,
     modal: null, skillId: null, popNodeId: null,
     modeFilter: 'Все', familyFilter: 'Все', cmdkQuery: '',
@@ -2716,6 +2739,19 @@ class Component extends DCLogic {
   // ── Вертикали: список и установка ─────────────────────────────────────────────────────────
   // Пакет вертикали — единица поставки (шаг 4). Ставится одной операцией и отчитывается, что
   // именно изменила в системе: молча установка не делает ничего.
+  // ── Вендорский просмотр чужого арендатора ─────────────────────────────────────────────
+  // Переход разрешает сервер (только admin/support) и пишет его в журнал. Здесь — только
+  // заголовок и ПОСТОЯННАЯ плашка: смотреть данные клиента нужно, забывать об этом — нельзя.
+  setTenantView(tid) {
+    tid = String(tid || '').trim().toLowerCase();
+    try { if (tid) { localStorage.setItem('abop.tenant', tid); } else { localStorage.removeItem('abop.tenant'); } } catch (e) {}
+    this.setState({ tenantView: tid, userMenu: false });
+    this.showToast(tid ? ('Смотрю арендатора «' + tid + '»') : 'Вернулся к своему арендатору');
+    this.loadMe();
+    this.loadBackend();
+    this.loadData();
+  }
+
   loadVerticals() {
     var self = this;
     self.setState({ verticalsLoading: true });
@@ -4899,6 +4935,19 @@ class Component extends DCLogic {
         this.route('canvas');
       },
       nav, obsLinks, openRunTrace: () => this.openRunTrace(), crumb: s.screen === 'canvas' ? ('Граф · ' + ({ build: 'Строю', run: 'Прогон', ops: 'Эксплуатирую', envelope: 'Конверт' }[s.lens] || '')) : crumbs[s.screen],
+      // Арендатор показывается всегда: в многоарендной системе «чьи это данные» — часть ответа.
+      meTenant: (s.me && (s.me.tenant_active || s.me.tenant)) || 'default',
+      meTenantLine: 'арендатор: ' + ((s.me && (s.me.tenant_active || s.me.tenant)) || 'default'),
+      canSwitchTenant: !!(s.me && ['admin', 'support'].indexOf(s.me.level) > -1),
+      tenantViewVal: s.tenantView || '',
+      setTenantViewVal: (e) => this.setState({ tenantView: e.target.value }),
+      applyTenantView: () => this.setTenantView(s.tenantView),
+      resetTenantView: () => this.setTenantView(''),
+      // Чужой арендатор — постоянная плашка, а не разовый тост: вендор, забывший про переход,
+      // примет чужие находки за свои.
+      tenantForeign: !!(s.me && (s.me.tenant_active || 'default') !== (s.me.tenant || 'default')),
+      tenantForeignLine: 'Вы смотрите данные арендатора «' + ((s.me && s.me.tenant_active) || '')
+        + '». Это чужая компания — правки уйдут ей.',
       meName: (s.me && s.me.name) || 'Гость', meRole: s.me ? ({admin:'администратор',support:'поддержка',manager:'менеджер',analyst:'аналитик'}[s.me.level] || s.me.level) : 'вход не выполнен', meDept: s.me ? (s.me.department === '*' ? 'все области' : s.me.department) : '—', meInitials: (((s.me && s.me.name) || 'МС').replace('@','')).substr(0,2).toUpperCase(), meRing: s.me ? 'rgba(129,140,248,.5)' : 'var(--w10)', meAvatarBg: s.me ? (s.me.level==='admin' ? 'linear-gradient(135deg,#8b5cf6,#6366f1)' : (s.me.department==='finance' ? 'linear-gradient(135deg,#34d399,#059669)' : 'linear-gradient(135deg,#f59e0b,#d97706)')) : 'linear-gradient(135deg, #6366f1, #8b5cf6)', canMutate: !!s.me && ['manager','support','admin'].indexOf(s.me.level) > -1, notAuthed: !s.me, authed: !!s.me, userMenu: !!s.userMenu, toggleUserMenu: () => this.setState({ userMenu: !s.userMenu }), doLogout: () => this.logout(), demoUsers: this.demoAccounts().map(u => ({ username: u.username, label: u.label, deptLabel: u.deptLabel, tone: u.tone, pick: () => this.setState({ loginEmail: u.username }), bg: (s.me && s.me.department === u.deptId) ? 'rgba(129,140,248,.16)' : 'var(--w3)', ring: (s.me && s.me.department === u.deptId) ? 'rgba(129,140,248,.5)' : 'var(--w8)' })), loginEmail: s.loginEmail || '', setLoginEmail: (e) => this.setState({ loginEmail: e.target.value }), loginPass: (s.loginPass || ''), setLoginPass: (e) => this.setState({ loginPass: e.target.value }), loginJwt: s.loginJwt || '', setLoginJwt: (e) => this.setState({ loginJwt: e.target.value }), doLoginForm: () => { if (!s.loginEmail || !s.loginPass) { this.showToast('Введите логин и пароль'); return; } this.doLogin(s.loginEmail, s.loginPass); }, applyJwt: () => this.applyJwt(s.loginJwt), quickUsers: ['admin.abop','buh.analyst','pm.manager'].map(n => ({ name: n, fill: () => this.setState({ loginEmail: n }) })), readOnly: !!(s.me && s.me.level === 'analyst'), goLk: () => { this.setState({ userMenu: false }); this.go('lk'); }, goSettings: () => { this.setState({ userMenu: false }); this.go('settings'); }, goAdmin: () => { this.setState({ userMenu: false }); this.go('security'); this.loadAdmin(); }, isAdmin: !!s.me && (s.me.level === 'admin' || s.me.level === 'support'), isLkScreen: s.screen === 'lk', isSettingsScreen: s.screen === 'settings', isSecScreen: s.screen === 'security', adminTab: s.adminTab || 'users', adminTabs: [['users','Пользователи'],['roles','Роли и области'],['staff','Штат'],['audit','Аудит ИБ']].map(t => ({ label: t[1], pick: () => this.setState({ adminTab: t[0] }), bg: (s.adminTab||'users')===t[0] ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : 'transparent', fg: (s.adminTab||'users')===t[0] ? 'var(--ink)' : 'var(--w55)' })), isAU: (s.adminTab||'users')==='users', isAR: (s.adminTab||'users')==='roles', isAS: (s.adminTab||'users')==='staff', isAA: (s.adminTab||'users')==='audit', adminUsers: (s.adminUsers||[]).map(x => { var c={admin:['rgba(139,92,246,.16)','var(--vio-ink)'],support:['rgba(59,130,246,.16)','#93c5fd'],manager:['rgba(245,158,11,.16)','var(--warn-ink)'],analyst:['rgba(52,211,153,.16)','var(--ok-ink)']}[x.level] || ['var(--w8)','var(--ink)']; return { username: x.username, email: x.email || '—', department: x.department || '—', levelLabel: {admin:'администратор',support:'поддержка',manager:'менеджер',analyst:'аналитик'}[x.level] || x.level, roleBg: c[0], roleFg: c[1], statusDot: x.enabled ? '#34d399' : '#6b7280' }; }), adminStaff: (s.adminStaff||[]).map(p => ({ login: p.login, name: p.name || '—', mail: p.mail || '—' })), adminEmpty: !(s.adminUsers||[]).length, adminNote: s.adminLoading ? 'Загрузка…' : (s.adminErr || 'Нет данных (нужны права admin/support)'), rolesMatrix: ['admin','support','manager','analyst'].map(lv => { var us=(s.adminUsers||[]).filter(x => x.level===lv); var ar=[]; us.forEach(x => { if(x.department && ar.indexOf(x.department)<0) ar.push(x.department); }); var c={admin:['rgba(139,92,246,.16)','var(--vio-ink)'],support:['rgba(59,130,246,.16)','#93c5fd'],manager:['rgba(245,158,11,.16)','var(--warn-ink)'],analyst:['rgba(52,211,153,.16)','var(--ok-ink)']}[lv]; var срв=((s.adminRbac||[]).filter(function(x){return x.role===lv;})[0]||{}); var ен=срв.enforced||null; return { label: {admin:'администратор',support:'поддержка',manager:'менеджер',analyst:'аналитик'}[lv], count: us.length, rights: {admin:'полный доступ · роли и области · governance',support:'сквозной доступ (чтение) · поддержка',manager:'сборка и публикация агентов в своём отделе · прогоны',analyst:'только чтение · агенты и данные своей области'}[lv], areas: (ar.join(', ') || '—'), hasEnforced: !!ен, enforcedText: ен ? ('по факту: мутаций разрешено ' + ен.allowed_count + ', закрыто ' + ен.denied_count + ' (выведено из гейтов кода)') : 'фактические гейты не загружены — показана только подпись уровня', enforcedSample: ен ? (ен.denied_sample||[]).join(' · ') : '', roleBg: c[0], roleFg: c[1], bg: 'var(--w3)', border: 'var(--w9)' }; }), reloadAdmin: () => this.loadAdmin(), runsJournal: (function(){ var mapRow = (r) => ({ agent: r.agent_name || r.agent_id, ver: r.version ? ('v'+r.version) : '—', startedBy: r.started_by || '—', vLabel: r.verdict_ok ? 'пройден' : 'замечания', vBg: r.verdict_ok ? 'rgba(16,185,129,.14)' : 'rgba(239,68,68,.14)', vFg: r.verdict_ok ? 'var(--ok-ink)' : 'var(--err-ink)', autonomy: r.autonomy_used || '—', hitl: String(r.hitl_count || 0), when: (r.created_at || '').replace('T', ' ').slice(0, 16) }); return (s.runsList||[]).map(mapRow); })(),
       runsQuery: s.runsQuery || '',
       setRunsQuery: (e) => this.setState({ runsQuery: e.target.value }),

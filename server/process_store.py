@@ -29,6 +29,7 @@ import datetime as _dt
 import json
 import uuid
 
+from . import tenancy
 from . import observability as obs
 from .config import settings
 
@@ -86,6 +87,21 @@ CREATE TABLE IF NOT EXISTS process_presence (
     PRIMARY KEY (area, actor)
 );
 """
+# Арендатор (шаг 5). Область зовут одинаково у всех («*», «org»), поэтому арендатор входит в
+# ПЕРВИЧНЫЙ ключ карты и присутствия, а у редакций и посадок — в фильтр и уникальный индекс.
+SCHEMA += tenancy.миграция_ключа("process_map", "area", "revision")
+SCHEMA += tenancy.миграция_ключа("process_presence", "area", "actor")
+SCHEMA += """
+ALTER TABLE process_seats     ADD COLUMN IF NOT EXISTS tenant TEXT NOT NULL DEFAULT 'default';
+ALTER TABLE process_revisions ADD COLUMN IF NOT EXISTS tenant TEXT NOT NULL DEFAULT 'default';
+ALTER TABLE process_changes   ADD COLUMN IF NOT EXISTS tenant TEXT NOT NULL DEFAULT 'default';
+-- «Одна открытая редакция на область» обязана быть «на область У АРЕНДАТОРА»: иначе второй
+-- заказчик не откроет черновик, пока первый не закрыл свой.
+DROP INDEX IF EXISTS idx_rev_open;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_rev_open_tenant ON process_revisions (tenant, area)
+    WHERE status IN ('черновик', 'на согласовании');
+CREATE INDEX IF NOT EXISTS idx_seats_tenant ON process_seats (tenant, area) WHERE until IS NULL;
+"""
 
 КАРТА = "*"      # карта организации одна и читается всеми; по областям живут только ЧЕРНОВИКИ
 ОТКРЫТЫЕ = ("черновик", "на согласовании")
@@ -97,6 +113,15 @@ CREATE TABLE IF NOT EXISTS process_presence (
 ТИПЫ_СВЯЗИ = ("seq", "cond", "timer", "handoff")
 
 _MEM: dict = {"map": {}, "seats": [], "rev": {}, "changes": {}, "presence": {}}
+
+
+def _обл(area: str) -> str:
+    """Ключ области в памяти — с арендатором: карта компании А не та же, что у компании Б.
+
+    В Postgres роль того же ключа играет колонка `tenant`; здесь он входит в сам ключ, чтобы
+    фолбэк памяти изолировал так же, как база, а не «почти так же».
+    """
+    return tenancy.ключ_памяти(area)
 _ЗАМКИ: dict = {}
 _ПОДПИСЧИКИ: dict = {}      # area -> set[asyncio.Queue]
 
@@ -502,7 +527,7 @@ def liveness(*, seats: list[dict], runs: list[dict], retired: set,
 async def map_of(area: str) -> dict:
     """Применённая редакция области: дерево, номер, кто и когда применил."""
     if not _has_pg():
-        строки = _MEM["map"].get(area) or []
+        строки = _MEM["map"].get(_обл(area)) or []
         п = строки[-1] if строки else None
         return dict(п) if п else {"area": area, "revision": 0, "tree": None,
                                   "applied_by": None, "applied_at": None}
@@ -510,7 +535,8 @@ async def map_of(area: str) -> dict:
     async with _conn() as conn:
         cur = await conn.execute(
             "SELECT area, revision, tree, note, applied_by, applied_at FROM process_map "
-            "WHERE area = %s ORDER BY revision DESC LIMIT 1", (area,))
+            "WHERE area = %s AND tenant = %s ORDER BY revision DESC LIMIT 1",
+            (area, tenancy.текущий()))
         r = await cur.fetchone()
     if not r:
         return {"area": area, "revision": 0, "tree": None, "applied_by": None, "applied_at": None}
@@ -527,7 +553,7 @@ async def history(area: str, *, limit: int = 50) -> list[dict]:
     смысла: решение о процессе принимают один раз, а живут с ним годами.
     """
     if not _has_pg():
-        строки = list(_MEM["map"].get(area) or [])
+        строки = list(_MEM["map"].get(_обл(area)) or [])
         строки.sort(key=lambda r: r.get("revision") or 0, reverse=True)
         return [{"revision": r.get("revision"), "note": r.get("note"),
                  "applied_by": r.get("applied_by"),
@@ -538,7 +564,8 @@ async def history(area: str, *, limit: int = 50) -> list[dict]:
     async with _conn() as conn:
         cur = await conn.execute(
             "SELECT revision, note, applied_by, applied_at, tree FROM process_map "
-            "WHERE area = %s ORDER BY revision DESC LIMIT %s", (area, max(1, min(500, limit))))
+            "WHERE area = %s AND tenant = %s ORDER BY revision DESC LIMIT %s",
+            (area, tenancy.текущий(), max(1, min(500, limit))))
         строки = await cur.fetchall()
     return [{"revision": r[0], "note": r[1], "applied_by": r[2],
              "applied_at": r[3].isoformat() if r[3] else None,
@@ -548,7 +575,7 @@ async def history(area: str, *, limit: int = 50) -> list[dict]:
 async def map_at(area: str, revision: int) -> dict | None:
     """Дерево на конкретной редакции — вход для сравнения «что изменилось между N и M»."""
     if not _has_pg():
-        for r in (_MEM["map"].get(area) or []):
+        for r in (_MEM["map"].get(_обл(area)) or []):
             if int(r.get("revision") or 0) == int(revision):
                 return dict(r)
         return None
@@ -556,7 +583,8 @@ async def map_at(area: str, revision: int) -> dict | None:
     async with _conn() as conn:
         cur = await conn.execute(
             "SELECT area, revision, tree, note, applied_by, applied_at FROM process_map "
-            "WHERE area = %s AND revision = %s", (area, revision))
+            "WHERE area = %s AND revision = %s AND tenant = %s",
+            (area, revision, tenancy.текущий()))
         r = await cur.fetchone()
     if not r:
         return None
@@ -689,6 +717,7 @@ async def seats_of(area: str | None = None, *, include_closed: bool = False) -> 
     if not _has_pg():
         из = [dict(s) for s in _MEM["seats"]
               if (area is None or s["area"] == area)
+              and s.get("tenant") == tenancy.текущий()
               and (include_closed or s.get("until") is None)]
         return [dict(s, state="actual") for s in из]
     from .db import _conn
@@ -697,7 +726,8 @@ async def seats_of(area: str | None = None, *, include_closed: bool = False) -> 
         поле = "area = %s" if area is not None else "%s::text IS NULL"
         cur = await conn.execute(
             "SELECT id, area, op_id, audit_id, pin_version, created_by, since, until "
-            f"FROM process_seats WHERE {поле}{где} ORDER BY since", (area,))
+            "FROM process_seats WHERE tenant = %s AND "
+            f"{поле}{где} ORDER BY since", (tenancy.текущий(), area))
         строки = await cur.fetchall()
     return [{"id": r[0], "area": r[1], "op_id": r[2], "audit_id": r[3], "pin_version": r[4],
              "created_by": r[5], "since": r[6].isoformat() if r[6] else None,
@@ -707,12 +737,15 @@ async def seats_of(area: str | None = None, *, include_closed: bool = False) -> 
 async def seats_by_agent(audit_id: str) -> list[dict]:
     """Действующие посадки агента — по ним прогон узнаёт, какие операции он закрывает (ADR-044)."""
     if not _has_pg():
-        return [dict(s) for s in _MEM["seats"] if s["audit_id"] == audit_id and s.get("until") is None]
+        return [dict(s) for s in _MEM["seats"]
+                if s["audit_id"] == audit_id and s.get("until") is None
+                and s.get("tenant") == tenancy.текущий()]
     from .db import _conn
     async with _conn() as conn:
         cur = await conn.execute(
             "SELECT id, area, op_id, audit_id, pin_version FROM process_seats "
-            "WHERE audit_id = %s AND until IS NULL", (audit_id,))
+            "WHERE audit_id = %s AND tenant = %s AND until IS NULL",
+            (audit_id, tenancy.текущий()))
         строки = await cur.fetchall()
     return [{"id": r[0], "area": r[1], "op_id": r[2], "audit_id": r[3], "pin_version": r[4]}
             for r in строки]
@@ -721,7 +754,7 @@ async def seats_by_agent(audit_id: str) -> list[dict]:
 async def draft_of(area: str) -> dict | None:
     """Открытая редакция области вместе с журналом правок."""
     if not _has_pg():
-        ред = _MEM["rev"].get(area)
+        ред = _MEM["rev"].get(_обл(area))
         if not ред or ред["status"] not in ОТКРЫТЫЕ:
             return None
         return dict(ред, changes=[dict(c) for c in _MEM["changes"].get(ред["id"], [])])
@@ -729,14 +762,14 @@ async def draft_of(area: str) -> dict | None:
     async with _conn() as conn:
         cur = await conn.execute(
             "SELECT id, area, base, status, version, author, note, created_at, updated_at "
-            "FROM process_revisions WHERE area = %s AND status = ANY(%s) LIMIT 1",
-            (area, list(ОТКРЫТЫЕ)))
+            "FROM process_revisions WHERE area = %s AND tenant = %s AND status = ANY(%s) LIMIT 1",
+            (area, tenancy.текущий(), list(ОТКРЫТЫЕ)))
         r = await cur.fetchone()
         if not r:
             return None
         cur = await conn.execute(
             "SELECT seq, kind, target, payload, author, at FROM process_changes "
-            "WHERE rev_id = %s ORDER BY seq", (r[0],))
+            "WHERE rev_id = %s AND tenant = %s ORDER BY seq", (r[0], tenancy.текущий()))
         ch = await cur.fetchall()
     return {"id": r[0], "area": r[1], "base": r[2], "status": r[3], "version": r[4],
             "author": r[5], "note": r[6],
@@ -786,13 +819,15 @@ async def save_map(area: str, tree: dict, *, editor: str, note: str = "") -> dic
     запись = {"area": area, "revision": номер, "tree": tree, "note": note,
               "applied_by": editor, "applied_at": _now().isoformat()}
     if not _has_pg():
-        _MEM["map"].setdefault(area, []).append(запись)
+        _MEM["map"].setdefault(_обл(area), []).append(запись)
     else:
         from .db import _conn
         async with _conn() as conn:
             await conn.execute(
-                "INSERT INTO process_map (area, revision, tree, note, applied_by) "
-                "VALUES (%s,%s,%s,%s,%s)", (area, номер, json.dumps(tree, ensure_ascii=False), note, editor))
+                "INSERT INTO process_map (area, revision, tree, note, applied_by, tenant) "
+                "VALUES (%s,%s,%s,%s,%s,%s)",
+                (area, номер, json.dumps(tree, ensure_ascii=False), note, editor,
+                 tenancy.текущий()))
     await _оповестить(area, {"type": "map", "revision": номер, "author": editor})
     return запись
 
@@ -804,12 +839,13 @@ async def _открыть_черновик(area: str, автор: str, conn=None
            "status": "черновик", "version": 0, "author": автор, "note": "",
            "created_at": _now().isoformat(), "updated_at": _now().isoformat()}
     if conn is None:
-        _MEM["rev"][area] = ред
+        _MEM["rev"][_обл(area)] = ред
         _MEM["changes"][rid] = []
     else:
         await conn.execute(
-            "INSERT INTO process_revisions (id, area, base, status, version, author) "
-            "VALUES (%s,%s,%s,'черновик',0,%s)", (rid, area, ред["base"], автор))
+            "INSERT INTO process_revisions (id, area, base, status, version, author, tenant) "
+            "VALUES (%s,%s,%s,'черновик',0,%s,%s)",
+            (rid, area, ред["base"], автор, tenancy.текущий()))
     return ред
 
 
@@ -880,7 +916,7 @@ async def _подготовить(area: str, base: int, правки: list[dict]
 
 
 async def _append_mem(area: str, base: int, правки: list[dict], author: str) -> dict:
-    ред = _MEM["rev"].get(area)
+    ред = _MEM["rev"].get(_обл(area))
     if not ред or ред["status"] not in ОТКРЫТЫЕ:
         ред = await _открыть_черновик(area, author)
     журнал = _MEM["changes"].setdefault(ред["id"], [])
@@ -896,8 +932,9 @@ async def _append_mem(area: str, base: int, правки: list[dict], author: st
 
 async def _append_pg(conn, area: str, base: int, правки: list[dict], author: str) -> dict:
     cur = await conn.execute(
-        "SELECT id, version, status FROM process_revisions WHERE area = %s AND status = ANY(%s) "
-        "FOR UPDATE", (area, list(ОТКРЫТЫЕ)))
+        "SELECT id, version, status FROM process_revisions "
+        "WHERE area = %s AND tenant = %s AND status = ANY(%s) "
+        "FOR UPDATE", (area, tenancy.текущий(), list(ОТКРЫТЫЕ)))
     r = await cur.fetchone()
     if not r:
         ред = await _открыть_черновик(area, author, conn=conn)
@@ -905,19 +942,22 @@ async def _append_pg(conn, area: str, base: int, правки: list[dict], autho
     else:
         rid, версия, статус = r[0], int(r[1]), r[2]
     cur = await conn.execute(
-        "SELECT seq, kind, target, payload, author FROM process_changes WHERE rev_id = %s ORDER BY seq",
-        (rid,))
+        "SELECT seq, kind, target, payload, author FROM process_changes "
+        "WHERE rev_id = %s AND tenant = %s ORDER BY seq",
+        (rid, tenancy.текущий()))
     журнал = [{"seq": c[0], "kind": c[1], "target": c[2], "payload": c[3], "author": c[4]}
               for c in await cur.fetchall()]
     пропущено = await _подготовить(area, base, правки, журнал, версия, статус)
     for p in правки:
         версия += 1
         await conn.execute(
-            "INSERT INTO process_changes (rev_id, seq, kind, target, payload, author) "
-            "VALUES (%s,%s,%s,%s,%s,%s)",
-            (rid, версия, p["kind"], p["target"], json.dumps(p["payload"], ensure_ascii=False), author))
+            "INSERT INTO process_changes (rev_id, seq, kind, target, payload, author, tenant) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            (rid, версия, p["kind"], p["target"], json.dumps(p["payload"], ensure_ascii=False),
+             author, tenancy.текущий()))
     await conn.execute(
-        "UPDATE process_revisions SET version = %s, updated_at = now() WHERE id = %s", (версия, rid))
+        "UPDATE process_revisions SET version = %s, updated_at = now() "
+        "WHERE id = %s AND tenant = %s", (версия, rid, tenancy.текущий()))
     await _оповестить(area, {"type": "change", "version": версия, "author": author})
     return {"revision_id": rid, "version": версия, "missed": пропущено, "applied": правки}
 
@@ -925,17 +965,18 @@ async def _append_pg(conn, area: str, base: int, правки: list[dict], autho
 async def drop_draft(area: str, *, actor: str) -> bool:
     """Отбросить черновик целиком: применённая карта не менялась, значит терять нечего."""
     if not _has_pg():
-        ред = _MEM["rev"].get(area)
+        ред = _MEM["rev"].get(_обл(area))
         if not ред or ред["status"] not in ОТКРЫТЫЕ:
             return False
         _MEM["changes"].pop(ред["id"], None)
-        _MEM["rev"].pop(area, None)
+        _MEM["rev"].pop(_обл(area), None)
     else:
         from .db import _conn
         async with _conn() as conn:
             cur = await conn.execute(
                 "UPDATE process_revisions SET status = 'отклонена', approved_by = %s, updated_at = now() "
-                "WHERE area = %s AND status = ANY(%s) RETURNING id", (actor, area, list(ОТКРЫТЫЕ)))
+                "WHERE area = %s AND tenant = %s AND status = ANY(%s) RETURNING id",
+                (actor, area, tenancy.текущий(), list(ОТКРЫТЫЕ)))
             if not await cur.fetchone():
                 return False
     await _оповестить(area, {"type": "dropped", "author": actor})
@@ -954,13 +995,14 @@ async def submit(area: str, *, base_version: int, actor: str) -> dict:
         raise Конфликт("в редакцию дописали правки — перечитайте её перед отправкой",
                        версия=int(черновик["version"]), соперники=[])
     if not _has_pg():
-        _MEM["rev"][area]["status"] = "на согласовании"
-        _MEM["rev"][area]["updated_at"] = _now().isoformat()
+        _MEM["rev"][_обл(area)]["status"] = "на согласовании"
+        _MEM["rev"][_обл(area)]["updated_at"] = _now().isoformat()
     else:
         from .db import _conn
         async with _conn() as conn:
             await conn.execute("UPDATE process_revisions SET status = 'на согласовании', "
-                               "updated_at = now() WHERE id = %s", (черновик["id"],))
+                               "updated_at = now() WHERE id = %s AND tenant = %s",
+                               (черновик["id"], tenancy.текущий()))
     await _оповестить(area, {"type": "submitted", "author": actor})
     return {"revision_id": черновик["id"], "area": area, "status": "на согласовании"}
 
@@ -1006,11 +1048,12 @@ async def apply(area: str, *, base_version: int, actor: str, preflight=None,
 
     номер = int(применено.get("revision") or 0) + 1
     if not _has_pg():
-        _MEM["map"].setdefault(КАРТА, []).append({
+        _MEM["map"].setdefault(_обл(КАРТА), []).append({
             "area": КАРТА, "revision": номер, "tree": дерево, "note": черновик.get("note"),
             "applied_by": actor, "applied_at": _now().isoformat()})
         for s in новые:
             _MEM["seats"].append({"id": "seat-" + uuid.uuid4().hex[:10],
+                                  "tenant": tenancy.текущий(),
                                   "area": area_of(дерево, s["op_id"]),
                                   "op_id": s["op_id"], "audit_id": s["audit_id"],
                                   "pin_version": s.get("pin_version"),
@@ -1019,34 +1062,39 @@ async def apply(area: str, *, base_version: int, actor: str, preflight=None,
         for s in снимаемые:
             for живая in _MEM["seats"]:
                 if (живая["op_id"] == s["op_id"]
+                        and живая.get("tenant") == tenancy.текущий()
                         and живая["audit_id"] == s["audit_id"] and живая.get("until") is None):
                     живая["until"] = _now().isoformat()
         _MEM["changes"].pop(черновик["id"], None)
-        ред = _MEM["rev"].get(area)
+        ред = _MEM["rev"].get(_обл(area))
         if ред:
             ред["status"] = "применена"
-            _MEM["rev"].pop(area, None)
+            _MEM["rev"].pop(_обл(area), None)
     else:
         from .db import _conn
         async with _conn() as conn:
             async with conn.transaction():
                 await conn.execute(
-                    "INSERT INTO process_map (area, revision, tree, note, applied_by) "
-                    "VALUES (%s,%s,%s,%s,%s)",
-                    (КАРТА, номер, json.dumps(дерево, ensure_ascii=False), черновик.get("note"), actor))
+                    "INSERT INTO process_map (area, revision, tree, note, applied_by, tenant) "
+                    "VALUES (%s,%s,%s,%s,%s,%s)",
+                    (КАРТА, номер, json.dumps(дерево, ensure_ascii=False), черновик.get("note"),
+                     actor, tenancy.текущий()))
                 for s in новые:
                     await conn.execute(
-                        "INSERT INTO process_seats (id, area, op_id, audit_id, pin_version, created_by) "
-                        "VALUES (%s,%s,%s,%s,%s,%s)",
+                        "INSERT INTO process_seats (id, area, op_id, audit_id, pin_version, created_by, tenant) "
+                        "VALUES (%s,%s,%s,%s,%s,%s,%s)",
                         ("seat-" + uuid.uuid4().hex[:10], area_of(дерево, s["op_id"]), s["op_id"],
-                         s["audit_id"], s.get("pin_version"), s.get("created_by") or actor))
+                         s["audit_id"], s.get("pin_version"), s.get("created_by") or actor,
+                         tenancy.текущий()))
                 for s in снимаемые:
                     await conn.execute(
                         "UPDATE process_seats SET until = now() WHERE op_id = %s "
-                        "AND audit_id = %s AND until IS NULL", (s["op_id"], s["audit_id"]))
+                        "AND audit_id = %s AND tenant = %s AND until IS NULL",
+                        (s["op_id"], s["audit_id"], tenancy.текущий()))
                 await conn.execute(
                     "UPDATE process_revisions SET status = 'применена', approved_by = %s, "
-                    "updated_at = now() WHERE id = %s", (actor, черновик["id"]))
+                    "updated_at = now() WHERE id = %s AND tenant = %s",
+                    (actor, черновик["id"], tenancy.текущий()))
     await _оповестить(area, {"type": "applied", "revision": номер, "author": actor})
     return {"area": area, "revision": номер, "seats_added": len(новые),
             "seats_closed": len(снимаемые), "tree": дерево,
@@ -1062,24 +1110,26 @@ async def apply(area: str, *, base_version: int, actor: str, preflight=None,
 async def presence_touch(area: str, actor: str) -> None:
     """Heartbeat живого подключения. Таблица, а не память процесса: при репликах список верен."""
     if not _has_pg():
-        _MEM["presence"][(area, actor)] = _now()
+        _MEM["presence"][(_обл(area), actor)] = _now()
         return
     from .db import _conn
     async with _conn() as conn:
         await conn.execute(
-            "INSERT INTO process_presence (area, actor, at) VALUES (%s,%s,now()) "
-            "ON CONFLICT (area, actor) DO UPDATE SET at = now()", (area, actor))
+            "INSERT INTO process_presence (area, actor, at, tenant) VALUES (%s,%s,now(),%s) "
+            "ON CONFLICT (tenant, area, actor) DO UPDATE SET at = now()",
+            (area, actor, tenancy.текущий()))
 
 
 async def presence_of(area: str, *, window_sec: int = 60) -> list[str]:
     порог = _now() - _dt.timedelta(seconds=window_sec)
     if not _has_pg():
-        return sorted(a for (ar, a), ts in _MEM["presence"].items() if ar == area and ts > порог)
+        return sorted(a for (ar, a), ts in _MEM["presence"].items()
+                      if ar == _обл(area) and ts > порог)
     from .db import _conn
     async with _conn() as conn:
         cur = await conn.execute(
-            "SELECT actor FROM process_presence WHERE area = %s AND at > %s ORDER BY actor",
-            (area, порог))
+            "SELECT actor FROM process_presence WHERE area = %s AND tenant = %s AND at > %s "
+            "ORDER BY actor", (area, tenancy.текущий(), порог))
         return [r[0] for r in await cur.fetchall()]
 
 

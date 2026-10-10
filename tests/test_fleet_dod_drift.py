@@ -23,7 +23,7 @@ for k in ("KEYCLOAK_JWKS_URI", "ABOP_EXTRA_JWKS", "PG_DSN", "DATABASE_URL", "ABO
 os.environ["ABOP_DEV_AUTH"] = "1"
 os.environ["ABOP_RUN_WORKERS"] = "0"
 
-from server import run_store, web_api  # noqa: E402
+from server import run_store, tenancy, web_api  # noqa: E402
 
 
 @pytest.fixture()
@@ -43,7 +43,9 @@ def _прогон(client, *, ok: bool, дней_назад: int, агент="aud
         run_store.save({"id": рид, "agent_id": агент, "contract_audit_id": "audit-1c",
                         "verdict": {"ok": ok}}))
     когда = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=дней_назад)
-    run_store._MEM[рид]["created_at"] = когда.isoformat()
+    # Журнал прогонов изолирован по арендатору (шаг 5), и фолбэк в памяти ключуется так же —
+    # иначе тест на изоляцию зеленел бы в памяти и падал на Postgres.
+    run_store._MEM[tenancy.ключ_памяти(рид)]["created_at"] = когда.isoformat()
 
 
 def _дод(client) -> dict:

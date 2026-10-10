@@ -18,6 +18,10 @@ import pytest
 
 КОРЕНЬ = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(КОРЕНЬ))
+# `cli/ape.py` импортирует `checks` по имени (он же скрипт) — без этой строки модуль
+# собирается только если другой тест уже положил cli/ в путь. Зависеть от порядка тестов
+# нельзя: прогон одного файла должен работать так же, как прогон всей папки.
+sys.path.insert(0, str(КОРЕНЬ / "cli"))
 for k in ("KEYCLOAK_JWKS_URI", "ABOP_EXTRA_JWKS", "PG_DSN", "DATABASE_URL", "ABOP_PG_DSN"):
     os.environ.pop(k, None)
 os.environ["ABOP_DEV_AUTH"] = "1"

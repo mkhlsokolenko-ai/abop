@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 
+from . import tenancy
 from .config import settings
 
 SCHEMA = """
@@ -17,7 +18,11 @@ CREATE TABLE IF NOT EXISTS runs (
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_runs_agent ON runs (agent_id);
+-- Арендатор (шаг 5): журнал прогонов — это находки и деньги конкретной компании.
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS tenant TEXT NOT NULL DEFAULT 'default';
+CREATE INDEX IF NOT EXISTS idx_runs_tenant ON runs (tenant, created_at DESC);
 """
+SCHEMA += tenancy.миграция_ключа("runs", "id")
 
 _MEM: dict[str, dict] = {}
 _SEQ = {"n": 0}
@@ -56,20 +61,22 @@ async def new_id(agent_id: str) -> str:
 async def save(run: dict) -> dict:
     rid = str(run.get("id") or "") or await _next_id(run["agent_id"])
     row = dict(run); row["id"] = rid
+    row["tenant"] = tenancy.текущий()
     if not _has_pg():
         import datetime as _dt
         row["created_at"] = _dt.datetime.now(_dt.timezone.utc).isoformat()
-        _MEM[rid] = row
+        _MEM[tenancy.ключ_памяти(rid)] = row
         return row
     from .db import _conn
     v = run.get("verdict") or {}
     g = (run.get("run_metrics") or {}).get("governance") or {}
     async with _conn() as conn:
         await conn.execute(
-            "INSERT INTO runs (id,agent_id,contract_audit_id,verdict_ok,autonomy_used,hitl_count,payload) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            "INSERT INTO runs (id,agent_id,contract_audit_id,verdict_ok,autonomy_used,hitl_count,payload,tenant) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
             (rid, run["agent_id"], run.get("contract_audit_id"), bool(v.get("ok")),
-             v.get("autonomy_used"), int(g.get("hitl_count") or 0), json.dumps(run)))
+             v.get("autonomy_used"), int(g.get("hitl_count") or 0), json.dumps(run),
+             tenancy.текущий()))
     out = await get(rid)
     if out is not None:
         out["id"] = rid  # payload хранит run без id — восстанавливаем
@@ -87,19 +94,23 @@ async def purge(before: str | None = None, agent_id: str | None = None) -> int:
     if not _has_pg():
         ids = [k for k, r in _MEM.items()
                if (not agent_id or r.get("agent_id") == agent_id)
-               and (not before or str(r.get("created_at") or "") < before)]
+               and (not before or str(r.get("created_at") or "") < before)
+               and r.get("tenant") == tenancy.текущий()]
         for k in ids:
             _MEM.pop(k, None)
         return len(ids)
     from .db import _conn
-    where, args = [], []
+    # Чистка журнала — тоже только своего: «удалить всё» одного арендатора не должно задеть
+    # соседа, даже если вызвал её вендорский администратор по привычке.
+    where, args = [], [tenancy.текущий()]
     if agent_id:
         where.append("agent_id = %s")
         args.append(agent_id)
     if before:
         where.append("created_at < %s")
         args.append(before)
-    sql = "DELETE FROM runs" + (" WHERE " + " AND ".join(where) if where else "")
+    # «tenant = %s» стоит текстом: чистка журнала не должна зависеть от порядка сборки условий.
+    sql = "DELETE FROM runs WHERE tenant = %s" + ("".join(" AND " + w for w in where))
     async with _conn() as conn:
         cur = await conn.execute(sql, tuple(args))
         return int(cur.rowcount or 0)
@@ -108,7 +119,9 @@ async def purge(before: str | None = None, agent_id: str | None = None) -> int:
 async def list_runs(agent_id: str | None = None, limit: int = 100) -> list[dict]:
     """Сводки прогонов (для журнала): без тяжёлого payload, свежие сверху."""
     if not _has_pg():
-        rows = [r for r in _MEM.values() if not agent_id or r.get("agent_id") == agent_id]
+        rows = [r for r in _MEM.values()
+                if (not agent_id or r.get("agent_id") == agent_id)
+                and r.get("tenant") == tenancy.текущий()]
         rows.sort(key=lambda r: r.get("created_at") or "", reverse=True)
         out = []
         for r in rows[:limit]:
@@ -143,10 +156,12 @@ async def list_runs(agent_id: str | None = None, limit: int = 100) -> list[dict]
     async with _conn() as conn:
         if agent_id:
             cur = await conn.execute(
-                f"SELECT {cols} FROM runs WHERE agent_id=%s ORDER BY created_at DESC LIMIT %s", (agent_id, limit))
+                f"SELECT {cols} FROM runs WHERE tenant=%s AND agent_id=%s "
+                "ORDER BY created_at DESC LIMIT %s", (tenancy.текущий(), agent_id, limit))
         else:
             cur = await conn.execute(
-                f"SELECT {cols} FROM runs ORDER BY created_at DESC LIMIT %s", (limit,))
+                f"SELECT {cols} FROM runs WHERE tenant=%s ORDER BY created_at DESC LIMIT %s",
+                (tenancy.текущий(), limit))
         rows = await cur.fetchall()
     return [{"id": r[0], "agent_id": r[1], "contract_audit_id": r[2], "verdict_ok": r[3],
              "autonomy_used": r[4], "hitl_count": r[5],
@@ -156,11 +171,14 @@ async def list_runs(agent_id: str | None = None, limit: int = 100) -> list[dict]
 
 
 async def get(run_id: str) -> dict | None:
+    """Прогон по id — только свой: в нём находки, суммы и выгрузка данных компании."""
     if not _has_pg():
-        return _MEM.get(run_id)
+        r = _MEM.get(tenancy.ключ_памяти(run_id))
+        return r if r and r.get("tenant") == tenancy.текущий() else None
     from .db import _conn
     async with _conn() as conn:
-        cur = await conn.execute("SELECT payload, created_at FROM runs WHERE id=%s", (run_id,))
+        cur = await conn.execute("SELECT payload, created_at FROM runs WHERE id=%s AND tenant=%s",
+                                 (run_id, tenancy.текущий()))
         r = await cur.fetchone()
     if not r:
         return None

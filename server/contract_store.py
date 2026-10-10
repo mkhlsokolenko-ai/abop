@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 
+from . import tenancy
 from .config import settings
 
 SCHEMA = """
@@ -26,6 +27,8 @@ CREATE TABLE IF NOT EXISTS contract_sets (
 CREATE INDEX IF NOT EXISTS idx_cs_family ON contract_sets (family);
 CREATE INDEX IF NOT EXISTS idx_cs_ingested ON contract_sets (ingested_at);
 """
+# Арендатор — часть ПЕРВИЧНОГО ключа: audit_id вертикали одинаков у всех, кто её поставил.
+SCHEMA += tenancy.миграция_ключа("contract_sets", "audit_id")
 
 _MEM: dict[str, dict] = {}  # фолбэк без Postgres
 
@@ -64,34 +67,36 @@ async def save(bundle: dict, intake: dict, ingested_by: str = "dev") -> dict:
     if not _has_pg():
         import datetime as _dt  # локально: фолбэк-метка времени только для памяти
         row["ingested_at"] = _dt.datetime.now(_dt.timezone.utc).isoformat()
-        _MEM[row["audit_id"]] = row
+        row["tenant"] = tenancy.текущий()
+        _MEM[tenancy.ключ_памяти(row["audit_id"])] = row
         return row
     from .db import _conn
     async with _conn() as conn:
         await conn.execute(
             "INSERT INTO contract_sets "
-            "(audit_id, segment, family, autonomy, schema_ver, bundle, intake, ingested_by) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s) "
-            "ON CONFLICT (audit_id) DO UPDATE SET "
+            "(audit_id, segment, family, autonomy, schema_ver, bundle, intake, ingested_by, tenant) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+            "ON CONFLICT (tenant, audit_id) DO UPDATE SET "
             "segment=EXCLUDED.segment, family=EXCLUDED.family, autonomy=EXCLUDED.autonomy, "
             "schema_ver=EXCLUDED.schema_ver, bundle=EXCLUDED.bundle, intake=EXCLUDED.intake, "
             "ingested_by=EXCLUDED.ingested_by, ingested_at=now()",
             (row["audit_id"], row["segment"], row["family"], row["autonomy"],
              row["schema_ver"], json.dumps(row["bundle"]), json.dumps(row["intake"]),
-             row["ingested_by"]),
+             row["ingested_by"], tenancy.текущий()),
         )
     return await get(row["audit_id"]) or row
 
 
 async def get(audit_id: str) -> dict | None:
+    """Контракт по audit_id — только своего арендатора: конверт прав принадлежит компании."""
     if not _has_pg():
-        return _MEM.get(audit_id)
+        return _MEM.get(tenancy.ключ_памяти(audit_id))
     from .db import _conn
     async with _conn() as conn:
         cur = await conn.execute(
             "SELECT audit_id, segment, family, autonomy, schema_ver, bundle, intake, "
-            "ingested_by, ingested_at FROM contract_sets WHERE audit_id = %s",
-            (audit_id,),
+            "ingested_by, ingested_at FROM contract_sets WHERE audit_id = %s AND tenant = %s",
+            (audit_id, tenancy.текущий()),
         )
         r = await cur.fetchone()
     if not r:
@@ -104,14 +109,15 @@ async def get(audit_id: str) -> dict | None:
 async def list_all(limit: int = 100) -> list[dict]:
     """Список принятых контрактов (краткие карточки, без полного бандла)."""
     if not _has_pg():
-        items = sorted(_MEM.values(), key=lambda x: x.get("ingested_at") or "", reverse=True)
+        items = sorted((x for x in _MEM.values() if x.get("tenant") == tenancy.текущий()),
+                       key=lambda x: x.get("ingested_at") or "", reverse=True)
         return [_brief(x) for x in items[:limit]]
     from .db import _conn
     async with _conn() as conn:
         cur = await conn.execute(
             "SELECT audit_id, segment, family, autonomy, intake, ingested_at "
-            "FROM contract_sets ORDER BY ingested_at DESC LIMIT %s",
-            (limit,),
+            "FROM contract_sets WHERE tenant = %s ORDER BY ingested_at DESC LIMIT %s",
+            (tenancy.текущий(), limit),
         )
         rows = await cur.fetchall()
     return [{"audit_id": r[0], "segment": r[1], "family": r[2], "autonomy": r[3],

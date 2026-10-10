@@ -26,6 +26,8 @@ import json
 import os
 import time
 
+from . import tenancy
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS dp_records (
   seq         BIGSERIAL PRIMARY KEY,
@@ -37,6 +39,11 @@ CREATE TABLE IF NOT EXISTS dp_records (
 );
 CREATE INDEX IF NOT EXISTS dp_records_lookup ON dp_records (entity, rec_id, fetched_at DESC);
 CREATE INDEX IF NOT EXISTS dp_records_entity ON dp_records (entity);
+-- Арендатор (шаг 5). Миграция безопасна: уже лежащие записи достаются арендатору
+-- по умолчанию — той единственной компании, для которой система и работала.
+ALTER TABLE dp_records ADD COLUMN IF NOT EXISTS tenant TEXT NOT NULL DEFAULT 'default';
+CREATE INDEX IF NOT EXISTS dp_records_tenant
+  ON dp_records (tenant, entity, rec_id, fetched_at DESC);
 """
 
 _pool = None
@@ -94,21 +101,23 @@ def _последние(recs: list[dict]) -> list[dict]:
 
 def append(entity: str, records: list[dict], *, reset: bool = False) -> int:
     """Дописать пачку записей. `reset=True` — перечитать сущность начисто (как `w` у файла)."""
+    ключ, арендатор = tenancy.ключ_памяти(entity), tenancy.текущий()
     if not _has_pg():
         if reset:
-            _MEM[entity] = []
-        _MEM.setdefault(entity, []).extend(records)
+            _MEM[ключ] = []
+        _MEM.setdefault(ключ, []).extend(records)
         return len(records)
     with _pool.connection() as conn:
         with conn.transaction():
-            if reset:
-                conn.execute("DELETE FROM dp_records WHERE entity=%s", (entity,))
+            if reset:        # «перечитать начисто» — только СВОЮ сущность, не соседа
+                conn.execute("DELETE FROM dp_records WHERE entity=%s AND tenant=%s",
+                             (entity, арендатор))
             for r in records:
                 conn.execute(
-                    "INSERT INTO dp_records (entity, rec_id, fetched_at, ttl_sec, payload) "
-                    "VALUES (%s,%s,%s,%s,%s)",
+                    "INSERT INTO dp_records (entity, rec_id, fetched_at, ttl_sec, payload, tenant) "
+                    "VALUES (%s,%s,%s,%s,%s,%s)",
                     (entity, str(r.get("id", "")), _ts(r), _ttl(r),
-                     json.dumps(r, ensure_ascii=False)))
+                     json.dumps(r, ensure_ascii=False), арендатор))
     return len(records)
 
 
@@ -117,20 +126,23 @@ def append(entity: str, records: list[dict], *, reset: bool = False) -> int:
 def query(entity: str, filters: dict | None = None, fields: list | None = None,
           limit: int = 50, include_stale: bool = False) -> list[dict]:
     """Та же семантика, что у файлового `ape.data_query`."""
+    арендатор = tenancy.текущий()
     if not _has_pg():
-        recs = list(_MEM.get(entity, []))
+        recs = list(_MEM.get(tenancy.ключ_памяти(entity), []))
         res = recs if include_stale else _последние(recs)
     elif include_stale:
         with _pool.connection() as conn:
-            cur = conn.execute("SELECT payload FROM dp_records WHERE entity=%s ORDER BY seq", (entity,))
+            cur = conn.execute("SELECT payload FROM dp_records WHERE entity=%s AND tenant=%s "
+                               "ORDER BY seq", (entity, арендатор))
             res = [_строка(x[0]) for x in cur.fetchall()]
     else:
         # DISTINCT ON отдаёт по одной строке на rec_id — ту, у которой свежее fetched_at;
         # при равенстве берём позже добавленную (seq), как делал файл при равных метках.
         with _pool.connection() as conn:
             cur = conn.execute(
-                "SELECT DISTINCT ON (rec_id) payload FROM dp_records WHERE entity=%s "
-                "ORDER BY rec_id, fetched_at DESC, seq DESC", (entity,))
+                "SELECT DISTINCT ON (rec_id) payload FROM dp_records "
+                "WHERE entity=%s AND tenant=%s "
+                "ORDER BY rec_id, fetched_at DESC, seq DESC", (entity, арендатор))
             res = [_строка(x[0]) for x in cur.fetchall()]
     for k, v in (filters or {}).items():
         res = [r for r in res if str(r.get(k, "")).lower() == str(v).lower()]
@@ -150,17 +162,25 @@ def get(entity: str, rec_id: str, include_stale: bool = False) -> dict | None:
 
 def count(entity: str) -> int:
     if not _has_pg():
-        return len(_последние(_MEM.get(entity, [])))
+        return len(_последние(_MEM.get(tenancy.ключ_памяти(entity), [])))
     with _pool.connection() as conn:
-        cur = conn.execute("SELECT count(DISTINCT rec_id) FROM dp_records WHERE entity=%s", (entity,))
+        cur = conn.execute("SELECT count(DISTINCT rec_id) FROM dp_records "
+                           "WHERE entity=%s AND tenant=%s", (entity, tenancy.текущий()))
         return int(cur.fetchone()[0])
 
 
 def entities() -> list[str]:
+    """Сущности, у которых есть записи У ЭТОГО арендатора.
+
+    Сущность соседа не должна появляться даже в перечне: по составу Data Plane читается, чем
+    занимается другая компания.
+    """
+    префикс = tenancy.ключ_памяти("")
     if not _has_pg():
-        return sorted(k for k, v in _MEM.items() if v)
+        return sorted(k[len(префикс):] for k, v in _MEM.items() if v and k.startswith(префикс))
     with _pool.connection() as conn:
-        cur = conn.execute("SELECT DISTINCT entity FROM dp_records ORDER BY entity")
+        cur = conn.execute("SELECT DISTINCT entity FROM dp_records WHERE tenant=%s ORDER BY entity",
+                           (tenancy.текущий(),))
         return [x[0] for x in cur.fetchall()]
 
 
@@ -170,7 +190,7 @@ def compact(entity: str, *, now: float | None = None) -> int:
     """Удалить перекрытые версии старше TTL. Последняя версия каждого id остаётся всегда."""
     сейчас = now if now is not None else time.time()
     if not _has_pg():
-        recs = _MEM.get(entity, [])
+        recs = _MEM.get(tenancy.ключ_памяти(entity), [])
         latest = {}
         for r in recs:
             k = r.get("id", id(r))
@@ -180,15 +200,16 @@ def compact(entity: str, *, now: float | None = None) -> int:
                 if latest.get(r.get("id", id(r))) is r
                 or not _ttl(r) or _ts(r) + _ttl(r) >= сейчас]
         убрано = len(recs) - len(keep)
-        _MEM[entity] = keep
+        _MEM[tenancy.ключ_памяти(entity)] = keep
         return убрано
     with _pool.connection() as conn:
         cur = conn.execute(
-            "DELETE FROM dp_records d WHERE d.entity=%s AND d.ttl_sec > 0 "
+            "DELETE FROM dp_records d WHERE d.entity=%s AND d.tenant=%s AND d.ttl_sec > 0 "
             "AND d.fetched_at + d.ttl_sec < %s "
-            "AND EXISTS (SELECT 1 FROM dp_records n WHERE n.entity=d.entity AND n.rec_id=d.rec_id "
+            "AND EXISTS (SELECT 1 FROM dp_records n WHERE n.entity=d.entity "
+            "            AND n.tenant=d.tenant AND n.rec_id=d.rec_id "
             "            AND (n.fetched_at, n.seq) > (d.fetched_at, d.seq))",
-            (entity, сейчас))
+            (entity, tenancy.текущий(), сейчас))
         return cur.rowcount or 0
 
 

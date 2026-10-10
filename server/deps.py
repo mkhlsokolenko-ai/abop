@@ -16,6 +16,7 @@ import time
 import jwt as _pyjwt
 from fastapi import HTTPException, Request
 
+from . import tenancy
 from .config import settings  # noqa: F401  (часть помощников читает настройки)
 
 # ── Auth: Keycloak JWT. Dev-режим без JWKS. Multi-issuer: смычка с desktop (realm ai-product-engineer)
@@ -105,11 +106,36 @@ def _identity(claims: dict, dev: bool = False) -> dict:
     if level in ("admin", "support"):
         dept = "*"
     return {"sub": claims.get("sub", "dev"), "name": claims.get("preferred_username") or claims.get("name") or "dev",
-            "roles": roles, "level": level, "department": dept or "*", "dev": dev}
+            "roles": roles, "level": level, "department": dept or "*", "dev": dev,
+            # Арендатор — из токена, а не выбор пользователя: работодатель у человека один.
+            # Фильтруют по нему СТОРЫ (server/tenancy.py), поэтому ручка не может прочитать чужое,
+            # даже если её автор о тенантах не думал.
+            "tenant": tenancy.из_заявки(claims)}
+
+
+def _применить_арендатора(request: Request, ident: dict) -> dict:
+    """Поставить арендатора на контекст запроса — и пустить вендорский переход только явно.
+
+    Ставится ОДИН раз и здесь: дальше по нему фильтруют сторы. Заголовок `X-ABOP-Tenant` работает
+    только для вендора (admin/support) и пишется в журнал: «посмотреть у клиента» не должно быть
+    тихой операцией.
+    """
+    просят = (request.headers.get("X-ABOP-Tenant") or "").strip() if request else ""
+    действует = tenancy.для_пользователя(ident, просят or None)
+    tenancy.установить(действует)
+    if просят and действует != tenancy.нормализовать(ident.get("tenant")):
+        try:    # журнал — не критичный путь: отказ записи не должен ронять запрос
+            from . import observability as _obs
+            _obs.log_event("warning", "tenant.switch", who=ident.get("name"),
+                           level=ident.get("level"), from_tenant=ident.get("tenant"),
+                           to_tenant=действует)
+        except Exception:  # noqa: BLE001
+            pass
+    return {**ident, "tenant_active": действует}
 
 
 def user(request: Request) -> dict:
-    """Текущий пользователь из Bearer-JWT (roles + department → level + ABAC-область).
+    """Текущий пользователь из Bearer-JWT (roles + department → level + ABAC-область + арендатор).
     Bearer есть → декодируем (JWKS-верификация если настроена, иначе decode для демо-переключателя).
     Bearer нет: без JWKS — dev-admin; с JWKS — 401."""
     auth = request.headers.get("Authorization", "")
@@ -118,7 +144,7 @@ def user(request: Request) -> dict:
         import jwt
         cached = _jwt_cache_get(token) if _jwks_url() else None   # verify один раз на токен
         if cached is not None:
-            return cached
+            return _применить_арендатора(request, cached)
         extra = _extra_issuers()
         try:
             if _jwks_url() or extra:  # строгая верификация подписи по JWKS (свой realm + доп. issuer)
@@ -144,15 +170,16 @@ def user(request: Request) -> dict:
         ident = _identity(claims, dev=False)
         if _jwks_url() or extra:                          # кэшируем только верифицированный успех
             _jwt_cache_put(token, ident, claims.get("exp"))
-        return ident
+        return _применить_арендатора(request, ident)
     if _jwks_url() or _extra_issuers():
         raise HTTPException(401, "нужен Bearer-JWT")
     # red-team #3: без Keycloak аноним = admin — только при явном ABOP_DEV_AUTH=1 (локальная разработка/CI);
     # иначе fail-closed, чтобы забытый env на стенде не открывал API всем.
     if os.getenv("ABOP_DEV_AUTH", "") != "1":
         raise HTTPException(401, "аутентификация не настроена: задайте KEYCLOAK_JWKS_URI (или ABOP_DEV_AUTH=1 для локальной разработки)")
-    return _identity({"sub": "dev", "preferred_username": "dev (admin)",
-                      "realm_access": {"roles": ["admin"]}, "department": "*"}, dev=True)
+    return _применить_арендатора(request, _identity(
+        {"sub": "dev", "preferred_username": "dev (admin)",
+         "realm_access": {"roles": ["admin"]}, "department": "*"}, dev=True))
 
 
 def can_see_family(u: dict, family: str) -> bool:

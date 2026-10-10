@@ -26,6 +26,7 @@ import secrets
 import time
 
 from . import observability as obs
+from . import tenancy
 from .config import settings
 
 SCHEMA = """
@@ -145,6 +146,10 @@ async def enqueue(*, agent_id: str, actor: str, payload: dict, dedupe_key: str |
             cur["deduped"] = True
             return cur
     jid = "job-" + secrets.token_hex(6)
+    # Арендатор кладётся в задание ЗДЕСЬ, пока мы ещё внутри запроса и контекст известен.
+    # Воркер поставит его обратно перед исполнением (`worker_loop`).
+    payload = dict(payload or {})
+    payload.setdefault("tenant", tenancy.текущий())
     if not _has_pg():
         async with _MEM_LOCK:
             _MEM[jid] = {"id": jid, "kind": kind, "agent_id": agent_id, "actor": actor, "dedupe_key": dedupe_key,
@@ -572,6 +577,11 @@ async def worker_loop(worker_id: str, handler, *, on_done=None, on_error=None) -
             t0 = time.perf_counter()
             hb_task = None
             tok = CURRENT_JOB.set(job["id"])
+            # Арендатор задания — на весь контекст исполнения. Очередь сквозная (воркер берёт
+            # следующее задание любой компании), поэтому изоляцию даёт именно эта постановка:
+            # без неё прогон компании А считался бы по данным арендатора по умолчанию.
+            tok_t = tenancy.установить((job.get("payload") or {}).get("tenant")
+                                       or job.get("tenant") or tenancy.ПО_УМОЛЧАНИЮ)
             try:
                 async def _hb():
                     while True:
@@ -621,6 +631,7 @@ async def worker_loop(worker_id: str, handler, *, on_done=None, on_error=None) -
                     except Exception:  # noqa: BLE001
                         pass
             finally:
+                tenancy.вернуть(tok_t)
                 CURRENT_JOB.reset(tok)
                 if hb_task:
                     hb_task.cancel()

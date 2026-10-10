@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 
+from . import tenancy
 from .config import settings
 
 SCHEMA = """
@@ -28,6 +29,8 @@ CREATE TABLE IF NOT EXISTS check_rules (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 """
+# Арендатор в ПЕРВИЧНОМ ключе: набор «showcase-b» правят у себя все, кто поставил вертикаль.
+SCHEMA += tenancy.миграция_ключа("check_rules", "id")
 
 _MEM: dict[str, dict] = {}
 _COLS = "id,rules,version,editor,updated_at"
@@ -53,10 +56,12 @@ async def init() -> None:
 async def all() -> list[dict]:
     """Все правки. Поставочные наборы сюда НЕ попадают: их источник — пакет вертикали."""
     if not _has_pg():
-        return sorted(_MEM.values(), key=lambda x: x["id"])
+        return sorted((v for k, v in _MEM.items() if k.startswith(tenancy.ключ_памяти(""))),
+                      key=lambda x: x["id"])
     from .db import _conn
     async with _conn() as conn:
-        cur = await conn.execute(f"SELECT {_COLS} FROM check_rules ORDER BY id")
+        cur = await conn.execute(f"SELECT {_COLS} FROM check_rules WHERE tenant=%s ORDER BY id",
+                                 (tenancy.текущий(),))
         return [_row(r) for r in await cur.fetchall()]
 
 
@@ -64,10 +69,11 @@ async def get(rid: str) -> dict | None:
     if not rid:
         return None
     if not _has_pg():
-        return _MEM.get(rid)
+        return _MEM.get(tenancy.ключ_памяти(rid))
     from .db import _conn
     async with _conn() as conn:
-        cur = await conn.execute(f"SELECT {_COLS} FROM check_rules WHERE id=%s", (rid,))
+        cur = await conn.execute(f"SELECT {_COLS} FROM check_rules WHERE id=%s AND tenant=%s",
+                                 (rid, tenancy.текущий()))
         r = await cur.fetchone()
     return _row(r) if r else None
 
@@ -78,26 +84,29 @@ async def save(rid: str, набор: dict, editor: str = "dev") -> dict:
     версия = int((было or {}).get("версия") or 0) + 1
     if not _has_pg():
         import datetime as _dt
-        _MEM[rid] = {"id": rid, "набор": набор, "версия": версия, "кто": editor,
-                     "когда": _dt.datetime.now(_dt.timezone.utc).isoformat()}
-        return _MEM[rid]
+        _MEM[tenancy.ключ_памяти(rid)] = {
+            "id": rid, "набор": набор, "версия": версия, "кто": editor,
+            "когда": _dt.datetime.now(_dt.timezone.utc).isoformat()}
+        return _MEM[tenancy.ключ_памяти(rid)]
     from .db import _conn
     async with _conn() as conn:
         await conn.execute(
-            "INSERT INTO check_rules (id,rules,version,editor,updated_at) VALUES (%s,%s,%s,%s,now()) "
-            "ON CONFLICT (id) DO UPDATE SET rules=EXCLUDED.rules, version=EXCLUDED.version, "
+            "INSERT INTO check_rules (id,rules,version,editor,updated_at,tenant) "
+            "VALUES (%s,%s,%s,%s,now(),%s) "
+            "ON CONFLICT (tenant, id) DO UPDATE SET rules=EXCLUDED.rules, version=EXCLUDED.version, "
             "editor=EXCLUDED.editor, updated_at=now()",
-            (rid, json.dumps(набор, ensure_ascii=False), версия, editor))
+            (rid, json.dumps(набор, ensure_ascii=False), версия, editor, tenancy.текущий()))
     return await get(rid)
 
 
 async def revert(rid: str) -> bool:
     """Снять правку: набор снова такой, каким приехал в пакете вертикали."""
     if not _has_pg():
-        return _MEM.pop(rid, None) is not None
+        return _MEM.pop(tenancy.ключ_памяти(rid), None) is not None
     from .db import _conn
     async with _conn() as conn:
-        cur = await conn.execute("DELETE FROM check_rules WHERE id=%s", (rid,))
+        cur = await conn.execute("DELETE FROM check_rules WHERE id=%s AND tenant=%s",
+                                 (rid, tenancy.текущий()))
         return bool(getattr(cur, "rowcount", 0))
 
 
