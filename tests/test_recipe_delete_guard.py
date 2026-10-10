@@ -100,3 +100,21 @@ def test_система_рецепта_настраивается_в_карто�
     КАРТОЧКА = (КОРЕНЬ / "webapp" / "src" / "components" / "Overlays.dc.html").read_text(
         encoding="utf-8")
     assert "ov.recipeSystemOptions" in КАРТОЧКА, "поля системы нет в вёрстке карточки рецепта"
+
+
+def test_система_доезжает_до_сохранённого_рецепта():
+    """Поле, которое не доезжает до хранилища, хуже отсутствующего: человек думает, что связал.
+
+    Карточка отправляет `system_id`, нормализатор рецепта обязан его сохранить — иначе привязка
+    молча теряется, а на плитке всё равно будет «без системы», и причину никто не найдёт.
+    """
+    import sys
+
+    sys.path.insert(0, str(КОРЕНЬ / "cli"))
+    import ape
+
+    r = ape.normalize_recipe("проба_системы", {
+        "recipe": "проба_системы", "source": {"kind": "json", "target": "/x.json"},
+        "entity": "feed_card", "map_rows": [{"field": "id", "spec": "col:id"}], "rules": [],
+        "system_id": "minio", "status": "опубликован"})
+    assert r.get("system_id") == "minio", f"привязка потерялась при нормализации: {sorted(r)}"
