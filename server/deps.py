@@ -123,15 +123,20 @@ def _применить_арендатора(request: Request, ident: dict) -> d
     просят = (request.headers.get("X-ABOP-Tenant") or "").strip() if request else ""
     действует = tenancy.для_пользователя(ident, просят or None)
     tenancy.установить(действует)
-    if просят and действует != tenancy.нормализовать(ident.get("tenant")):
-        try:    # журнал — не критичный путь: отказ записи не должен ронять запрос
-            from . import observability as _obs
+    свой = tenancy.нормализовать(ident.get("tenant"))
+    if просят and действует != свой:
+        # Переход вендора на данные клиента — событие управления, и оно обязано быть видно.
+        # `user_level`, а не `level`: у `log_event` первый параметр так и называется, и прежний
+        # вызов падал на TypeError внутри `except Exception: pass` — запись не велась ВООБЩЕ,
+        # а глушитель прятал мою же ошибку. Поэтому глушитель сужен до отказа записи.
+        from . import observability as _obs
+        try:
             _obs.log_event("warning", "tenant.switch", who=ident.get("name"),
-                           level=ident.get("level"), from_tenant=ident.get("tenant"),
+                           user_level=ident.get("level"), from_tenant=свой,
                            to_tenant=действует)
-        except Exception:  # noqa: BLE001
+        except OSError:                       # поток вывода закрыт — не повод ронять запрос
             pass
-    return {**ident, "tenant_active": действует}
+    return {**ident, "tenant_active": действует, "tenant_own": свой}
 
 
 def личность(request: Request) -> dict:
@@ -192,7 +197,37 @@ async def user(request: Request) -> dict:
     """
     u = личность(request)
     tenancy.установить(u.get("tenant_active") or u.get("tenant"))
+    await _записать_переход(u)
     return u
+
+
+_ПЕРЕХОДЫ: dict = {}          # (кто, арендатор) → когда записали в журнал последний раз
+_ПЕРЕХОД_ОКНО = 300.0         # не чаще раза в пять минут на пару: журнал читают, а не листают
+
+
+async def _записать_переход(u: dict) -> None:
+    """Вендорский просмотр чужого арендатора — в append-only журнал, а не только в поток логов.
+
+    Поток логов контейнера живёт до перезапуска; «кто смотрел данные клиента» — вопрос, который
+    задают через месяц. Частота ограничена: без этого каждая прокрутка экрана писала бы строку, и
+    журнал стал бы нечитаемым — то есть бесполезным.
+    """
+    свой, действует = u.get("tenant_own"), u.get("tenant_active")
+    if not действует or действует == свой:
+        return
+    ключ = (str(u.get("sub") or u.get("name")), действует)
+    сейчас = time.time()
+    if сейчас - float(_ПЕРЕХОДЫ.get(ключ) or 0) < _ПЕРЕХОД_ОКНО:
+        return
+    _ПЕРЕХОДЫ[ключ] = сейчас
+    try:
+        from . import audit_store
+        await audit_store.record(str(u.get("name") or u.get("sub") or "?"),
+                                 "tenant.switch", действует,
+                                 {"from": свой, "level": u.get("level")})
+    except Exception:  # noqa: BLE001 — журнал не должен ронять запрос, но и молчать не должен
+        from . import observability as _obs
+        _obs.log_event("error", "tenant.switch.audit_failed", to_tenant=действует)
 
 
 def can_see_family(u: dict, family: str) -> bool:

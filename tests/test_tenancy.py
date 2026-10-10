@@ -470,3 +470,54 @@ def test_контекст_переживает_поток():
             return await asyncio.to_thread(tenancy.текущий)
 
     assert asyncio.new_event_loop().run_until_complete(проверить()) == "acme"
+
+
+def test_вендорский_переход_записан_в_журнал():
+    """Проверяем ЗАПИСЬ, а не наличие кода — именно этого и не хватало.
+
+    Первая версия звала `log_event(..., level=...)`, что столкнулось с позиционным параметром
+    `log_event(level, event)`: `TypeError` съедался `except Exception: pass`, и переход не
+    записывался ВООБЩЕ. Тест, который смотрел бы на исходник, остался бы зелёным — поэтому этот
+    смотрит на журнал.
+    """
+    from server import audit_store
+
+    класс = type("Зпр", (), {"headers": {"X-ABOP-Tenant": "acme"}})
+    было = len(прогнать(audit_store.list_events(limit=200)))
+    deps._ПЕРЕХОДЫ.clear()
+    u = deps._применить_арендатора(класс(), {"sub": "u7", "name": "qa.support",
+                                             "level": "support", "tenant": "default"})
+    assert u["tenant_own"] == "default" and u["tenant_active"] == "acme"
+    прогнать(deps._записать_переход(u))
+
+    события = прогнать(audit_store.list_events(limit=200))
+    assert len(события) > было, "переход вендора не попал в журнал"
+    запись = [e for e in события if (e.get("action") or e.get("kind")) == "tenant.switch"]
+    assert запись, [e.get("action") for e in события[:5]]
+    assert (запись[0].get("target") or запись[0].get("object")) == "acme"
+
+
+def test_переход_не_флудит_журнал():
+    """Без ограничения частоты каждая прокрутка экрана писала бы строку, и журнал стал бы
+    нечитаемым — то есть бесполезным."""
+    from server import audit_store
+
+    deps._ПЕРЕХОДЫ.clear()
+    u = {"sub": "u8", "name": "qa.support", "level": "support",
+         "tenant_own": "default", "tenant_active": "acme"}
+    прогнать(deps._записать_переход(u))
+    до = len(прогнать(audit_store.list_events(limit=200)))
+    for _ in range(5):
+        прогнать(deps._записать_переход(u))
+    assert len(прогнать(audit_store.list_events(limit=200))) == до, "журнал залит повторами"
+
+
+def test_свой_арендатор_не_пишется_в_журнал():
+    """Запись нужна о ПЕРЕХОДЕ, а не о каждом запросе: иначе событие теряется в шуме."""
+    from server import audit_store
+
+    deps._ПЕРЕХОДЫ.clear()
+    до = len(прогнать(audit_store.list_events(limit=200)))
+    прогнать(deps._записать_переход({"sub": "u9", "name": "кто-то", "level": "manager",
+                                     "tenant_own": "acme", "tenant_active": "acme"}))
+    assert len(прогнать(audit_store.list_events(limit=200))) == до
