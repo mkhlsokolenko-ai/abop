@@ -230,7 +230,14 @@ export async function mount(root, ctx) {
     let caught = null;
     try { caught = await api(M + "/threads/" + t.id + "/catchup"); } catch { /* сервер недоступен — покажем что есть */ }
     try { messages = await api(M + "/threads/" + t.id + "/messages"); } catch (e) { messages = []; toast(humanError(e), "danger"); }
-    if (caught && caught.added) toast(`Дописан результат прогона: ${caught.added}`, "ok");
+    if (caught && caught.added) {
+      toast(`Дописан результат прогона: ${caught.added}`, "ok");
+      // Прогон закончился, пока приложение было закрыто: тост увидят только если смотрят в экран,
+      // поэтому извещаем и системой — за этим человек и уходил из окна.
+      ctx.notify?.({ title: "Прогон закончился, пока вас не было",
+                     body: `Результатов дописано: ${caught.added}. Открыть чат.`,
+                     куда: "chat", ключ: "catchup:" + t.id });
+    }
     if (caught && (caught.running || []).length) toast(`Ещё выполняется прогонов: ${caught.running.length}`, "");
     render(); scrollDown(true); loadKb();
   }
@@ -862,6 +869,16 @@ export async function mount(root, ctx) {
           else stat(`цепочка «${esc(p.name || pid)}» · шаг ${(pr.steps_done || 0) + 1} из ${pr.steps_total || (p.steps || []).length} · ${sec} с`);
         }
         curJob = null;
+        // Прогон кончился, пока окно могло быть закрыто: извещаем ОС. Ключ по заданию — чтобы
+        // повторный доклад того же прогона не показал второе окно.
+        if (fin) {
+          const ок = fin.status === "done";
+          ctx.notify?.({
+            title: ок ? `Готово: ${p.name || pid}` : `Не вышло: ${p.name || pid}`,
+            body: ок ? "Результат в чате." : (fin.error || "цепочка не выполнена"),
+            куда: "chat", ключ: "job:" + jobId,
+          });
+        }
         if (!fin) throw new Error("цепочка не завершилась за 30 минут — результат появится в карточке прогона в этом чате");
         if (fin.status !== "done") throw new Error(fin.status === "cancelled" ? "цепочка отменена" : (fin.error || "цепочка не выполнена"));
         r = { steps: fin.steps || [] };
@@ -1839,6 +1856,15 @@ export async function mount(root, ctx) {
       inp.value = "Проанализируй этот фрагмент:\n\n" + clip; inp.focus(); inp.scrollTop = inp.scrollHeight; renderAgentSuggest(inp.value); return;
     }
     if (it.attach) { await attachText(it.attach.name, it.attach.text); return; }
+    // Открыть НАЗВАННЫЙ чат: присмотр за папкой ведёт свой чат и обязан уметь привести в него.
+    // Чат мог ещё не попасть в загруженный список — тогда перечитываем список и ищем снова.
+    if (it.thread) {
+      let t = threads.find((x) => String(x.id) === String(it.thread));
+      if (!t) { await loadThreads(); t = threads.find((x) => String(x.id) === String(it.thread)); }
+      if (t) await openThread(t);
+      else toast("Этот чат не найден — возможно, он удалён", "warn");
+      return;
+    }
     if (it.runAgent) { await newChat(); runAbopAgentDeliver(it.runAgent.id, it.runAgent.name || agentName(it.runAgent.id), it.runAgent.task || "", it.runAgent.deliver || ""); return; }
   }
   root.addEventListener("ape:intent", (e) => handleIntent(e.detail));

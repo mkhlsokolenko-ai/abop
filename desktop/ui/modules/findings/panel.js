@@ -2,12 +2,22 @@
 // В журнале прогонов находка живёт внутри своего прогона: чтобы увидеть картину целиком, надо было
 // открыть десяток карточек. Здесь — один список с фильтрами и четырьмя ответами по каждой находке:
 // что не сходится, откуда это видно, чем грозит, что проверить.
+// Источник каждой находки назван: правило из набора (его можно перепрогнать на истории и править
+// методологу) или прочтение модели. Смешивать их в одну карточку без пометки значит выдавать прозу
+// за расчёт — а решение по находке человек принимает, глядя именно на её надёжность.
 const F = "/api/modules/findings";
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const LBL = "font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)";
 const CARD = "display:flex;flex-direction:column;gap:9px;padding:15px 17px;border-radius:16px;border:1px solid var(--line);background:var(--panel);backdrop-filter:var(--blur)";
 const INP = "padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-size:12.5px";
 const SEV = { "высокая": "var(--danger-ink)", "средняя": "var(--warn-ink)", "низкая": "var(--ink-3)" };
+// Источник находки: чем она посчитана. Правило и обход цепочки — расчёт по данным 1С, его можно
+// повторить и проверить; «со слов модели» — прочтение, которое повторить нельзя.
+const ИСТОЧНИК = {
+  "правило": { текст: "правило", цвет: "var(--ok-ink)", why: "Находку дало правило из набора: его видно, можно перепрогнать на истории и поправить." },
+  "цепочка": { текст: "обход цепочки", цвет: "var(--ok-ink)", why: "Находку дал обход цепочки документов в 1С, а не правило из набора — править её в наборе правил нельзя." },
+  "модель": { текст: "со слов модели", цвет: "var(--warn-ink)", why: "За находкой нет правила: это прочтение модели. Перепрогнать его на истории нельзя — проверяйте по первичному документу." },
+};
 
 export async function mount(root, ctx) {
   const { api, toast, humanError } = ctx;
@@ -66,6 +76,33 @@ export async function mount(root, ctx) {
     </div>`;
   }
 
+  // Правило, факты и источник — отдельным блоком: это то, чем находка обоснована.
+  function правилоHTML(c) {
+    const п = c.правило || {};
+    const и = ИСТОЧНИК[c.источник] || ИСТОЧНИК["модель"];
+    const row = (k, v) => v ? `<div style="display:grid;grid-template-columns:120px 1fr;gap:10px;margin-top:6px">
+        <span style="${LBL}">${esc(k)}</span><span style="font-size:12.5px;color:var(--ink-2);line-height:1.55">${esc(v)}</span></div>` : "";
+    const факты = Object.entries(п.факты || {});
+    return `<div style="margin-top:12px;padding-top:11px;border-top:1px solid var(--line)">
+      <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
+        <span style="${LBL}">чем обоснована</span>
+        <span style="font-size:11.5px;color:${и.цвет}">${esc(и.текст)}</span>
+      </div>
+      <div style="font-size:11.5px;color:var(--ink-3);margin-top:4px;line-height:1.5">${esc(и.why)}</div>
+      ${row("правило", п.код ? (п.код + (п.набор ? " · набор " + п.набор : "")) : "")}
+      ${row("почему находка", п.причина)}
+      ${row("поле", п.поле)}
+      ${факты.length ? `<div style="display:grid;grid-template-columns:120px 1fr;gap:10px;margin-top:6px">
+        <span style="${LBL}">сличили</span>
+        <div style="display:flex;flex-direction:column;gap:2px;font-family:var(--mono);font-size:11.5px;color:var(--ink-2)">
+          ${факты.map(([k, v]) => `<span>${esc(k)}: ${esc(v == null ? "—" : String(v))}</span>`).join("")}
+        </div></div>` : ""}
+      ${row("чинится", п.чинится)}
+      ${row("что подсказывает правило", п.подсказка)}
+      ${c.проверка_описана === false ? `<div style="font-size:11.5px;color:var(--warn-ink);margin-top:8px;line-height:1.5">Эта проверка не описана в карте участков: участки «откуда → куда» и норма по ней неизвестны, поэтому в карточке их нет. Межучастковой она НЕ считается — не потому, что это установлено, а потому, что сведений нет.</div>` : ""}
+    </div>`;
+  }
+
   function cardHTML(c) {
     const e = c.explain || {};
     const on = openId === c.id;
@@ -80,6 +117,8 @@ export async function mount(root, ctx) {
         <span style="font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:6px;background:var(--accent-bg);color:var(--accent-ink)">${esc(c.cls || "")}</span>
         <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:${SEV[c.severity] || "var(--ink-3)"}">${esc(c.severity || "")}</span>
         <span style="font-family:var(--mono);font-size:11.5px;color:var(--ink-3)">${esc(c.id)}</span>
+        ${(() => { const и = ИСТОЧНИК[c.источник] || ИСТОЧНИК["модель"]; const п = c.правило || {};
+          return `<span title="${esc(и.why)}" style="font-size:10.5px;padding:2px 7px;border-radius:6px;border:1px solid var(--line);color:${и.цвет}">${esc(и.текст)}${п.код ? " · " + esc(п.код) : ""}</span>`; })()}
         ${c.cross ? `<span title="Расхождение видно только на стыке участков" style="font-size:10.5px;padding:2px 7px;border-radius:6px;border:1px solid var(--line);color:var(--ink-2)">${esc(c.section_from)} → ${esc(c.section_to)}</span>` : ""}
         ${labChip}
         ${c.amount_text ? `<span style="margin-left:auto;font-size:12.5px;font-weight:600">${esc(c.amount_text)}</span>` : ""}
@@ -90,6 +129,7 @@ export async function mount(root, ctx) {
         ${(e.consequences || []).length ? row("последствия", (e.consequences || []).join(" · ")) : ""}
         ${row("что проверить", e.action)}
         ${c.norm && c.norm.title ? row("норма", c.norm.title + (c.norm.section ? " · " + c.norm.section : "")) : ""}
+        ${правилоHTML(c)}
         <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
           ${c.doc_url ? `<a class="btn sm" href="${esc(c.doc_url)}" target="_blank" rel="noopener">Документ в 1С ▸</a>` : ""}
           <button class="btn sm fRun" data-run="${esc(c.run_id)}">Открыть прогон</button>
@@ -115,7 +155,7 @@ export async function mount(root, ctx) {
       <div style="display:flex;flex-direction:column;gap:5px">
         <span style="${LBL}">пилот 1С</span>
         <h1 style="margin:0;font-size:26px;font-weight:800;letter-spacing:-.7px">Находки</h1>
-        <p style="margin:0;font-size:13px;color:var(--ink-2)">Расхождения по всем последним прогонам аудитора и следователя в одном списке. Числа считает код по ссылкам 1С, объяснение и норму подбирает модель. Разметку эксперта видно, ставится она в веб-интерфейсе.</p>
+        <p style="margin:0;font-size:13px;color:var(--ink-2)">Расхождения по всем последним прогонам аудитора и следователя в одном списке. У каждой находки назван источник: правило из набора, обход цепочки или прочтение модели. Числа считает код по ссылкам 1С, объяснение и норму подбирает модель. Разметку эксперта видно, ставится она в веб-интерфейсе.</p>
       </div>
       ${loading || err ? "" : metricsHTML()}
       ${loading || err ? "" : filterHTML()}

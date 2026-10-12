@@ -103,6 +103,16 @@ def _startup() -> None:
     for m in _MODULES:
         app.include_router(m.router, prefix=f"/api/modules/{m.MANIFEST['id']}")
     print(f"[sidecar] модули: {[m.MANIFEST['id'] for m in _MODULES]}")
+    # Модуль вправе иметь фоновую работу (присмотр за папкой). Поднимаем её здесь, по одному
+    # правилу для всех: сбой одного фона не должен мешать запуску приложения целиком.
+    for m in _MODULES:
+        пуск = getattr(m, "запустить", None)
+        if not callable(пуск):
+            continue
+        try:
+            пуск()
+        except Exception as e:  # noqa: BLE001
+            print(f"[sidecar] фон модуля '{m.MANIFEST['id']}' не запущен: {e}")
 
 
 # ── ядро: здоровье, аутентификация, список модулей ──
@@ -151,7 +161,47 @@ def me() -> dict:
     return {"authed": True, "level": level, "can_approve": level != "analyst",
             "user": cl.get("preferred_username"),
             "email": cl.get("email") or "", "name": cl.get("name") or "",
-            "department": cl.get("department") or cl.get("family") or "", "roles": roles}
+            "department": cl.get("department") or cl.get("family") or "", "roles": roles,
+            **_арендатор()}
+
+
+def _арендатор() -> dict:
+    """Чьи данные на экране — СО СЛОВ СЕРВЕРА.
+
+    Считать арендатора из токена здесь нельзя: правило вычисления живёт на сервере
+    (`tenancy.из_заявки`: tenant → org → organization), и местная копия разошлась бы с ним молча.
+    Ровно так уже случилось с уровнем доступа — интерфейс показывал кнопку, которой не было прав.
+
+    Нет связи — так и говорим: «неизвестно». Показать «свой» наугад значит обещать, что на экране
+    данные вашей организации, не зная этого.
+    """
+    from . import abop_client as abop
+    try:
+        u = ((abop.me() or {}).get("user") or {})
+    except abop.AbopError:
+        return {"tenant": "", "tenant_own": "", "tenant_known": False,
+                "tenant_can_switch": False, "tenant_asked": abop.просим_арендатора()}
+    действует = str(u.get("tenant_active") or u.get("tenant") or "")
+    свой = str(u.get("tenant_own") or u.get("tenant") or "")
+    return {"tenant": действует, "tenant_own": свой, "tenant_known": bool(действует),
+            # Переключать вправе только поддержка вендора — и решает это сервер. Здесь только
+            # подсказка интерфейсу, показывать ли переключатель: отказ всё равно придёт с сервера.
+            "tenant_can_switch": str(u.get("level") or "") in ("admin", "support"),
+            "tenant_asked": abop.просим_арендатора()}
+
+
+@app.post("/api/auth/tenant")
+def set_tenant(body: dict | None = None) -> dict:
+    """Посмотреть установку клиента (вендор) или вернуться к своей.
+
+    Возвращаем то, что ДЕЙСТВУЕТ по мнению сервера, а не то, что попросили: переход сервер вправе
+    не пустить, и в этом случае интерфейс обязан показать «свой», иначе он соврёт.
+    """
+    from . import abop_client as abop
+    abop.смотреть_у((body or {}).get("tenant"))
+    # Область локальных таблиц (вложения, задания догона) считается на каждом обращении и уже
+    # включает запрошенного арендатора — сбрасывать нечего: вложения клиента не смешаются со своими.
+    return _арендатор()
 
 
 @app.post("/api/auth/login")
@@ -175,7 +225,19 @@ def do_login() -> dict:
             break
         threading.Event().wait(0.1)
     t.join()
-    return holder.get("res", {"ok": False, "error": "internal"})
+    res = holder.get("res", {"ok": False, "error": "internal"})
+    if res.get("ok"):
+        # Старые вложения помечены просто «srv» — без указания установки. Переносим их на
+        # текущую при первом же входе: иначе человек потеряет файлы в своих же чатах, а
+        # раздавать их всем установкам нельзя (см. store.перенести_старые_области).
+        try:
+            from .modules.chat import store as _чат
+            перенесено = _чат.перенести_старые_области()
+            if перенесено:
+                res["перенесено_вложений"] = перенесено
+        except Exception:  # noqa: BLE001 — перенос не повод не пустить человека в приложение
+            pass
+    return res
 
 
 @app.post("/api/auth/logout")

@@ -48,6 +48,10 @@ def findings_list(limit: int = 120, runs: int = 12, agent_id: str = "",
         if ql:
             hay = " ".join(str(c.get(k) or "") for k in ("id", "check", "kind", "doc_line", "agent_name"))
             hay += " " + str((c.get("explain") or {}).get("what") or "")
+            # Код правила и набор — чтобы методолог мог спросить «покажи всё по B1»: правило он
+            # правит целиком, а не находку за находкой.
+            п = c.get("правило") or {}
+            hay += " " + str(п.get("код") or "") + " " + str(п.get("набор") or "")
             if not all(w in hay.lower() for w in ql.split()):
                 return False
         return True

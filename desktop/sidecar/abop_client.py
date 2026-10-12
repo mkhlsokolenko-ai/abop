@@ -14,6 +14,40 @@ import urllib.request
 from . import auth, config
 
 
+# ── Вендорский переход на данные клиента ───────────────────────────────────────────────────────
+# Поддержка вендора (admin/support) вправе посмотреть установку клиента. Решает это СЕРВЕР: он
+# пустит переход только вендору и запишет его в журнал. Здесь лежит только просьба — и живёт она в
+# памяти процесса, не на диске: «смотрю у клиента» не должно переживать перезапуск молча.
+_ПРОСИМ_АРЕНДАТОРА: str = ""
+
+
+def просим_арендатора() -> str:
+    """Какой арендатор запрошен в этом сеансе. Пусто — работаем в своём."""
+    return _ПРОСИМ_АРЕНДАТОРА
+
+
+def смотреть_у(арендатор: str | None) -> str:
+    """Запросить чужого арендатора (или вернуться к своему, передав пусто).
+
+    Что ДЕЙСТВУЕТ, здесь не решается и не возвращается: ответ даёт сервер в `/api/me`. Иначе
+    десктоп показывал бы просьбу как факт — а сервер вправе переход не пустить.
+    """
+    global _ПРОСИМ_АРЕНДАТОРА
+    _ПРОСИМ_АРЕНДАТОРА = str(арендатор or "").strip().lower()
+    return _ПРОСИМ_АРЕНДАТОРА
+
+
+def _заголовки() -> dict:
+    """Общие заголовки всех вызовов: тип, Bearer пользователя и просьба о переходе."""
+    h = {"Content-Type": "application/json"}
+    tok = auth.token()
+    if tok:
+        h["Authorization"] = "Bearer " + tok
+    if _ПРОСИМ_АРЕНДАТОРА:
+        h["X-ABOP-Tenant"] = _ПРОСИМ_АРЕНДАТОРА
+    return h
+
+
 class AbopError(Exception):
     def __init__(self, status: int, detail: str):
         super().__init__(f"ABOP {status}: {detail}")
@@ -32,10 +66,7 @@ def _req(method: str, path: str, body: dict | None = None, timeout: int = 120) -
     экранированные куски (`%D0%90`) и разделители запроса, поэтому двойного экранирования нет.
     """
     url = config.ABOP.rstrip("/") + urllib.parse.quote(path, safe="/%?&=+:,@!$'()*;~")
-    headers = {"Content-Type": "application/json"}
-    tok = auth.token()
-    if tok:
-        headers["Authorization"] = "Bearer " + tok
+    headers = _заголовки()
     data = json.dumps(body).encode("utf-8") if body is not None else None
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
@@ -57,10 +88,7 @@ def chat_stream(prompt: str, system: str = "", profile: str = "standard", max_to
     """Проксирует SSE-стрим ABOP /api/chat/stream: генератор yield-ит строки SSE как есть
     (`data: {...}`). Настоящий стрим токенов (не псевдо-нарезка). Bearer из auth.token()."""
     url = config.ABOP.rstrip("/") + "/api/chat/stream"
-    headers = {"Content-Type": "application/json"}
-    tok = auth.token()
-    if tok:
-        headers["Authorization"] = "Bearer " + tok
+    headers = _заголовки()
     payload = {"prompt": prompt, "profile": profile, "max_tokens": max_tokens}
     if system:
         payload["system"] = system

@@ -68,6 +68,31 @@ CREATE TABLE IF NOT EXISTS agents (
     outward INTEGER NOT NULL DEFAULT 0,      -- действует наружу → требует approve/deny
     created_at REAL NOT NULL
 );
+-- Папки под присмотром: новый файл в папке сам становится задачей агента.
+CREATE TABLE IF NOT EXISTS watched (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    path TEXT NOT NULL,
+    agent_id TEXT NOT NULL,
+    agent_name TEXT NOT NULL DEFAULT '',
+    mask TEXT NOT NULL DEFAULT '',          -- расширения через запятую; пусто = всё, что умеем читать
+    thread_id INTEGER NOT NULL DEFAULT 0,   -- чат, куда приходит результат
+    scope TEXT NOT NULL DEFAULT 'local',    -- та же область, что у вложений: установка + человек
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at REAL NOT NULL
+);
+-- Что присмотр уже видел. Отпечаток = путь + размер + время правки: один и тот же файл не
+-- запускает агента дважды, а ИЗМЕНЁННЫЙ файл — это новая работа, и его возьмут снова.
+CREATE TABLE IF NOT EXISTS watched_seen (
+    folder_id INTEGER NOT NULL,
+    fingerprint TEXT NOT NULL,
+    name TEXT NOT NULL,
+    state TEXT NOT NULL,                    -- взят | не вышло | был до присмотра
+    note TEXT NOT NULL DEFAULT '',
+    job_id TEXT NOT NULL DEFAULT '',
+    at REAL NOT NULL,
+    PRIMARY KEY (folder_id, fingerprint)
+);
+CREATE INDEX IF NOT EXISTS idx_seen_folder ON watched_seen(folder_id, at DESC);
 """
 
 
@@ -112,10 +137,21 @@ def q(sql: str, args: tuple = ()) -> list[dict[str, Any]]:
 
 
 def run(sql: str, args: tuple = ()) -> int:
+    """Выполнить и вернуть rowid ВСТАВЛЕННОЙ строки. Для UPDATE/DELETE смысла не имеет — там
+    `change()`: `lastrowid` после них отдаёт прошлую вставку этого соединения, и «перенесено N»
+    было бы просто неправдой."""
     with _conn() as c:
         cur = c.execute(sql, args)
         c.commit()
         return cur.lastrowid
+
+
+def change(sql: str, args: tuple = ()) -> int:
+    """Выполнить UPDATE/DELETE и вернуть ЧИСЛО затронутых строк."""
+    with _conn() as c:
+        cur = c.execute(sql, args)
+        c.commit()
+        return cur.rowcount if cur.rowcount is not None and cur.rowcount >= 0 else 0
 
 
 def now() -> float:

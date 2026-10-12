@@ -1,6 +1,6 @@
 // Electron main: спавнит Python-сайдкар (движок) и рендерит модульный UI поверх него.
 // Оболочка тонкая — вся логика в сайдкаре; окно можно заменить, не трогая движок.
-const { app, BrowserWindow, Menu, shell, ipcMain, globalShortcut, clipboard } = require("electron");
+const { app, BrowserWindow, Menu, Tray, Notification, nativeImage, dialog, shell, ipcMain, globalShortcut, clipboard } = require("electron");
 const { spawn } = require("child_process");
 const path = require("path");
 const net = require("net");
@@ -100,6 +100,18 @@ async function createWindow() {
     },
   });
   installContextMenu(win);
+  // Закрытие окна ПРЯЧЕТ приложение, а не завершает: иначе уведомление о конце прогона некому
+  // показать — прогон идёт минуты, и окно за это время закрывают. Выход — из меню в трее.
+  win.on("close", (e) => {
+    if (выходим) return;
+    e.preventDefault();
+    win.hide();
+    if (!былоПодсказки) {
+      былоПодсказки = true;
+      уведомить({ title: "ABOP продолжает следить за прогонами",
+                  body: "Значок в трее: открыть окно или выйти совсем." });
+    }
+  });
   // внешние ссылки — в системный браузер (например, окно логина при необходимости)
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
@@ -123,6 +135,75 @@ async function createWindow() {
   win.loadURL(uiUrl + (uiUrl.includes("?") ? "&" : "?") + "api=" + encodeURIComponent(apiBase));
   win.webContents.once("did-finish-load", setupUpdater); // UI уже слушает события апдейтера
 }
+
+// ── Трей и уведомления ОС ───────────────────────────────────────────────────────────────────
+// Счётчик и текст приходят ИЗ UI: он один знает, что уже показывал, и не станет извещать на
+// каждый опрос очереди. Main только показывает — так логика живёт в одном месте.
+let tray = null;
+let выходим = false;
+let былоПодсказки = false;
+let ждут = 0;
+
+function значок() {
+  const ico = path.join(__dirname, "..", "build", "icon.ico");
+  const img = nativeImage.createFromPath(ico);
+  return img.isEmpty() ? nativeImage.createEmpty() : img;
+}
+
+function обновитьТрей() {
+  if (!tray) return;
+  const хвост = ждут ? ` · ждут решения: ${ждут}` : "";
+  tray.setToolTip("ABOP Desktop" + хвост);
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: ждут ? `Ждут вашего решения: ${ждут}` : "Ничего не ждёт", enabled: false },
+    { type: "separator" },
+    { label: "Открыть ABOP", click: () => показать() },
+    { label: "Выход", click: () => { выходим = true; app.quit(); } },
+  ]));
+  // Значок на иконке приложения поддерживают не все системы — там, где нет, остаётся трей.
+  try { if (app.setBadgeCount) app.setBadgeCount(ждут); } catch (e) { /* не критично */ }
+}
+
+function показать(куда) {
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+  if (куда) win.webContents.send("ape:open", куда);
+}
+
+function уведомить({ title, body, куда }) {
+  if (!Notification.isSupported()) return false;
+  const n = new Notification({ title: String(title || "ABOP"), body: String(body || ""),
+                               icon: значок(), silent: false });
+  // Клик по уведомлению обязан приводить ТУДА, о чём уведомили: иначе человек ищет сам.
+  n.on("click", () => показать(куда));
+  n.show();
+  return true;
+}
+
+function создатьТрей() {
+  if (tray) return;
+  try {
+    tray = new Tray(значок());
+    tray.on("double-click", () => показать());
+    обновитьТрей();
+  } catch (e) {
+    tray = null;   // без трея приложение работает как раньше, просто без фонового режима
+  }
+}
+
+// Выбор папки для присмотра. Путь руками — верный способ опечататься в кириллическом пути и
+// получить «папки нет» вместо работы; диалог ОС даёт ровно то, что существует.
+ipcMain.handle("os:pickFolder", async () => {
+  const r = await dialog.showOpenDialog(win, {
+    title: "Папка под присмотром", properties: ["openDirectory"], buttonLabel: "Присматривать",
+  });
+  return (r && !r.canceled && r.filePaths && r.filePaths[0]) ? r.filePaths[0] : "";
+});
+
+ipcMain.handle("os:notify", (_e, данные) => уведомить(данные || {}));
+ipcMain.handle("os:badge", (_e, n) => { ждут = Math.max(0, Number(n) || 0); обновитьТрей(); return ждут; });
 
 // Видимый авто-апдейт: события electron-updater транслируем в UI (баннер с кнопкой).
 let updater = null;
@@ -295,7 +376,7 @@ function installContextMenu(w) {
   });
 }
 
-app.whenReady().then(() => { installMenu(); createWindow(); registerHotkey(); });
+app.whenReady().then(() => { installMenu(); createWindow(); registerHotkey(); создатьТрей(); });
 // Буфер обмена напрямую: `navigator.clipboard` в окне зависит от разрешений и фокуса документа и
 // молча отказывает — кнопка «копировать» тогда врёт. Модуль clipboard Electron таких условий не
 // имеет, поэтому интерфейсу нужен этот путь как основной.
@@ -314,6 +395,9 @@ function stop() {
   }
 }
 app.on("window-all-closed", () => {
+  // Пока жив трей — приложение остаётся в фоне и может известить о конце прогона. Выход только
+  // осознанный: из меню в трее (там выставляется `выходим`). Без трея поведение прежнее.
+  if (tray && !выходим) return;
   stop();
   if (process.platform !== "darwin") app.quit();
 });

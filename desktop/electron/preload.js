@@ -22,4 +22,12 @@ contextBridge.exposeInMainWorld("ape", {
     writeText: (text) => ipcRenderer.invoke("clip:write", text),
     readText: () => ipcRenderer.invoke("clip:read"),
   },
+  // Уведомления ОС и счётчик в трее. Решает, КОГДА извещать, интерфейс: он знает, что уже
+  // показывал, и не станет повторять на каждый опрос очереди.
+  os: {
+    notify: (данные) => ipcRenderer.invoke("os:notify", данные),
+    badge: (n) => ipcRenderer.invoke("os:badge", n),
+    onOpen: (cb) => ipcRenderer.on("ape:open", (_e, куда) => cb(куда)),
+    pickFolder: () => ipcRenderer.invoke("os:pickFolder"),
+  },
 });

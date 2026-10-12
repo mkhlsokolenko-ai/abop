@@ -255,12 +255,18 @@ export function sanitizeHtml(html) {
 
 export const ctx = {
   api, base: API, user: null, roles: [], email: null, authed: false,
+  // Чьи данные на экране. Считает СЕРВЕР (`tenant_active`), десктоп только показывает: правило
+  // вычисления арендатора живёт на сервере, и местная копия разошлась бы с ним молча.
+  tenant: "", tenantOwn: "", tenantKnown: false, tenantCanSwitch: false,
   gate: apeGate, mascot: apeMascot, modal, confirm: confirmDialog, toast, humanError, esc, openOverlay,
   copy: copyText, say, sanitizeHtml,
   // навигация с намерением: ctx.open("chat", { attach: {...} }) — модуль получает intent (см. loadModule)
   open: (id, intent) => loadModule(id, intent),
   fileToast,
   setHitlCount,
+  // Уведомление ОС: прогон идёт минуты, и окно за это время закрывают. Решает КОГДА извещать
+  // модуль — он знает, что произошло; main только показывает.
+  notify: извещение,
   reload: (id) => reloadModule(id),
   login: () => startLogin(),
 };
@@ -272,7 +278,7 @@ const mounted = new Map();        // id → { root, mod }   (D-H11: кэш мо�
 
 function icon(name) {
   // Реальные глифы из эталона APE Desktop (standalone): геометрические, не смайлы.
-  return { chat: "✦", runs: "◷", findings: "◬", agents: "⎔", cabinet: "◉", graphlens: "◈", opslens: "◎", connectors: "⛁", security: "⛨", ocr: "◵", ml: "❖", abop: "⬡" }[name] || "◆";
+  return { chat: "✦", runs: "◷", findings: "◬", agents: "⎔", cabinet: "◉", graphlens: "◈", opslens: "◎", connectors: "⛁", security: "⛨", ocr: "◵", watch: "▤", ml: "❖", abop: "⬡" }[name] || "◆";
 }
 
 // ── вход: единый термин «ABOP» (Keycloak за шлюзом — детали пользователю не нужны) (D-H12) ──────
@@ -305,13 +311,20 @@ function renderAuthBox(me) {
         <span style="font-size:12.5px;font-weight:600;color:var(--ink);max-width:132px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(nm)}</span></button>`;
     $("meBtn").onclick = () => {
       const rows = [["имя", nm], ["почта", me.email || "—"], ["отдел", me.department || "—"],
-                    ["роль", (ctx.roles || []).join(", ") || ctx.level || "—"]];
+                    ["роль", (ctx.roles || []).join(", ") || ctx.level || "—"],
+                    ["арендатор", ctx.tenantKnown
+                      ? (ctx.tenant + (ctx.tenant !== ctx.tenantOwn ? " (данные клиента)" : ""))
+                      : "неизвестно — нет связи"]];
       const ov = modal("Учётная запись",
         `<div style="display:flex;flex-direction:column;gap:8px">${rows.map(([k, v]) => `<div style="display:flex;gap:10px;align-items:baseline">
           <span class="ape-label" style="min-width:52px">${k}</span><span style="font-size:13px;color:var(--ink);word-break:break-all">${esc(String(v))}</span></div>`).join("")}
           <div class="dcard-note">Под этой почтой агенты отправляют письма и заводят задачи — проверяйте её перед внешними действиями.</div>
-          <button class="btn danger" id="logoutBtn" style="align-self:flex-start;margin-top:4px">Выйти из ABOP</button></div>`,
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+            <button class="btn danger" id="logoutBtn">Выйти из ABOP</button>
+            <button class="btn sm" id="tenantBtn">Чьи данные на экране</button>
+          </div></div>`,
         null, "Закрыть", { width: "420px" });
+      ov.querySelector("#tenantBtn").onclick = () => { ov.close(true); tenantDetails(); };
       ov.querySelector("#logoutBtn").onclick = async () => {
         try { await api("/api/auth/logout", { method: "POST" }); } catch { /* noop */ }
         ov.close(true); await renderAuth(); reloadAll();
@@ -336,6 +349,9 @@ async function renderAuth() {
   const was = ctx.authed;
   ctx.user = me.user || null; ctx.roles = me.roles || []; ctx.email = me.email || null; ctx.authed = !!me.authed;
   ctx.level = me.level || "analyst"; ctx.canApprove = me.can_approve !== false;
+  ctx.tenant = me.tenant || ""; ctx.tenantOwn = me.tenant_own || "";
+  ctx.tenantKnown = !!me.tenant_known; ctx.tenantCanSwitch = !!me.tenant_can_switch;
+  renderTenant();
   if (_loginBusy && !me.authed) return;   // ждём завершения входа — не мигаем кнопкой
   renderAuthBox(me);
   refreshCost();
@@ -361,7 +377,7 @@ function canSee(id) { const min = MODULE_MIN_LEVEL[id]; return !min || levelAtLe
 // (Ctrl+K) и по прямой ссылке — убрана только постоянная кнопка, которой никто не пользовался.
 const HIDDEN_MODULES = new Set(["opslens", "security", "findings", "connectors", "ocr"]);
 function visibleModules() { return MODULES.filter((m) => !HIDDEN_MODULES.has(m.id) && canSee(m.id)); }
-const RAIL_ORDER = ["chat", "runs", "agents", "graphlens", "cabinet"];
+const RAIL_ORDER = ["chat", "runs", "agents", "watch", "graphlens", "cabinet"];
 const RAIL_TITLE = { agents: "Мои агенты" };
 function railModules() {
   const rank = (id) => { const i = RAIL_ORDER.indexOf(id); return i < 0 ? RAIL_ORDER.length : i; };
@@ -373,8 +389,32 @@ let hitlCount = 0;
 export function setHitlCount(n) {
   const v = Math.max(0, Number(n) || 0);
   if (v === hitlCount) return;
+  const было = hitlCount;
   hitlCount = v;
   renderNav();
+  // Счётчик в трее — всегда, уведомление — только на ПРИБАВЛЕНИЕ. Иначе каждый опрос очереди
+  // превращался бы в всплывающее окно, а это верный способ научить человека их закрывать не читая.
+  try { window.ape?.os?.badge?.(v); } catch (e) { /* не в electron — ничего страшного */ }
+  if (v > было) {
+    извещение({
+      title: v === 1 ? "Действие ждёт вашего решения" : `Ждут решения: ${v}`,
+      body: "Агент подготовил внешнее действие и остановился до вашего «да».",
+      куда: "chat",
+    });
+  }
+}
+
+// Уведомление ОС. Работает только в приложении (в браузере моста нет) и не повторяет одно и то
+// же чаще, чем раз в минуту: прогон может доложиться дважды, человек не должен получать дубль.
+const _извещено = new Map();
+export function извещение({ title, body, куда, ключ }) {
+  const мост = window.ape?.os?.notify;
+  if (!мост) return false;
+  const k = String(ключ || title || "");
+  const t = Date.now();
+  if (t - (_извещено.get(k) || 0) < 60000) return false;
+  _извещено.set(k, t);
+  try { мост({ title, body, куда }); return true; } catch (e) { return false; }
 }
 
 // Раздел в рейле — строка маршрута, как в вебе: плашка знака, подпись, полоса слева у текущего.
@@ -624,6 +664,65 @@ const LINK_LOOK = {
   engine:   { dot: "var(--danger-ink)", ink: "var(--danger-ink)", text: "Движок не отвечает", bg: "var(--danger-bg)", br: "var(--danger-line)" },
 };
 
+// Плашка арендатора: видна ТОЛЬКО когда на экране данные не своей организации. Это состояние
+// опасно именно незаметностью — поддержка вендора, забывшая вернуться к себе, продолжает работать
+// в данных клиента, а по экрану это ничем не отличается от обычной работы.
+function renderTenant() {
+  const pill = $("tenantPill"), txt = $("tenantText");
+  if (!pill) return;
+  const чужое = ctx.authed && ctx.tenantKnown && ctx.tenant && ctx.tenant !== ctx.tenantOwn;
+  pill.hidden = !чужое;
+  if (!чужое) return;
+  if (txt) txt.textContent = "данные клиента: " + ctx.tenant;
+  pill.title = "Вы смотрите установку клиента «" + ctx.tenant + "», а не свою («" + (ctx.tenantOwn || "—")
+    + "»). Переход записан в журнал сервера. Нажмите, чтобы вернуться к своим данным.";
+  pill.onclick = () => tenantDetails();
+}
+
+// Подробности и переход. Переключатель показываем только поддержке вендора — но отказ всё равно
+// придёт с сервера, и показываем мы то, что ПО ЕГО МНЕНИЮ действует, а не то, что попросили.
+function tenantDetails() {
+  const своё = !ctx.tenant || ctx.tenant === ctx.tenantOwn;
+  const rows = [
+    ["Арендатор", ctx.tenantKnown ? ctx.tenant : "неизвестно — нет связи с сервером"],
+    ["Своя организация", ctx.tenantOwn || "—"],
+    ["Установка", linkState.url || "—"],
+  ];
+  const свитч = ctx.tenantCanSwitch
+    ? `<div style="display:flex;flex-direction:column;gap:7px;margin-top:12px;padding-top:11px;border-top:1px solid var(--line)">
+         <span class="ape-label">посмотреть установку клиента</span>
+         <div style="display:flex;gap:8px;flex-wrap:wrap">
+           <input id="tnInp" value="${esc(своё ? "" : ctx.tenant)}" placeholder="имя арендатора"
+                  style="flex:1;min-width:160px;padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-size:12.5px"/>
+           <button class="btn sm" id="tnGo">Смотреть</button>
+           ${своё ? "" : `<button class="btn sm" id="tnBack">Вернуться к своим</button>`}
+         </div>
+         <div class="dcard-note">Переход записывается в журнал сервера как событие управления. Вложения и переписка клиента остаются в своей области — со своими они не смешаются.</div>
+       </div>`
+    : `<div class="dcard-note" style="margin-top:12px">Сменить арендатора может только поддержка вендора. Ваши агенты и данные — в организации «${esc(ctx.tenantOwn || "—")}».</div>`;
+  const body = `<div style="display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:12.5px;line-height:1.55">`
+    + rows.map(([k, v]) => `<div style="color:var(--ink-3)">${esc(k)}</div><div style="color:var(--ink-1);word-break:break-word">${esc(String(v))}</div>`).join("")
+    + `</div>` + свитч;
+  const ov = modal("Чьи данные на экране", body, null, "Закрыть", { kicker: "Арендатор", width: "460px" });
+  const перейти = async (куда) => {
+    try {
+      const r = await api("/api/auth/tenant", { method: "POST", body: JSON.stringify({ tenant: куда }) });
+      ctx.tenant = r.tenant || ""; ctx.tenantOwn = r.tenant_own || ctx.tenantOwn;
+      ctx.tenantKnown = !!r.tenant_known;
+      renderTenant();
+      ov.close(true);
+      // Сервер мог переход НЕ пустить. Говорим о том, что действует, а не о том, что просили.
+      if (куда && ctx.tenant !== куда) toast("Сервер оставил арендатора «" + (ctx.tenant || "—") + "»: переход не разрешён", "danger");
+      else toast(куда ? ("Смотрим данные клиента «" + ctx.tenant + "»") : "Вернулись к своим данным", "ok");
+      reloadAll();
+    } catch (e) { toast("Переход не удался: " + humanError(e), "danger"); }
+  };
+  const go = ov.querySelector("#tnGo");
+  if (go) go.onclick = () => перейти(String((ov.querySelector("#tnInp") || {}).value || "").trim());
+  const back = ov.querySelector("#tnBack");
+  if (back) back.onclick = () => перейти("");
+}
+
 function renderLink(state) {
   const pill = $("linkPill"), txt = $("linkText"), dot = $("linkDot");
   if (!pill) return;
@@ -649,6 +748,10 @@ function linkDetails() {
       : phase === "engine" ? "локальный движок приложения не отвечает"
       : phase === "checking" ? "идёт проверка" : "сервер ABOP не отвечает"],
     ["Адрес сервера", linkState.url || "—"],
+    // Адрес установки без арендатора не отвечает на вопрос «чьи данные я вижу»: одна установка
+    // обслуживает несколько организаций, и фильтруют их сторы, а не адрес.
+    ["Арендатор", !ctx.authed ? "вы не вошли"
+      : (ctx.tenantKnown ? (ctx.tenant + (ctx.tenant !== ctx.tenantOwn ? " — данные клиента, не ваши" : "")) : "неизвестно — сервер не ответил")],
     ["Последняя проверка", when],
   ];
   if (linkState.error) rows.push(["Ответ сервера", String(linkState.error).slice(0, 400)]);
@@ -721,6 +824,8 @@ async function boot() {
   };
   pollHitl();
   setInterval(pollHitl, 45000);
+  // Клик по уведомлению обязан приводить ТУДА, о чём известили, иначе человек ищет сам.
+  try { window.ape?.os?.onOpen?.((куда) => { if (куда) loadModule(String(куда)); }); } catch (e) { /* не electron */ }
   window.addEventListener("online", () => pingLink());
   window.addEventListener("offline", () => { linkOk = false; renderLink({ ok: false }); });
 }

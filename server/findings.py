@@ -177,6 +177,7 @@ def _chain(f: dict, meta: dict) -> list[dict]:
 
 def card_from_finding(run: dict, f: dict, label: dict | None) -> dict:
     check = str(f.get("проверка") or "")
+    описана = check in CHECK_META     # карта участков знает эту проверку
     meta = CHECK_META.get(check) or {"from": "—", "to": "—", "kind": check or "находка", "norm": None, "chain": [], "consequences": [], "contract": False}
     norm = norm_excerpt(*meta["norm"]) if meta.get("norm") else {"title": "", "url": "", "risk": "", "action": "", "ref": ""}
     rag = f.get("нормы_rag") or []
@@ -190,6 +191,26 @@ def card_from_finding(run: dict, f: dict, label: dict | None) -> dict:
         "created_at": run.get("created_at"), "cls": str(f.get("класс") or ""), "severity": str(f.get("серьёзность") or ""),
         "check": check, "kind": meta["kind"], "section_from": meta["from"], "section_to": meta["to"],
         "cross": meta["from"] != meta["to"],
+        # Проверка может прийти из набора правил методолога, которого нет в карте участков. Тогда
+        # участки неизвестны — и карточка обязана сказать это, а не показать «—» → «—», выдав
+        # отсутствие сведений за «не межучастковая».
+        "проверка_описана": описана,
+        # Чем находка обоснована. `правило` и `факты` считает движок проверок, `описание` и норму
+        # подбирает модель — в одной карточке это разные по надёжности сведения, и смешивать их
+        # нельзя: правило можно перепрогнать на истории, прозу нельзя.
+        "источник": "правило" if f.get("правило") else "модель",
+        "правило": {
+            "код": str(f.get("правило") or ""),
+            "набор": str(f.get("набор") or ""),
+            "причина": str(f.get("причина") or ""),
+            "поле": str(f.get("поле") or ""),
+            # `факты` отдаёт только предикат, который что-то сличал (две даты, ключ дубля, список
+            # допустимых). У «поле обязательно» сличать нечего — там всё сказано полем, и пустой
+            # словарь здесь означает именно это, а не потерю сведений.
+            "факты": {str(k): v for k, v in (f.get("факты") or {}).items()},
+            "подсказка": str(f.get("подсказка") or ""),
+            "чинится": str(f.get("чинится") or ""),
+        },
         "amount": amount, "amount_text": _fmt_rub(amount),
         "doc": doc, "doc_line": _doc_line(doc), "doc_url": doc_url(doc),
         "chain": chain, "broken_link": next((c["label"] for c in chain if c["broken"]), ""),
@@ -227,6 +248,10 @@ def card_from_investigation(run: dict, iv: dict, label: dict | None) -> dict:
         "created_at": run.get("created_at"), "cls": "B", "severity": str(iv.get("серьёзность") or "высокая"),
         "check": "Расследование от симптома", "kind": str(iv.get("симптом") or INVEST_META["kind"]),
         "section_from": INVEST_META["from"], "section_to": str(to).split(" (")[0], "cross": True,
+        # Расследование идёт не правилом, а обходом цепочки документов: сведения те же по
+        # надёжности (считает код), но править его в наборе правил нельзя — значит и не обещаем.
+        "проверка_описана": True, "источник": "цепочка",
+        "правило": {"код": "", "набор": "", "причина": "", "факты": {}, "подсказка": "", "чинится": ""},
         "amount": amount, "amount_text": _fmt_rub(amount),
         "doc": start, "doc_line": _doc_line(start), "doc_url": doc_url(start),
         "chain": chain, "broken_link": (broken or {}).get("звено") or "",

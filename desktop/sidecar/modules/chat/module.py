@@ -396,7 +396,7 @@ def run_agent(thread_id: int, body: RunAgentIn) -> dict:
         # запоминаем задание: даже если опрос оборвётся, результат доедет в чат при следующем открытии
         db.run("INSERT OR REPLACE INTO pending_runs (job_id, thread_id, agent_id, scope, created_at) "
                "VALUES (?,?,?,?,?)",
-               (str(r["job_id"]), thread_id, body.agent_id, store.mode(), db.now()))
+               (str(r["job_id"]), thread_id, body.agent_id, store.область(), db.now()))
     return {"ok": True, "done": False, "job_id": r.get("job_id"), "status": r.get("status"),
             "position": r.get("position"), "deduped": bool(r.get("deduped"))}
 
@@ -447,7 +447,7 @@ def catchup(thread_id: int) -> dict:
     """Догнать прогоны, чей опрос оборвался: дописать готовые карточки, сообщить о ещё идущих.
     Вызывается при открытии чата — без этого результат пропадал вместе с закрытой вкладкой."""
     rows = db.q("SELECT job_id, agent_id FROM pending_runs WHERE thread_id=? AND scope=? ORDER BY created_at",
-                (thread_id, store.mode()))
+                (thread_id, store.область()))
     added, running = 0, []
     for r in rows:
         try:
@@ -518,8 +518,8 @@ def delete_thread(thread_id: int) -> dict:
         store.delete(thread_id)
     except abop.AbopError as e:
         raise HTTPException(e.status if 400 <= e.status < 600 else 502, e.detail) from None
-    db.run("DELETE FROM attachments WHERE thread_id=? AND scope=?", (thread_id, store.mode()))
-    db.run("DELETE FROM pending_runs WHERE thread_id=? AND scope=?", (thread_id, store.mode()))
+    db.run("DELETE FROM attachments WHERE thread_id=? AND scope=?", (thread_id, store.область()))
+    db.run("DELETE FROM pending_runs WHERE thread_id=? AND scope=?", (thread_id, store.область()))
     return {"ok": True}
 
 
@@ -579,7 +579,7 @@ def attach(thread_id: int, body: AttachIn) -> dict:
     chars = len(full)
     aid = db.run("INSERT INTO attachments(thread_id,name,chars,chunks,content,scope,created_at) "
                  "VALUES(?,?,?,?,?,?,?)",
-                 (thread_id, body.name, chars, 0, full, store.mode(), db.now()))
+                 (thread_id, body.name, chars, 0, full, store.область(), db.now()))
     return {"ok": True, "id": aid, "indexed": 0, "name": body.name, "chars": chars}
 
 
@@ -629,7 +629,7 @@ def attach_file(thread_id: int, body: AttachFileIn) -> dict:
         return {"ok": False, "error": "в файле не найден текстовый слой (возможно скан — нужен OCR)"}
     aid = db.run("INSERT INTO attachments(thread_id,name,chars,chunks,content,scope,created_at) "
                  "VALUES(?,?,?,?,?,?,?)",
-                 (thread_id, body.name, len(text), 0, text, store.mode(), db.now()))
+                 (thread_id, body.name, len(text), 0, text, store.область(), db.now()))
     return {"ok": True, "id": aid, "indexed": 0, "name": body.name, "chars": len(text)}
 
 
@@ -638,14 +638,14 @@ def files(thread_id: int) -> list[dict]:
     """Проиндексированные вложения треда — чтобы видеть, что уже в базе знаний."""
     return db.q("SELECT id,name,chars,chunks,created_at FROM attachments "
                 "WHERE thread_id=? AND scope=? ORDER BY id DESC",
-                (thread_id, store.mode()))
+                (thread_id, store.область()))
 
 
 @router.delete("/threads/{thread_id}/files/{att_id}")
 def del_file(thread_id: int, att_id: int) -> dict:
     # из локального списка убираем; из Qdrant чанки живут по TTL сессии (чистится шлюзом)
     db.run("DELETE FROM attachments WHERE id=? AND thread_id=? AND scope=?",
-           (att_id, thread_id, store.mode()))
+           (att_id, thread_id, store.область()))
     return {"ok": True}
 
 
@@ -794,7 +794,7 @@ def _attach_context(thread_id: int, user_prompt: str) -> str:
     """Контекст из прикреплённых файлов: полный текст (в пределах бюджета) — модель ВИДИТ файл сразу,
     как в обычных чатах. Для больших/множественных файлов добавляем релевантные чанки из RAG."""
     atts = db.q("SELECT name,content,chars FROM attachments WHERE thread_id=? AND scope=? ORDER BY id",
-                (thread_id, store.mode()))
+                (thread_id, store.область()))
     if not atts:
         return ""
     total = sum(a["chars"] for a in atts)
