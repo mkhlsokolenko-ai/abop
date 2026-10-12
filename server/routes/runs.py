@@ -30,7 +30,7 @@ from cli import ape
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 
-from .. import agent_store, arbiter, audit_store, blackboard, contract_store, finding_store
+from .. import agent_store, arbiter, assembly, audit_store, blackboard, contract_store, finding_store
 from .. import findings, hitl_store, identity_store
 from .. import observability as obs
 from .. import pipeline_graph, report_store, run_bus, run_queue, run_store, runner, schema_store
@@ -232,6 +232,13 @@ async def run_start(body: dict, u: dict = Depends(user),
     agent = await agent_store.get(agent_id) if agent_id else None
     if not agent:
         raise HTTPException(404, "нет такого AgentVersion")
+    # Канал в мессенджере запускает только то, что читает и считает. Это проверка НА ЗАПУСКЕ, а не
+    # фильтр списка: спрятать агента в списке — значит защититься от интерфейса, а не от запроса.
+    наружу = assembly.действует_наружу(agent)
+    if u.get("channel") and наружу:
+        raise HTTPException(403, "в канале «" + str(u.get("channel")) + "» нельзя запускать агента с "
+                            "внешними действиями (" + ", ".join(sorted(set(наружу))) + "): "
+                            "запустите его из приложения, где есть подтверждение")
     contract = await contract_store.get(agent.get("contract_audit_id") or audit_id)
     if not contract:
         contract = {"intake": {"autonomy_ceiling": agent.get("autonomy_max") or "A2"}, "bundle": {}}

@@ -13,6 +13,10 @@
  ],
  [
   "DELETE",
+  "/api/channels/{binding}"
+ ],
+ [
+  "DELETE",
   "/api/chat/threads/{thread_id}"
  ],
  [
@@ -146,6 +150,10 @@
  [
   "GET",
   "/api/catalog/fields"
+ ],
+ [
+  "GET",
+  "/api/channels"
  ],
  [
   "GET",
@@ -614,6 +622,14 @@
  [
   "POST",
   "/api/canvas/layout/{key}"
+ ],
+ [
+  "POST",
+  "/api/channels/{channel}/code"
+ ],
+ [
+  "POST",
+  "/api/channels/{channel}/exchange"
  ],
  [
   "POST",

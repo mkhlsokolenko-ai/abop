@@ -312,10 +312,7 @@ async def _agent_for_skills(sids: list[str], u: dict) -> dict | None:
         skills = [str(n.get("skill") or "") for n in nodes if n.get("kind") == "skill"]
         if sorted(skills) != sorted(sids):
             continue
-        outward = any(n.get("kind") == "out"
-                      and str((n.get("out") or {}).get("channel") or "") not in assembly._LOCAL_CHANNELS
-                      for n in nodes)
-        if outward:
+        if assembly.действует_наружу(ag):
             continue
         rank = 0 if str(row.get("contract_audit_id") or "").startswith(mine_prefix) else 1
         if best is None or rank < best[0]:

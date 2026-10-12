@@ -28,6 +28,25 @@ _LOCAL_CHANNELS = ("pdf", "file", "chat", "")
 _UNATTENDED_FROM = 3   # индекс A3
 
 
+def действует_наружу(agent: dict) -> list[str]:
+    """Каналы агента, уходящие за периметр. Пусто ⇒ агент только читает и считает.
+
+    Вынесено в одну функцию, потому что спрашивают уже из трёх мест: сборка агента из плана
+    (не плодить однофамильцев с доставкой), бот в мессенджере (ему внешние действия запрещены
+    по построению) и этот модуль. Три копии одного правила разошлись бы на первой же правке
+    списка локальных каналов.
+    """
+    узлы = (((agent or {}).get("graph") or {}).get("nodes") or [])
+    наружу = []
+    for n in узлы:
+        if not isinstance(n, dict) or n.get("kind") != "out":
+            continue
+        канал = str((n.get("out") or {}).get("channel") or "")
+        if канал not in _LOCAL_CHANNELS:
+            наружу.append(канал)
+    return наружу
+
+
 def check_graph(graph: dict, intake: dict, safety_of: Callable[[str], dict],
                 *, reads_data: set | None = None) -> dict:
     """Вернёт {errors[], warnings[], hitl_count, autonomy_max}. errors → сохранение запрещено.

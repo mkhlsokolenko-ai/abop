@@ -16,7 +16,7 @@ import time
 import jwt as _pyjwt
 from fastapi import HTTPException, Request
 
-from . import tenancy
+from . import channel_tokens, tenancy
 from .config import settings  # noqa: F401  (часть помощников читает настройки)
 
 # ── Auth: Keycloak JWT. Dev-режим без JWKS. Multi-issuer: смычка с desktop (realm ai-product-engineer)
@@ -146,6 +146,14 @@ def личность(request: Request) -> dict:
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Bearer "):
         token = auth[7:]
+        # Токен внешнего канала (бот в мессенджере) — не JWT: это узкий токен ABOP с правами
+        # `analyst` и без возможности переключить арендатора. Проверяем ДО разбора JWT: иначе
+        # `jwt.decode` на нём упадёт и канал получит «невалидный токен» вместо работы.
+        if token.startswith(channel_tokens.ПРЕФИКС):
+            из_канала = channel_tokens.личность_по_токену(token)
+            if из_канала is None:
+                raise HTTPException(401, "токен канала не действует — привяжите канал заново")
+            return _применить_арендатора(request, из_канала)
         import jwt
         cached = _jwt_cache_get(token) if _jwks_url() else None   # verify один раз на токен
         if cached is not None:
