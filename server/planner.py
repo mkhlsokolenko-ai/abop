@@ -569,7 +569,8 @@ def semantic_bonus(sem: float) -> float:
 
 def plan(task: str, catalog: dict, *, entities: set[str], slots: set[str],
          max_steps: int = 4, hints: dict | None = None,
-         semantic: dict | None = None, prefer: dict | None = None) -> dict:
+         semantic: dict | None = None, prefer: dict | None = None,
+         model_pick: dict | None = None) -> dict:
     """Собрать исполнимую цепочку под задачу.
 
     catalog  — {skill_id: {title, short, body, inputs, produces, families, mode}}
@@ -586,6 +587,11 @@ def plan(task: str, catalog: dict, *, entities: set[str], slots: set[str],
     # маленькая и с потолком — она решает ничью, а не назначает исполнителя: иначе подбор замкнётся
     # на первых удачных выборах и перестанет видеть остальной каталог.
     prefer = prefer or {}
+    # Голос модели из закрытого списка (`server/semantic_pick.py`). Отдельным доводом, а не в одном
+    # числе с остальными: лесенка уже показала, чем кончается сложение разных механизмов — вывод
+    # делается про невиновного. Пустой словарь означает «модель не участвовала», и в ответе это
+    # сказано словами, а не домыслено по отсутствию прибавки.
+    model_pick = model_pick or {}
     # Подбор ведём по УКАЗАНИЮ, а не по всему тексту. Приложенный материал (вставленный документ,
     # кусок переписки) остаётся контекстом для самого прогона, но на выбор исполнителя влиять не
     # должен: иначе слово «Telegram/Email» в чужом абзаце добавляло в цепочку черновик письма, а
@@ -631,9 +637,20 @@ def plan(task: str, catalog: dict, *, entities: set[str], slots: set[str],
             # не находит навык в принципе, а именно так люди и пишут.
             sem = semantic_bonus(semantic.get(sid))
             pref = float(prefer.get(sid) or 0.0)
+            # Голос модели НЕ заперт порогом `own`, в отличие от подсказки похожего агента: он
+            # существует ровно для того случая, когда слова не нашли навык вовсе (перефраз без
+            # общих основ). Запереть его словарным совпадением значило бы выключить его там, где
+            # он единственный, кто может помочь.
+            #
+            # Вес ведущего выбора НАМЕРЕННО выше любого словарного счёта (`semantic_pick.ВЕДЁТ`):
+            # замер показал, что прибавкой с потолком разрыв не закрывается — словарный счёт
+            # похожего навыка перебивал голос модели при любом весе ниже своего. Поэтому модель
+            # называет РАБОТУ, а правила отвечают за исполнимость: навык без данных сущности в
+            # план не попадёт, а поставщики его входов встанут раньше — это ниже, в `add`.
+            mdl = float(model_pick.get(sid) or 0.0)
             # Роль системы в задаче сказана человеком прямо — она сильнее словарного совпадения.
             pen = SOURCE_ROLE_PENALTY if _delivers_into_source(m, src_here, targets) else 0.0
-            return own + boost + aim + sem + pref + _source_bonus(sid, m) - pen
+            return own + boost + aim + sem + pref + mdl + _source_bonus(sid, m) - pen
 
         r = sorted(((score(sid, m), sid) for sid, m in catalog.items() if sid != EDITOR_SKILL),
                    key=lambda x: (-x[0], x[1]))
@@ -648,6 +665,21 @@ def plan(task: str, catalog: dict, *, entities: set[str], slots: set[str],
     if not ranked:
         return {"ok": False, "steps": [], "waves": [], "missing": ["ни один навык не похож на задачу"],
                 "note": "исполнителя под такую задачу в каталоге нет"}
+
+    def повод(sid: str, текст: str, score: float | None = None) -> str:
+        """«Почему» не вправе называть голос модели словарным совпадением.
+
+        Счёт у навыка, которого назвала модель, складывается из её веса (1.2) и словарной части.
+        Написать про такой счёт «совпадение 1.44» значит выдать голос модели за совпадение слов —
+        и человек, читая «почему», сделает вывод о надёжности, которого нет. Поэтому там, где
+        ведёт модель, так и написано, а словарная часть названа отдельным числом.
+        """
+        m = float(model_pick.get(sid) or 0)
+        if not m:
+            return текст
+        слов = (f", словарное совпадение {round(max(0.0, float(score) - m), 2)}"
+                if score is not None else "")
+        return f"назвала модель{слов}"
 
     chosen: list[dict] = []          # шаги в порядке добавления
     have_out: dict[str, dict] = {}   # что уже отдают выбранные навыки
@@ -690,6 +722,9 @@ def plan(task: str, catalog: dict, *, entities: set[str], slots: set[str],
                        "sem": round(float(semantic.get(sid) or 0), 3) or None,
                        # Прибавка за прошлый выбор — числом, чтобы «почему» не превращалось в магию.
                        "prefer": round(float(prefer.get(sid) or 0), 3) or None,
+                       # Прибавка за голос модели — отдельным числом: по нему видно, навык найден
+                       # словами или назван моделью. Без этого «почему» выглядит одинаково.
+                       "модель": round(float(model_pick.get(sid) or 0), 3) or None,
                        # Счёт числом, а не только словами в «why»: по нему вызывающая сторона решает,
                        # уверенный это выбор или догадка. Догадку честнее превратить в вопрос.
                        "score": round(float(score), 3) if score is not None else None,
@@ -752,7 +787,8 @@ def plan(task: str, catalog: dict, *, entities: set[str], slots: set[str],
             outs = {str(it.get("path") or "") for it in sc.produces_list((catalog.get(sid) or {}).get("produces"))}
             if outs and outs <= given:
                 continue       # такой же результат уже даёт выбранный навык
-            if add(sid, f"этап «{stage[:48]}» (совпадение {round(score, 2)})", score=score):
+            if add(sid, повод(sid, f"этап «{stage[:48]}» (совпадение {round(score, 2)})",
+                              score), score=score):
                 given |= outs
                 break
 
@@ -856,7 +892,8 @@ def plan(task: str, catalog: dict, *, entities: set[str], slots: set[str],
         outs = {str(it.get("path") or "") for it in sc.produces_list((catalog.get(sid) or {}).get("produces"))}
         if chosen and outs and outs <= given:
             continue
-        if add(sid, f"похож на задачу (совпадение {round(score, 2)})", score=score):
+        if add(sid, повод(sid, f"похож на задачу (совпадение {round(score, 2)})", score),
+               score=score):
             given |= outs
 
     if not chosen:

@@ -1,0 +1,1888 @@
+{
+ "01e7ad46d8e2393b664b632a": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "report-editor",
+  "задача": "приведи отчёт к принятому виду и вычисти формулировки",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "report-editor",
+   "status-report",
+   "weekly-update"
+  ],
+  "почему": "модель назвала: report-editor, status-report, weekly-update",
+  "сек": 0.65
+ },
+ "078da7aa0191148fa855e86d": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "memory-architect",
+  "задача": "спроектируй память агента: что помнить, сколько и когда забывать",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "memory-architect",
+   "agent-design-writer",
+   "rag-architect"
+  ],
+  "почему": "модель назвала: memory-architect, agent-design-writer, rag-architect",
+  "сек": 1.02
+ },
+ "0835330647cc3f40ae3a846d": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "audit1c-explain",
+  "задача": "объясни найденные расхождения в учёте: чем грозит и что проверить",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "audit1c-explain",
+   "ledger_reconciliation",
+   "variance_explanation"
+  ],
+  "почему": "модель назвала: audit1c-explain, ledger_reconciliation, variance_explanation",
+  "сек": 0.7
+ },
+ "0e882576b393e21669bc77a2": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "to-tickets",
+  "задача": "разложи работу на тикеты с описаниями и ответственными",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "to-tickets",
+   "meeting-action-items",
+   "daily-plan"
+  ],
+  "почему": "модель назвала: to-tickets, meeting-action-items, daily-plan",
+  "сек": 0.66
+ },
+ "0f3a5b834c20b51c296584ad": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "user-stories",
+  "задача": "сформулируй от лица пользователя, что он хочет сделать и зачем",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "report-editor",
+   "status-report",
+   "weekly-update"
+  ],
+  "почему": "модель назвала: report-editor, status-report, weekly-update",
+  "сек": 0.65
+ },
+ "0ff572511c3b0fe3ec81c546": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "report-editor",
+  "задача": "отредактируй готовый документ: структура, язык, единые обозначения",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "report-editor",
+   "spec-reviewer",
+   "conventional-commits"
+  ],
+  "почему": "модель назвала: report-editor, spec-reviewer, conventional-commits",
+  "сек": 0.67
+ },
+ "143a556d7e7777ab0348a4c3": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "feed-scorecard",
+  "задача": "посчитай полноту и точность проверок против фактического лога отказов витрины",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "feed-scorecard",
+   "feed-checks",
+   "audit1c-checks"
+  ],
+  "почему": "модель назвала: feed-scorecard, feed-checks, audit1c-checks",
+  "сек": 0.74
+ },
+ "17d3e6fcc38d9fe54ad24617": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "ledger_reconciliation",
+  "задача": "сопоставь учётные остатки с движением по счёту и покажи, что не бьётся",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "ledger_reconciliation",
+   "audit1c-extract",
+   "audit1c-match-weak"
+  ],
+  "почему": "модель назвала: ledger_reconciliation, audit1c-extract, audit1c-match-weak",
+  "сек": 0.72
+ },
+ "19d264d2be892663d16d5877": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "architecture-chooser",
+  "задача": "что лучше взять под эту работу: жёсткий пошаговый сценарий или самостоятельного исполнителя",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "bft-draft",
+   "process-map",
+   "user-stories"
+  ],
+  "почему": "модель назвала: bft-draft, process-map, user-stories",
+  "сек": 0.66
+ },
+ "23288f779f65bac574e56adf": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "dashboard-builder",
+  "задача": "собери дашборд с ключевыми показателями по данным",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "dashboard-builder",
+   "status-report",
+   "report-editor"
+  ],
+  "почему": "модель назвала: dashboard-builder, status-report, report-editor",
+  "сек": 0.66
+ },
+ "24e4fed06ef1a2f391277e59": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "feed-checks",
+  "задача": "проверь карточки товара на соответствие требованиям витрины",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "feed-checks",
+   "feed-scorecard",
+   "feed-fix"
+  ],
+  "почему": "модель назвала: feed-checks, feed-scorecard, feed-fix",
+  "сек": 0.63
+ },
+ "264ff983a330c82ca528b36b": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "icp-interviewer",
+  "задача": "проведи интервью с идеальным клиентом по гипотезе",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "icp-interviewer",
+   "researcher",
+   "market-research"
+  ],
+  "почему": "модель назвала: icp-interviewer, researcher, market-research",
+  "сек": 0.64
+ },
+ "26ac848eadc82ec5eafd3675": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "audit1c-match-weak",
+  "задача": "найди, какие записи на самом деле про одно и то же, хотя написаны по-разному",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "audit1c-match-weak",
+   "audit1c-extract",
+   "audit1c-graph-build"
+  ],
+  "почему": "модель назвала: audit1c-match-weak, audit1c-extract, audit1c-graph-build",
+  "сек": 0.72
+ },
+ "27ca474767e3c50cb5901aa2": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "email-draft",
+  "задача": "набросай текст сообщения адресату с нужными акцентами",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "client-letter",
+   "email-draft",
+   "weekly-update"
+  ],
+  "почему": "модель назвала: client-letter, email-draft, weekly-update",
+  "сек": 0.66
+ },
+ "2db5e26bf921b72a5aa47cd8": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "daily-plan",
+  "задача": "собери план на день по приоритетам из моих задач и писем",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "daily-plan",
+   "mail-triage",
+   "email-draft"
+  ],
+  "почему": "модель назвала: daily-plan, mail-triage, email-draft",
+  "сек": 0.65
+ },
+ "2de981f181eb27d648b0124f": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "api-design",
+  "задача": "опиши, какие ручки нужны сервису и что каждая принимает и возвращает",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "api-design",
+   "application_intake_validation",
+   "report-editor"
+  ],
+  "почему": "модель назвала: api-design, application_intake_validation, report-editor",
+  "сек": 0.64
+ },
+ "2ea2edf1eb2b5ec3ab572ca7": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "audit1c-checks",
+  "задача": "проверь учётные данные 1С на расхождения по проводкам, счетам-фактурам и справочникам",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "audit1c-checks",
+   "ledger_reconciliation",
+   "invest1c-trace"
+  ],
+  "почему": "модель назвала: audit1c-checks, ledger_reconciliation, invest1c-trace",
+  "сек": 0.67
+ },
+ "2f87c50b12ba57c1c44d5af8": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "application_intake_validation",
+  "задача": "посмотри, всё ли приложено к обращению клиента и можно ли двигать дальше",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "application_intake_validation",
+   "client-letter",
+   "daily-plan"
+  ],
+  "почему": "модель назвала: application_intake_validation, client-letter, daily-plan",
+  "сек": 0.63
+ },
+ "2fccac195e7b7cccad72c861": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "devils-advocate",
+  "задача": "раскритикуй мой план и найди слабые места в рассуждении",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "devils-advocate",
+   "spec-reviewer",
+   "audit1c-explain"
+  ],
+  "почему": "модель назвала: devils-advocate, spec-reviewer, audit1c-explain",
+  "сек": 0.7
+ },
+ "30eb3dbdb09ffa6b1fa98a17": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "bft-draft",
+  "задача": "опиши постановку для разработки: что система должна делать и по каким правилам",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "api-design",
+   "application_intake_validation",
+   "spec-reviewer"
+  ],
+  "почему": "модель назвала: api-design, application_intake_validation, spec-reviewer",
+  "сек": 0.72
+ },
+ "33b1bbf50e84df4f36e92b01": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "eval-generator",
+  "задача": "придумай, на каких примерах мерить, стало лучше или хуже",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "status-report",
+   "roadmap-fact",
+   "daily-plan"
+  ],
+  "почему": "модель назвала: status-report, roadmap-fact, daily-plan",
+  "сек": 0.75
+ },
+ "34202d220dda8c5e3c6f71df": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "three-statement-model",
+  "задача": "собери финансовую модель из трёх форм по движению денег",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "three-statement-model",
+   "budget-forecast",
+   "finance-report"
+  ],
+  "почему": "модель назвала: three-statement-model, budget-forecast, finance-report",
+  "сек": 0.76
+ },
+ "36764a49656af6dbf0fca083": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "acceptance-check",
+  "задача": "итоги сдачи работ заказчику: по каким пунктам нас завернули и с какими оговорками",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "report-editor",
+   "status-report",
+   "weekly-update"
+  ],
+  "почему": "модель назвала: report-editor, status-report, weekly-update",
+  "сек": 0.62
+ },
+ "37b0367622c388de811baa69": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "variance_explanation",
+  "задача": "разбери причины отклонения факта от бюджета и назови виновные статьи",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "variance_explanation",
+   "budget-forecast",
+   "audit1c-root-cause"
+  ],
+  "почему": "модель назвала: variance_explanation, budget-forecast, audit1c-root-cause",
+  "сек": 0.73
+ },
+ "3a6635325b543179d4e05ab6": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "limit_policy_enforcement",
+  "задача": "примени лимитную политику к кредитной заявке",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "limit_policy_enforcement",
+   "application_intake_validation",
+   "disbursement_orchestration"
+  ],
+  "почему": "модель назвала: limit_policy_enforcement, application_intake_validation, disbursement_orchestration",
+  "сек": 0.67
+ },
+ "3e4821677e029d3e230a5841": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "invest1c-verdict",
+  "задача": "подготовь заключение по цепочке документов со ссылкой на норму",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "invest1c-verdict",
+   "report-editor",
+   "audit1c-explain"
+  ],
+  "почему": "модель назвала: invest1c-verdict, report-editor, audit1c-explain",
+  "сек": 0.7
+ },
+ "3fb1b70eebe09e1a94305c34": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "jtbd-formulator",
+  "задача": "сформулируй работу пользователя по методике JTBD",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "jtbd-formulator"
+  ],
+  "почему": "модель назвала: jtbd-formulator",
+  "сек": 0.59
+ },
+ "42b223de50b697a4a4bd250b": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "eval-generator",
+  "задача": "собери набор проверок качества для модели с порогами",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "eval-generator",
+   "audit1c-checks",
+   "spec-reviewer"
+  ],
+  "почему": "модель назвала: eval-generator, audit1c-checks, spec-reviewer",
+  "сек": 0.65
+ },
+ "435189bffa90e897e8ee0f8f": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "adr-writer",
+  "задача": "оформи письменно, почему выбрали этот вариант и чем пожертвовали, чтобы через год не спорили",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "client-letter",
+   "report-editor",
+   "weekly-update"
+  ],
+  "почему": "модель назвала: client-letter, report-editor, weekly-update",
+  "сек": 0.62
+ },
+ "4376154ddb79d16921be8946": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "weekly-update",
+  "задача": "подготовь короткий обзор за семь дней: движение, стопы, решения",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "weekly-update",
+   "status-report",
+   "report-editor"
+  ],
+  "почему": "модель назвала: weekly-update, status-report, report-editor",
+  "сек": 0.63
+ },
+ "443f24d7247f14752462f323": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "memory-architect",
+  "задача": "реши, какие сведения исполнитель держит между запусками и как их чистить",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "memory-architect",
+   "rag-architect",
+   "audit1c-extract"
+  ],
+  "почему": "модель назвала: memory-architect, rag-architect, audit1c-extract",
+  "сек": 0.75
+ },
+ "47f187207aedf45f22d29f9b": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "grill-me",
+  "задача": "задай мне неудобные вопросы по этой затее",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "devils-advocate",
+   "grill-me",
+   "idea-scorer"
+  ],
+  "почему": "модель назвала: devils-advocate, grill-me, idea-scorer",
+  "сек": 0.86
+ },
+ "4901641c37d6848ff5dd753d": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "finance-report",
+  "задача": "подготовь сводку по деньгам за квартал с главными показателями",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "finance-report",
+   "dashboard-builder",
+   "status-report"
+  ],
+  "почему": "модель назвала: finance-report, dashboard-builder, status-report",
+  "сек": 2.03
+ },
+ "4be324ce0a4f76e714ffd2ee": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "weekly-update",
+  "задача": "собери недельную сводку по проектам для руководителя",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "weekly-update",
+   "status-report",
+   "report-editor"
+  ],
+  "почему": "модель назвала: weekly-update, status-report, report-editor",
+  "сек": 0.65
+ },
+ "5275d772aca47ba702c2df26": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "icp-interviewer",
+  "задача": "поговори от лица целевого покупателя и вытащи его настоящую боль",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "icp-interviewer",
+   "jtbd-formulator",
+   "user-stories"
+  ],
+  "почему": "модель назвала: icp-interviewer, jtbd-formulator, user-stories",
+  "сек": 0.67
+ },
+ "5642aa2e7dece28360146994": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "c4-diagram",
+  "задача": "покажи схему системы: из каких частей состоит и как они общаются",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "c4-diagram",
+   "process-map",
+   "architecture-chooser"
+  ],
+  "почему": "модель назвала: c4-diagram, process-map, architecture-chooser",
+  "сек": 0.65
+ },
+ "56cca4c4b382787d8023bafc": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "unit-economics-checker",
+  "задача": "посчитай, сходится ли математика на одном покупателе",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "unit-economics-checker",
+   "ledger_reconciliation",
+   "audit1c-checks"
+  ],
+  "почему": "модель назвала: unit-economics-checker, ledger_reconciliation, audit1c-checks",
+  "сек": 0.74
+ },
+ "5b6575f71beb99e866cb74c4": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "mail-triage",
+  "задача": "просей почту: что срочное, что мусор, что можно отложить",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "mail-triage",
+   "daily-plan",
+   "email-draft"
+  ],
+  "почему": "модель назвала: mail-triage, daily-plan, email-draft",
+  "сек": 0.7
+ },
+ "5b807ebc018339bba7983795": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "audit1c-checks",
+  "задача": "прогони бухгалтерскую базу на нарушения: где не бьются суммы и рвутся связи документов",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "audit1c-checks",
+   "ledger_reconciliation",
+   "invest1c-trace"
+  ],
+  "почему": "модель назвала: audit1c-checks, ledger_reconciliation, invest1c-trace",
+  "сек": 0.67
+ },
+ "5d66eb50ebc76b5f4eb0386e": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "ledger_reconciliation",
+  "задача": "сведи оборотно-сальдовую ведомость с банковскими выписками и найди расхождения",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "ledger_reconciliation",
+   "audit1c-extract",
+   "finance-report"
+  ],
+  "почему": "модель назвала: ledger_reconciliation, audit1c-extract, finance-report",
+  "сек": 0.63
+ },
+ "5df9dfdd3a479de018369f9f": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "market-research",
+  "задача": "посмотри, насколько велика поляна и кто на ней уже сидит",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "feed-checks",
+   "audit1c-extract",
+   "audit1c-graph-build"
+  ],
+  "почему": "модель назвала: feed-checks, audit1c-extract, audit1c-graph-build",
+  "сек": 0.68
+ },
+ "61e9754c2b6a00ac9427535e": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "to-tickets",
+  "задача": "нарежь задачи в трекере по итогам обсуждения",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "to-tickets",
+   "meeting-action-items",
+   "report-editor"
+  ],
+  "почему": "модель назвала: to-tickets, meeting-action-items, report-editor",
+  "сек": 0.65
+ },
+ "622248e03a11070b3a51837f": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "docker-patterns",
+  "задача": "подготовь docker-сборку по принятым практикам",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "docker-patterns",
+   "conventional-commits",
+   "fastapi-patterns"
+  ],
+  "почему": "модель назвала: docker-patterns, conventional-commits, fastapi-patterns",
+  "сек": 0.67
+ },
+ "62feaa8f0071a68889ee2331": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "devils-advocate",
+  "задача": "выступи против этой затеи: где она развалится и почему я себя обманываю",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "devils-advocate",
+   "idea-scorer",
+   "audit1c-explain"
+  ],
+  "почему": "модель назвала: devils-advocate, idea-scorer, audit1c-explain",
+  "сек": 0.67
+ },
+ "6662ac122534a7cd54166153": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "meeting-action-items",
+  "задача": "собери из записи совещания, кто что обещал и к какому сроку",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "meeting-action-items",
+   "email-thread-reconstruct",
+   "report-editor"
+  ],
+  "почему": "модель назвала: meeting-action-items, email-thread-reconstruct, report-editor",
+  "сек": 0.68
+ },
+ "67108e0e165f6a5f2465b9f6": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "audit1c-rank",
+  "задача": "отранжируй найденные расхождения по сумме влияния и серьёзности для отчёта",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "audit1c-rank",
+   "report-editor",
+   "audit1c-explain"
+  ],
+  "почему": "модель назвала: audit1c-rank, report-editor, audit1c-explain",
+  "сек": 0.67
+ },
+ "6747283bd84c354f3c816bb3": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "email-draft",
+  "задача": "составь черновик письма по теме",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "client-letter",
+   "email-draft",
+   "report-editor"
+  ],
+  "почему": "модель назвала: client-letter, email-draft, report-editor",
+  "сек": 0.64
+ },
+ "695ac9da91a4ec884f62b8ee": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "c4-diagram",
+  "задача": "нарисуй диаграмму контейнеров и компонентов по нотации C4",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "c4-diagram",
+   "process-map",
+   "api-design"
+  ],
+  "почему": "модель назвала: c4-diagram, process-map, api-design",
+  "сек": 0.66
+ },
+ "6b890586648e9e8fddc0d1e6": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "feed-fix",
+  "задача": "подготовь исправленную карточку товара на повторную отправку",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "feed-fix",
+   "report-editor",
+   "feed-checks"
+  ],
+  "почему": "модель назвала: feed-fix, report-editor, feed-checks",
+  "сек": 0.63
+ },
+ "6c1b9d1f2e9362548f0e9e8e": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "conventional-commits",
+  "задача": "приведи описания правок в репозитории к единому принятому виду",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "conventional-commits",
+   "report-editor",
+   "spec-reviewer"
+  ],
+  "почему": "модель назвала: conventional-commits, report-editor, spec-reviewer",
+  "сек": 0.81
+ },
+ "6d28e01e8c922e85c1990415": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "status-report",
+  "задача": "подготовь статус-отчёт по проекту: сделано, риски, следующие шаги",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "status-report",
+   "report-editor",
+   "weekly-update"
+  ],
+  "почему": "модель назвала: status-report, report-editor, weekly-update",
+  "сек": 0.62
+ },
+ "6e7dc76d6710b22c02599726": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "process-map",
+  "задача": "опиши процесс как карту: этапы, роли и разрывы между участками",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "process-map",
+   "audit1c-graph-build",
+   "audit1c-match-weak"
+  ],
+  "почему": "модель назвала: process-map, audit1c-graph-build, audit1c-match-weak",
+  "сек": 0.74
+ },
+ "6ec571adfd67012e895dd735": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "grill-me",
+  "задача": "допроси меня по замыслу, чтобы я сам увидел дыры",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "grill-me",
+   "devils-advocate",
+   "spec-reviewer"
+  ],
+  "почему": "модель назвала: grill-me, devils-advocate, spec-reviewer",
+  "сек": 0.7
+ },
+ "6fcdcb98751a0cdc35c306c7": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "invest1c-trace",
+  "задача": "покажи путь сделки по первичке и укажи звено, где она обрывается",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "invest1c-trace",
+   "process-map",
+   "report-editor"
+  ],
+  "почему": "модель назвала: invest1c-trace, process-map, report-editor",
+  "сек": 0.64
+ },
+ "7224be10a3e093542a8ffcad": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "roadmap-fact",
+  "задача": "сравни обещанный график с тем, что реально сделали исполнители",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "roadmap-fact",
+   "status-report",
+   "weekly-update"
+  ],
+  "почему": "модель назвала: roadmap-fact, status-report, weekly-update",
+  "сек": 0.67
+ },
+ "72b58d1bd85514591a4c2f71": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "process-map",
+  "задача": "разложи работу по шагам и покажи, где она провисает между людьми",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "process-map",
+   "meeting-action-items",
+   "status-report"
+  ],
+  "почему": "модель назвала: process-map, meeting-action-items, status-report",
+  "сек": 0.71
+ },
+ "751c85c74d63eadffaec5335": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "audit1c-graph-build",
+  "задача": "построй граф связей документов 1С: основания, оплаты, счета-фактуры",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "audit1c-graph-build",
+   "invest1c-trace",
+   "audit1c-extract"
+  ],
+  "почему": "модель назвала: audit1c-graph-build, invest1c-trace, audit1c-extract",
+  "сек": 0.82
+ },
+ "768214e07d0b9b81acf1bae0": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "feed-scorecard",
+  "задача": "сравни наши замечания с тем, что реально завернула площадка, и посчитай долю угаданного",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "audit1c-explain",
+   "report-editor",
+   "status-report"
+  ],
+  "почему": "модель назвала: audit1c-explain, report-editor, status-report",
+  "сек": 0.64
+ },
+ "77e9a892f12739f663f58185": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "dashboard-builder",
+  "задача": "сделай сводный экран с цифрами, чтобы следить за состоянием дел",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "dashboard-builder",
+   "status-report",
+   "weekly-update"
+  ],
+  "почему": "модель назвала: dashboard-builder, status-report, weekly-update",
+  "сек": 0.64
+ },
+ "78c7619a40ced1d97d791d43": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "one-three-one",
+  "задача": "сформулируй проблему, три варианта и рекомендацию одной страницей",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "report-editor",
+   "status-report",
+   "weekly-update"
+  ],
+  "почему": "модель назвала: report-editor, status-report, weekly-update",
+  "сек": 1.39
+ },
+ "7ae75a92d1ae9707764479fd": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "idea-scorer",
+  "задача": "проанализируй идею сервиса и оцени её по критериям",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "idea-scorer",
+   "idea-selector",
+   "market-research"
+  ],
+  "почему": "модель назвала: idea-scorer, idea-selector, market-research",
+  "сек": 0.64
+ },
+ "7b931e8b57737e5b6cdee25d": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "researcher",
+  "задача": "найди материалы и источники по теме с ссылками",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "researcher",
+   "audit1c-extract",
+   "audit1c-graph-build"
+  ],
+  "почему": "модель назвала: researcher, audit1c-extract, audit1c-graph-build",
+  "сек": 0.67
+ },
+ "7bf2388195a1cec4490153bc": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "roadmap-fact",
+  "задача": "сверь дорожную карту проекта с отчётами подрядчиков: сроки, часы, причины срыва",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "roadmap-fact",
+   "status-report",
+   "variance_explanation"
+  ],
+  "почему": "модель назвала: roadmap-fact, status-report, variance_explanation",
+  "сек": 0.64
+ },
+ "7c0ac80302953f016cee7173": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "finance-report",
+  "задача": "собери финансовый отчёт с KPI за период",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "finance-report",
+   "report-editor",
+   "status-report"
+  ],
+  "почему": "модель назвала: finance-report, report-editor, status-report",
+  "сек": 0.69
+ },
+ "7d9648117532f5cf3ad4a364": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "spec-reviewer",
+  "задача": "проверь спецификацию на дыры, противоречия и невыполнимые требования",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "spec-reviewer",
+   "devils-advocate",
+   "audit1c-checks"
+  ],
+  "почему": "модель назвала: spec-reviewer, devils-advocate, audit1c-checks",
+  "сек": 0.67
+ },
+ "81af53617d85e9727237d6c1": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "architecture-chooser",
+  "задача": "выбери между простым конвейером и автономным агентом под эту задачу и обоснуй",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "architecture-chooser",
+   "agent-design-writer",
+   "application_intake_validation"
+  ],
+  "почему": "модель назвала: architecture-chooser, agent-design-writer, application_intake_validation",
+  "сек": 0.71
+ },
+ "873a9dc7dde476c4fc3f0c22": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "jtbd-formulator",
+  "задача": "опиши, какую задачу человек на самом деле решает, покупая это",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "user-stories",
+   "idea-scorer",
+   "jtbd-formulator"
+  ],
+  "почему": "модель назвала: user-stories, idea-scorer, jtbd-formulator",
+  "сек": 0.66
+ },
+ "87b9419fe218dd8169519562": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "agent-design-writer",
+  "задача": "спроектируй автономного исполнителя под эту работу и опиши его рамки",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "agent-design-writer",
+   "architecture-chooser",
+   "rag-architect"
+  ],
+  "почему": "модель назвала: agent-design-writer, architecture-chooser, rag-architect",
+  "сек": 0.66
+ },
+ "8a1232adbd0db556ae160973": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "audit1c-extract",
+  "задача": "забери из учётной системы документы и справочники за период",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "audit1c-extract",
+   "period_close_orchestration",
+   "report-editor"
+  ],
+  "почему": "модель назвала: audit1c-extract, period_close_orchestration, report-editor",
+  "сек": 0.67
+ },
+ "8b77771851b9d94f21986384": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "fastapi-patterns",
+  "задача": "поправь веб-слой приложения по сложившимся правилам этого фреймворка",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "fastapi-patterns",
+   "c4-diagram",
+   "api-design"
+  ],
+  "почему": "модель назвала: fastapi-patterns, c4-diagram, api-design",
+  "сек": 0.65
+ },
+ "8d00731ecdb1f1f39375283d": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "user-stories",
+  "задача": "опиши истории и сценарии использования для фичи",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "user-stories",
+   "bft-draft",
+   "idea-scorer"
+  ],
+  "почему": "модель назвала: user-stories, bft-draft, idea-scorer",
+  "сек": 0.67
+ },
+ "9115f298955536bb5f3d5712": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "mail-triage",
+  "задача": "разбери входящие письма и выдели, что требует ответа",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "mail-triage",
+   "email-thread-reconstruct",
+   "client-letter"
+  ],
+  "почему": "модель назвала: mail-triage, email-thread-reconstruct, client-letter",
+  "сек": 0.65
+ },
+ "97fb7c3e0aac8e11e37c3fdf": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "disbursement_orchestration",
+  "задача": "оформи выдачу средств по одобренной заявке с проверками",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "disbursement_orchestration",
+   "limit_policy_enforcement",
+   "audit1c-checks"
+  ],
+  "почему": "модель назвала: disbursement_orchestration, limit_policy_enforcement, audit1c-checks",
+  "сек": 1.08
+ },
+ "9b0d15e5e917ade4de74503d": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "variance_explanation",
+  "задача": "объясни, почему расходы отклонились от плана по статьям",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "variance_explanation",
+   "finance-report",
+   "budget-forecast"
+  ],
+  "почему": "модель назвала: variance_explanation, finance-report, budget-forecast",
+  "сек": 0.66
+ },
+ "9f228e75056684b8d617324d": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "meeting-action-items",
+  "задача": "вытащи решения и поручения из протокола встречи",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "meeting-action-items",
+   "report-editor",
+   "email-thread-reconstruct"
+  ],
+  "почему": "модель назвала: meeting-action-items, report-editor, email-thread-reconstruct",
+  "сек": 0.63
+ },
+ "a10ac2c712aef5c34b287b39": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "mlsdd-writer",
+  "задача": "подготовь документ MLSDD по системе",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "mlsdd-writer",
+   "report-editor",
+   "architecture-chooser"
+  ],
+  "почему": "модель назвала: mlsdd-writer, report-editor, architecture-chooser",
+  "сек": 0.79
+ },
+ "a2f12e17e3ef6b5a2c64ae6f": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "audit1c-root-cause",
+  "задача": "объясни, какой сбой в работе людей породил эту серию нарушений",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "audit1c-root-cause",
+   "audit1c-explain",
+   "audit1c-checks"
+  ],
+  "почему": "модель назвала: audit1c-root-cause, audit1c-explain, audit1c-checks",
+  "сек": 0.69
+ },
+ "a320db5c65754ca74f2f4f37": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "idea-selector",
+  "задача": "скажи, какой из замыслов брать первым и почему остальные ждут",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "idea-selector",
+   "idea-scorer",
+   "daily-plan"
+  ],
+  "почему": "модель назвала: idea-selector, idea-scorer, daily-plan",
+  "сек": 0.64
+ },
+ "a4fcc642777da13b7f965e26": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "audit1c-explain",
+  "задача": "растолкуй главбуху смысл выявленных нарушений и последствия для отчётности",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "audit1c-explain",
+   "report-editor",
+   "finance-report"
+  ],
+  "почему": "модель назвала: audit1c-explain, report-editor, finance-report",
+  "сек": 0.64
+ },
+ "a72ec2808276d2e2a3fe8aaf": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "feed-checks",
+  "задача": "прогони товарный фид на то, что маркетплейс завернёт при отправке",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "feed-checks",
+   "feed-fix",
+   "feed-scorecard"
+  ],
+  "почему": "модель назвала: feed-checks, feed-fix, feed-scorecard",
+  "сек": 0.63
+ },
+ "aabf4aa7ccb6cc1f4965fb76": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "conventional-commits",
+  "задача": "оформи сообщения коммитов по conventional commits",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "conventional-commits",
+   "report-editor",
+   "test-writer"
+  ],
+  "почему": "модель назвала: conventional-commits, report-editor, test-writer",
+  "сек": 0.66
+ },
+ "ab18abda074593cf7620adb2": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "researcher",
+  "задача": "подними литературу по вопросу и дай выжимку с указанием, откуда взято",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "researcher",
+   "report-editor",
+   "audit1c-extract"
+  ],
+  "почему": "модель назвала: researcher, report-editor, audit1c-extract",
+  "сек": 0.66
+ },
+ "ac7a599e7577b5c1f4dde349": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "rag-architect",
+  "задача": "реши, как исполнитель будет находить нужное в корпусе наших документов",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "rag-architect",
+   "researcher",
+   "report-editor"
+  ],
+  "почему": "модель назвала: rag-architect, researcher, report-editor",
+  "сек": 0.65
+ },
+ "af780252cfa87cd6d567dfc2": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "three-statement-model",
+  "задача": "посчитай P&L и драйверы по транзакциям за квартал",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "finance-report",
+   "variance_explanation",
+   "period_close_orchestration"
+  ],
+  "почему": "модель назвала: finance-report, variance_explanation, period_close_orchestration",
+  "сек": 0.66
+ },
+ "b1c0ac0df136ba95d53ab59b": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "invest1c-trace",
+  "задача": "проследи цепочку документов от реализации до оплаты и найди разрыв",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "invest1c-trace",
+   "invest1c-verdict",
+   "audit1c-checks"
+  ],
+  "почему": "модель назвала: invest1c-trace, invest1c-verdict, audit1c-checks",
+  "сек": 0.69
+ },
+ "b6276d191e726c9c4cc188c4": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "email-thread-reconstruct",
+  "задача": "восстанови ход переписки по ветке писем: кто что решил и когда",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "email-thread-reconstruct",
+   "client-letter",
+   "daily-plan"
+  ],
+  "почему": "модель назвала: email-thread-reconstruct, client-letter, daily-plan",
+  "сек": 0.64
+ },
+ "b999152ac80f01f8d44d44bf": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "api-design",
+  "задача": "спроектируй контракты API под описанные сценарии использования",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "api-design",
+   "spec-reviewer",
+   "user-stories"
+  ],
+  "почему": "модель назвала: api-design, spec-reviewer, user-stories",
+  "сек": 0.63
+ },
+ "b9a9ac93c645c98049926d0f": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "audit1c-extract",
+  "задача": "выгрузи снапшот данных 1С в канонический вид для разбора",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "audit1c-extract",
+   "audit1c-checks",
+   "audit1c-graph-build"
+  ],
+  "почему": "модель назвала: audit1c-extract, audit1c-checks, audit1c-graph-build",
+  "сек": 0.7
+ },
+ "bbc3e0b8395d2f7f9df373dd": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "mlsdd-writer",
+  "задача": "опиши проектную документацию решения по принятому шаблону",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "report-editor",
+   "spec-reviewer",
+   "c4-diagram"
+  ],
+  "почему": "модель назвала: report-editor, spec-reviewer, c4-diagram",
+  "сек": 0.72
+ },
+ "bd7ee689247b9daebce3cf9c": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "dcf-valuation",
+  "задача": "оцени компанию методом дисконтированных денежных потоков",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "dcf-valuation",
+   "three-statement-model",
+   "finance-report"
+  ],
+  "почему": "модель назвала: dcf-valuation, three-statement-model, finance-report",
+  "сек": 0.71
+ },
+ "bdc6d6f6abdc9a557765095b": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "acceptance-check",
+  "задача": "собери картину приёмки по проекту: что принято, что с замечаниями, что отклонено комиссией",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "acceptance-check",
+   "report-editor",
+   "status-report"
+  ],
+  "почему": "модель назвала: acceptance-check, report-editor, status-report",
+  "сек": 0.78
+ },
+ "bf206bae654c55787106a57d": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "unit-economics-checker",
+  "задача": "проверь юнит-экономику подписки: окупаемость и маржу на клиента",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "unit-economics-checker",
+   "finance-report",
+   "budget-forecast"
+  ],
+  "почему": "модель назвала: unit-economics-checker, finance-report, budget-forecast",
+  "сек": 0.64
+ },
+ "c1b9760c23d19a22470e7e7e": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "audit1c-root-cause",
+  "задача": "найди первопричины расхождений, а не перечисляй отдельные случаи",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "audit1c-root-cause",
+   "variance_explanation",
+   "audit1c-explain"
+  ],
+  "почему": "модель назвала: audit1c-root-cause, variance_explanation, audit1c-explain",
+  "сек": 0.72
+ },
+ "c430e0cf48b3c5fb93bb81e7": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "fastapi-patterns",
+  "задача": "приведи сервис к принятым практикам FastAPI",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "fastapi-patterns",
+   "api-design",
+   "conventional-commits"
+  ],
+  "почему": "модель назвала: fastapi-patterns, api-design, conventional-commits",
+  "сек": 0.87
+ },
+ "c670c426496d6081a2682010": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "spec-reviewer",
+  "задача": "вычитай постановку задачи и скажи, чего в ней не хватает для работы",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "spec-reviewer",
+   "application_intake_validation",
+   "status-report"
+  ],
+  "почему": "модель назвала: spec-reviewer, application_intake_validation, status-report",
+  "сек": 0.78
+ },
+ "c72f98d3acbc5b6ecce5295b": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "test-writer",
+  "задача": "напиши тесты под методику до реализации",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "test-writer",
+   "spec-reviewer",
+   "eval-generator"
+  ],
+  "почему": "модель назвала: test-writer, spec-reviewer, eval-generator",
+  "сек": 0.62
+ },
+ "cae95a4f6cab4c8d873e90bf": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "audit1c-rank",
+  "задача": "расставь нарушения по важности: с чего начинать разбор, чтобы закрыть самое дорогое",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "dcf-valuation",
+   "audit1c-rank",
+   "audit1c-root-cause"
+  ],
+  "почему": "модель назвала: dcf-valuation, audit1c-rank, audit1c-root-cause",
+  "сек": 0.72
+ },
+ "cb0e2834fbdc0e72c6cfff6f": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "client-letter",
+  "задача": "напиши письмо заказчику по итогам выполненных работ",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "client-letter",
+   "report-editor",
+   "weekly-update"
+  ],
+  "почему": "модель назвала: client-letter, report-editor, weekly-update",
+  "сек": 0.63
+ },
+ "d1ba7725a9e2c1352afcd564": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "one-three-one",
+  "задача": "подготовь решение по формату один-три-один",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "one-three-one"
+  ],
+  "почему": "модель назвала: one-three-one",
+  "сек": 0.69
+ },
+ "d1c70d71fd501fbde812183d": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "audit1c-match-weak",
+  "задача": "сопоставь записи по слабым ключам: похожие наименования и ИНН с опечатками",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "audit1c-match-weak",
+   "audit1c-extract",
+   "audit1c-graph-build"
+  ],
+  "почему": "модель назвала: audit1c-match-weak, audit1c-extract, audit1c-graph-build",
+  "сек": 1.81
+ },
+ "d3ebc0303fac6e49b99e3375": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "cost-estimator",
+  "задача": "посчитай, сколько человеко-часов и денег уйдёт на эту доработку",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "cost-estimator",
+   "budget-forecast",
+   "spec-reviewer"
+  ],
+  "почему": "модель назвала: cost-estimator, budget-forecast, spec-reviewer",
+  "сек": 0.64
+ },
+ "d4535a91e2242fefa1ad47c7": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "idea-scorer",
+  "задача": "разбери замысел продукта: чего он стоит и где риск",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "jtbd-formulator",
+   "idea-scorer",
+   "market-research"
+  ],
+  "почему": "модель назвала: jtbd-formulator, idea-scorer, market-research",
+  "сек": 0.65
+ },
+ "d467a00cda07ddf4499e1417": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "adr-writer",
+  "задача": "зафиксируй принятое решение по архитектуре как ADR с альтернативами и последствиями",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "adr-writer",
+   "architecture-chooser",
+   "c4-diagram"
+  ],
+  "почему": "модель назвала: adr-writer, architecture-chooser, c4-diagram",
+  "сек": 0.64
+ },
+ "d4f43aedddfe15fdc7125c28": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "idea-selector",
+  "задача": "выбери между идеями и обоснуй выбор по критериям",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "idea-selector",
+   "idea-scorer",
+   "audit1c-rank"
+  ],
+  "почему": "модель назвала: idea-selector, idea-scorer, audit1c-rank",
+  "сек": 0.65
+ },
+ "d585e7003d2b0823fb7c9f95": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "feed-fix",
+  "задача": "почини описание товара так, чтобы площадка его приняла со второго раза",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "feed-fix",
+   "feed-checks",
+   "report-editor"
+  ],
+  "почему": "модель назвала: feed-fix, feed-checks, report-editor",
+  "сек": 0.64
+ },
+ "d5cf1de4a5d6ce46ac45c4ae": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "limit_policy_enforcement",
+  "задача": "проверь обращение на соответствие ограничениям по сумме и риску",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "limit_policy_enforcement",
+   "unit-economics-checker",
+   "application_intake_validation"
+  ],
+  "почему": "модель назвала: limit_policy_enforcement, unit-economics-checker, application_intake_validation",
+  "сек": 0.67
+ },
+ "d71adfb098f1f2500ce4411c": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "disbursement_orchestration",
+  "задача": "проведи перечисление клиенту по решению и зафиксируй шаги",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "client-letter",
+   "disbursement_orchestration",
+   "daily-plan"
+  ],
+  "почему": "модель назвала: client-letter, disbursement_orchestration, daily-plan",
+  "сек": 0.66
+ },
+ "de16d5b5c7fe95d8f43b6a8d": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "client-letter",
+  "задача": "подготовь текст для клиента: что сделали, что осталось, что нужно от него",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "client-letter",
+   "status-report",
+   "weekly-update"
+  ],
+  "почему": "модель назвала: client-letter, status-report, weekly-update",
+  "сек": 0.66
+ },
+ "e3a3801c0e578e0753825460": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "status-report",
+  "задача": "доложи обстановку по работам: где мы и что мешает",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "status-report",
+   "weekly-update",
+   "roadmap-fact"
+  ],
+  "почему": "модель назвала: status-report, weekly-update, roadmap-fact",
+  "сек": 0.67
+ },
+ "e3ebebc6c1347eb95b7193ba": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "docker-patterns",
+  "задача": "упакуй сервис в контейнер так, чтобы он собирался и запускался предсказуемо",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "docker-patterns",
+   "fastapi-patterns",
+   "c4-diagram"
+  ],
+  "почему": "модель назвала: docker-patterns, fastapi-patterns, c4-diagram",
+  "сек": 0.68
+ },
+ "e4903627b6e7d8c700316e93": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "period_close_orchestration",
+  "задача": "закрой учётный период: что осталось не проведено и не сверено",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "period_close_orchestration",
+   "ledger_reconciliation",
+   "status-report"
+  ],
+  "почему": "модель назвала: period_close_orchestration, ledger_reconciliation, status-report",
+  "сек": 0.95
+ },
+ "e72f27322d05eaee184ab84a": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "daily-plan",
+  "задача": "скажи, за что браться сегодня в первую очередь и что можно отложить",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "daily-plan",
+   "mail-triage",
+   "meeting-action-items"
+  ],
+  "почему": "модель назвала: daily-plan, mail-triage, meeting-action-items",
+  "сек": 0.7
+ },
+ "ea30ca6c3fcb9a3f85e383e0": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "dcf-valuation",
+  "задача": "посчитай стоимость бизнеса по будущим поступлениям с учётом ставки",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "dcf-valuation",
+   "cost-estimator",
+   "three-statement-model"
+  ],
+  "почему": "модель назвала: dcf-valuation, cost-estimator, three-statement-model",
+  "сек": 0.65
+ },
+ "eba80c18f157eed42e8f8baa": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "application_intake_validation",
+  "задача": "прими заявку и проверь её на полноту и валидность по политике",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "application_intake_validation",
+   "audit1c-checks",
+   "report-editor"
+  ],
+  "почему": "модель назвала: application_intake_validation, audit1c-checks, report-editor",
+  "сек": 0.66
+ },
+ "ebe04e798297842a66ae8544": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "audit1c-graph-build",
+  "задача": "свяжи первичку между собой, чтобы видеть, что из чего следует",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "audit1c-graph-build",
+   "audit1c-root-cause",
+   "audit1c-match-weak"
+  ],
+  "почему": "модель назвала: audit1c-graph-build, audit1c-root-cause, audit1c-match-weak",
+  "сек": 0.72
+ },
+ "ecab489b2c1d2f6a13c47f2f": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "agent-design-writer",
+  "задача": "опиши дизайн агента: шаги, границы, что считать результатом",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "agent-design-writer",
+   "memory-architect",
+   "rag-architect"
+  ],
+  "почему": "модель назвала: agent-design-writer, memory-architect, rag-architect",
+  "сек": 0.65
+ },
+ "f21aa27d30afc436fff1a2f7": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "budget-forecast",
+  "задача": "посчитай, сколько мы потратим по направлениям до конца года и от чего это зависит",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "budget-forecast",
+   "variance_explanation",
+   "finance-report"
+  ],
+  "почему": "модель назвала: budget-forecast, variance_explanation, finance-report",
+  "сек": 0.67
+ },
+ "f255ee79fe2bdc69e209799b": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "bft-draft",
+  "задача": "подготовь черновик бизнес-функциональных требований по задаче",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "bft-draft",
+   "user-stories",
+   "process-map"
+  ],
+  "почему": "модель назвала: bft-draft, user-stories, process-map",
+  "сек": 0.69
+ },
+ "f53b631b4245d1af4ffa1e54": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "budget-forecast",
+  "задача": "сделай прогноз бюджета по статьям на следующий квартал с драйверами",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "budget-forecast",
+   "variance_explanation",
+   "finance-report"
+  ],
+  "почему": "модель назвала: budget-forecast, variance_explanation, finance-report",
+  "сек": 0.77
+ },
+ "f5de2e6b49a5bf166b918a27": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "cost-estimator",
+  "задача": "оцени трудозатраты и стоимость разработки по объёму работ",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "cost-estimator",
+   "budget-forecast",
+   "spec-reviewer"
+  ],
+  "почему": "модель назвала: cost-estimator, budget-forecast, spec-reviewer",
+  "сек": 0.67
+ },
+ "f99940478d5132ba3812d8d6": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "period_close_orchestration",
+  "задача": "проверь готовность месяца к закрытию и покажи оставшиеся хвосты",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "period_close_orchestration",
+   "status-report",
+   "weekly-update"
+  ],
+  "почему": "модель назвала: period_close_orchestration, status-report, weekly-update",
+  "сек": 0.67
+ },
+ "faac55d6560d76ea7d28248d": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "test-writer",
+  "задача": "опиши проверки, которые должны упасть, пока код не написан",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "test-writer",
+   "spec-reviewer",
+   "application_intake_validation"
+  ],
+  "почему": "модель назвала: test-writer, spec-reviewer, application_intake_validation",
+  "сек": 0.66
+ },
+ "fb99ea31f8a0168f68efb3cd": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "market-research",
+  "задача": "оцени размер рынка под гипотезу и конкурентов",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "market-research",
+   "unit-economics-checker",
+   "three-statement-model"
+  ],
+  "почему": "модель назвала: market-research, unit-economics-checker, three-statement-model",
+  "сек": 0.76
+ },
+ "fbf685996cfedc5d2c85a21a": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "email-thread-reconstruct",
+  "задача": "собери историю обсуждения из цепочки сообщений и выдели договорённости",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "email-thread-reconstruct",
+   "report-editor",
+   "meeting-action-items"
+  ],
+  "почему": "модель назвала: email-thread-reconstruct, report-editor, meeting-action-items",
+  "сек": 0.68
+ },
+ "fc82ed350c1eda425a43e578": {
+  "ok": true,
+  "вариант": "б",
+  "ждём": "invest1c-verdict",
+  "задача": "вынеси вердикт по сделке: правомерно или нет и на каком основании",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "invest1c-verdict",
+   "audit1c-explain",
+   "report-editor"
+  ],
+  "почему": "модель назвала: invest1c-verdict, audit1c-explain, report-editor",
+  "сек": 0.65
+ },
+ "fd325c68e316627ccb72046e": {
+  "ok": true,
+  "вариант": "а",
+  "ждём": "rag-architect",
+  "задача": "спроектируй поиск по документам для агента: разбивка, индекс, выдача",
+  "лишние": [],
+  "модель": "qwen3-30b-a3b",
+  "порядок": [
+   "rag-architect",
+   "agent-design-writer",
+   "memory-architect"
+  ],
+  "почему": "модель назвала: rag-architect, agent-design-writer, memory-architect",
+  "сек": 0.68
+ }
+}

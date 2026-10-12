@@ -16,13 +16,22 @@ from cli import ape
 
 from .. import access, admin_store, agent_store, assembly, audit_store, choice_store, clients
 from .. import cost_estimate, nlu, orchestrator, planner, report_compose, report_store, run_store
-from .. import schema_store
+from .. import schema_store, semantic_pick
 
 from .data import data_entities
 from ..deps import _sub, require_level, user
 
 from .. import observability as obs
 from ..config import settings
+
+# Подбор моделью. Включён по РЕЗУЛЬТАТУ замера, а не заранее: `ops/planner_model.py` на 126
+# запросах показал 18 из 63 первым у правил и 41 из 63 с ведущим голосом модели на формулировке,
+# которую журнал не видел (в плане — 21 и 48). Цена: один запрос к своей модели на подбор, около
+# секунды и ~2.6 тыс. входных токенов на своём боксе. Выключатель оставлен: эндпоинт может быть
+# платным или недоступным, и тогда подбор работает словарём, а в ответе написано, что модель не
+# участвовала.
+import os as _os
+_МОДЕЛЬЮ = _os.getenv("ABOP_PLAN_MODEL", "1") != "0"
 from ..nlu import nlu_config
 from ..vectors import cosine as _cosine
 from .agents import agent_author
@@ -206,8 +215,25 @@ async def plan_auto(body: dict, u: dict = Depends(user)) -> dict:
     except Exception as _ex:  # noqa: BLE001 — предпочтения усиление, а не условие подбора
         obs.log_event("warning", "plan.prefer_failed", error=str(_ex)[:160])
         pref = {}
+    # Голос модели из закрытого списка навыков. Нужен ровно там, где словарь бессилен: перефраз
+    # без общих основ («кто мне не заплатил» ↔ «дебиторская задолженность»). Выключатель есть и
+    # по умолчанию ВЫКЛЮЧЕН: каждый подбор — это запрос к модели, то есть деньги и задержка, и
+    # включать такое до измерения значит платить за необоснованную надежду.
+    выбор_модели: dict = {}
+    голос = {"ok": False, "почему": "подбор моделью выключен (ABOP_PLAN_MODEL)"}
+    if _МОДЕЛЬЮ:
+        голос = await semantic_pick.голос(planner.without_links(task), catalog)
+        выбор_модели = голос.get("выбор") or {}
+        if not голос.get("ok"):
+            obs.log_event("warning", "plan.model_silent", why=str(голос.get("почему"))[:160])
     p = planner.plan(task, catalog, entities=ents, slots=slots_given, max_steps=max_steps,
-                     hints=hints, semantic=sem, prefer=pref)
+                     hints=hints, semantic=sem, prefer=pref, model_pick=выбор_модели)
+    # Участвовала модель или нет — в ответе словами. Иначе «почему выбран этот навык» читается
+    # одинаково и когда модель подтвердила выбор, и когда она молчала: решение принимают по этому.
+    p["подбор_моделью"] = {"участвовала": bool(голос.get("ok")),
+                           "модель": голос.get("модель") or "",
+                           "назвала": голос.get("порядок") or [],
+                           "почему": голос.get("почему") or ""}
     # Форму спрашиваем у реестра форм: бланк вертикали объявляет, чьи результаты оформляет, и знает
     # предмет лучше правила по виду результата. Правило по виду остаётся фолбэком — на случай, когда
     # под навыки плана бланка нет.
