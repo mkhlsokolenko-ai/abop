@@ -194,7 +194,15 @@ async def plan_auto(body: dict, u: dict = Depends(user)) -> dict:
 
     sem = await _skill_semantics(planner.without_links(task), catalog)
     try:
+        # Две прибавки разной природы, и они складываются: СКЛОННОСТЬ человека к навыку плюс
+        # связь СЛОВ этого запроса с тем, что люди арендатора брали на такие слова. Вторая и есть
+        # обучение на правках: поменял предложенное руками — слова запроса начинают тянуть к
+        # выбранному. Обе держатся ниже порога уверенного подбора, поэтому решают ничью, а не
+        # назначают исполнителя.
         pref = await choice_store.prefer(_sub(u))
+        for sid, add in (await choice_store.prefer_terms(task)).items():
+            pref[sid] = round(min(choice_store.PREFER_CAP + choice_store.TERMS_CAP,
+                                  float(pref.get(sid) or 0) + add), 4)
     except Exception as _ex:  # noqa: BLE001 — предпочтения усиление, а не условие подбора
         obs.log_event("warning", "plan.prefer_failed", error=str(_ex)[:160])
         pref = {}
@@ -309,6 +317,20 @@ async def plan_prefer(u: dict = Depends(user)) -> dict:
     """Что подбор выучил на решениях этого человека — чтобы это можно было посмотреть, а не гадать."""
     return {"prefer": await choice_store.prefer(_sub(u)),
             "history": (await choice_store.history(_sub(u), 20))[:20]}
+
+
+@router.get("/api/plan/terms")
+async def plan_terms(task: str = "", u: dict = Depends(user)) -> dict:
+    """Что подбор выучил на СЛОВАХ: какие навыки тянет эта формулировка и почему.
+
+    Нужна, чтобы обучение было видно, а не угадывалось: прибавка невидимая глазом — это та же
+    магия, против которой написан весь остальной подбор.
+    """
+    прибавка = await choice_store.prefer_terms(task) if task.strip() else {}
+    return {"task": task, "terms": sorted(choice_store._основы(task)),
+            "prefer_terms": прибавка, "cap": choice_store.TERMS_CAP,
+            "поддержка_мин": choice_store.ПОДДЕРЖКА_МИН,
+            "решений_для_полного_веса": choice_store.ПОДДЕРЖКА_ПОЛНАЯ}
 
 
 @router.post("/api/plan/auto/build")

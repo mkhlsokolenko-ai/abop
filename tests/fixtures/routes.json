@@ -297,6 +297,10 @@
  ],
  [
   "GET",
+  "/api/plan/terms"
+ ],
+ [
+  "GET",
   "/api/process/coverage"
  ],
  [

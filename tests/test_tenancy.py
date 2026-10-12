@@ -204,6 +204,7 @@ def test_контракт_той_же_вертикали_у_двух_аренд�
 ТАБЛИЦЫ_С_АРЕНДАТОРОМ = {
     "dp_records", "agent_versions", "runs", "check_rules", "dp_recipes", "dp_connectors",
     "contract_sets", "process_map", "process_seats", "process_revisions", "process_changes",
+    "skill_overrides", "plan_choices",
 }
 # Запросы, которым фильтр не нужен и почему. Каждое исключение — осознанное и названное.
 ИСКЛЮЧЕНИЯ = {

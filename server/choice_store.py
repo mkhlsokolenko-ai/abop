@@ -12,14 +12,27 @@
 
 Прибавка персональная: это предпочтения конкретного человека, а не «правильный ответ» для всех.
 
-plan_choices{id, user_sub, task, offered JSONB, taken JSONB, outcome, created_at}
+plan_choices{id, user_sub, task, offered JSONB, taken JSONB, outcome, tenant, created_at}
 outcome: accepted | edited | cancelled
+
+**Две разные прибавки, и их нельзя путать.**
+
+* `prefer()` — склонность ЧЕЛОВЕКА к навыку. Вкус: один работает финансовыми методиками, другой
+  почтой. Персональная по построению.
+* `prefer_terms()` — связь СЛОВ запроса с выбранным навыком. Это факт о языке предметной области,
+  а не вкус, поэтому считается по всем решениям арендатора: «НДС» означает аудит независимо от
+  того, кто это слово написал. Разделение арендаторов обязательно — словарь одной компании не
+  должен учить подбор другой, и в `task` попадают имена её контрагентов.
+
+Вторая прибавка и есть то, чего не хватало: правка руками связывает слова запроса с тем навыком,
+который человек взял вместо предложенного.
 """
 from __future__ import annotations
 
 import json
 import time
 
+from . import nlu, tenancy
 from .config import settings
 
 SCHEMA = """
@@ -33,6 +46,10 @@ CREATE TABLE IF NOT EXISTS plan_choices (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS plan_choices_user_idx ON plan_choices (user_sub, created_at DESC);
+-- Арендатор (шаг 5): словарь одной компании не должен учить подбор другой, а в тексте запроса
+-- попадаются имена её контрагентов и проектов.
+ALTER TABLE plan_choices ADD COLUMN IF NOT EXISTS tenant TEXT NOT NULL DEFAULT 'default';
+CREATE INDEX IF NOT EXISTS plan_choices_tenant_idx ON plan_choices (tenant, created_at DESC);
 """
 
 _MEM: list[dict] = []
@@ -44,6 +61,21 @@ PREFER_CAP = 0.12
 # Отмена весит больше принятия: «не то» — более сильный сигнал, чем «подошло», потому что принимают
 # часто и по инерции, а отменяют осознанно.
 W_ACCEPTED, W_EDITED, W_CANCELLED = 1.0, 1.3, -1.6
+
+# ── обучение на словах запроса ───────────────────────────────────────────────────────────────
+# Потолок словесной прибавки. Как и `PREFER_CAP`, держится НИЖЕ порога уверенного подбора (0.30):
+# выученное слово решает ничью, но не назначает исполнителя вместо подбора по существу.
+TERMS_CAP = 0.10
+# Основа учитывается с ТРЕТЬЕГО наблюдения. Иначе одна случайная правка навсегда свяжет «НДС» с
+# неверным навыком: при единственном наблюдении косинус равен единице, и прибавка вышла бы
+# максимальной — ошибка человека превратилась бы в правило системы.
+ПОДДЕРЖКА_МИН = 3
+# Полный вес прибавка получает к девятому решению по навыку. До него растёт линейно: уверенность
+# должна соответствовать числу наблюдений, а не появляться скачком на третьем.
+ПОДДЕРЖКА_ПОЛНАЯ = 9
+# Вес отрицательного свидетельства: карточку отменили целиком, значит ЭТИ слова НЕ означают
+# предложенные навыки. Слабее положительного — отмена бывает и по причинам, не связанным с подбором.
+W_СЛОВА_ОТКАЗ = 0.5
 
 
 def _has_pg() -> bool:
@@ -66,6 +98,7 @@ async def record(user_sub: str, task: str, offered: list, taken: list, outcome: 
     row = {"user_sub": str(user_sub or ""), "task": str(task or "")[:600],
            "offered": [str(x) for x in (offered or [])], "taken": [str(x) for x in (taken or [])],
            "outcome": str(outcome or "accepted"), "at": time.time()}
+    row["tenant"] = tenancy.текущий()
     if not _has_pg():
         _MEM.append(row)
         del _MEM[:-WINDOW]
@@ -73,19 +106,22 @@ async def record(user_sub: str, task: str, offered: list, taken: list, outcome: 
     from .db import _conn
     async with _conn() as conn:
         await conn.execute(
-            "INSERT INTO plan_choices (user_sub, task, offered, taken, outcome) VALUES (%s,%s,%s,%s,%s)",
+            "INSERT INTO plan_choices (user_sub, task, offered, taken, outcome, tenant) "
+            "VALUES (%s,%s,%s,%s,%s,%s)",
             (row["user_sub"], row["task"], json.dumps(row["offered"], ensure_ascii=False),
-             json.dumps(row["taken"], ensure_ascii=False), row["outcome"]))
+             json.dumps(row["taken"], ensure_ascii=False), row["outcome"], tenancy.текущий()))
 
 
 async def history(user_sub: str, limit: int = WINDOW) -> list[dict]:
     if not _has_pg():
-        return [r for r in _MEM if r["user_sub"] == str(user_sub or "")][-limit:]
+        return [r for r in _MEM if r["user_sub"] == str(user_sub or "")
+                and r.get("tenant") == tenancy.текущий()][-limit:]
     from .db import _conn
     async with _conn() as conn:
         cur = await conn.execute(
-            "SELECT task, offered, taken, outcome FROM plan_choices WHERE user_sub=%s "
-            "ORDER BY id DESC LIMIT %s", (str(user_sub or ""), int(limit)))
+            "SELECT task, offered, taken, outcome FROM plan_choices "
+            "WHERE user_sub=%s AND tenant=%s "
+            "ORDER BY id DESC LIMIT %s", (str(user_sub or ""), tenancy.текущий(), int(limit)))
         rows = await cur.fetchall()
     out = []
     for task, offered, taken, outcome in rows:
@@ -127,3 +163,123 @@ async def prefer(user_sub: str, limit: int = WINDOW) -> dict[str, float]:
     if top <= 0:
         return {}
     return {sid: round(PREFER_CAP * (v / top), 4) for sid, v in raw.items() if v > 0}
+
+# ── обучение на словах запроса ───────────────────────────────────────────────────────────────
+
+async def _решения_арендатора(limit: int = WINDOW) -> list[dict]:
+    """Решения ВСЕХ людей арендатора: связь «слово → навык» — факт о языке, а не чей-то вкус."""
+    if not _has_pg():
+        return [r for r in _MEM if r.get("tenant") == tenancy.текущий()][-limit:]
+    from .db import _conn
+    async with _conn() as conn:
+        cur = await conn.execute(
+            "SELECT task, offered, taken, outcome FROM plan_choices WHERE tenant=%s "
+            "ORDER BY id DESC LIMIT %s", (tenancy.текущий(), int(limit)))
+        rows = await cur.fetchall()
+    return [{"task": t, "offered": list(o or []), "taken": list(k or []), "outcome": oc}
+            for t, o, k, oc in rows]
+
+
+def _основы(task: str) -> set[str]:
+    """Основы слов запроса — ТЕМ ЖЕ разбором, что у подбора.
+
+    Если учить журнал своим токенизатором, он выучит слова, которых матчер не произносит, и
+    прибавка никогда не совпадёт с кандидатом.
+    """
+    return {w for w in nlu.tokens(str(task or "")) if len(w) > 2}
+
+
+def _словарь(rows: list[dict]) -> tuple[dict, dict]:
+    """По решениям собрать {навык: {основа: наблюдений}} и {навык: решений}.
+
+    Положительное свидетельство — что человек ВЗЯЛ (принял или поправил руками). Отрицательное —
+    что ему предложили в отменённой карточке: эти слова не означают эти навыки.
+    """
+    слова: dict[str, dict[str, float]] = {}
+    решений: dict[str, int] = {}
+    for r in rows:
+        основы = _основы(r.get("task"))
+        if not основы:
+            continue
+        исход = r.get("outcome")
+        if исход in ("accepted", "edited"):
+            вес = W_ACCEPTED if исход == "accepted" else W_EDITED
+            for sid in (r.get("taken") or []):
+                решений[sid] = решений.get(sid, 0) + 1
+                д = слова.setdefault(sid, {})
+                for w in основы:
+                    д[w] = д.get(w, 0.0) + вес
+        elif исход == "cancelled":
+            for sid in (r.get("offered") or []):
+                д = слова.setdefault(sid, {})
+                for w in основы:
+                    д[w] = д.get(w, 0.0) - W_СЛОВА_ОТКАЗ
+    return слова, решений
+
+
+def _idf(слова: dict) -> dict[str, float]:
+    """Редкость основы ПО ЖУРНАЛУ: слово, встречающееся у всех навыков, ничего не различает.
+
+    Тот же приём, что в словаре каталога (`planner._index`), но по другому корпусу: там слова из
+    описаний навыков, здесь — слова, которыми люди формулируют задачи.
+    """
+    import math
+
+    n = max(1, len(слова))
+    df: dict[str, int] = {}
+    for д in слова.values():
+        for w, v in д.items():
+            if v > 0:
+                df[w] = df.get(w, 0) + 1
+    return {w: math.log(1 + n / c) for w, c in df.items()}
+
+
+async def prefer_terms(task: str, limit: int = WINDOW) -> dict[str, float]:
+    """Прибавка по СЛОВАМ запроса: {навык: 0..TERMS_CAP}.
+
+    Это и есть обучение на правках: человек поменял предложенное на своё — слова его запроса
+    начинают тянуть к тому, что он выбрал. Три защиты, без которых прибавка опасна:
+
+    1. **порог поддержки** — основа учитывается с третьего наблюдения, иначе одна случайная правка
+       навсегда связывает слово с неверным навыком;
+    2. **рост с числом решений** — полный вес к девятому, а не скачком на третьем;
+    3. **потолок ниже порога подбора** — решает ничью, не назначает исполнителя.
+    """
+    основы = _основы(task)
+    if not основы:
+        return {}
+    rows = await _решения_арендатора(limit)
+    if not rows:
+        return {}
+    слова, решений = _словарь(rows)
+    idf = _idf(слова)
+    счёт: dict[str, float] = {}
+    for sid, д in слова.items():
+        попало = 0.0
+        for w in основы:
+            v = д.get(w, 0.0)
+            if v <= 0:
+                попало += v * idf.get(w, 1.0)      # отрицательное свидетельство учитываем сразу
+                continue
+            if v < ПОДДЕРЖКА_МИН:                   # поддержки не хватает — слово молчит
+                continue
+            попало += v * idf.get(w, 1.0)
+        if попало <= 0:
+            continue
+        счёт[sid] = попало
+    верх = max(счёт.values(), default=0.0)
+    if верх <= 0:
+        return {}
+    # Нормировка по максимуму даёт ОТНОСИТЕЛЬНУЮ силу совпадения слов, а уверенность по числу
+    # решений — АБСОЛЮТНУЮ величину прибавки. Множить до нормировки нельзя: при единственном
+    # кандидате уверенность сокращается сама с собой, и прибавка всегда равна потолку — то есть
+    # защита «растёт с числом решений» исчезает ровно в самом частом случае.
+    out = {}
+    for sid, v in счёт.items():
+        if v <= 0:
+            continue
+        доверие = min(1.0, max(0.0, решений.get(sid, 0) / ПОДДЕРЖКА_ПОЛНАЯ))
+        прибавка = round(TERMS_CAP * (v / верх) * доверие, 4)
+        if прибавка > 0:
+            out[sid] = прибавка
+    return out
