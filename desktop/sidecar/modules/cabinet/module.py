@@ -60,6 +60,33 @@ def billing() -> dict:
         return {"error": str(e)}
 
 
+@router.post("/telegram/code")
+def telegram_code() -> dict:
+    """Код на привязку Telegram. Сам токен канала десктоп НЕ получает и не хранит: его выдаёт ABOP
+    боту в обмен на этот код. Так в приложении не появляется ещё одного секрета."""
+    try:
+        return abop.channel_code("telegram")
+    except abop.AbopError as e:
+        return {"ok": False, "error": e.detail or str(e), "status": e.status}
+
+
+@router.get("/channels")
+def channels() -> dict:
+    """Чем человек привязан. Видно, когда каналом пользовались: забытая привязка — открытая дверь."""
+    try:
+        return abop.channels()
+    except abop.AbopError as e:
+        return {"ok": False, "error": e.detail or str(e), "привязки": []}
+
+
+@router.delete("/channels/{binding}")
+def channel_revoke(binding: str) -> dict:
+    try:
+        return abop.channel_revoke(binding)
+    except abop.AbopError as e:
+        return {"ok": False, "error": e.detail or str(e)}
+
+
 @router.get("/sources")
 def sources() -> dict:
     """Рабочие источники: подключены в ABOP Data Plane (см. модуль «Источники»); локальные файлы —

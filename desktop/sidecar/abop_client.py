@@ -127,6 +127,21 @@ def me() -> dict:
     return _req("GET", "/api/me", timeout=20)
 
 
+# ── внешние каналы (бот в мессенджере) ──
+def channel_code(channel: str = "telegram") -> dict:
+    """Одноразовый код на привязку канала. Токен канала выдаёт ABOP боту, а не десктопу: десктоп
+    только показывает код человеку, чтобы тот отправил его в переписку."""
+    return _req("POST", "/api/channels/" + urllib.request.quote(channel) + "/code", {}, timeout=20)
+
+
+def channels() -> dict:
+    return _req("GET", "/api/channels", timeout=20)
+
+
+def channel_revoke(binding: str) -> dict:
+    return _req("DELETE", "/api/channels/" + urllib.request.quote(binding), timeout=20)
+
+
 def agents(contract: str = "", archived: bool = False) -> list:
     части = []
     if contract:

@@ -11,6 +11,12 @@ const AG = "/api/modules/agents";
 const K = "/api/modules/connectors";
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const CARD = "padding:20px;border-radius:16px;background:var(--panel);border:1px solid var(--line);display:flex;flex-direction:column;gap:14px;box-shadow:var(--shadow-1);backdrop-filter:var(--blur)";
+// Что бот умеет и чего не умеет — рядом с кнопкой привязки, а не в документации: человек
+// решает, нужен ли ему канал, именно здесь.
+const TG_МОЖЕТ = "Поставить задачу словами, получить результат, посмотреть что считается и расписания.";
+const TG_НЕ_МОЖЕТ = "Не пишет в чужие системы (письма, задачи в трекере) и не собирает агентов — "
+  + "это из приложения, где видно последствия и есть подтверждение.";
+
 const SHORTCUTS = [
   ["Ctrl K", "поиск и команды"], ["Ctrl N", "новый чат"], ["Enter", "отправить · Shift+Enter — перенос строки"],
   ["Esc", "остановить ответ · закрыть шторку или окно"],
@@ -134,6 +140,7 @@ export async function mount(root, ctx) {
           <textarea id="persona" rows="3" placeholder="Например: я руководитель отдела продаж; отвечай кратко, по пунктам, на «вы»; суммы в рублях"></textarea>
           <span id="personaNote" style="font-size:11.5px;color:var(--ink-3)"></span>
         </label>
+        <div id="tgBox" style="display:flex;flex-direction:column;gap:11px;padding-top:4px"></div>
         ${guideRows ? `<div style="display:flex;flex-direction:column;gap:9px">
           <span style="font-size:12.5px;font-weight:600">Руководства</span>
           ${guideRows}
@@ -144,6 +151,64 @@ export async function mount(root, ctx) {
         </div>
       </div>
     </div></div>`;
+
+  // ── Telegram: код, привязки, отзыв ────────────────────────────────────────────────────────
+  async function нарисоватьКанал() {
+    const узел = root.querySelector("#tgBox");
+    if (!узел) return;
+    let привязки = [];
+    let ошибка = "";
+    try {
+      const r = await api(C + "/channels");
+      привязки = (r && r["привязки"]) || [];
+      if (r && r.ok === false) ошибка = r.error || "";
+    } catch (e) { ошибка = humanError(e); }
+    const когда = (t) => t ? new Date(t).toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" }) : "ещё не пользовались";
+    узел.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:7px">
+        <span style="font-size:12.5px;font-weight:600">Telegram <span style="font-weight:400;color:var(--ink-3)">· задачи с телефона</span></span>
+        <span style="font-size:11.5px;color:var(--ink-2);line-height:1.5">${esc(TG_МОЖЕТ)}</span>
+        <span style="font-size:11.5px;color:var(--ink-3);line-height:1.5">${esc(TG_НЕ_МОЖЕТ)}</span>
+      </div>
+      ${ошибка ? `<div style="font-size:11.5px;color:var(--danger-ink)">Привязки недоступны: ${esc(ошибка)}</div>` : ""}
+      ${привязки.length ? `<div style="display:flex;flex-direction:column;gap:6px">${привязки.map((b) => `
+        <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+          <span style="font-size:12px;color:var(--ink-2)">чат ${esc(String(b["куда"] || "—"))}</span>
+          <span style="font-size:11.5px;color:var(--ink-3)">последний раз: ${esc(когда(b["последнее"]))}</span>
+          <button class="btn sm danger tgOff" data-id="${esc(String(b.id))}" style="margin-left:auto">Отвязать</button>
+        </div>`).join("")}</div>`
+        : `<span style="font-size:12px;color:var(--ink-3)">Ни один чат не привязан.</span>`}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="btn sm" id="tgCode">Получить код привязки</button>
+        <span id="tgOut" style="font-family:var(--mono);font-size:13px;color:var(--ink)"></span>
+      </div>`;
+    const кнопка = узел.querySelector("#tgCode");
+    if (кнопка) кнопка.onclick = async () => {
+      кнопка.disabled = true;
+      try {
+        const r = await api(C + "/telegram/code", { method: "POST" });
+        if (!r || r.ok === false || !r["код"]) throw new Error((r && r.error) || "сервер не выдал код");
+        узел.querySelector("#tgOut").textContent = r["код"];
+        toast(`Код ${r["код"]} — отправьте его боту одним сообщением. Живёт ${r["живёт_минут"]} мин и один раз.`, "ok", { ttl: 12000 });
+      } catch (e) { toast("Код не выдан: " + humanError(e), "danger"); }
+      кнопка.disabled = false;
+    };
+    узел.querySelectorAll(".tgOff").forEach((b) => b.onclick = async () => {
+      const ok = await ctx.confirm({
+        title: "Отвязать чат от вашей учётной записи?",
+        text: "Бот перестанет запускать агентов от вашего имени. Запущенные прогоны это не отменяет — "
+            + "они уже идут и их результат останется в журнале.",
+        okLabel: "Отвязать", danger: true, kicker: "Telegram" });
+      if (!ok) return;
+      try {
+        const r = await api(C + "/channels/" + encodeURIComponent(b.dataset.id), { method: "DELETE" });
+        if (r && r.ok === false) throw new Error(r.error || "не отозвано");
+        toast("Чат отвязан", "ok");
+      } catch (e) { toast("Отвязать не удалось: " + humanError(e), "danger"); }
+      нарисоватьКанал();
+    });
+  }
+  нарисоватьКанал();
 
   const p = root.querySelector("#persona");
   if (p) {
