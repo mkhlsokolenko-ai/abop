@@ -21,6 +21,10 @@
  ],
  [
   "DELETE",
+  "/api/control/permissions/{binding}"
+ ],
+ [
+  "DELETE",
   "/api/data/connectors/{cid}"
  ],
  [
@@ -170,6 +174,10 @@
  [
   "GET",
   "/api/contracts/{audit_id}"
+ ],
+ [
+  "GET",
+  "/api/control/feed"
  ],
  [
   "GET",

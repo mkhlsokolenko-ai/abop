@@ -146,6 +146,67 @@ async def ждущие_с_payload(limit: int = 500) -> list[dict]:
     return [dict(zip(keys, r)) for r in rows]
 
 
+async def решённые(*, дней: int = 7, limit: int = 300) -> list[dict]:
+    """История решений за период: что подтвердили, что отклонили, что просрочено.
+
+    Нужна ленте контроля руководителя (ADR-066): необратимое уже случилось, и единственное, что с
+    ним можно сделать, — увидеть. Отдаём и `approved`, и `rejected`/`expired`: «не дошло» для
+    руководителя важнее, чем «дошло», потому что там стоит работа.
+    """
+    if not _has_pg():
+        import datetime as _dt
+
+        порог = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=дней)
+        итог = []
+        for v in _MEM.values():
+            if v.get("state") == "pending":
+                continue
+            пз = v.get("payload") or {}
+            итог.append({**{k: v.get(k) for k in
+                            ("id", "channel", "to_addr", "state", "requested_by", "addressed_to",
+                             "decided_by", "reason", "family", "agent_id", "run_id")},
+                         "когда": v.get("decided_at") or v.get("created_at"),
+                         "уровень": пз.get("уровень"), "агент": пз.get("agent_name")})
+        _ = порог    # в памяти история короткая, период не отсекаем
+        return итог[:limit]
+    from .db import _conn
+    async with _conn() as conn:
+        cur = await conn.execute(
+            "SELECT id,channel,to_addr,state,requested_by,addressed_to,decided_by,reason,family,"
+            "agent_id,run_id,decided_at,created_at,payload->>'уровень',payload->>'agent_name' "
+            "FROM hitl_items WHERE state <> 'pending' "
+            "AND COALESCE(decided_at, created_at) > now() - (%s || ' days')::interval "
+            "ORDER BY COALESCE(decided_at, created_at) DESC LIMIT %s", (str(int(дней)), int(limit)))
+        rows = await cur.fetchall()
+    итог = []
+    for r in rows:
+        когда = r[11] or r[12]
+        итог.append({"id": r[0], "channel": r[1], "to_addr": r[2], "state": r[3],
+                     "requested_by": r[4], "addressed_to": r[5], "decided_by": r[6],
+                     "reason": r[7], "family": r[8], "agent_id": r[9], "run_id": r[10],
+                     "когда": когда.isoformat() if когда else None,
+                     "уровень": r[13], "агент": r[14]})
+    return итог
+
+
+async def адресаты_до(*, дней: int = 7) -> set[str]:
+    """Адресаты, которым подтверждали отправку РАНЬШЕ периода ленты.
+
+    Нужны, чтобы «новый адресат» означал новизну, а не край окна: в любом окне каждый адрес
+    встречается впервые, и без прежнего перечня аномалией становилась бы вся переписка.
+    """
+    if not _has_pg():
+        return set()
+    from .db import _conn
+    async with _conn() as conn:
+        cur = await conn.execute(
+            "SELECT DISTINCT lower(to_addr) FROM hitl_items WHERE state='approved' "
+            "AND to_addr <> '' "
+            "AND COALESCE(decided_at, created_at) <= now() - (%s || ' days')::interval",
+            (str(int(дней)),))
+        return {r[0] for r in await cur.fetchall() if r[0]}
+
+
 async def просрочить_черновики(старше_сек: int | None = None) -> int:
     """Черновики старше срока уходят в `expired`. Возвращает число убранных.
 

@@ -389,6 +389,17 @@ def hitl_queue() -> list:
     return (r or {}).get("queue", []) if isinstance(r, dict) else (r or [])
 
 
+def control_feed(days: int = 7) -> dict:
+    """Лента контроля руководителя (manager+). Отказ по правам прилетит как есть — 403 со словами."""
+    return _req("GET", f"/api/control/feed?days={int(days)}", timeout=30) or {}
+
+
+def control_revoke(binding: str) -> dict:
+    """Снять постоянное разрешение (привязку канала) человека своего отдела."""
+    return _req("DELETE", "/api/control/permissions/" + urllib.request.quote(binding),
+                timeout=30) or {}
+
+
 def hitl_queue_mine(mine: str = "1") -> dict:
     """Очередь решений с ответом целиком: разделу «Решения» нужно и `всего`, и порядок.
 

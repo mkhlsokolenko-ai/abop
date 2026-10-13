@@ -353,6 +353,69 @@ async def мои(sub: str) -> list[dict]:
              "последнее": r[4].isoformat() if r[4] else None} for r in строки]
 
 
+async def действующие(*, отдел: str = "") -> list[dict]:
+    """Действующие привязки каналов — то есть постоянные разрешения, выданные людьми себе.
+
+    Для ленты контроля руководителя: после привязки агенты человека запускаются из переписки и
+    готовят письма коллегам. Это и есть «кто сам себе разрешил» в сегодняшнем продукте — авто-правил
+    «подтверждать за меня» в ABOP нет, и подставлять в ленту несуществующую сущность нельзя.
+
+    `отдел` пустой или `*` — все (admin/support); иначе только свой отдел.
+    """
+    if not _есть_pg():
+        изб = [з for з in _МЕМ_ТОКЕНЫ.values()
+               if not з.get("revoked") and з.get("tenant") == tenancy.текущий()
+               and (отдел in ("", "*") or з.get("department") == отдел)]
+        return [{"id": з["id"], "канал": з["channel"], "куда": з.get("external_id"),
+                 "кто": з.get("name") or з.get("sub"), "sub": з.get("sub"),
+                 "отдел": з.get("department"), "создана": з.get("created_at"),
+                 "последнее": з.get("last_used_at")} for з in изб]
+    from .db import _conn
+    усл = "" if отдел in ("", "*") else " AND department=%s"
+    пар: tuple = (tenancy.текущий(),) if отдел in ("", "*") else (tenancy.текущий(), отдел)
+    async with _conn() as conn:
+        cur = await conn.execute(
+            "SELECT id,channel,external_id,name,sub,department,created_at,last_used_at "
+            "FROM channel_tokens WHERE revoked=FALSE AND tenant=%s" + усл
+            + " ORDER BY created_at DESC", пар)
+        строки = await cur.fetchall()
+    return [{"id": r[0], "канал": r[1], "куда": r[2], "кто": r[3] or r[4], "sub": r[4],
+             "отдел": r[5], "создана": r[6].isoformat() if r[6] else None,
+             "последнее": r[7].isoformat() if r[7] else None} for r in строки]
+
+
+async def снять(ид: str, *, отдел: str) -> dict | None:
+    """Снять ЧУЖУЮ привязку — рычаг руководителя. Возвращает снятое или None.
+
+    Отличается от `отозвать` намеренно: тот — самообслуживание («только своё»), этот — управление
+    полномочиями в своём отделе. Поэтому область обязательна и проверяется в самом запросе:
+    проверка в маршруте защищала бы от интерфейса, а не от запроса. `*` (admin/support) снимает
+    любую: у них и так есть доступ к базе, прятать кнопку бессмысленно.
+    """
+    if not _есть_pg():
+        for хэш, з in list(_МЕМ_ТОКЕНЫ.items()):
+            подходит = (з.get("id") == ид and з.get("tenant") == tenancy.текущий()
+                        and (отдел in ("", "*") or з.get("department") == отдел))
+            if подходит:
+                з["revoked"] = True
+                _МЕМ_ТОКЕНЫ.pop(хэш, None)
+                return {"id": ид, "кто": з.get("name") or з.get("sub"), "канал": з.get("channel")}
+        return None
+    from .db import _conn
+    усл = "" if отдел in ("", "*") else " AND department=%s"
+    пар: tuple = ((ид, tenancy.текущий()) if отдел in ("", "*")
+                  else (ид, tenancy.текущий(), отдел))
+    async with _conn() as conn:
+        cur = await conn.execute(
+            "UPDATE channel_tokens SET revoked=TRUE WHERE id=%s AND revoked=FALSE AND tenant=%s"
+            + усл + " RETURNING token_hash, name, sub, channel", пар)
+        строка = await cur.fetchone()
+    if not строка:
+        return None
+    _МЕМ_ТОКЕНЫ.pop(строка[0], None)     # из кэша тоже: иначе отзыв не действует до рестарта
+    return {"id": ид, "кто": строка[1] or строка[2], "канал": строка[3]}
+
+
 async def отозвать(sub: str, ид: str) -> bool:
     """Отзыв привязки. Только своей: чужую не отзывают даже admin — для этого есть удаление."""
     if not _есть_pg():

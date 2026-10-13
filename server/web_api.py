@@ -389,11 +389,15 @@ from .routes import verticals as _routes_verticals  # noqa: E402
 # Внешние каналы (бот в мессенджере): привязка человека к чату узким токеном ABOP, а не
 # offline-токеном Keycloak — см. шапку `server/channel_tokens.py`.
 from .routes import channels as _routes_channels  # noqa: E402
+# Лента контроля руководителя: смотреть свершившееся необратимое и управлять полномочиями
+# (ADR-066). Не согласование: руководитель чужие действия не подтверждает.
+from .routes import control as _routes_control  # noqa: E402
 
 app.include_router(_routes_data.router)
 app.include_router(_routes_rules.router)
 app.include_router(_routes_verticals.router)
 app.include_router(_routes_channels.router)
+app.include_router(_routes_control.router)
 
 # Инъекция рецептов и коннекторов в ядро `ape` — забота СТАРТА, а не маршрута, но живёт она
 # рядом с доменом данных. Берём оттуда по имени: дублировать функцию ради чистоты импорта значило

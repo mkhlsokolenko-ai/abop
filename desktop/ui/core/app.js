@@ -283,7 +283,7 @@ const mounted = new Map();        // id → { root, mod }   (D-H11: кэш мо�
 
 function icon(name) {
   // Реальные глифы из эталона APE Desktop (standalone): геометрические, не смайлы.
-  return { chat: "✦", runs: "◷", findings: "◬", agents: "⎔", cabinet: "◉", graphlens: "◈", opslens: "◎", connectors: "⛁", security: "⛨", ocr: "◵", watch: "▤", ml: "❖", abop: "⬡", decisions: "⌦" }[name] || "◆";
+  return { chat: "✦", runs: "◷", findings: "◬", agents: "⎔", cabinet: "◉", graphlens: "◈", opslens: "◎", connectors: "⛁", security: "⛨", ocr: "◵", watch: "▤", ml: "❖", abop: "⬡", decisions: "⌦", control: "◰" }[name] || "◆";
 }
 
 // ── вход: единый термин «ABOP» (Keycloak за шлюзом — детали пользователю не нужны) (D-H12) ──────
@@ -368,7 +368,9 @@ async function renderAuth() {
 // "admin" из чужого realm: роли lecturer в ABOP нет, поэтому «Граф» был скрыт от manager и
 // support молча — человек уровня «менеджер» не видел раздела и не получал объяснения.
 const LEVELS = ["analyst", "manager", "support", "admin"];
-const MODULE_MIN_LEVEL = { graphlens: "manager", security: "support", opslens: "support" };
+// Лента контроля — сводка по ЛЮДЯМ отдела: аналитику её показывать незачем, у него и своих решений
+// хватает. Это не «режим руководителя»: раздел просто не виден тем, кому он не адресован.
+const MODULE_MIN_LEVEL = { graphlens: "manager", control: "manager", security: "support", opslens: "support" };
 function levelAtLeast(min) {
   const have = LEVELS.indexOf(ctx.level || "analyst");
   const need = LEVELS.indexOf(min);
@@ -385,7 +387,7 @@ function visibleModules() { return MODULES.filter((m) => !HIDDEN_MODULES.has(m.i
 // «Решения» стоят вторыми: там ждут человека, и это важнее журнала прогонов. Переключателя
 // режимов нет (DIZAJN, 5.1) — руководитель тоже ставит задачи, и прыгать между двумя
 // приложениями ради одного подтверждения он не должен.
-const RAIL_ORDER = ["chat", "decisions", "runs", "agents", "watch", "graphlens", "cabinet"];
+const RAIL_ORDER = ["chat", "decisions", "control", "runs", "agents", "watch", "graphlens", "cabinet"];
 const RAIL_TITLE = { agents: "Мои агенты" };
 function railModules() {
   const rank = (id) => { const i = RAIL_ORDER.indexOf(id); return i < 0 ? RAIL_ORDER.length : i; };
