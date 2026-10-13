@@ -14,10 +14,16 @@
 # Пароль не хранится в репозитории: подставляется переменной среды контейнера Grafana
 # (`GF_DS_PG_PASSWORD` в `ops/docker-compose.observability.yml`, значение — из `.env` сервера).
 apiVersion: 1
+# Пересоздание: провижининг не меняет у существующей записи ни `uid`, ни `type`. Тип был
+# `postgres` (имя плагина из Grafana 9), и фронт выбрасывал источник из списка — панели
+# писали «Datasource abop-pg was not found». Источник без состояния, терять нечего.
+deleteDatasources:
+  - name: ABOP Postgres
+    orgId: 1
 datasources:
   - name: ABOP Postgres
     uid: abop-pg
-    type: postgres
+    type: grafana-postgresql-datasource
     access: proxy
     # Адрес — ПО СЕТИ КОНТЕЙНЕРОВ, а не через host-gateway. На сервере Postgres опубликован как
     # `127.0.0.1:5433`, то есть только на петлевом интерфейсе хоста: из контейнера Grafana

@@ -21,7 +21,7 @@
         "label": "Арендатор",
         "type": "query",
         "datasource": {
-          "type": "postgres",
+          "type": "grafana-postgresql-datasource",
           "uid": "abop-pg"
         },
         "query": "SELECT DISTINCT tenant FROM runs ORDER BY 1",
@@ -36,7 +36,7 @@
         "label": "Отдел",
         "type": "query",
         "datasource": {
-          "type": "postgres",
+          "type": "grafana-postgresql-datasource",
           "uid": "abop-pg"
         },
         "query": "SELECT DISTINCT COALESCE(NULLIF(family,''),'(не указан)') FROM runs WHERE tenant = '$tenant' ORDER BY 1",
@@ -72,7 +72,7 @@
       "type": "stat",
       "title": "Прогонов за период",
       "datasource": {
-        "type": "postgres",
+        "type": "grafana-postgresql-datasource",
         "uid": "abop-pg"
       },
       "gridPos": {
@@ -96,7 +96,7 @@
           "rawQuery": true,
           "editorMode": "code",
           "datasource": {
-            "type": "postgres",
+            "type": "grafana-postgresql-datasource",
             "uid": "abop-pg"
           }
         }
@@ -121,7 +121,7 @@
       "type": "stat",
       "title": "Стоимость за период",
       "datasource": {
-        "type": "postgres",
+        "type": "grafana-postgresql-datasource",
         "uid": "abop-pg"
       },
       "gridPos": {
@@ -145,7 +145,7 @@
           "rawQuery": true,
           "editorMode": "code",
           "datasource": {
-            "type": "postgres",
+            "type": "grafana-postgresql-datasource",
             "uid": "abop-pg"
           }
         }
@@ -171,7 +171,7 @@
       "title": "Работали агенты",
       "description": "Суммарное время исполнения прогонов. Это НЕ «сэкономленные часы людей»: норматива на ручную работу у нас нет, и выдумывать его мы не стали.",
       "datasource": {
-        "type": "postgres",
+        "type": "grafana-postgresql-datasource",
         "uid": "abop-pg"
       },
       "gridPos": {
@@ -195,7 +195,7 @@
           "rawQuery": true,
           "editorMode": "code",
           "datasource": {
-            "type": "postgres",
+            "type": "grafana-postgresql-datasource",
             "uid": "abop-pg"
           }
         }
@@ -221,7 +221,7 @@
       "title": "Решений ждёт",
       "description": "Заявки в состоянии pending: что готово и не отправлено. Отдельно — сколько из них просрочено (срок решения прошёл, доставка не состоялась).",
       "datasource": {
-        "type": "postgres",
+        "type": "grafana-postgresql-datasource",
         "uid": "abop-pg"
       },
       "gridPos": {
@@ -245,7 +245,7 @@
           "rawQuery": true,
           "editorMode": "code",
           "datasource": {
-            "type": "postgres",
+            "type": "grafana-postgresql-datasource",
             "uid": "abop-pg"
           }
         }
@@ -270,7 +270,7 @@
       "type": "timeseries",
       "title": "Прогоны по дням",
       "datasource": {
-        "type": "postgres",
+        "type": "grafana-postgresql-datasource",
         "uid": "abop-pg"
       },
       "gridPos": {
@@ -297,7 +297,7 @@
           "rawQuery": true,
           "editorMode": "code",
           "datasource": {
-            "type": "postgres",
+            "type": "grafana-postgresql-datasource",
             "uid": "abop-pg"
           }
         }
@@ -308,7 +308,7 @@
       "type": "timeseries",
       "title": "Стоимость по дням",
       "datasource": {
-        "type": "postgres",
+        "type": "grafana-postgresql-datasource",
         "uid": "abop-pg"
       },
       "gridPos": {
@@ -335,7 +335,7 @@
           "rawQuery": true,
           "editorMode": "code",
           "datasource": {
-            "type": "postgres",
+            "type": "grafana-postgresql-datasource",
             "uid": "abop-pg"
           }
         }
@@ -347,7 +347,7 @@
       "title": "Кто что запускал",
       "description": "По людям: сколько прогонов, сколько из них с замечаниями, сколько стоило, сколько работали агенты. «С замечаниями» — не ошибка человека: это вердикт прогона по DoD.",
       "datasource": {
-        "type": "postgres",
+        "type": "grafana-postgresql-datasource",
         "uid": "abop-pg"
       },
       "gridPos": {
@@ -397,7 +397,7 @@
           "rawQuery": true,
           "editorMode": "code",
           "datasource": {
-            "type": "postgres",
+            "type": "grafana-postgresql-datasource",
             "uid": "abop-pg"
           }
         }
@@ -420,7 +420,7 @@
       "title": "Что ушло наружу",
       "description": "Свершившееся необратимое: подтверждённые доставки по каналам и адресатам. Отправленное не вернуть — здесь это видно постфактум, а управлять можно только тем, что будет можно дальше (снять разрешение).",
       "datasource": {
-        "type": "postgres",
+        "type": "grafana-postgresql-datasource",
         "uid": "abop-pg"
       },
       "gridPos": {
@@ -441,7 +441,7 @@
           "rawQuery": true,
           "editorMode": "code",
           "datasource": {
-            "type": "postgres",
+            "type": "grafana-postgresql-datasource",
             "uid": "abop-pg"
           }
         }
@@ -464,7 +464,7 @@
       "title": "Не дошло: отказы и просроченные решения",
       "description": "Что НЕ состоялось и почему. Самая полезная таблица на экране: по ней видно, где работа встала, а не где всё хорошо.",
       "datasource": {
-        "type": "postgres",
+        "type": "grafana-postgresql-datasource",
         "uid": "abop-pg"
       },
       "gridPos": {
@@ -485,7 +485,7 @@
           "rawQuery": true,
           "editorMode": "code",
           "datasource": {
-            "type": "postgres",
+            "type": "grafana-postgresql-datasource",
             "uid": "abop-pg"
           }
         }

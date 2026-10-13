@@ -270,6 +270,34 @@ def test_каждая_панель_называет_свой_источник_д
     assert "uid: abop-prom" in пром, "у Prometheus нет устойчивого uid — ссылки панелей разъедутся"
 
 
+def test_тип_источника_это_идентификатор_плагина_а_не_наследие():
+    """«Datasource abop-pg was not found» при существующей записи в базе.
+
+    В Grafana 10+ плагин Postgres называется `grafana-postgresql-datasource`; `postgres` — имя из
+    девятой версии. С устаревшим типом запись в базе есть, роль читает, SQL работает — а фронт
+    выбрасывает источник из списка, и панель говорит «не найден», не отправляя запроса. Владелец
+    видел ровно это.
+
+    Так же легко промахнуться и в обратную сторону: у Prometheus идентификатор плагина не менялся.
+    """
+    устаревшие = {"postgres", "mysql-datasource", "influxdb-datasource"}
+    дс = (КОРЕНЬ / "ops" / "grafana" / "provisioning" / "datasources" / "postgres.yml").read_text(encoding="utf-8")
+    assert "type: grafana-postgresql-datasource" in дс, (
+        "в провижининге устаревший тип источника — фронт его не найдёт")
+    import json as _json
+
+    for файл in ("abop-manager.json", "abop-overview.json"):
+        d = _json.loads((ДАШБОРД_ПУТЬ.parent / файл).read_text(encoding="utf-8"))
+        узлы = ([п.get("datasource") for п in d["panels"]]
+                + [т.get("datasource") for п in d["panels"] for т in (п.get("targets") or [])]
+                + [в.get("datasource") for в in (d.get("templating") or {}).get("list", [])])
+        плохие = [u.get("type") for u in узлы if isinstance(u, dict) and u.get("type") in устаревшие]
+        assert not плохие, f"{файл}: устаревшие типы источников: {set(плохие)}"
+    # Пересоздание нужно: провижининг не меняет у существующей записи ни uid, ни type.
+    assert "deleteDatasources" in дс, (
+        "без пересоздания правка типа не применится к уже созданному источнику")
+
+
 def test_провайдер_дашбордов_подхватит_новый():
     """Дашборд кладётся в ту же папку, которую монтирует compose, — иначе его просто не видно."""
     compose = (КОРЕНЬ / "ops" / "docker-compose.observability.yml").read_text(encoding="utf-8")
