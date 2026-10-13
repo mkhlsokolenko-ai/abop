@@ -101,17 +101,41 @@ async def list_pending() -> list[dict]:
                             ("id", "run_id", "agent_id", "family", "node", "title", "channel",
                              "to_addr", "requested_by", "created_at")},
                          "черновик": пз.get("черновик") or "", "уровень": пз.get("уровень"),
-                         "основание": пз.get("основание") or "", "решает": пз.get("решает") or ""})
+                         "основание": пз.get("основание") or "", "решает": пз.get("решает") or "",
+                         "срок_до": пз.get("срок_до"), "срок_истёк": bool(пз.get("срок_отмечен"))})
         return итог
     from .db import _conn
     async with _conn() as conn:
         cur = await conn.execute(
             "SELECT id,run_id,agent_id,family,node,title,channel,to_addr,created_at,requested_by,"
-            "payload->>'черновик',payload->>'уровень',payload->>'основание',payload->>'решает' "
+            "payload->>'черновик',payload->>'уровень',payload->>'основание',payload->>'решает',"
+            "payload->>'срок_до',(payload->>'срок_отмечен') IS NOT NULL "
             "FROM hitl_items WHERE state='pending' ORDER BY created_at DESC LIMIT 100")
         rows = await cur.fetchall()
     keys = ["id", "run_id", "agent_id", "family", "node", "title", "channel", "to_addr",
-            "created_at", "requested_by", "черновик", "уровень", "основание", "решает"]
+            "created_at", "requested_by", "черновик", "уровень", "основание", "решает",
+            "срок_до", "срок_истёк"]
+    return [dict(zip(keys, r)) for r in rows]
+
+
+async def ждущие_с_payload(limit: int = 500) -> list[dict]:
+    """Ждущие решения заявки ЦЕЛИКОМ, с payload. Нужно проходу по срокам (`server/decisions`).
+
+    Отдельно от `list_pending`, потому что у них разные читатели: карточке нужен короткий список
+    без вложений (там лежит готовое письмо, иногда большое), фоновому проходу — срок и признак
+    отметки, то есть сам payload.
+    """
+    if not _has_pg():
+        return [dict(v) for v in _MEM.values() if v.get("state") == "pending"]
+    from .db import _conn
+    async with _conn() as conn:
+        cur = await conn.execute(
+            "SELECT id,run_id,agent_id,family,node,title,channel,to_addr,payload,requested_by,"
+            "created_at FROM hitl_items WHERE state='pending' ORDER BY created_at LIMIT %s",
+            (int(limit),))
+        rows = await cur.fetchall()
+    keys = ["id", "run_id", "agent_id", "family", "node", "title", "channel", "to_addr", "payload",
+            "requested_by", "created_at"]
     return [dict(zip(keys, r)) for r in rows]
 
 

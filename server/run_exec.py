@@ -31,7 +31,7 @@ from cli import ape
 
 from . import access, admin_store, assembly, audit_store, blackboard, clients, dataplane_store
 from . import delivery as delivery_mod
-from . import doclink, hitl_store, identity_store, langfuse_trace, levels
+from . import decisions, doclink, hitl_store, identity_store, langfuse_trace, levels
 from . import observability as obs
 from . import report_compose, report_store, run_cache_store, run_parts_store, run_queue
 from . import run_store, runner, schema_store, skill_store, skill_templates, skill_tools
@@ -649,6 +649,7 @@ async def _deliver_out_nodes(agent: dict, result: dict, actor: str, deliver_filt
             # «черновик команды в шине» нельзя — команда либо ушла, либо нет. Автор узла может
             # потребовать ожидания явно (`wait`), если следующий шаг читает то, что отправлено.
             ждать = bool(cfg.get("wait") or cfg.get("ждать")) or not черновик
+            _срок = decisions.срок_решения(cfg)
             item = await hitl_store.create(
                 run_id=str(run_id), agent_id=agent.get("id") or "", family=fam,
                 node=n.get("id") or "", title=n.get("title") or channel,
@@ -660,7 +661,11 @@ async def _deliver_out_nodes(agent: dict, result: dict, actor: str, deliver_filt
                          # поменяться, и действовать надо по текущему правилу, а не по записанному.
                          "класс": класс, "уровень": у, "решает": levels.кто_решает(у),
                          "основание": levels.основание(у), "черновик": черновик,
-                         "живёт_с": _time.time(), "живёт_сек": levels.ЖИВЁТ_ЧЕРНОВИК},
+                         "живёт_с": _time.time(), "живёт_сек": levels.ЖИВЁТ_ЧЕРНОВИК,
+                         # Срок решения — свойство ДЕЙСТВИЯ: объявляется у узла, иначе общий по
+                         # умолчанию. Запоминаем абсолютным моментом: правка настройки позже не
+                         # должна переписывать срок уже готовому черновику.
+                         "срок_сек": _срок, "срок_до": (_time.time() + _срок) if _срок else 0},
                 requested_by=actor)
             deliveries.append({"node": n.get("id"), "title": n.get("title"), "channel": channel,
                                "to": cfg.get("to"), "format": cfg.get("format"),

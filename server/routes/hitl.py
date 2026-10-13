@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from fastapi.responses import JSONResponse
 
-from .. import agent_store, audit_store, channel_tokens, hitl_store, levels, run_bus, run_queue, systems_store
+from .. import agent_store, audit_store, channel_tokens, decisions, hitl_store, levels, run_bus, run_queue, systems_store
 
 from .registry import access_check
 from ..deps import can_see_family, require_level, user
@@ -282,17 +282,10 @@ async def hitl_approve(item_id: str, body: dict = None, u: dict = Depends(user))
 
 
 async def _resume_job_after_hitl(item_id: str, payload: dict, decision: str) -> str | None:
-    """Если заявка принадлежит заданию очереди, которое ждёт решения (цепочка на HITL-шаге) —
-    вернуть его в очередь; воркер продолжит со следующего шага с учётом решения."""
-    job = None
-    jid = payload.get("job_id")
-    if jid:
-        job = await run_queue.get(jid)
-    if not job or job.get("status") != "awaiting_hitl":
-        job = await run_queue.find_awaiting_by_hitl(item_id)
-    if not job:
-        return None
-    await run_queue.resume(job["id"], decision, item_id)
-    await run_bus.bus().publish_request(job, obs.current_trace_id())
-    obs.log_event("info", "run_queue.resumed", job_id=job["id"], hitl_id=item_id, decision=decision)
-    return job["id"]
+    """Вернуть ждущее заявку задание цепочки в очередь.
+
+    Сама работа живёт в `server/decisions`: её зовёт и этот маршрут, и фоновый проход по срокам, а
+    фоновому проходу импортировать HTTP-домен незачем. Имя оставлено — по нему зовут из четырёх
+    мест этого файла.
+    """
+    return await decisions.возобновить_задание(item_id, payload, decision)
