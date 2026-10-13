@@ -125,6 +125,14 @@
  ],
  [
   "GET",
+  "/api/backlog/links"
+ ],
+ [
+  "GET",
+  "/api/backlog/review"
+ ],
+ [
+  "GET",
   "/api/billing"
  ],
  [
@@ -610,6 +618,10 @@
  [
   "POST",
   "/api/auth/refresh"
+ ],
+ [
+  "POST",
+  "/api/backlog/apply"
  ],
  [
   "POST",

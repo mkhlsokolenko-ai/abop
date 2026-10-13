@@ -4218,6 +4218,92 @@ def _t_redmine_create_issue(a):
         return f"Redmine ошибка: {type(ex).__name__} — {ex}"
 
 
+def _t_redmine_issues(a):
+    """Прочитать задачи проекта Redmine. ЧТЕНИЕ, без dry_run.
+    args: {project, status:open|closed|*, limit, issue_id, updated_after}. Ключ из REDMINE_API_KEY."""
+    if not REDMINE_API_KEY:
+        return "нет REDMINE_API_KEY в env — читать трекер нечем"
+    один = str(a.get("issue_id") or "").strip()
+    if один:
+        url = _guard_url(REDMINE_BASE.rstrip("/") + f"/issues/{int(один)}.json?include=journals")
+    else:
+        проект = str(a.get("project") or REDMINE_PROJECT or "")
+        if not проект:
+            return "не задан проект (project или env REDMINE_PROJECT)"
+        пар = [f"project_id={urllib.parse.quote(проект)}",
+               f"status_id={urllib.parse.quote(str(a.get('status') or 'open'))}",
+               f"limit={min(int(a.get('limit') or 100), 100)}"]
+        if a.get("updated_after"):
+            пар.append("updated_on=%3E%3D" + urllib.parse.quote(str(a["updated_after"])))
+        url = _guard_url(REDMINE_BASE.rstrip("/") + "/issues.json?" + "&".join(пар))
+    req = urllib.request.Request(url, headers={"X-Redmine-API-Key": REDMINE_API_KEY})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            d = json.loads(r.read().decode("utf-8", "replace"))
+    except Exception as ex:  # noqa: BLE001
+        return f"Redmine ошибка: {type(ex).__name__} — {ex}"
+    задачи = ([d["issue"]] if d.get("issue") else (d.get("issues") or []))
+    # Отдаём то, что нужно сверке, а не весь ответ: поля задачи, её статус, родителя (эпик),
+    # срок и объявленный DoD. DoD ищем там, где его объявляют люди, — в своём поле или в тексте.
+    из = []
+    for з in задачи:
+        из.append({
+            "id": з.get("id"), "subject": з.get("subject"),
+            "status": ((з.get("status") or {}).get("name") or ""),
+            "closed": bool((з.get("status") or {}).get("is_closed")),
+            "parent": ((з.get("parent") or {}).get("id")),
+            "project": ((з.get("project") or {}).get("identifier")
+                        or (з.get("project") or {}).get("name") or ""),
+            "assigned_to": ((з.get("assigned_to") or {}).get("name") or ""),
+            "due_date": з.get("due_date"), "done_ratio": з.get("done_ratio"),
+            "updated_on": з.get("updated_on"),
+            "description": (з.get("description") or "")[:4000],
+            "custom": {str(c.get("name") or ""): c.get("value")
+                       for c in (з.get("custom_fields") or [])},
+            "notes": [str((j.get("notes") or ""))[:500]
+                      for j in (з.get("journals") or []) if j.get("notes")][-10:],
+        })
+    return json.dumps({"issues": из, "total": d.get("total_count", len(из))}, ensure_ascii=False)
+
+
+def _t_redmine_update_issue(a):
+    """Обновить задачу Redmine: статус, комментарий, процент. ДЕЙСТВИЕ → dry_run по умолчанию.
+    args: {issue_id, status_id?, notes?, done_ratio?, run:true}."""
+    иид = str(a.get("issue_id") or "").strip()
+    if not иид:
+        return "не указана задача (issue_id)"
+    заметка = str(a.get("notes") or "")
+    статус = a.get("status_id")
+    доля = a.get("done_ratio")
+    что = ", ".join(x for x in [f"статус→{статус}" if статус else "",
+                                f"готовность→{доля}%" if доля is not None else "",
+                                f"комментарий ({len(заметка)} симв.)" if заметка else ""] if x)
+    if not (str(a.get("run")).lower() == "true"):
+        return f"[dry_run] Redmine: задача #{иид} — {что or 'без изменений'}. Реально — run=true."
+    if not REDMINE_API_KEY:
+        return "нет REDMINE_API_KEY в env контейнера abop-webapi — реальное обновление недоступно"
+    issue = {}
+    if статус:
+        issue["status_id"] = int(статус)
+    if доля is not None:
+        issue["done_ratio"] = max(0, min(100, int(доля)))
+    if заметка:
+        issue["notes"] = заметка[:8000]
+    if not issue:
+        return f"нечего менять в задаче #{иид}"
+    url = _guard_url(REDMINE_BASE.rstrip("/") + f"/issues/{int(иид)}.json")
+    req = urllib.request.Request(url, data=json.dumps({"issue": issue}).encode("utf-8"),
+                                 headers={"Content-Type": "application/json",
+                                          "X-Redmine-API-Key": REDMINE_API_KEY},
+                                 method="PUT")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            r.read()
+        return f"задача #{иид} обновлена: {что}"
+    except Exception as ex:  # noqa: BLE001
+        return f"Redmine ошибка: {type(ex).__name__} — {ex}"
+
+
 def mail_deliverable(to: str) -> tuple:
     """Можно ли писать по этому адресу НАРУЖУ. Возвращает (можно, причина отказа).
 
@@ -4566,6 +4652,10 @@ AGENT_TOOLS = {
                    'отправить письмо (Mailpit) с PDF-вложением — ДЕЙСТВИЕ, dry_run по умолчанию — args: {"to":"...","subject":"...","body":"...","attachment":"audit_report.pdf","run":true}'),
     "redmine_create_issue": (_t_redmine_create_issue,
                    'создать задачу в Redmine (аналог Jira) — ДЕЙСТВИЕ, dry_run по умолчанию — args: {"subject":"...","description":"...","project":"...","run":true}'),
+    "redmine_issues": (_t_redmine_issues,
+                   'прочитать задачи Redmine (статус, эпик-родитель, срок, DoD) — ЧТЕНИЕ — args: {"project":"...","status":"open","limit":100} или {"issue_id":123}'),
+    "redmine_update_issue": (_t_redmine_update_issue,
+                   'обновить задачу Redmine: статус/комментарий/готовность — ДЕЙСТВИЕ, dry_run по умолчанию — args: {"issue_id":123,"status_id":5,"notes":"...","run":true}'),
 }
 
 _AGENT_SYS = (

@@ -208,6 +208,38 @@ async def list_runs(agent_id: str | None = None, limit: int = 100) -> list[dict]
             for r in rows]
 
 
+async def недавние_с_доставкой(*, дней: int = 30, limit: int = 300) -> list[dict]:
+    """Прогоны за период с тем, что нужно сверке бэклога: доставка, находки, участки, ошибки.
+
+    Отдельно от `list_runs`, потому что сводке журнала доставка не нужна, а агенту бэклога нужна
+    именно она: «задача создана в Redmine: #123» — самое прямое основание связки. Тянуть payload
+    целиком ради этого не надо, поэтому поля достаём точечно.
+    """
+    т = tenancy.текущий()
+    if not _has_pg():
+        из = []
+        for r in _MEM.values():
+            if r.get("tenant") != т:
+                continue
+            из.append({"id": r.get("id"), "delivery": r.get("delivery") or [],
+                       "findings_summary": r.get("findings_summary") or {},
+                       "op_ids": r.get("op_ids") or [], "run_metrics": r.get("run_metrics") or {},
+                       "soft_errors": r.get("soft_errors") or [],
+                       "created_at": r.get("created_at")})
+        return из[:limit]
+    from .db import _conn
+    async with _conn() as conn:
+        cur = await conn.execute(
+            "SELECT id, payload->'delivery', payload->'findings_summary', payload->'op_ids', "
+            "payload->'run_metrics', payload->'soft_errors', created_at FROM runs "
+            "WHERE tenant=%s AND created_at > now() - (%s || ' days')::interval "
+            "ORDER BY created_at DESC LIMIT %s", (т, str(int(дней)), int(limit)))
+        rows = await cur.fetchall()
+    return [{"id": r[0], "delivery": r[1] or [], "findings_summary": r[2] or {},
+             "op_ids": r[3] or [], "run_metrics": r[4] or {}, "soft_errors": r[5] or [],
+             "created_at": r[6].isoformat() if r[6] else None} for r in rows]
+
+
 async def get(run_id: str) -> dict | None:
     """Прогон по id — только свой: в нём находки, суммы и выгрузка данных компании."""
     if not _has_pg():

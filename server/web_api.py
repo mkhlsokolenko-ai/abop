@@ -30,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, arbiter, assembly, audit_store, blackboard, planner, cachebus, channel_tokens, charts, clients, compute, contract_store, cost_estimate, dataplane_store, decisions, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, bpmn_import, dataplane_records, mcp_server, pipeline_store, process_deploy, process_store, rbac_map, reglament_store, chat_store, orchestrator, report_compose, report_store, choice_store, doclink, rules_store, run_cache_store, run_parts_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, arbiter, assembly, audit_store, backlog_store, blackboard, planner, cachebus, channel_tokens, charts, clients, compute, contract_store, cost_estimate, dataplane_store, decisions, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, bpmn_import, dataplane_records, mcp_server, pipeline_store, process_deploy, process_store, rbac_map, reglament_store, chat_store, orchestrator, report_compose, report_store, choice_store, doclink, rules_store, run_cache_store, run_parts_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 from .vectors import cosine as _cosine  # noqa: E402
 from .nlu import nlu_config  # noqa: E402  (пороги подбора переехали к разбору фразы)
@@ -392,12 +392,16 @@ from .routes import channels as _routes_channels  # noqa: E402
 # Лента контроля руководителя: смотреть свершившееся необратимое и управлять полномочиями
 # (ADR-066). Не согласование: руководитель чужие действия не подтверждает.
 from .routes import control as _routes_control  # noqa: E402
+# Агент тактического бэклога: сверяет сделанное с поручённым и закрывает задачи по объявленному DoD
+# (ADR-067). Разбор ничего не меняет, применение — отдельной ручкой.
+from .routes import backlog as _routes_backlog  # noqa: E402
 
 app.include_router(_routes_data.router)
 app.include_router(_routes_rules.router)
 app.include_router(_routes_verticals.router)
 app.include_router(_routes_channels.router)
 app.include_router(_routes_control.router)
+app.include_router(_routes_backlog.router)
 
 # Инъекция рецептов и коннекторов в ядро `ape` — забота СТАРТА, а не маршрута, но живёт она
 # рядом с доменом данных. Берём оттуда по имени: дублировать функцию ради чистоты импорта значило
@@ -514,6 +518,7 @@ async def _startup() -> None:
     ape.set_rule_store(rules_store.ЭФФЕКТИВНЫЕ)
     await run_cache_store.init()
     await hitl_store.init()
+    await backlog_store.init()        # память связок «прогон ↔ задача ↔ эпик» (ADR-067)
     await finding_store.init()
     await blackboard.init()               # доска прогона: общая память ветвей с авторством
     import asyncio as _asyncio
