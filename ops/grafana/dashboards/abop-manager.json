@@ -1,12 +1,18 @@
 {
   "title": "ABOP — срезы руководителя",
   "uid": "abop-manager",
-  "tags": ["abop", "руководителю"],
+  "tags": [
+    "abop",
+    "руководителю"
+  ],
   "timezone": "browser",
   "schemaVersion": 39,
   "version": 1,
   "refresh": "5m",
-  "time": { "from": "now-7d", "to": "now" },
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
   "description": "Что сделали люди и их агенты: объём, стоимость, время, решения. Источник — журнал прогонов ABOP (таблица runs, колонки actor/family/cost_rub/seconds). Пустая панель означает, что за выбранный период прогонов не было, а не что данные потеряны.",
   "templating": {
     "list": [
@@ -14,21 +20,35 @@
         "name": "tenant",
         "label": "Арендатор",
         "type": "query",
-        "datasource": { "type": "postgres", "uid": "abop-pg" },
+        "datasource": {
+          "type": "postgres",
+          "uid": "abop-pg"
+        },
         "query": "SELECT DISTINCT tenant FROM runs ORDER BY 1",
-        "current": { "text": "default", "value": "default" },
+        "current": {
+          "text": "default",
+          "value": "default"
+        },
         "refresh": 1
       },
       {
         "name": "family",
         "label": "Отдел",
         "type": "query",
-        "datasource": { "type": "postgres", "uid": "abop-pg" },
+        "datasource": {
+          "type": "postgres",
+          "uid": "abop-pg"
+        },
         "query": "SELECT DISTINCT COALESCE(NULLIF(family,''),'(не указан)') FROM runs WHERE tenant = '$tenant' ORDER BY 1",
         "includeAll": true,
         "multi": true,
-        "current": { "text": "All", "value": "$__all" },
-        "refresh": 1
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "refresh": 1,
+        "allValue": ".*",
+        "description": "Отдел прогона. «All» = регулярное выражение .*, поэтому панель не падает, даже когда отделов ещё нет."
       }
     ]
   },
@@ -36,7 +56,12 @@
     {
       "type": "text",
       "title": "Чем это посчитано",
-      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
       "options": {
         "mode": "markdown",
         "content": "Источник — **журнал прогонов** (`runs`): одна строка на выполненный прогон, записанная в момент исполнения. Стоимость — реальные токены по тарифу (`run_metrics.cost`), время — от начала до конца прогона. **Пустое значение стоимости означает «не посчиталось», а не «ноль»** — на своём боксе прогон стоит 0 ₽, и это записано нулём явно. Время человека у экрана здесь не показывается: его мерит приложение на компьютере и хранит у себя (ADR-064)."
@@ -45,26 +70,54 @@
     {
       "type": "stat",
       "title": "Прогонов за период",
-      "datasource": { "type": "postgres", "uid": "abop-pg" },
-      "gridPos": { "h": 5, "w": 5, "x": 0, "y": 4 },
-      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 }, "overrides": [] },
+      "datasource": {
+        "type": "postgres",
+        "uid": "abop-pg"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 0,
+        "y": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0
+        },
+        "overrides": []
+      },
       "targets": [
         {
           "format": "table",
-          "rawSql": "SELECT count(*) AS \"прогонов\" FROM runs WHERE tenant = '$tenant' AND ($__timeFilter(created_at)) AND (COALESCE(NULLIF(family,''),'(не указан)') IN ($family) OR '$family' = '$__all')"
+          "rawSql": "SELECT count(*) AS \"прогонов\" FROM runs WHERE tenant = '$tenant' AND ($__timeFilter(created_at)) AND COALESCE(NULLIF(family,''),'(не указан)') ~ '${family:regex}'"
         }
       ]
     },
     {
       "type": "stat",
       "title": "Стоимость за период",
-      "datasource": { "type": "postgres", "uid": "abop-pg" },
-      "gridPos": { "h": 5, "w": 5, "x": 5, "y": 4 },
-      "fieldConfig": { "defaults": { "unit": "currencyRUB", "decimals": 2 }, "overrides": [] },
+      "datasource": {
+        "type": "postgres",
+        "uid": "abop-pg"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 5,
+        "y": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyRUB",
+          "decimals": 2
+        },
+        "overrides": []
+      },
       "targets": [
         {
           "format": "table",
-          "rawSql": "SELECT COALESCE(sum(cost_rub),0) AS \"рублей\" FROM runs WHERE tenant = '$tenant' AND ($__timeFilter(created_at)) AND (COALESCE(NULLIF(family,''),'(не указан)') IN ($family) OR '$family' = '$__all')"
+          "rawSql": "SELECT COALESCE(sum(cost_rub),0) AS \"рублей\" FROM runs WHERE tenant = '$tenant' AND ($__timeFilter(created_at)) AND COALESCE(NULLIF(family,''),'(не указан)') ~ '${family:regex}'"
         }
       ]
     },
@@ -72,13 +125,27 @@
       "type": "stat",
       "title": "Работали агенты",
       "description": "Суммарное время исполнения прогонов. Это НЕ «сэкономленные часы людей»: норматива на ручную работу у нас нет, и выдумывать его мы не стали.",
-      "datasource": { "type": "postgres", "uid": "abop-pg" },
-      "gridPos": { "h": 5, "w": 6, "x": 10, "y": 4 },
-      "fieldConfig": { "defaults": { "unit": "s", "decimals": 0 }, "overrides": [] },
+      "datasource": {
+        "type": "postgres",
+        "uid": "abop-pg"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 10,
+        "y": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 0
+        },
+        "overrides": []
+      },
       "targets": [
         {
           "format": "table",
-          "rawSql": "SELECT COALESCE(sum(seconds),0) AS \"секунд\" FROM runs WHERE tenant = '$tenant' AND ($__timeFilter(created_at)) AND (COALESCE(NULLIF(family,''),'(не указан)') IN ($family) OR '$family' = '$__all')"
+          "rawSql": "SELECT COALESCE(sum(seconds),0) AS \"секунд\" FROM runs WHERE tenant = '$tenant' AND ($__timeFilter(created_at)) AND COALESCE(NULLIF(family,''),'(не указан)') ~ '${family:regex}'"
         }
       ]
     },
@@ -86,9 +153,23 @@
       "type": "stat",
       "title": "Решений ждёт",
       "description": "Заявки в состоянии pending: что готово и не отправлено. Отдельно — сколько из них просрочено (срок решения прошёл, доставка не состоялась).",
-      "datasource": { "type": "postgres", "uid": "abop-pg" },
-      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 4 },
-      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 }, "overrides": [] },
+      "datasource": {
+        "type": "postgres",
+        "uid": "abop-pg"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 8,
+        "x": 16,
+        "y": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0
+        },
+        "overrides": []
+      },
       "targets": [
         {
           "format": "table",
@@ -99,26 +180,60 @@
     {
       "type": "timeseries",
       "title": "Прогоны по дням",
-      "datasource": { "type": "postgres", "uid": "abop-pg" },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
-      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "bars", "fillOpacity": 60 } }, "overrides": [] },
+      "datasource": {
+        "type": "postgres",
+        "uid": "abop-pg"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 60
+          }
+        },
+        "overrides": []
+      },
       "targets": [
         {
           "format": "time_series",
-          "rawSql": "SELECT date_trunc('day', created_at) AS time, COALESCE(NULLIF(family,''),'(не указан)') AS metric, count(*) AS value FROM runs WHERE tenant = '$tenant' AND ($__timeFilter(created_at)) AND (COALESCE(NULLIF(family,''),'(не указан)') IN ($family) OR '$family' = '$__all') GROUP BY 1, 2 ORDER BY 1"
+          "rawSql": "SELECT date_trunc('day', created_at) AS time, COALESCE(NULLIF(family,''),'(не указан)') AS metric, count(*) AS value FROM runs WHERE tenant = '$tenant' AND ($__timeFilter(created_at)) AND COALESCE(NULLIF(family,''),'(не указан)') ~ '${family:regex}' GROUP BY 1, 2 ORDER BY 1"
         }
       ]
     },
     {
       "type": "timeseries",
       "title": "Стоимость по дням",
-      "datasource": { "type": "postgres", "uid": "abop-pg" },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
-      "fieldConfig": { "defaults": { "unit": "currencyRUB", "custom": { "drawStyle": "bars", "fillOpacity": 60 } }, "overrides": [] },
+      "datasource": {
+        "type": "postgres",
+        "uid": "abop-pg"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyRUB",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 60
+          }
+        },
+        "overrides": []
+      },
       "targets": [
         {
           "format": "time_series",
-          "rawSql": "SELECT date_trunc('day', created_at) AS time, COALESCE(NULLIF(family,''),'(не указан)') AS metric, COALESCE(sum(cost_rub),0) AS value FROM runs WHERE tenant = '$tenant' AND ($__timeFilter(created_at)) AND (COALESCE(NULLIF(family,''),'(не указан)') IN ($family) OR '$family' = '$__all') GROUP BY 1, 2 ORDER BY 1"
+          "rawSql": "SELECT date_trunc('day', created_at) AS time, COALESCE(NULLIF(family,''),'(не указан)') AS metric, COALESCE(sum(cost_rub),0) AS value FROM runs WHERE tenant = '$tenant' AND ($__timeFilter(created_at)) AND COALESCE(NULLIF(family,''),'(не указан)') ~ '${family:regex}' GROUP BY 1, 2 ORDER BY 1"
         }
       ]
     },
@@ -126,19 +241,53 @@
       "type": "table",
       "title": "Кто что запускал",
       "description": "По людям: сколько прогонов, сколько из них с замечаниями, сколько стоило, сколько работали агенты. «С замечаниями» — не ошибка человека: это вердикт прогона по DoD.",
-      "datasource": { "type": "postgres", "uid": "abop-pg" },
-      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 17 },
+      "datasource": {
+        "type": "postgres",
+        "uid": "abop-pg"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 17
+      },
       "fieldConfig": {
         "defaults": {},
         "overrides": [
-          { "matcher": { "id": "byName", "options": "рублей" }, "properties": [{ "id": "unit", "value": "currencyRUB" }, { "id": "decimals", "value": 2 }] },
-          { "matcher": { "id": "byName", "options": "работали агенты" }, "properties": [{ "id": "unit", "value": "s" }] }
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "рублей"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyRUB"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "работали агенты"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              }
+            ]
+          }
         ]
       },
       "targets": [
         {
           "format": "table",
-          "rawSql": "SELECT COALESCE(NULLIF(actor,''),'(не указан)') AS \"человек\", COALESCE(NULLIF(family,''),'(не указан)') AS \"отдел\", count(*) AS \"прогонов\", count(*) FILTER (WHERE verdict_ok IS FALSE) AS \"с замечаниями\", COALESCE(sum(cost_rub),0) AS \"рублей\", COALESCE(sum(seconds),0) AS \"работали агенты\" FROM runs WHERE tenant = '$tenant' AND ($__timeFilter(created_at)) AND (COALESCE(NULLIF(family,''),'(не указан)') IN ($family) OR '$family' = '$__all') GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 50"
+          "rawSql": "SELECT COALESCE(NULLIF(actor,''),'(не указан)') AS \"человек\", COALESCE(NULLIF(family,''),'(не указан)') AS \"отдел\", count(*) AS \"прогонов\", count(*) FILTER (WHERE verdict_ok IS FALSE) AS \"с замечаниями\", COALESCE(sum(cost_rub),0) AS \"рублей\", COALESCE(sum(seconds),0) AS \"работали агенты\" FROM runs WHERE tenant = '$tenant' AND ($__timeFilter(created_at)) AND COALESCE(NULLIF(family,''),'(не указан)') ~ '${family:regex}' GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 50"
         }
       ]
     },
@@ -146,9 +295,20 @@
       "type": "table",
       "title": "Что ушло наружу",
       "description": "Свершившееся необратимое: подтверждённые доставки по каналам и адресатам. Отправленное не вернуть — здесь это видно постфактум, а управлять можно только тем, что будет можно дальше (снять разрешение).",
-      "datasource": { "type": "postgres", "uid": "abop-pg" },
-      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 17 },
-      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "datasource": {
+        "type": "postgres",
+        "uid": "abop-pg"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 17
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
       "targets": [
         {
           "format": "table",
@@ -160,9 +320,20 @@
       "type": "table",
       "title": "Не дошло: отказы и просроченные решения",
       "description": "Что НЕ состоялось и почему. Самая полезная таблица на экране: по ней видно, где работа встала, а не где всё хорошо.",
-      "datasource": { "type": "postgres", "uid": "abop-pg" },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 26 },
-      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "datasource": {
+        "type": "postgres",
+        "uid": "abop-pg"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 26
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
       "targets": [
         {
           "format": "table",
