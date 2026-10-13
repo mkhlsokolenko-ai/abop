@@ -246,9 +246,20 @@ def can_see_family(u: dict, family: str) -> bool:
     return u.get("department") in ("*", None) or u.get("department") == family
 
 
+def уровень_не_ниже(u: dict, minimum: str) -> bool:
+    """То же сравнение, что и `require_level`, но ответом, а не исключением.
+
+    Нужно там, где недостаток уровня — не ошибка, а ВЕТКА: лестница ответственности на запуске
+    прогона не отказывает человеку без `manager`, а заводит ему заявку на подтверждение
+    (`routes/runs`, PRD 2.3). Через `try/except HTTPException` такое читается как обработка сбоя,
+    которым оно не является.
+    """
+    return _LEVELS.index(u.get("level", "analyst")) >= _LEVELS.index(minimum)
+
+
 def require_level(u: dict, minimum: str) -> None:
     """RBAC-гейт мутаций: уровень пользователя ≥ minimum (иначе 403)."""
-    if _LEVELS.index(u.get("level", "analyst")) < _LEVELS.index(minimum):
+    if not уровень_не_ниже(u, minimum):
         raise HTTPException(403, f"нужен уровень доступа ≥ {minimum} (у вас {u.get('level')})")
 
 

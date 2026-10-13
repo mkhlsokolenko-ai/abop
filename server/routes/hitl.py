@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from fastapi.responses import JSONResponse
 
-from .. import agent_store, audit_store, channel_tokens, hitl_store, run_bus, run_queue, systems_store
+from .. import agent_store, audit_store, channel_tokens, hitl_store, levels, run_bus, run_queue, systems_store
 
 from .registry import access_check
 from ..deps import can_see_family, require_level, user
@@ -129,8 +129,21 @@ async def hitl_item(item_id: str, u: dict = Depends(user)) -> dict:
             "result": payload.get("result"), "source": payload.get("source")}
 
 
+def _уровень_заявки(item: dict) -> int:
+    """Уровень действия, которого ждёт заявка (PRD, раздел 2).
+
+    Класс считаем по каналу и АДРЕСАТУ заявки, а не по каналу одному: письмо коллеге — У1, то же
+    письмо клиенту — У2. Объявление класса у узла доехало в `payload.cfg` и сильнее таблицы.
+    """
+    cfg = ((item or {}).get("payload") or {}).get("cfg") or {}
+    класс = levels.класс_действия(str(item.get("channel") or ""),
+                                  адресат=str(item.get("to_addr") or ""),
+                                  объявлен=levels.объявленный_класс(cfg))
+    return levels.уровень(класс)
+
+
 def _можно_решать(u: dict, item: dict, decision: str) -> None:
-    """Кто вправе подтвердить заявку. Обычный путь — `manager+`; канал — узкое исключение.
+    """Кто вправе подтвердить заявку. Решает УРОВЕНЬ действия, а не должность человека.
 
     Канал (бот в мессенджере) имеет уровень `analyst` и мутации не проходит. Но тогда он не смог бы
     отправить письмо коллеге, а это ровно то, зачем он нужен (решение владельца 13.10). Поэтому
@@ -143,9 +156,27 @@ def _можно_решать(u: dict, item: dict, decision: str) -> None:
       отправка из канала закрыта. Ограничение без перечня — предложение, а не ограничение.
 
     Отклонить (`reject`) каналу можно всегда: отказ от отправки необратимым не бывает.
+
+    **Почему не «любая заявка требует manager», как было до 13.10.** Такое правило делает
+    руководителя нажимателем кнопок: отправку КП подтверждал бы не тот, в чьи обязанности она
+    входит, а тот, у кого выше уровень доступа. Владелец это отверг прямо, и лестница ставит
+    решение туда, где лежит ответственность: У2 — исполнитель прогона, У3 — `manager+`.
+
+    Отдел заявки уже проверен вызывающим (`can_see_family`), поэтому «свой прогон» здесь — это
+    про конкретного человека, а не про доступ.
     """
     if not u.get("channel"):
-        require_level(u, "manager")
+        if _уровень_заявки(item) >= 3:
+            # У3: необратимое с правовыми последствиями. Пока адресуется по отделу; адресный
+            # владелец операции карты процессов — следующий пункт порядка работ (PRD, 10.4).
+            require_level(u, "manager")
+            return
+        кто = {str(u.get("name") or ""), str(u.get("sub") or "")} - {""}
+        своя = str(item.get("requested_by") or "") in кто
+        if not своя:
+            # Чужую заявку закрывает тот, кто вправе отвечать за отдел: человек ушёл в отпуск, а
+            # письмо осталось. Это не «эскалация по умолчанию» — своя заявка руководителя не ждёт.
+            require_level(u, "manager")
         return
     канал_заявки = str(item.get("channel") or "")
     if канал_заявки not in channel_tokens.КАНАЛЫ_ДОСТАВКИ:
@@ -193,9 +224,17 @@ async def hitl_approve(item_id: str, body: dict = None, u: dict = Depends(user))
         ag = await agent_store.get(item.get("agent_id") or "")
         if not ag:
             raise HTTPException(404, "агент заявки не найден")
-        job = await run_queue.enqueue(agent_id=ag["id"], actor=actor, kind="run",
-                                      payload={"contract_audit_id": ag.get("contract_audit_id"), "use_cache": False,
-                                               "user_context": "", "deliver_filter": "",
+        # Заявка на запуск по лестнице (У3) несёт исходный запрос: предмет работы, контекст и выбор
+        # доставки. Без этого подтверждённый прогон уходил с пустым контекстом — то есть делал не
+        # то, что подтвердили, и это было бы хуже отказа.
+        запуск = payload.get("запуск") if isinstance(payload.get("запуск"), dict) else {}
+        чей = str(запуск.get("actor") or "") or actor
+        job = await run_queue.enqueue(agent_id=ag["id"], actor=чей, kind="run",
+                                      payload={"contract_audit_id": запуск.get("contract_audit_id")
+                                               or ag.get("contract_audit_id"), "use_cache": False,
+                                               "user_context": str(запуск.get("user_context") or ""),
+                                               "deliver_filter": str(запуск.get("deliver_filter") or ""),
+                                               "actor_sub": запуск.get("actor_sub") or None,
                                                "trigger": payload.get("trigger_node"), "trace_id": obs.current_trace_id()})
         await run_bus.bus().publish_request(job, obs.current_trace_id())
         await hitl_store.decide(item_id, "approved", actor, reason)

@@ -31,11 +31,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 
 from .. import agent_store, arbiter, assembly, audit_store, blackboard, channel_tokens, contract_store, finding_store
-from .. import findings, hitl_store, identity_store
+from .. import findings, hitl_store, identity_store, levels
 from .. import observability as obs
 from .. import pipeline_graph, report_store, run_bus, run_queue, run_store, runner, schema_store
 from .. import skill_contract
-from ..deps import _sub, _uid_of, can_see_family, require_level, user
+from ..deps import _sub, _uid_of, can_see_family, require_level, user, уровень_не_ниже
 from ..report_context import _labels_ctx, _report_context
 from ..run_exec import _template_for_run, execute_agent_run
 from .agents import agent_slots
@@ -232,32 +232,23 @@ async def run_start(body: dict, u: dict = Depends(user),
     agent = await agent_store.get(agent_id) if agent_id else None
     if not agent:
         raise HTTPException(404, "нет такого AgentVersion")
-    # Канал в мессенджере запускает только то, что читает и считает. Это проверка НА ЗАПУСКЕ, а не
-    # фильтр списка: спрятать агента в списке — значит защититься от интерфейса, а не от запроса.
-    наружу = assembly.действует_наружу(agent)
+    # Лестница ответственности на запуске (PRD, раздел 2). Проверяем КЛАСС действий агента, а не
+    # имена каналов: прежде здесь стояли два перечня — «каналы доставки, разрешённые боту» и
+    # «режимы навыков» — и оба отвечали на один вопрос «какого уровня то, что агент делает».
+    # Проверка стоит НА ЗАПУСКЕ, а не фильтром списка: спрятать агента в списке — значит
+    # защититься от интерфейса, а не от запроса.
+    действия = levels.действия_агента(agent, ape.skill_safety)
     if u.get("channel"):
-        # Каналу позволено спросить данные и отослать их коллегам письмом (решение владельца
-        # 13.10). Поэтому запрет не «любое внешнее действие», а точный перечень: почта можно,
-        # остальное необратимое — нет. Сама отправка письма всё равно пойдёт через подтверждение
-        # человеком, это ниже, в `run_exec._deliver_out_nodes`.
-        чужие = sorted({c for c in наружу if c not in channel_tokens.КАНАЛЫ_ДОСТАВКИ})
-        if чужие:
+        # Политика канала УЖЕ лестницы и живёт в `channel_tokens.вне_канала`: уровень действия и
+        # «что можно начинать из переписки» — разные вопросы. Класс `по_адресату` проходит
+        # намеренно: адресата на запуске часто ещё нет, и проверит его доставка
+        # (`run_exec._deliver_out_nodes` + подтверждение заявки).
+        вне = channel_tokens.вне_канала(действия)
+        if вне:
             raise HTTPException(403, "в канале «" + str(u.get("channel")) + "» нельзя запускать "
-                                "агента с действиями в " + ", ".join(чужие)
-                                + ": запустите его из приложения, где видно последствия. "
-                                "Из канала доступны только " + ", ".join(channel_tokens.КАНАЛЫ_ДОСТАВКИ)
-                                + " и подготовка документов")
-        # Режим навыка — объявленное свойство: `action` меняет состояние внешней системы помимо
-        # доставки, и в мессенджере ему места нет, даже если OUT-узла у агента нет вовсе.
-        узлы = ((agent.get("graph") or {}).get("nodes") or [])
-        действия = sorted({str(n.get("skill") or "") for n in узлы
-                           if isinstance(n, dict) and n.get("skill")
-                           and (ape.skill_safety(str(n.get("skill"))) or {}).get("mode")
-                           not in channel_tokens.РЕЖИМЫ_НАВЫКОВ})
-        if действия:
-            raise HTTPException(403, "в канале «" + str(u.get("channel")) + "» нельзя запускать "
-                                "навыки, меняющие внешние системы: " + ", ".join(действия)
-                                + ". Запустите агента из приложения.")
+                                "этого агента: " + "; ".join(sorted(вне))
+                                + ". Запустите его из приложения, где видно последствия: из "
+                                "переписки доступны чтение, расчёт и письмо коллеге")
     contract = await contract_store.get(agent.get("contract_audit_id") or audit_id)
     if not contract:
         contract = {"intake": {"autonomy_ceiling": agent.get("autonomy_max") or "A2"}, "bundle": {}}
@@ -266,6 +257,47 @@ async def run_start(body: dict, u: dict = Depends(user),
     if not _rate_check(actor):
         obs.inc("abop_rate_limited_total")
         raise HTTPException(429, f"слишком много прогонов: лимит {_USER_RATE_MAX} за {_USER_RATE_WINDOW}с — подождите")
+    # У3 подтверждается В НАЧАЛЕ сценария (PRD, 2.3). Подтверждать последний шаг многосоставной
+    # цепочки бессмысленно: к этому моменту всё остальное уже произошло, и «нет» ничего не отменит.
+    # Поэтому агент с объявленным необратимым действием не запускается напрямую — рождается заявка
+    # на ЗАПУСК, и человек решает один раз, видя план целиком.
+    #
+    # Решает `manager+` (лестница: У3 — менеджер зоны ответственности). Запускающий менеджер
+    # проходит сам: он и есть точка решения, и запуском он её уже применил. Адресный владелец
+    # операции карты процессов — следующий пункт порядка работ (PRD, 10.4); пока заявка видна
+    # отделу, как все остальные.
+    необратимые = [д for д in действия if д["класс"] == levels.НЕОБРАТИМОЕ]
+    if необратимые and (u.get("channel") or not уровень_не_ниже(u, "manager")):
+        перечень = ", ".join(sorted({str(д["что"]) for д in необратимые}))
+        item = await hitl_store.create(
+            run_id="", agent_id=agent["id"], family=agent.get("family") or "",
+            node=str((необратимые[0] or {}).get("узел") or ""),
+            title=f"Запуск сценария с необратимым действием: {agent.get('name') or agent['id']}",
+            channel="spawn", to_addr="",
+            payload={"kind": "spawn", "agent_name": agent.get("name"),
+                     "уровень": 3, "класс": levels.НЕОБРАТИМОЕ,
+                     "основание": levels.основание(3),
+                     # Запрос едет с заявкой целиком: после подтверждения прогон должен пойти с тем
+                     # же предметом и контекстом, а не с пустым. Прежний путь spawn их терял.
+                     "запуск": {"contract_audit_id": agent.get("contract_audit_id") or audit_id,
+                                # Прогон остаётся ПРОГОНОМ ЗАКАЗЧИКА, а не подтверждающего: иначе
+                                # человек перестаёт видеть в журнале то, что сам же и просил.
+                                "actor": actor, "actor_sub": _sub(u),
+                                "user_context": str((body or {}).get("context") or "")[:20000],
+                                "deliver_filter": "" if isinstance((body or {}).get("deliver"), bool)
+                                                  else str((body or {}).get("deliver") or "").strip()},
+                     "html": ("<p>Агент «" + str(agent.get("name") or agent["id"]) + "» содержит "
+                              "необратимые действия: " + перечень + ".</p><p>" + levels.основание(3)
+                              + ". После подтверждения прогон встанет в очередь и выполнится "
+                              "целиком.</p>")},
+            requested_by=actor)
+        await audit_store.record(actor, "run.spawn_hitl", agent["id"],
+                                 {"уровень": 3, "действия": перечень, "hitl_id": item["id"]},
+                                 severity="warn")
+        return JSONResponse({"state": "awaiting_hitl", "hitl_id": item["id"], "уровень": 3,
+                             "основание": levels.основание(3), "действия": перечень,
+                             "note": "сценарий с необратимым действием подтверждают до запуска"},
+                            status_code=202)
     user_context = str((body or {}).get("context") or "").strip()[:20000]  # задача/файл/ссылка из чата
     # Сквозной ID: агент адресен под пользователя — подмешиваем его профиль (кто он, отдел, аккаунты
     # в системах: какой ящик/Redmine-исполнитель/CRM-владелец). Наследует RBAC/ABAC (department из JWT).
