@@ -24,12 +24,17 @@ const ЗНАК = { "новый адресат": "◆", "нерабочее вр�
 export async function mount(root, ctx) {
   const { api, esc, toast, humanError, card, origin, confirm } = ctx;
   let данные = null, err = "", loading = true, дней = 7, busy = "";
+  // Разбор бэклога грузим отдельным запросом: он ходит в трекер и может быть медленнее ленты.
+  // Нет трекера — блока просто нет, лента от этого не страдает.
+  let бэклог = null;
 
   async function load() {
     loading = true; render();
     try { данные = await api(M + "/feed?days=" + дней); err = ""; }
     catch (e) { err = humanError(e); данные = null; }
     loading = false; render();
+    try { бэклог = await api(M + "/backlog?days=" + Math.max(дней, 30)); render(); }
+    catch { бэклог = null; }
   }
 
   async function снять(id, кто) {
@@ -138,6 +143,32 @@ export async function mount(root, ctx) {
     });
   }
 
+  function бэклогHTML() {
+    const б = бэклог || {};
+    if (б["ошибка"] || !(б["решения"] || []).length) {
+      // Молчим, а не показываем пустой блок: трекер может быть не подключён, и пустая плашка
+      // читалась бы как «задач нет».
+      return "";
+    }
+    const стоит = (б["решения"] || []).filter((р) => р["решение"] && р["решение"] !== "закрыть");
+    const эпики = (б["эпики"] || []).slice(0, 4).map((э) =>
+      `<div style="font-size:12.5px;padding:3px 0">${esc(э["строка"])}</div>`).join("");
+    const порядок = (б["очерёдность"] || []).slice(0, 6).map((o) => `<div style="display:flex;gap:9px;align-items:baseline;font-size:12px;padding:3px 0">
+      <span style="font-family:var(--mono);color:var(--ink-3);min-width:46px">#${esc(o["issue_id"])}</span>
+      <span style="flex:1">${esc(o["subject"] || "")}</span>
+      <span style="color:var(--ink-3)">${esc(o["порядок_потому"])}</span>
+      <span style="color:var(--ink-2);min-width:150px">${esc(o["почему"] || o["состояние"] || "")}</span>
+    </div>`).join("");
+    return card({
+      "что": "Тактический бэклог",
+      "состояние": `${б["задач"]} задач · к закрытию ${(б["к_закрытию"] || []).length}`,
+      "справа": `стоит ${стоит.length}`,
+      "суть": "Что из поручённого сделано, что стоит и в каком порядке брать.",
+      "происхождение": б["чем_посчитано"] || "",
+      "действия": [`<div style="width:100%">${эпики}${эпики ? '<div style="height:8px"></div>' : ""}${порядок}</div>`],
+    });
+  }
+
   function render() {
     const d = данные || {};
     const окна = [7, 14, 30].map((n) => `<button data-days="${n}" style="${BTN}${n === дней ? ";border-color:var(--line-2);font-weight:650" : ""}">${n} дн.</button>`).join("");
@@ -157,6 +188,7 @@ export async function mount(root, ctx) {
         : card({ "что": "Наружу ничего не уходило", "суть": "За период внешних отправок не было.",
                  "происхождение": "журнал решений" })) : ""}
       ${данные ? разрешенияHTML() : ""}
+      ${бэклогHTML()}
     </div>`;
     root.querySelectorAll("[data-days]").forEach((b) => b.onclick = () => { дней = Number(b.dataset.days); load(); });
     root.querySelectorAll("[data-off]").forEach((b) => b.onclick = () => снять(b.dataset.off, b.dataset["кто"]));

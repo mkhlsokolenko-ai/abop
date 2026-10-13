@@ -33,6 +33,19 @@ def feed(days: int = 7) -> dict:
         raise _ошибка(ex) from ex
 
 
+@router.get("/backlog")
+def backlog(days: int = 30) -> dict:
+    """Разбор тактического бэклога: эпики, что стоит, очерёдность. Ничего не меняет.
+
+    Применение (закрытие задач) здесь НЕ проксируем намеренно: это отдельное действие, и место
+    ему не в ленте, которую читают.
+    """
+    try:
+        return abop.backlog_review(days=days)
+    except Exception as ex:  # noqa: BLE001 — трекер может быть не подключён; это не ошибка ленты
+        return {"ошибка": str(ex)[:300]}
+
+
 @router.delete("/permissions/{binding}")
 def revoke(binding: str) -> dict:
     """Снять постоянное разрешение. Необратимым не является: человек может привязать канал снова."""

@@ -394,6 +394,11 @@ def control_feed(days: int = 7) -> dict:
     return _req("GET", f"/api/control/feed?days={int(days)}", timeout=30) or {}
 
 
+def backlog_review(days: int = 30) -> dict:
+    """Разбор бэклога (manager+). Трекер может быть не подключён — тогда прилетит отказ сервера."""
+    return _req("GET", f"/api/backlog/review?days={int(days)}", timeout=60) or {}
+
+
 def control_revoke(binding: str) -> dict:
     """Снять постоянное разрешение (привязку канала) человека своего отдела."""
     return _req("DELETE", "/api/control/permissions/" + urllib.request.quote(binding),
