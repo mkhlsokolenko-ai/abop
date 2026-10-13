@@ -250,6 +250,26 @@ def test_датасорс_только_на_чтение_и_без_пароля_
     assert "GF_DS_PG_PASSWORD" in compose, "переменная пароля не передаётся контейнеру"
 
 
+def test_каждая_панель_называет_свой_источник_данных():
+    """Панель без датасорса берёт «тот, что по умолчанию» — и держится на случайности.
+
+    Пока в Grafana был один Prometheus, 26 панелей обзора работали без указания источника. Теперь
+    источников два, и дашборд держался на том, что у Prometheus стоит `isDefault`. Стоило бы
+    сделать основным Postgres — и все панели обзора молча начали бы спрашивать SQL-источник
+    запросами PromQL.
+    """
+    import json as _json
+
+    for файл in ("abop-manager.json", "abop-overview.json"):
+        d = _json.loads((ДАШБОРД_ПУТЬ.parent / файл).read_text(encoding="utf-8"))
+        безымянные = [п.get("title") for п in d["panels"]
+                      if п.get("type") != "text" and not (п.get("datasource") or {}).get("uid")]
+        assert not безымянные, f"{файл}: панели без источника данных: {безымянные}"
+    # uid источников задан в провижининге, а не сгенерирован: в другой установке он был бы другим.
+    пром = (КОРЕНЬ / "ops" / "grafana" / "provisioning" / "datasources" / "prometheus.yml").read_text(encoding="utf-8")
+    assert "uid: abop-prom" in пром, "у Prometheus нет устойчивого uid — ссылки панелей разъедутся"
+
+
 def test_провайдер_дашбордов_подхватит_новый():
     """Дашборд кладётся в ту же папку, которую монтирует compose, — иначе его просто не видно."""
     compose = (КОРЕНЬ / "ops" / "docker-compose.observability.yml").read_text(encoding="utf-8")
