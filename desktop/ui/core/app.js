@@ -394,6 +394,52 @@ function railModules() {
 // Сколько действий ждёт решения — показываем на кнопке чата в боковом меню: очередь жила только
 // внутри чата, и из «Прогонов» или «Кабинета» о висящих письмах и задачах было не узнать.
 let hitlCount = 0;
+// ── строка живой работы ─────────────────────────────────────────────────────────────────────
+// «что идёт, где оно и сколько уже стоило» — одной строкой и из любого раздела. Опрос идёт, только
+// пока что-то действительно идёт: пустой опрос раз в пять секунд — это батарея ноутбука за то, что
+// никому не нужно. Поэтому пауза растёт, когда живого нет.
+let _живоеTimer = null;
+let _живоеПусто = 0;
+function живаяСтрокаHTML(список) {
+  if (!список.length) return "";
+  const r = список[0];
+  const ещё = список.length > 1 ? ` · и ещё ${список.length - 1}` : "";
+  const сек = r["начато"] ? Math.max(0, Math.round((Date.now() - Date.parse(r["начато"])) / 1000)) : 0;
+  const длит = длительность(сек);
+  const знак = r.status === "running" ? "●" : (r.status === "awaiting_hitl" ? "◐" : "○");
+  const куда = r.status === "awaiting_hitl" ? "decisions" : "runs";
+  return `<div id="liveWork" style="display:flex;gap:10px;align-items:center;padding:6px 12px;border-bottom:1px solid var(--line);font-size:12px">
+    <span style="color:var(--ok-ink)">${знак}</span>
+    <b style="font-weight:650">${esc(r["что"])}</b>
+    <span style="color:var(--ink-2)">${esc(r.agent_id || "агент")}</span>
+    ${r["шаг"] ? `<span style="color:var(--ink-3)">${esc(r["шаг"])}</span>` : ""}
+    ${длит ? `<span style="font-family:var(--mono);color:var(--ink-3)">${esc(длит)}</span>` : ""}
+    ${r["место"] ? `<span style="color:var(--ink-3)">в очереди ${esc(r["место"])}</span>` : ""}
+    <span style="color:var(--ink-3)">${esc(ещё)}</span>
+    <button id="liveOpen" data-go="${esc(куда)}" style="margin-left:auto;padding:3px 10px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);color:var(--ink);font-size:11.5px;cursor:pointer">Открыть</button>
+  </div>`;
+}
+function длительность(с) {
+  if (!с) return "";
+  if (с < 60) return с + " с";
+  const м = Math.floor(с / 60), о = с % 60;
+  return о ? `${м} м ${String(о).padStart(2, "0")} с` : `${м} м`;
+}
+async function tickЖивое() {
+  const узел = $("liveWorkSlot");
+  if (!узел) return;
+  let список = [];
+  try { список = ((await api("/api/modules/runs/live")) || {})["живое"] || []; }
+  catch { список = []; }            // движок недоступен — строки просто нет, это не ошибка
+  узел.innerHTML = живаяСтрокаHTML(список);
+  const b = $("liveOpen");
+  if (b) b.onclick = () => loadModule(b.dataset.go);
+  _живоеПусто = список.length ? 0 : Math.min(_живоеПусто + 1, 6);
+  clearTimeout(_живоеTimer);
+  _живоеTimer = setTimeout(tickЖивое, список.length ? 5000 : 5000 + _живоеПусто * 5000);
+}
+export function startЖивое() { clearTimeout(_живоеTimer); tickЖивое(); }
+
 export function setHitlCount(n) {
   const v = Math.max(0, Number(n) || 0);
   if (v === hitlCount) return;
@@ -814,6 +860,10 @@ async function boot() {
   $("panel").innerHTML = "";
   if (MODULES.length) loadModule(MODULES.find((m) => m.id === "chat") ? "chat" : MODULES[0].id);
   else $("panel").innerHTML = `<div style="padding:24px;display:flex;flex-direction:column;gap:10px"><div style="font-weight:700">Модули не найдены</div><div class="faint" style="font-size:12.5px">Движок запущен, но не отдал список разделов. Перезапустите приложение.</div></div>`;
+  // Строка живой работы: видна из любого раздела, опрашивается с растущей паузой. Ставим ПОСЛЕ
+  // ветки if/else — первая попытка воткнула вызов между `if` и `else`, и модуль перестал
+  // разбираться вовсе. Поймал тест на разбор ES-модуля (`node --check`).
+  startЖивое();
   document.addEventListener("keydown", (e) => {
     if (e.ctrlKey && (e.key === "k" || e.key === "K")) { e.preventDefault(); openPalette(); }
     else if (e.ctrlKey && (e.key === "n" || e.key === "N")) { e.preventDefault(); loadModule("chat", { newChat: true }); }

@@ -33,7 +33,8 @@ from . import access, admin_store, assembly, audit_store, blackboard, clients, d
 from . import delivery as delivery_mod
 from . import decisions, doclink, hitl_store, identity_store, langfuse_trace, levels
 from . import observability as obs
-from . import process_store, report_compose, report_store, run_cache_store, run_parts_store
+from . import process_store, report_compose, report_store, run_cache_store, run_card
+from . import run_parts_store
 from . import run_queue
 from . import run_store, runner, schema_store, skill_store, skill_templates, skill_tools
 from . import slava, systems_store
@@ -1370,6 +1371,10 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, sta
     # на обычном прогоне поле не заполнялось вовсе: человек видел «находок 7» и ни одной строки о
     # том, что именно нашли, хотя каждый навык отдал по 3–6 тысяч знаков. Найдено стресс-тестом 05.10.
     result["summary_lines"] = run_summary(result)
+    # Итог в числах с происхождением — одной функцией на все поверхности (ADR-064). Считается
+    # здесь, а не в панелях: карточка прогона в чате однажды уже разошлась с карточкой в журнале,
+    # и разошлась молча.
+    result["итог"] = run_card.итог_в_числах(result)
     _entries = result.pop("board_entries", None) or []
     result["op_ids"] = _ops_прогона
     saved = await run_store.save(result)

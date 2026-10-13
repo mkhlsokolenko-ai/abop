@@ -10,11 +10,30 @@ import re
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
-from ... import abop_client as abop
+from ... import abop_client as abop, db
 
 MANIFEST = {"id": "runs", "title": "Прогоны", "icon": "runs", "ui": "runs", "order": 25}
 router = APIRouter()
+
+# Предел одной отметки внимания: счётчик в окне останавливается не всегда (спящий компьютер,
+# закрытый ноутбук), и без предела «вы у экрана» однажды покажет восемь часов.
+ПРЕДЕЛ_ВНИМАНИЯ = 30 * 60.0
+
+
+def _внимание(run_id: str) -> float:
+    строки = db.q("SELECT sec FROM attention WHERE run_id = ?", (run_id,))
+    return round(float(строки[0]["sec"]), 1) if строки else 0.0
+
+
+def _время(сек: float) -> str:
+    """То же правило, что на сервере (`run_card._время`): секунды до минуты, дальше минуты."""
+    с = max(0, int(round(сек)))
+    if с < 60:
+        return f"{с} с"
+    м, ост = divmod(с, 60)
+    return f"{м} м {ост:02d} с" if ост else f"{м} м"
 
 
 def _err(e: "abop.AbopError") -> JSONResponse:
@@ -101,6 +120,89 @@ def run_metrics(run_id: str):
         return abop.run_metrics(run_id)
     except abop.AbopError as e:
         return _err(e)
+
+
+@router.get("/live")
+def live():
+    """Что сейчас идёт у ЭТОГО человека — для строки живой работы.
+
+    Берём задания из местной очереди догона (`pending_runs`): это ровно то, что человек запустил
+    сам. Сервер спрашиваем о состоянии каждого — их единицы. Недоступность сервера не ошибка
+    строки: нечего показать — значит строки нет.
+    """
+    строки = []
+    try:
+        задания = db.q("SELECT job_id, agent_id FROM pending_runs ORDER BY created_at")
+    except Exception:  # noqa: BLE001 — своя база не должна ронять оболочку
+        задания = []
+    for з in задания[:5]:
+        try:
+            j = abop.run_job(з["job_id"]) or {}
+        except Exception:  # noqa: BLE001 — сервер недоступен: задание просто не показываем
+            continue
+        статус = str(j.get("status") or "")
+        if статус not in ("queued", "running", "awaiting_hitl"):
+            continue
+        пр = j.get("progress") or {}
+        шаг = ""
+        if пр.get("steps_total"):
+            шаг = f"шаг {int(пр.get('step') or 0) + 1} из {пр['steps_total']}"
+        строки.append({
+            "job_id": з["job_id"], "agent_id": з.get("agent_id") or j.get("agent_id") or "",
+            "status": статус,
+            "что": {"queued": "в очереди", "running": "идёт",
+                    "awaiting_hitl": "ждёт решения"}.get(статус, статус),
+            "шаг": шаг, "run_id": j.get("run_id") or "",
+            "начато": j.get("started_at") or j.get("created_at") or "",
+            "место": int(j.get("position") or 0),
+        })
+    return {"живое": строки}
+
+
+class ВниманиеIn(BaseModel):
+    sec: float = 0.0
+
+
+@router.post("/attention/{run_id:path}")
+def attention(run_id: str, body: ВниманиеIn):
+    """Прибавить время, которое человек провёл у карточки прогона.
+
+    Копится, а не перезаписывается: карточку открывают несколько раз, и «вы у экрана» — это всё
+    потраченное время, а не последний заход. Отрицательное и неправдоподобно большое отбрасываем:
+    счётчик в браузере останавливается на спящем компьютере, и час «внимания» означал бы, что
+    ноутбук закрыли, а не что человек читал.
+    """
+    сек = max(0.0, min(float(body.sec or 0), ПРЕДЕЛ_ВНИМАНИЯ))
+    if not сек:
+        return {"ok": True, "sec": _внимание(run_id)}
+    db.run("INSERT INTO attention (run_id, sec, at) VALUES (?,?,?) "
+           "ON CONFLICT(run_id) DO UPDATE SET sec = sec + excluded.sec, at = excluded.at",
+           (run_id, сек, db.now()))
+    return {"ok": True, "sec": _внимание(run_id)}
+
+
+@router.get("/summary/{run_id:path}")
+def summary(run_id: str):
+    """Итог прогона в числах: серверные числа + местное «вы у экрана».
+
+    Числа и происхождение считает сервер (`server/run_card`) — одной функцией на все поверхности.
+    Десктоп добавляет ОДНУ плитку, которую только он и может знать, и честно говорит в
+    происхождении, что мерил он.
+    """
+    try:
+        run = abop.run_full(run_id)
+    except abop.AbopError as e:
+        return _err(e)
+    итог = dict((run or {}).get("итог") or {})
+    числа = [list(x) for x in (итог.get("числа") or [])]
+    сек = _внимание(run_id)
+    if сек:
+        числа.insert(min(2, len(числа)), [_время(сек), "вы у экрана"])
+        итог["происхождение"] = ((итог.get("происхождение") or "")
+                                 + " · время у экрана считает приложение на этом компьютере").strip(" ·")
+    итог["числа"] = числа
+    итог["внимание_сек"] = сек
+    return итог
 
 
 @router.get("/templates")

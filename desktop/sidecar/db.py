@@ -93,6 +93,14 @@ CREATE TABLE IF NOT EXISTS watched_seen (
     PRIMARY KEY (folder_id, fingerprint)
 );
 CREATE INDEX IF NOT EXISTS idx_seen_folder ON watched_seen(folder_id, at DESC);
+-- Время человека у экрана по прогону (ADR-064). Живёт ЗДЕСЬ, а не на сервере, потому что сервер
+-- этого не знает и знать не может: он не видит, сколько карточка была открыта. Число личное —
+-- «сколько времени на это потратили ВЫ», — и общего смысла у него нет.
+CREATE TABLE IF NOT EXISTS attention (
+    run_id TEXT PRIMARY KEY,
+    sec    REAL NOT NULL DEFAULT 0,
+    at     REAL NOT NULL
+);
 """
 
 

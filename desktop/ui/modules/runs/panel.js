@@ -25,6 +25,10 @@ export async function mount(root, ctx) {
   let runs = [], agentsList = [], total = 0, loadErr = null, busy = false;
   let q = "", agentId = "", verdict = "", days = 0, deep = false, hits = {};
   let open = null, openData = null, openTab = "findings", openErr = "", templates = [];
+  // Итог в числах и время у экрана. Секундомер идёт, пока карточка открыта; накопленное уходит на
+  // отметку при закрытии и при уходе из раздела. Без отметки при уходе число терялось бы у того,
+  // кто читает карточку и закрывает приложение — то есть у большинства.
+  let итог = null, _сИтога = 0;
 
   async function load() {
     busy = true; loadErr = null; render();
@@ -48,10 +52,36 @@ export async function mount(root, ctx) {
   }
 
   async function openRun(id) {
-    open = id; openData = null; openErr = ""; openTab = "findings"; render();
+    await отметить();                 // уходим с прошлой карточки — её время не теряем
+    open = id; openData = null; openErr = ""; openTab = "findings"; итог = null;
+    _сИтога = Date.now();
+    render();
     try { openData = await api(R + "/item/" + encodeURIComponent(id)); }
     catch (e) { openErr = humanError(e); }
     render();
+    // Итог приходит отдельным запросом: числа считает сервер, «вы у экрана» добавляет сайдкар.
+    // Если не пришёл — карточка остаётся как была: отсутствие чисел не повод не показать прогон.
+    try { итог = await api(R + "/summary/" + encodeURIComponent(id)); render(); }
+    catch { итог = null; }
+  }
+
+  async function отметить() {
+    if (!open || !_сИтога) return;
+    const сек = Math.round((Date.now() - _сИтога) / 1000);
+    const id = open;
+    _сИтога = 0;
+    if (сек < 2) return;             // мелькнувшая карточка — не «время у экрана»
+    try { await api(R + "/attention/" + encodeURIComponent(id),
+                    { method: "POST", body: JSON.stringify({ sec: сек }) }); }
+    catch { /* отметка не критична: число личное и не влияет ни на что, кроме карточки */ }
+  }
+
+  function итогHTML() {
+    if (!итог || !(итог["числа"] || []).length) return "";
+    // Собирает примитив ядра — одна карточка на все поверхности. Правило числа тоже его:
+    // числа без происхождения он помечает сам.
+    return ctx.card({ "что": "Итог прогона", "числа": итог["числа"],
+                      "происхождение": итог["происхождение"] || "" });
   }
 
   // ── список ──
@@ -259,10 +289,14 @@ export async function mount(root, ctx) {
           <button class="btn sm" id="oDiff">Сравнить с прошлым</button></span>
       </div>
       <div style="font-size:11.5px;color:var(--ink-3);font-family:var(--mono)">${esc(open)}</div>
+      ${итогHTML()}
       ${miss.length ? `<div style="font-size:12px;color:var(--warn-ink)">Навыки заполнили схему не полностью: ${esc(miss.map((m) => m.skill).join(", "))}. В отчёте это отмечено.</div>` : ""}
       <div style="display:flex;gap:7px;flex-wrap:wrap">${tabs}</div>
       <div style="max-height:52vh;overflow:auto">${body}</div></div>`;
   }
+
+  // Уход из раздела (переключили рейл, закрыли окно) — последняя возможность не потерять замер.
+  window.addEventListener("beforeunload", () => { отметить(); });
 
   function render() {
     root.innerHTML = `<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:14px;padding:26px 28px;overflow:auto;animation:ape-in .3s ease-out">
@@ -293,7 +327,10 @@ export async function mount(root, ctx) {
       root.querySelectorAll(".rrow").forEach((b) => { b.onclick = () => openRun(b.dataset.id); });
       return;
     }
-    if ($("oBack")) $("oBack").onclick = () => { open = null; openData = null; boardData = null; boardErr = ""; render(); };
+    if ($("oBack")) $("oBack").onclick = () => {
+      отметить();                   // время у этой карточки записано до того, как она закрылась
+      open = null; openData = null; boardData = null; boardErr = ""; итог = null; render();
+    };
     if ($("oRetry")) $("oRetry").onclick = () => openRun(open);
     root.querySelectorAll(".rtab").forEach((b) => { b.onclick = async () => { openTab = b.dataset.tab; render(); if (openTab === "board" && !boardData && !boardErr) await loadBoard(); }; });
     if ($("oPdf")) $("oPdf").onclick = async (e) => {
