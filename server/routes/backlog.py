@@ -32,7 +32,7 @@ from cli import ape
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 
-from .. import audit_store, backlog, backlog_store, run_store
+from .. import audit_store, backlog, backlog_store, hitl_store, run_store
 from ..deps import require_level, user
 
 router = APIRouter()
@@ -76,7 +76,11 @@ async def backlog_review(u: dict = Depends(user),
     require_level(u, "manager")
     задачи = _задачи(project, limit)
     прогоны = await run_store.недавние_с_доставкой(дней=days, limit=300)
-    р = backlog.разбор(задачи, прогоны, по_участкам=_участки(задачи))
+    # Подтверждённые отправки живут в журнале решений, а не в прогоне: когда человек говорит
+    # «отправить», запись в прогоне не меняется. Без этого чтения агент не увидел бы ни одного
+    # артефакта у всего, что проходит через подтверждение, — то есть у всей внешней доставки.
+    решения = await hitl_store.решённые(дней=days, limit=500)
+    р = backlog.разбор(задачи, прогоны, по_участкам=_участки(задачи), решения_hitl=решения)
     return {**р, "задач": len(задачи), "прогонов": len(прогоны), "окно_дней": days,
             "статус_закрытия": ЗАКРЫТЫЙ_СТАТУС or "не задан (REDMINE_CLOSED_STATUS_ID) — "
                                                   "агент только комментирует"}
@@ -93,8 +97,10 @@ async def backlog_apply(body: dict = None, u: dict = Depends(user)) -> JSONRespo
     тело = body or {}
     только = {str(x) for x in (тело.get("issue_ids") or [])}
     задачи = _задачи(str(тело.get("project") or ""), int(тело.get("limit") or 100))
-    прогоны = await run_store.недавние_с_доставкой(дней=int(тело.get("days") or 30), limit=300)
-    р = backlog.разбор(задачи, прогоны, по_участкам=_участки(задачи))
+    дней = int(тело.get("days") or 30)
+    прогоны = await run_store.недавние_с_доставкой(дней=дней, limit=300)
+    решения = await hitl_store.решённые(дней=дней, limit=500)
+    р = backlog.разбор(задачи, прогоны, по_участкам=_участки(задачи), решения_hitl=решения)
     кто = u.get("name") or u.get("sub") or "manager"
     сделано, пропущено = [], []
     for решение in р["к_закрытию"]:
