@@ -148,6 +148,40 @@ docker compose -f ops/docker-compose.observability.yml up -d
 - Сквозной `trace_id` — заголовок `X-Trace-Id` (генерится/пробрасывается), в прогоне поле `trace_id`, в сообщениях шины заголовок `x-trace-id`.
 - LLM-трейсы (langfuse) — каркас; включаются заданием `LANGFUSE_URL/PUBLIC_KEY/SECRET_KEY`.
 
+**Второй источник данных — Postgres (13.10, ADR-065).** Prometheus отвечает «как работает
+система», Postgres — «что сделали люди и их агенты»: дашборд `abop-manager` (прогоны и стоимость
+по дням и отделам, «кто что запускал», «что ушло наружу», «не дошло»).
+
+Три вещи, без которых панели пустые, и каждая проверена на проде:
+
+1. **Роль только на чтение.** Grafana — SQL-консоль в руках вошедшего; прикладной пользователь
+   позволил бы править журнал прогонов.
+   ```sql
+   CREATE ROLE grafana_ro LOGIN PASSWORD '…';
+   GRANT CONNECT ON DATABASE abop TO grafana_ro;
+   GRANT USAGE ON SCHEMA public TO grafana_ro;
+   GRANT SELECT ON runs, run_jobs, hitl_items TO grafana_ro;
+   ```
+2. **Адрес базы — по сети контейнеров, а не через host-gateway.** Postgres опубликован как
+   `127.0.0.1:5433`, то есть только на петлевом интерфейсе хоста: из контейнера Grafana
+   `host.docker.internal:5433` даёт `connection refused`. Поэтому контейнер базы подключается в
+   сеть стека, и Grafana ходит по имени:
+   ```bash
+   docker network connect ops_default svod-analytics-pg     # имя контейнера базы на server-1
+   ```
+3. **Пароль и имя хоста — в `/opt/abop/ops/.env`** (рядом с compose-файлом, права 600):
+   `GF_DS_PG_PASSWORD=…`, `GF_DS_PG_HOST=svod-analytics-pg:5432`. В репозитории их нет.
+
+Проверка роли без Grafana (пароль админа Grafana может быть сменён):
+```bash
+P=$(grep -oP 'GF_DS_PG_PASSWORD=\K.*' /opt/abop/ops/.env)
+docker run --rm --network ops_default -e PGPASSWORD="$P" postgres:16-alpine \
+  psql -h svod-analytics-pg -p 5432 -U grafana_ro -d abop -t -c 'SELECT count(*) FROM runs'
+docker run --rm --network ops_default -e PGPASSWORD="$P" postgres:16-alpine \
+  psql -h svod-analytics-pg -p 5432 -U grafana_ro -d abop -t -c 'DELETE FROM runs WHERE false'
+# первая команда отдаёт число, вторая обязана ответить «permission denied for table runs»
+```
+
 ---
 
 ## 4. Восстановление Data Plane (если прогоны дают 0 находок)
@@ -215,6 +249,8 @@ curl -s -XPOST 'http://127.0.0.1:8091/api/runs?async=1' -H "Authorization: Beare
 | RAG / данные | `SLAVA_API_BASE_URL`, `QDRANT_URL`, `QDRANT_API_KEY`, `EMBED_MODEL` (`baai/bge-m3`), `ABOP_1C_WEB_URL` (веб-клиент 1С для ссылок из карточек) | |
 | OUT-доставка | `GOTENBERG_URL`, `BOOKSTACK_URL/TOKEN`, `MAILPIT_HOST/PORT`, `REDMINE_*`; реальные API — `YOUGILE_TOKEN/COLUMN_ID`, `YANDEX_SMTP_*` | Без токенов — dry_run. Команды через шину исполняет коннектор со **своими** секретами (`systems.env` на server-2) |
 | Observability | `LANGFUSE_URL/PUBLIC_KEY/SECRET_KEY`, `LOG_LEVEL` | |
+| Лестница ответственности | `ABOP_COLLEAGUE_DOMAINS` (контур организации; на проде `demo.local`) | **Fail-closed:** не задан ⇒ любой адресат внешний (У2), и отправка из мессенджера закрыта. По нему письмо коллеге — У1, клиенту — У2 (ADR-060) |
+| Агент бэклога | `REDMINE_CLOSED_STATUS_ID` (на проде `5` = «Закрыта», `is_closed=true`) | Не задан ⇒ агент **комментирует** задачу, но статус не трогает. Идентификаторы статусов свои в каждой установке: `GET /issue_statuses.json` (ADR-067) |
 
 ## 6а. Аудируемость, трассировка, наблюдаемость
 
