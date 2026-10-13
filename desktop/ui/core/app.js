@@ -1,4 +1,8 @@
 // Ядро фронта: загрузчик модулей + маршрутизация + API-клиент к сайдкару + общие примитивы UI.
+// Примитивы карточки живут отдельным модулем (`core/cards.js`): там они чистые функции,
+// и правило числа проверяется их ВЫЗОВОМ, а не поиском имени переменной в этом файле.
+import { card, tile, origin, esc } from "./cards.js";
+export { card, tile, origin, esc };
 // Модули НЕ хардкодятся: берём список из /api/modules и динамически импортируем панель.
 // Добавить фичу = новый backend-модуль + ui/modules/<id>/panel.js. Ядро не меняется.
 //
@@ -55,7 +59,7 @@ export function humanError(e) {
   if (st >= 500) return "Ошибка на сервере ABOP: " + (d || st);
   return d || "Не удалось выполнить действие.";
 }
-export function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+
 
 // ── стек оверлеев: Esc закрывает верхний, фокус-ловушка, возврат фокуса (D-H15) ─────────────────
 const overlays = [];
@@ -255,6 +259,7 @@ export function sanitizeHtml(html) {
 
 export const ctx = {
   api, base: API, user: null, roles: [], email: null, authed: false,
+  card, tile, origin,
   // Чьи данные на экране. Считает СЕРВЕР (`tenant_active`), десктоп только показывает: правило
   // вычисления арендатора живёт на сервере, и местная копия разошлась бы с ним молча.
   tenant: "", tenantOwn: "", tenantKnown: false, tenantCanSwitch: false,
@@ -278,7 +283,7 @@ const mounted = new Map();        // id → { root, mod }   (D-H11: кэш мо�
 
 function icon(name) {
   // Реальные глифы из эталона APE Desktop (standalone): геометрические, не смайлы.
-  return { chat: "✦", runs: "◷", findings: "◬", agents: "⎔", cabinet: "◉", graphlens: "◈", opslens: "◎", connectors: "⛁", security: "⛨", ocr: "◵", watch: "▤", ml: "❖", abop: "⬡" }[name] || "◆";
+  return { chat: "✦", runs: "◷", findings: "◬", agents: "⎔", cabinet: "◉", graphlens: "◈", opslens: "◎", connectors: "⛁", security: "⛨", ocr: "◵", watch: "▤", ml: "❖", abop: "⬡", decisions: "⌦" }[name] || "◆";
 }
 
 // ── вход: единый термин «ABOP» (Keycloak за шлюзом — детали пользователю не нужны) (D-H12) ──────
@@ -377,7 +382,10 @@ function canSee(id) { const min = MODULE_MIN_LEVEL[id]; return !min || levelAtLe
 // (Ctrl+K) и по прямой ссылке — убрана только постоянная кнопка, которой никто не пользовался.
 const HIDDEN_MODULES = new Set(["opslens", "security", "findings", "connectors", "ocr"]);
 function visibleModules() { return MODULES.filter((m) => !HIDDEN_MODULES.has(m.id) && canSee(m.id)); }
-const RAIL_ORDER = ["chat", "runs", "agents", "watch", "graphlens", "cabinet"];
+// «Решения» стоят вторыми: там ждут человека, и это важнее журнала прогонов. Переключателя
+// режимов нет (DIZAJN, 5.1) — руководитель тоже ставит задачи, и прыгать между двумя
+// приложениями ради одного подтверждения он не должен.
+const RAIL_ORDER = ["chat", "decisions", "runs", "agents", "watch", "graphlens", "cabinet"];
 const RAIL_TITLE = { agents: "Мои агенты" };
 function railModules() {
   const rank = (id) => { const i = RAIL_ORDER.indexOf(id); return i < 0 ? RAIL_ORDER.length : i; };

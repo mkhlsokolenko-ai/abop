@@ -58,6 +58,14 @@
   --user-bubble: rgba(99, 102, 241, 0.16); --user-bubble-line: rgba(129, 140, 248, 0.3);
   --ui: "Inter", "Segoe UI", system-ui, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, monospace;
+  /* Корпоративная плотность (DIZAJN_DESKTOPA_ENTERPRISE, раздел 2): шаг сетки 4/8, строка списка
+     32px вместо 44, отступ карточки 12/16. Одна плотность на приложение — «компактный режим»
+     отдельной настройкой был бы признаком того, что не выбрали. */
+  --row-h: 32px;
+  --pad-card: 12px;
+  --pad-card-2: 16px;
+  --gap-group: 16px;
+  --gap-item: 8px;
   --blur: blur(16px);
   /* легаси-алиасы (модули используют эти имена инлайново) */
   --bg0: var(--bg); --raised: var(--hover); --b1: var(--line);

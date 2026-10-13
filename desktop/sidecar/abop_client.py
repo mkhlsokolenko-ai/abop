@@ -389,6 +389,20 @@ def hitl_queue() -> list:
     return (r or {}).get("queue", []) if isinstance(r, dict) else (r or [])
 
 
+def hitl_queue_mine(mine: str = "1") -> dict:
+    """Очередь решений с ответом целиком: разделу «Решения» нужно и `всего`, и порядок.
+
+    Отдельно от `hitl_queue`, потому что тот отдаёт только список и урезает ответ: счётчик в рейле
+    считал бы по длине массива, а адресованность в нём не видна.
+    """
+    хвост = "?mine=1" if str(mine or "").lower() in ("1", "true", "yes") else ""
+    r = _req("GET", "/api/hitl/queue" + хвост, timeout=20)
+    if isinstance(r, dict):
+        return r
+    спис = r or []
+    return {"queue": спис, "всего": len(спис)}
+
+
 def billing() -> dict:
     """Расход/квота: реальные токены из RunMetrics + остаток (токен-квота). cost≈0 на self-host,
     но токены списываются с квоты — пользователь видит, сколько ещё может отработать."""
