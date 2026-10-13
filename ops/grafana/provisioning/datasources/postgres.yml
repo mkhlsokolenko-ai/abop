@@ -19,8 +19,17 @@ datasources:
     uid: abop-pg
     type: postgres
     access: proxy
-    # ABOP ходит в Postgres на 5433 (см. реестр систем). Grafana в контейнере — через host-gateway.
-    url: host.docker.internal:5433
+    # Адрес — ПО СЕТИ КОНТЕЙНЕРОВ, а не через host-gateway. На сервере Postgres опубликован как
+    # `127.0.0.1:5433`, то есть только на петлевом интерфейсе хоста: из контейнера Grafana
+    # `host.docker.internal:5433` даёт «connection refused». Проверено при раскатке — до того, как
+    # кто-то открыл дашборд и увидел пустые панели.
+    #
+    # Поэтому контейнер базы подключён в сеть стека наблюдаемости:
+    #   docker network connect ops_default <контейнер-postgres>
+    # и Grafana обращается к нему по имени. Имя контейнера на сервере задаётся переменной
+    # `GF_DS_PG_HOST` (у нас `svod-analytics-pg:5432`): в разных установках оно разное, и вписывать
+    # чужое имя в репозиторий нельзя.
+    url: ${GF_DS_PG_HOST}
     database: abop
     user: grafana_ro
     isDefault: false

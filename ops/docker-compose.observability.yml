@@ -38,6 +38,10 @@ services:
       # его нет: берётся из среды сервера. Не задан — панели срезов руководителя покажут ошибку
       # подключения, и это честнее, чем пустые графики, которые читаются как «работы не было».
       GF_DS_PG_PASSWORD: ${GF_DS_PG_PASSWORD:-}
+      # Имя контейнера Postgres в сети стека: в разных установках своё, поэтому переменной.
+      # Контейнер базы надо один раз подключить в эту сеть:
+      #   docker network connect ops_default <контейнер-postgres>
+      GF_DS_PG_HOST: ${GF_DS_PG_HOST:-host.docker.internal:5433}
     volumes:
       - abop_grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro   # datasource Prometheus + провайдер дашбордов
