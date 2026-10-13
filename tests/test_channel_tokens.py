@@ -257,12 +257,141 @@ def test_внешние_действия_определяются_в_одном_
         "в plan.py снова своя копия правила про внешние каналы")
 
 
-def test_запрет_внешних_действий_стоит_на_запуске():
+def test_проверка_канала_стоит_на_запуске():
     """Спрятать агента из списка — защита от интерфейса, а не от запроса."""
     текст = (КОРЕНЬ / "server" / "routes" / "runs.py").read_text(encoding="utf-8")
     i = текст.index("async def run_start")
-    тело = текст[i:i + 2500]
-    assert "действует_наружу" in тело, "на запуске прогона нет проверки внешних действий"
+    тело = текст[i:i + 3500]
+    assert "действует_наружу" in тело, "на запуске прогона нет проверки каналов доставки"
+    assert "КАНАЛЫ_ДОСТАВКИ" in тело, "перечень разрешённых каналов не применяется"
+    assert "РЕЖИМЫ_НАВЫКОВ" in тело, "режим навыка не проверяется"
     assert 'u.get("channel")' in тело, "проверка не смотрит, что запрос пришёл из канала"
-    j = тело.index("действует_наружу")
-    assert "403" in тело[j:j + 400], "отказ не 403"
+    assert тело.count("403") >= 2, "оба отказа должны быть 403"
+
+
+# ── политика канала: читать, готовить письма, отправлять коллегам ────────────────────────────────
+#
+# Решение владельца 13.10: канал нужен для двух вещей — спросить данные и отослать их коллегам
+# письмом. Поэтому «никаких внешних действий» сменилось точным перечнем: почта можно, остальное
+# необратимое — нет. Почта тоже необратима, и к ней идут ДВЕ защиты: подтверждение человеком и
+# проверка, что адресат — коллега.
+
+ПОЧТА = {"graph": {"nodes": [{"kind": "skill", "skill": "x"},
+                             {"kind": "out", "out": {"channel": "email"}}]}}
+ТРЕКЕР = {"graph": {"nodes": [{"kind": "skill", "skill": "x"},
+                              {"kind": "out", "out": {"channel": "redmine"}}]}}
+
+
+def test_почта_каналу_разрешена_а_трекер_нет():
+    assert "email" in ct.КАНАЛЫ_ДОСТАВКИ
+    почта = [c for c in assembly.действует_наружу(ПОЧТА) if c not in ct.КАНАЛЫ_ДОСТАВКИ]
+    трекер = [c for c in assembly.действует_наружу(ТРЕКЕР) if c not in ct.КАНАЛЫ_ДОСТАВКИ]
+    assert почта == [], "почта должна проходить: канал нужен, чтобы отослать данные коллегам"
+    assert трекер == ["redmine"], "задача в трекере из мессенджера проходить не должна"
+
+
+def test_режимы_навыков_каналу_ограничены():
+    """`action` меняет внешнюю систему помимо доставки — в мессенджере ему места нет."""
+    assert ct.РЕЖИМЫ_НАВЫКОВ == ("read", "write")
+    assert "action" not in ct.РЕЖИМЫ_НАВЫКОВ
+
+
+def test_отправка_из_канала_всегда_через_подтверждение():
+    """Даже если автономия агента позволяет отправить саму — из канала только через человека."""
+    текст = (КОРЕНЬ / "server" / "run_exec.py").read_text(encoding="utf-8")
+    i = текст.index("async def _deliver_out_nodes")
+    # Окном, а не до следующего `async def`: внутри функции есть вложенные определения, и поиск
+    # «следующего» выхватывал не тот кусок (а при их отсутствии бросал ValueError вместо отказа).
+    тело = текст[i:i + 6000]
+    assert "из_канала" in тело, "доставка не знает, что прогон пришёл из канала"
+    j = тело.index("из_канала and channel not in")
+    рядом = тело[j:j + 500]
+    assert '"hitl": True' in рядом, "гейт не ставится принудительно"
+    assert "необратим" in рядом.lower() or "подтверждени" in рядом.lower(), (
+        "решение не объяснено в коде — следующий читатель снимет его как лишнее")
+
+
+def test_признак_канала_доезжает_через_очередь():
+    """Прогон из канала почти всегда асинхронный: без признака в задании защита не работала бы."""
+    маршрут = (КОРЕНЬ / "server" / "routes" / "runs.py").read_text(encoding="utf-8")
+    assert '"channel": str(u.get("channel") or "")' in маршрут, "канал не кладётся в задание"
+    воркер = (КОРЕНЬ / "server" / "web_api.py").read_text(encoding="utf-8")
+    assert 'из_канала=str(p.get("channel") or "")' in воркер, "воркер не передаёт канал исполнителю"
+
+
+# ── подтверждение: только своё, только коллеге ───────────────────────────────────────────────────
+
+ЗАЯВКА = {"id": "hitl-1", "channel": "email", "to_addr": "kolya@acme.ru",
+          "requested_by": "Пётр", "state": "pending", "family": "финансы"}
+
+
+def _решить(item, decision="approve", **личность):
+    from server.routes.hitl import _можно_решать
+
+    л = {"channel": "telegram", "name": "Пётр", "sub": "u-7", "level": "analyst", **личность}
+    _можно_решать(л, item, decision)
+
+
+def test_канал_подтверждает_своё_письмо_коллеге(monkeypatch):
+    monkeypatch.setenv("ABOP_COLLEAGUE_DOMAINS", "acme.ru")
+    _решить(ЗАЯВКА)            # не бросает — значит можно
+
+
+def test_канал_не_подтверждает_чужую_заявку(monkeypatch):
+    from fastapi import HTTPException
+
+    monkeypatch.setenv("ABOP_COLLEAGUE_DOMAINS", "acme.ru")
+    with pytest.raises(HTTPException) as e:
+        _решить({**ЗАЯВКА, "requested_by": "Иван"})
+    assert e.value.status_code == 403
+    assert "не ваша заявка" in str(e.value.detail)
+
+
+def test_канал_не_подтверждает_действия_в_других_системах(monkeypatch):
+    from fastapi import HTTPException
+
+    monkeypatch.setenv("ABOP_COLLEAGUE_DOMAINS", "acme.ru")
+    with pytest.raises(HTTPException) as e:
+        _решить({**ЗАЯВКА, "channel": "redmine", "to_addr": "project-7"})
+    assert e.value.status_code == 403
+    assert "приложении" in str(e.value.detail)
+
+
+def test_письмо_наружу_из_канала_не_уходит(monkeypatch):
+    from fastapi import HTTPException
+
+    monkeypatch.setenv("ABOP_COLLEAGUE_DOMAINS", "acme.ru")
+    with pytest.raises(HTTPException) as e:
+        _решить({**ЗАЯВКА, "to_addr": "someone@gmail.com"})
+    assert e.value.status_code == 403
+    assert "не из организации" in str(e.value.detail)
+
+
+def test_без_перечня_доменов_отправка_из_канала_закрыта(monkeypatch):
+    """Ограничение без перечня — предложение, а не ограничение. Поэтому fail-closed."""
+    from fastapi import HTTPException
+
+    monkeypatch.delenv("ABOP_COLLEAGUE_DOMAINS", raising=False)
+    with pytest.raises(HTTPException) as e:
+        _решить(ЗАЯВКА)
+    assert e.value.status_code == 403
+    assert "ABOP_COLLEAGUE_DOMAINS" in str(e.value.detail), (
+        "администратору не сказано, что именно задать")
+
+
+def test_отказ_от_отправки_каналу_можно_всегда(monkeypatch):
+    """Отказ необратимым не бывает — запрещать его значит заставлять человека идти за компьютер."""
+    monkeypatch.delenv("ABOP_COLLEAGUE_DOMAINS", raising=False)
+    _решить(ЗАЯВКА, decision="reject")
+    _решить({**ЗАЯВКА, "to_addr": "someone@gmail.com"}, decision="reject")
+
+
+def test_человеку_без_канала_правило_прежнее(monkeypatch):
+    """Обычный путь не изменился: manager+ подтверждает что угодно, analyst — ничего."""
+    from fastapi import HTTPException
+
+    monkeypatch.setenv("ABOP_COLLEAGUE_DOMAINS", "acme.ru")
+    _решить(ЗАЯВКА, channel="", level="manager")
+    with pytest.raises(HTTPException) as e:
+        _решить(ЗАЯВКА, channel="", level="analyst")
+    assert e.value.status_code == 403

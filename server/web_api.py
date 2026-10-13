@@ -786,7 +786,11 @@ async def _handle_job(job: dict) -> dict:
                                   board_scope=p.get("board_scope") or job.get("group_id") or "",
                                   data_snapshot=p.get("data_snapshot") or None,
                                   parent_trace_id=p.get("parent_trace_id") or "",
-                                  trigger=p.get("trigger"), job_id=job["id"])
+                                  trigger=p.get("trigger"), job_id=job["id"],
+                                  # Из какого канала пришёл запуск. Без этого отправка наружу из
+                                  # мессенджера пошла бы по обычному правилу автономии — то есть
+                                  # могла уйти без подтверждения, а в канале это запрещено.
+                                  из_канала=str(p.get("channel") or ""))
     return {"run_id": out["saved"]["id"]}
 
 

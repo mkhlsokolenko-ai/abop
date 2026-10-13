@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from fastapi.responses import JSONResponse
 
-from .. import agent_store, audit_store, hitl_store, run_bus, run_queue, systems_store
+from .. import agent_store, audit_store, channel_tokens, hitl_store, run_bus, run_queue, systems_store
 
 from .registry import access_check
 from ..deps import can_see_family, require_level, user
@@ -129,11 +129,44 @@ async def hitl_item(item_id: str, u: dict = Depends(user)) -> dict:
             "result": payload.get("result"), "source": payload.get("source")}
 
 
+def _можно_решать(u: dict, item: dict, decision: str) -> None:
+    """Кто вправе подтвердить заявку. Обычный путь — `manager+`; канал — узкое исключение.
+
+    Канал (бот в мессенджере) имеет уровень `analyst` и мутации не проходит. Но тогда он не смог бы
+    отправить письмо коллеге, а это ровно то, зачем он нужен (решение владельца 13.10). Поэтому
+    исключение — точное и в одном месте:
+
+    * заявка должна быть по каналу, который каналу вообще позволен (почта), — а не по трекеру;
+    * заявка должна быть СВОЕЙ: её запросил тот же человек, что подтверждает. Иначе бот становился
+      бы пультом для чужих отправок;
+    * получатель обязан быть коллегой: перечень доменов задаёт `ABOP_COLLEAGUE_DOMAINS`, и без него
+      отправка из канала закрыта. Ограничение без перечня — предложение, а не ограничение.
+
+    Отклонить (`reject`) каналу можно всегда: отказ от отправки необратимым не бывает.
+    """
+    if not u.get("channel"):
+        require_level(u, "manager")
+        return
+    канал_заявки = str(item.get("channel") or "")
+    if канал_заявки not in channel_tokens.КАНАЛЫ_ДОСТАВКИ:
+        raise HTTPException(403, f"из канала «{u.get('channel')}» нельзя подтверждать действия в "
+                            f"«{канал_заявки}»: подтвердите в приложении, там видно последствия")
+    кто = u.get("name") or u.get("sub") or ""
+    if str(item.get("requested_by") or "") not in (кто, str(u.get("sub") or "")):
+        raise HTTPException(403, "это не ваша заявка: из канала подтверждают только своё")
+    if decision == "reject":
+        return
+    можно, почему = channel_tokens.адрес_коллеги(str(item.get("to_addr") or ""))
+    if not можно:
+        raise HTTPException(403, почему)
+
+
 @router.post("/api/hitl/{item_id}/approve")
 async def hitl_approve(item_id: str, body: dict = None, u: dict = Depends(user)) -> JSONResponse:
     """Одобрить/отклонить HITL-заявку. Тело: {decision: approve|reject, reason?}. При approve —
-    выполняется РЕАЛЬНАЯ доставка отчёта в канал OUT-узла. manager+ (analyst — только чтение)."""
-    require_level(u, "manager")
+    выполняется РЕАЛЬНАЯ доставка отчёта в канал OUT-узла. manager+ (analyst — только чтение).
+
+    Исключение для канала в мессенджере — в `_можно_решать`: своя заявка по почте коллеге."""
     item = await hitl_store.get(item_id)
     if not item:
         raise HTTPException(404, "нет такой HITL-заявки")
@@ -142,6 +175,9 @@ async def hitl_approve(item_id: str, body: dict = None, u: dict = Depends(user))
     if item.get("state") != "pending":
         raise HTTPException(409, f"заявка уже обработана: {item.get('state')}")
     decision = str((body or {}).get("decision", "approve")).lower()
+    # Права проверяем ПОСЛЕ чтения заявки: решение зависит от канала заявки и её адресата, а не
+    # только от уровня человека. До чтения такой проверки не существует.
+    _можно_решать(u, item, decision)
     reason = str((body or {}).get("reason", ""))
     actor = u.get("name") or u.get("sub") or "operator"
     payload = item.get("payload") or {}

@@ -29,7 +29,7 @@ import time as _time
 
 from cli import ape
 
-from . import access, admin_store, audit_store, blackboard, clients, dataplane_store
+from . import access, admin_store, assembly, audit_store, blackboard, clients, dataplane_store
 from . import delivery as delivery_mod
 from . import doclink, hitl_store, identity_store, langfuse_trace
 from . import observability as obs
@@ -554,7 +554,8 @@ async def _send_channel(cfg: dict, agent_name: str, html_report: str, real: bool
         return f"ошибка доставки: {type(ex).__name__}: {ex}"
 
 
-async def _deliver_out_nodes(agent: dict, result: dict, actor: str, deliver_filter: str = "") -> None:
+async def _deliver_out_nodes(agent: dict, result: dict, actor: str, deliver_filter: str = "",
+                             из_канала: str = "") -> None:
     """Проброс OUT-узла в доставку. Три режима на узел:
     - hitl=true → создаём ЗАЯВКУ в очередь HITL (pending), наружу НЕ шлём (подтвердит человек);
     - run=true, без hitl → РЕАЛЬНАЯ отправка;
@@ -623,6 +624,12 @@ async def _deliver_out_nodes(agent: dict, result: dict, actor: str, deliver_filt
                                        "result": f"⛔ доступ к системе «{sys_id}» закрыт для семьи (ABAC): {reason}"})
                     continue
         node_html = await _report_for(cfg)   # отчёт по шаблону узла (или дефолтный)
+        if из_канала and channel not in assembly._LOCAL_CHANNELS:
+            # Прогон запущен из мессенджера. Отправка наружу оттуда идёт ТОЛЬКО через
+            # подтверждение человеком — даже если автономия агента позволяет действовать сама.
+            # Иначе одно сообщение в переписке приводило бы к необратимой отправке без
+            # возможности прочитать, что именно уходит и кому.
+            cfg = {**cfg, "hitl": True}
         if cfg.get("hitl"):
             # заявка в очередь HITL — оператор подтвердит, тогда отправим реально
             item = await hitl_store.create(
@@ -927,7 +934,8 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, sta
                             job_id: str | None = None, data_scope: dict | None = None,
                             budget: dict | None = None, board_scope: str = "",
                             data_snapshot: dict | None = None, parent_trace_id: str = "",
-                            limits: dict | None = None, input_from: dict | None = None) -> dict:
+                            limits: dict | None = None, input_from: dict | None = None,
+                            из_канала: str = "") -> dict:
     """Ядро прогона (LLM-раскладка + находки audit1c + сохранение + аудит). Переиспользуется
     POST /api/runs и планировщиком триггеров (server/triggers.py). Возвращает {saved, result}.
     Кэш результатов (multi-user): при попадании возвращает сохранённый вывод без LLM/доставки.
@@ -1270,7 +1278,8 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, sta
     result["id"] = result["run_id"]
     # Проброс OUT-узла в реальную доставку (почта/BookStack/PDF) — dry_run по умолчанию.
     try:
-        await _deliver_out_nodes(agent, result, started_by, deliver_filter=deliver_filter)
+        await _deliver_out_nodes(agent, result, started_by, deliver_filter=deliver_filter,
+                                 из_канала=из_канала)
     except Exception as ex:  # noqa: BLE001 — доставка опциональна, прогон не падает
         result["delivery_error"] = f"{type(ex).__name__}: {ex}"
     try:

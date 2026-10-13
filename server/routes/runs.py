@@ -30,7 +30,7 @@ from cli import ape
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 
-from .. import agent_store, arbiter, assembly, audit_store, blackboard, contract_store, finding_store
+from .. import agent_store, arbiter, assembly, audit_store, blackboard, channel_tokens, contract_store, finding_store
 from .. import findings, hitl_store, identity_store
 from .. import observability as obs
 from .. import pipeline_graph, report_store, run_bus, run_queue, run_store, runner, schema_store
@@ -235,10 +235,29 @@ async def run_start(body: dict, u: dict = Depends(user),
     # Канал в мессенджере запускает только то, что читает и считает. Это проверка НА ЗАПУСКЕ, а не
     # фильтр списка: спрятать агента в списке — значит защититься от интерфейса, а не от запроса.
     наружу = assembly.действует_наружу(agent)
-    if u.get("channel") and наружу:
-        raise HTTPException(403, "в канале «" + str(u.get("channel")) + "» нельзя запускать агента с "
-                            "внешними действиями (" + ", ".join(sorted(set(наружу))) + "): "
-                            "запустите его из приложения, где есть подтверждение")
+    if u.get("channel"):
+        # Каналу позволено спросить данные и отослать их коллегам письмом (решение владельца
+        # 13.10). Поэтому запрет не «любое внешнее действие», а точный перечень: почта можно,
+        # остальное необратимое — нет. Сама отправка письма всё равно пойдёт через подтверждение
+        # человеком, это ниже, в `run_exec._deliver_out_nodes`.
+        чужие = sorted({c for c in наружу if c not in channel_tokens.КАНАЛЫ_ДОСТАВКИ})
+        if чужие:
+            raise HTTPException(403, "в канале «" + str(u.get("channel")) + "» нельзя запускать "
+                                "агента с действиями в " + ", ".join(чужие)
+                                + ": запустите его из приложения, где видно последствия. "
+                                "Из канала доступны только " + ", ".join(channel_tokens.КАНАЛЫ_ДОСТАВКИ)
+                                + " и подготовка документов")
+        # Режим навыка — объявленное свойство: `action` меняет состояние внешней системы помимо
+        # доставки, и в мессенджере ему места нет, даже если OUT-узла у агента нет вовсе.
+        узлы = ((agent.get("graph") or {}).get("nodes") or [])
+        действия = sorted({str(n.get("skill") or "") for n in узлы
+                           if isinstance(n, dict) and n.get("skill")
+                           and (ape.skill_safety(str(n.get("skill"))) or {}).get("mode")
+                           not in channel_tokens.РЕЖИМЫ_НАВЫКОВ})
+        if действия:
+            raise HTTPException(403, "в канале «" + str(u.get("channel")) + "» нельзя запускать "
+                                "навыки, меняющие внешние системы: " + ", ".join(действия)
+                                + ". Запустите агента из приложения.")
     contract = await contract_store.get(agent.get("contract_audit_id") or audit_id)
     if not contract:
         contract = {"intake": {"autonomy_ceiling": agent.get("autonomy_max") or "A2"}, "bundle": {}}
@@ -298,6 +317,11 @@ async def run_start(body: dict, u: dict = Depends(user),
                                                # Владелец личной доски едет с заданием: имя может
                                                # смениться, а доска переживает переименования.
                                                "actor_sub": _sub(u),
+                                               # Из какого канала пришёл запуск. Нужен исполнителю:
+                                               # отправка наружу из канала идёт только через
+                                               # подтверждение человеком, и решает это доставка,
+                                               # а не маршрут.
+                                               "channel": str(u.get("channel") or ""),
                                                "trace_id": obs.current_trace_id()},
                                       priority=int((body or {}).get("priority") or 5))
         await run_bus.bus().publish_request(job, obs.current_trace_id())
@@ -309,7 +333,8 @@ async def run_start(body: dict, u: dict = Depends(user),
         out = await execute_agent_run(agent, contract, actor, started_by_sub=_sub(u),
                                       use_cache=use_cache, data_scope=_data_scope,
                                       budget=_budget or None, limits=_run_limits or None,
-                                      user_context=user_context, deliver_filter=deliver_filter)
+                                      user_context=user_context, deliver_filter=deliver_filter,
+                                      из_канала=str(u.get("channel") or ""))
     return JSONResponse({"run_id": out["saved"]["id"], **out["result"]}, status_code=201)
 
 
