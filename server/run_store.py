@@ -208,6 +208,50 @@ async def list_runs(agent_id: str | None = None, limit: int = 100) -> list[dict]
             for r in rows]
 
 
+async def обновить_доставку(run_id: str, *, hitl_id: str, mode: str, result: str = "") -> bool:
+    """Записать исход доставки в прогон: заявка решена — запись больше не «ждёт».
+
+    Правим ТУ запись, которая ссылается на эту заявку (`hitl_id`), а не все: у прогона может быть
+    несколько OUT-узлов, и решение по одному ничего не говорит про остальные.
+
+    Читаем и пишем в одной транзакции с `FOR UPDATE`: два решения по разным заявкам одного прогона
+    приходят независимо, и без блокировки второе перезаписало бы первое.
+    """
+    т = tenancy.текущий()
+    if not _has_pg():
+        строка = _MEM.get(tenancy.ключ_памяти(str(run_id)))
+        if not строка:
+            return False
+        тронули = False
+        for d in (строка.get("delivery") or []):
+            if str(d.get("hitl_id") or "") == str(hitl_id):
+                d["mode"], d["result"] = mode, result[:400]
+                d["не_отправлено"] = mode not in ("real", "sent")
+                тронули = True
+        return тронули
+    import json as _json
+
+    from .db import _conn
+    async with _conn() as conn:
+        cur = await conn.execute(
+            "SELECT payload FROM runs WHERE id=%s AND tenant=%s FOR UPDATE", (str(run_id), т))
+        строка = await cur.fetchone()
+        if not строка:
+            return False
+        груз = строка[0] or {}
+        тронули = False
+        for d in (груз.get("delivery") or []):
+            if str(d.get("hitl_id") or "") == str(hitl_id):
+                d["mode"], d["result"] = mode, str(result)[:400]
+                d["не_отправлено"] = mode not in ("real", "sent")
+                тронули = True
+        if not тронули:
+            return False
+        await conn.execute("UPDATE runs SET payload=%s WHERE id=%s AND tenant=%s",
+                           (_json.dumps(груз, ensure_ascii=False), str(run_id), т))
+    return True
+
+
 async def недавние_с_доставкой(*, дней: int = 30, limit: int = 300) -> list[dict]:
     """Прогоны за период с тем, что нужно сверке бэклога: доставка, находки, участки, ошибки.
 

@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from fastapi.responses import JSONResponse
 
-from .. import agent_store, audit_store, channel_tokens, decisions, hitl_store, levels, run_bus, run_queue, systems_store
+from .. import agent_store, audit_store, channel_tokens, decisions, hitl_store, levels, run_bus, run_queue, run_store, systems_store
 
 from .registry import access_check
 from ..deps import can_see_family, require_level, user
@@ -147,6 +147,24 @@ async def hitl_item(item_id: str, u: dict = Depends(user)) -> dict:
             "result": payload.get("result"), "source": payload.get("source")}
 
 
+async def _записать_исход(item: dict, item_id: str, mode: str, result: str) -> None:
+    """Записать исход доставки в прогон. Сбой записи не отменяет уже случившуюся отправку.
+
+    Письмо ушло — это факт, и ронять ответ человеку из-за неудачной пометки в журнале нельзя.
+    Поэтому промах здесь пишется предупреждением: расхождение видно в логе, а не теряется.
+    """
+    run_id = str(item.get("run_id") or "")
+    if not run_id:
+        return
+    try:
+        if not await run_store.обновить_доставку(run_id, hitl_id=item_id, mode=mode, result=result):
+            obs.log_event("warn", "hitl.run_not_marked", run_id=run_id, item_id=item_id,
+                          reason="в прогоне нет записи доставки с этой заявкой")
+    except Exception as ex:  # noqa: BLE001 — отправка уже произошла, ответ человеку важнее
+        obs.log_event("warn", "hitl.run_mark_fail", run_id=run_id, item_id=item_id,
+                      error=f"{type(ex).__name__}: {ex}")
+
+
 def _уровень_заявки(item: dict) -> int:
     """Уровень действия, которого ждёт заявка (PRD, раздел 2).
 
@@ -240,6 +258,7 @@ async def hitl_approve(item_id: str, body: dict = None, u: dict = Depends(user))
     payload = item.get("payload") or {}
     if decision == "reject":
         await hitl_store.decide(item_id, "rejected", actor, reason)
+        await _записать_исход(item, item_id, "rejected", reason or "человек отказался от отправки")
         await audit_store.record(actor, "hitl.reject", item_id,
                                  {"agent_id": item.get("agent_id"), "channel": item.get("channel")}, severity="warn")
         obs.inc("abop_hitl_total", decision="reject")
@@ -291,6 +310,9 @@ async def hitl_approve(item_id: str, body: dict = None, u: dict = Depends(user))
                               "result": str(out)[:200]}, severity="info")
     obs.inc("abop_hitl_total", decision="approve")
     obs.log_event("info", "hitl.approved", item_id=item_id, channel=item.get("channel"))
+    # Исход — в прогон: иначе карточка в журнале навсегда показывает «ожидает подтверждения» у
+    # давно отправленного письма, и то же неверное говорят отчёт и выгрузка.
+    await _записать_исход(item, item_id, "real", str(out)[:400])
     resumed = await _resume_job_after_hitl(item_id, payload, "approve")
     return JSONResponse({"id": item_id, "state": "approved", "delivery": str(out)[:400], "resumed_job": resumed})
 
