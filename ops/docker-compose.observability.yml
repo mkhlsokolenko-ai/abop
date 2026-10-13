@@ -25,6 +25,11 @@ services:
     image: grafana/grafana:latest
     container_name: abop-grafana
     restart: unless-stopped
+    # Датасорс журнала прогонов ходит в Postgres хоста (`host.docker.internal:5433`). Без этой
+    # строки имя в контейнере Grafana не разрешается, и панели срезов руководителя показывают
+    # ошибку подключения — у Prometheus такая строка была, а у Grafana её не было.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
