@@ -4,11 +4,11 @@
 // сравнение прогонов и выбор шаблона отчёта были доступны только в вебе.
 //
 // Выборка и фильтры считаются на сервере (Postgres — источник истины), панель ничего не хранит.
+import { CARD, LBL, INP } from "../../core/cards.js";
+// Стили — из ядра: шесть разных карточек и пять разных подписей в панелях были
+// расхождением, а не выбором (DIZAJN, раздел 2).
 const R = "/api/modules/runs";
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const CARD = "padding:16px;border-radius:14px;background:var(--panel);border:1px solid var(--line);display:flex;flex-direction:column;gap:10px;box-shadow:var(--shadow-1)";
-const LBL = "font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)";
-const INP = "padding:8px 11px;border-radius:10px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-size:13px";
 
 const fmtDate = (s) => {
   const d = new Date(s);

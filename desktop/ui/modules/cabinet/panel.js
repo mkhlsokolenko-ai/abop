@@ -5,12 +5,15 @@
 // передаёт её в system-подсказку каждого ответа; хардкод-политика ролей помечена честно как пример,
 // пока энфорс на шлюзе не отдаёт реальную; «источники» считаются из реального каталога коннекторов.
 // D-H13: хоткей Ctrl+Shift+A описан здесь. Терминология без JWT/realm (D-H12).
+import { CARD } from "../../core/cards.js";
+// Стили — из ядра: шесть разных карточек и пять разных подписей в панелях были
+// расхождением, а не выбором (DIZAJN, раздел 2).
 const C = "/api/modules/cabinet";
 const SEC = "/api/modules/security";
 const AG = "/api/modules/agents";
 const K = "/api/modules/connectors";
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const CARD = "padding:20px;border-radius:16px;background:var(--panel);border:1px solid var(--line);display:flex;flex-direction:column;gap:14px;box-shadow:var(--shadow-1);backdrop-filter:var(--blur)";
+
 // Что бот умеет и чего не умеет — рядом с кнопкой привязки, а не в документации: человек
 // решает, нужен ли ему канал, именно здесь.
 const TG_МОЖЕТ = "Поставить задачу словами, получить результат, посмотреть что считается и расписания.";

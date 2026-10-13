@@ -5,9 +5,11 @@
 // UX-аудит 25.09: D-H6 — «▶ Запустить» открывает чат и запускает агента там (одна поверхность
 // результата, HITL и «сделать регулярной» в карточке чата); D-C1 — 401 показывается как «войдите»,
 // а не как «у вас нет агентов»; D-H9 — удаление через модалку подтверждения; D-H14 — токены цветов.
+import { CARD } from "../../core/cards.js";
+// Стили — из ядра: шесть разных карточек и пять разных подписей в панелях были
+// расхождением, а не выбором (DIZAJN, раздел 2).
 const A = "/api/modules/agents";
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const CARD = "padding:18px;border-radius:16px;background:var(--panel);border:1px solid var(--line);display:flex;flex-direction:column;gap:12px;box-shadow:var(--shadow-1);backdrop-filter:var(--blur)";
 
 export async function mount(root, ctx) {
   const { api, toast, humanError, confirm: confirmDialog } = ctx;

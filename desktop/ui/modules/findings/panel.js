@@ -5,11 +5,12 @@
 // Источник каждой находки назван: правило из набора (его можно перепрогнать на истории и править
 // методологу) или прочтение модели. Смешивать их в одну карточку без пометки значит выдавать прозу
 // за расчёт — а решение по находке человек принимает, глядя именно на её надёжность.
+import { LBL, CARD, INP } from "../../core/cards.js";
+// Стили — из ядра: шесть разных карточек и пять разных подписей в панелях были
+// расхождением, а не выбором (DIZAJN, раздел 2).
 const F = "/api/modules/findings";
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const LBL = "font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)";
-const CARD = "display:flex;flex-direction:column;gap:9px;padding:15px 17px;border-radius:16px;border:1px solid var(--line);background:var(--panel);backdrop-filter:var(--blur)";
-const INP = "padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-size:12.5px";
+
 const SEV = { "высокая": "var(--danger-ink)", "средняя": "var(--warn-ink)", "низкая": "var(--ink-3)" };
 // Источник находки: чем она посчитана. Правило и обход цепочки — расчёт по данным 1С, его можно
 // повторить и проверить; «со слов модели» — прочтение, которое повторить нельзя.

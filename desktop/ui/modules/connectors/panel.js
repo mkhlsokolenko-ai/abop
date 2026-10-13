@@ -1,9 +1,10 @@
 // Модуль «Источники» — тонкий клиент ABOP: каталог коннекторов и рецептов Data Plane из ABOP
 // (что реально видит агент, ABAC по отделу) + локальные файлы под правами пользователя ОС.
+import { LBL, CARD } from "../../core/cards.js";
+// Стили — из ядра: шесть разных карточек и пять разных подписей в панелях были
+// расхождением, а не выбором (DIZAJN, раздел 2).
 const K = "/api/modules/connectors";
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const LBL = "font-family:var(--mono);font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:var(--ink-3)";
-const CARD = "padding:20px;border-radius:16px;background:var(--panel);border:1px solid var(--line);display:flex;flex-direction:column;gap:14px;box-shadow:var(--shadow-1);backdrop-filter:var(--blur)";
 
 function row(icon, title, note, right) {
   return `<div style="display:flex;align-items:center;gap:12px;padding:11px 13px;border-radius:11px;background:var(--hover);border:1px solid var(--line)">

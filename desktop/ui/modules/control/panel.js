@@ -12,9 +12,11 @@
 //    отправленное не вернуть. Подпись к экрану говорит это прямо.
 // 4. **Снятие объяснено последствием.** «Человек сможет привязать канал снова» — это не запрет
 //    навсегда, и прятать разницу значит обещать больше, чем происходит.
+import { LBL, BTN } from "../../core/cards.js";
+// Стили — из ядра: шесть разных карточек и пять разных подписей в панелях были
+// расхождением, а не выбором (DIZAJN, раздел 2).
 const M = "/api/modules/control";
-const LBL = "font-family:var(--mono);font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3)";
-const BTN = "padding:6px 12px;border-radius:9px;border:1px solid var(--line);background:var(--panel-2);color:var(--ink);font-size:12px;cursor:pointer";
+
 // Вид аномалии — словом и знаком, не цветом: «нерабочее время» не ошибка, а повод посмотреть.
 const ЗНАК = { "новый адресат": "◆", "нерабочее время": "◷", "всплеск объёма": "▲",
                "решил не адресат": "◇" };

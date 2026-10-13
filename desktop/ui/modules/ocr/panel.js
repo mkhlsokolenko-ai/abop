@@ -1,9 +1,10 @@
 // Модуль «Распознать» (OCR) — локально (RapidOCR), под правами пользователя.
 // Перетащи/выбери картинку или скан → текст → «Добавить в чат» (текст попадает в контекст чата). Вёрстка по ДС.
+import { LBL, CARD } from "../../core/cards.js";
+// Стили — из ядра: шесть разных карточек и пять разных подписей в панелях были
+// расхождением, а не выбором (DIZAJN, раздел 2).
 const O = "/api/modules/ocr";
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const LBL = "font-family:var(--mono);font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:var(--ink-3)";
-const CARD = "padding:20px;border-radius:16px;background:var(--panel);border:1px solid var(--line);display:flex;flex-direction:column;gap:14px;box-shadow:var(--shadow-1);backdrop-filter:var(--blur)";
 
 export async function mount(root, ctx) {
   const { api, mascot, toast, humanError } = ctx;

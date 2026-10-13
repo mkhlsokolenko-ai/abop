@@ -1,8 +1,11 @@
 // Модуль «Граф» (GraphLens) — интерактивный редактор: палитра→холст→связи→инспектор→проверка→запуск.
 // Вёрстка в рецептах ДС. Узлы двигаются мышью, связи тянутся от правого порта к левому.
+import { LBL } from "../../core/cards.js";
+// Стили — из ядра: шесть разных карточек и пять разных подписей в панелях были
+// расхождением, а не выбором (DIZAJN, раздел 2).
 const G = "/api/modules/graphlens";
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const LBL = "font-family:var(--mono);font-size:11px;letter-spacing:.8px;text-transform:uppercase;color:var(--ink-3)";
+
 const NW = 150, NH = 52;
 
 export async function mount(root, ctx) {

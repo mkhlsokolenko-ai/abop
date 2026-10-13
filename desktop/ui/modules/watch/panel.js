@@ -4,11 +4,12 @@
 //
 // Главное в этом экране — не список папок, а ЖУРНАЛ: что взято, что не вышло и почему. Присмотр,
 // молча не берущий файлы, хуже отсутствия присмотра — человек считает, что работа идёт.
+import { LBL, CARD, INP } from "../../core/cards.js";
+// Стили — из ядра: шесть разных карточек и пять разных подписей в панелях были
+// расхождением, а не выбором (DIZAJN, раздел 2).
 const W = "/api/modules/watch";
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const LBL = "font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)";
-const CARD = "display:flex;flex-direction:column;gap:9px;padding:15px 17px;border-radius:16px;border:1px solid var(--line);background:var(--panel);backdrop-filter:var(--blur)";
-const INP = "padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-size:12.5px";
+
 // Цвет состояния в журнале: взят — сделано, не вышло — требует человека, был до присмотра — не
 // потерян, но и не взят. Третье состояние нужно именно потому, что иначе его приняли бы за отказ.
 const СОСТ = {

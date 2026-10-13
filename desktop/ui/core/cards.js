@@ -22,6 +22,25 @@ export const S_LBL = "font-family:var(--mono);font-size:11px;letter-spacing:.07e
 export const S_NUM = "font-family:var(--mono);font-size:17px;font-weight:700;line-height:1.1";
 export const S_ORIGIN = "font-size:11px;color:var(--ink-3);line-height:1.45";
 
+// ── общие стили панелей: ОДИН источник на приложение ───────────────────────────────────────────
+//
+// До этого каждая панель держала свои `const CARD/LBL/INP/BTN`, и они разошлись: шесть разных
+// карточек (отступ 15, 16, 18, 20 px) и пять разных подписей (9.5, 10, 10.5, 11 px, три варианта
+// межбуквенного интервала). Одно и то же место в двух разделах выглядело по-разному — а это ровно
+// то свойство корпоративного интерфейса, которого у нас не было: предсказуемость.
+//
+// Значения — из `docs/DIZAJN_DESKTOPA_ENTERPRISE.md`, раздел 2: отступ карточки 12/16, строка
+// списка 32 px, основной текст 12.5 px. Через токены темы, а не числами: плотность меняется в
+// одном месте, и «компактного режима» второй настройкой не будет.
+export const CARD = S_CARD;
+export const LBL = S_LBL;
+export const INP = "padding:7px 10px;border-radius:9px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-size:12.5px";
+export const BTN = "padding:6px 12px;border-radius:9px;border:1px solid var(--line);background:var(--panel-2);color:var(--ink);font-size:12.5px;cursor:pointer";
+export const BTN_OK = BTN + ";border-color:var(--ok-line, var(--line-2));font-weight:600";
+// Строка списка: высота из токена, а не из воздуха вокруг текста. Двенадцать строк на экране
+// 1366×768 вместо восьми — критерий из раздела 9 того же документа.
+export const ROW = "display:flex;align-items:center;gap:10px;min-height:var(--row-h);padding:0 var(--pad-card);font-size:12.5px;border-bottom:1px solid var(--line)";
+
 // Плитка числа: само число и подпись, что оно значит. Числа моноширинные — колонки выравниваются
 // по разряду, и «1 240» не выглядит длиннее «840».
 export function tile(число, подпись) {

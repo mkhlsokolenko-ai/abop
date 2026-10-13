@@ -1,9 +1,10 @@
 // Модуль «Безопасность» (AdminScreens) — рецепты 1:1 из ДС: панель-карточки, mono-лейблы,
 // политика роль→разрешено/запрещено, периметр/эскалация/ре-аттестация/аудит + демо approve/deny.
+import { LBL, CARD } from "../../core/cards.js";
+// Стили — из ядра: шесть разных карточек и пять разных подписей в панелях были
+// расхождением, а не выбором (DIZAJN, раздел 2).
 const S = "/api/modules/security";
 const esc = (s) => (s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
-const LBL = "font-family:var(--mono);font-size:9.5px;letter-spacing:.8px;text-transform:uppercase;color:var(--ink-3)";
-const CARD = "padding:20px;border-radius:16px;background:var(--panel);border:1px solid var(--line);display:flex;flex-direction:column;gap:14px";
 
 export async function mount(root, ctx) {
   const { api, gate, toast } = ctx;

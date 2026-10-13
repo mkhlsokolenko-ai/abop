@@ -11,10 +11,10 @@
 //    внешняя коммуникация, в рамках ваших должностных обязанностей».
 // 4. **Срок виден, и истёкший срок — не ошибка.** «Решение не принято за N ч» означает, что
 //    доставка не состоялась, а черновик лежит. Красным это рисовать нельзя: ничего не сломалось.
+import { LBL, BTN, BTN_OK } from "../../core/cards.js";
+// Стили — из ядра: шесть разных карточек и пять разных подписей в панелях были
+// расхождением, а не выбором (DIZAJN, раздел 2).
 const M = "/api/modules/decisions";
-const LBL = "font-family:var(--mono);font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3)";
-const BTN = "padding:7px 13px;border-radius:9px;border:1px solid var(--line);background:var(--panel-2);color:var(--ink);font-size:12.5px;cursor:pointer";
-const BTN_OK = BTN + ";border-color:var(--ok-line, var(--line));font-weight:600";
 
 export async function mount(root, ctx) {
   const { api, esc, toast, humanError, card, origin, sanitizeHtml, setHitlCount } = ctx;

@@ -354,6 +354,10 @@ def _run_summary(agent_id: str, run: dict) -> dict:
                              if (c.get("by_model") or {}) else None))(
             ((run.get("run_metrics") or {}).get("cost") or {})),
         "cost_rub": ((run.get("run_metrics") or {}).get("cost") or {}).get("rub"),
+        # Итог в числах с происхождением — тот же, что в журнале прогонов: его считает сервер одной
+        # функцией (`server/run_card`). Карточка в чате однажды уже разошлась с карточкой в журнале
+        # (держала план, собранный до правки подбора), и разошлась молча.
+        "итог": run.get("итог") if isinstance(run.get("итог"), dict) else None,
         # Прогон, обрезанный лимитом, выглядел как обычный: находок меньше — и непонятно почему.
         "budget_stopped": [str(x) for x in (((run.get("run_metrics") or {}).get("budget") or {}).get("stopped_skills") or [])],
         # Расхождения между ветвями: сколько закрыто правилом и что ждёт решения человека. Молчать об
