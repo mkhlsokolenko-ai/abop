@@ -1,0 +1,38 @@
+# Источник данных Postgres — журнал прогонов ABOP. Нужен для управленческих срезов: сколько стоил
+# отдел за неделю, кто сколько запускал, что ушло наружу. Prometheus на это не отвечает: он знает
+# счётчики и глубину очереди, но не знает, КТО и ЧТО делал.
+#
+# Доступ — ОТДЕЛЬНАЯ роль только на чтение, а не прикладной пользователь. Grafana — это SQL-консоль
+# в руках того, кто вошёл: с прикладными правами из неё можно было бы править журнал прогонов.
+# Создать роль на сервере (один раз):
+#
+#   psql -U abop -d abop -c "CREATE ROLE grafana_ro LOGIN PASSWORD '…'; \
+#        GRANT CONNECT ON DATABASE abop TO grafana_ro; \
+#        GRANT USAGE ON SCHEMA public TO grafana_ro; \
+#        GRANT SELECT ON runs, run_jobs, hitl_items, audit_log TO grafana_ro;"
+#
+# Пароль не хранится в репозитории: подставляется переменной среды контейнера Grafana
+# (`GF_DS_PG_PASSWORD` в `ops/docker-compose.observability.yml`, значение — из `.env` сервера).
+apiVersion: 1
+datasources:
+  - name: ABOP Postgres
+    uid: abop-pg
+    type: postgres
+    access: proxy
+    # ABOP ходит в Postgres на 5433 (см. реестр систем). Grafana в контейнере — через host-gateway.
+    url: host.docker.internal:5433
+    database: abop
+    user: grafana_ro
+    isDefault: false
+    editable: false
+    secureJsonData:
+      password: ${GF_DS_PG_PASSWORD}
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: false
+      # Запросы только на чтение — это свойство РОЛИ, а не галочки в интерфейсе; галочка здесь
+      # лишь убирает кнопки, которые всё равно не сработают.
+      maxOpenConns: 4
+      maxIdleConns: 2
+      connMaxLifetime: 14400

@@ -87,11 +87,31 @@ def claims() -> dict:
         return {}
 
 
-def login(idp: str = "github", timeout_s: int = 300) -> dict:
+СТРАНИЦА_ОК = (
+    "<html><head><meta charset='utf-8'></head>"
+    "<body style='font-family:sans-serif;text-align:center;padding-top:60px;"
+    "background:#0B0F14;color:#E6EDF3'><h2>Вход выполнен ✓</h2>"
+    "<p>Можно вернуться в приложение и закрыть вкладку.</p></body></html>")
+
+
+def _страница_отказа(почему: str) -> bytes:
+    return ("<html><head><meta charset='utf-8'></head>"
+            "<body style='font-family:sans-serif;text-align:center;padding-top:60px;"
+            "background:#0B0F14;color:#E6EDF3'><h2>Вход не завершён</h2>"
+            f"<p style='color:#fbbf24'>{почему}</p>"
+            "<p>Вернитесь в приложение и попробуйте снова.</p></body></html>").encode()
+
+
+def login(idp: str = "github", timeout_s: int = 300, on_url=None) -> dict:
     """Запускает loopback-PKCE вход; блокирует до редиректа или таймаута.
 
-    Возвращает {ok, user} либо {ok:False, error}. Открытие браузера — на стороне вызывающего
-    (Electron), сюда возвращаем url, если браузер не открылся.
+    `on_url(url)` вызывается СРАЗУ, как адрес готов, — так вызывающий открывает браузер именно на
+    этой попытке. Прежде адрес передавался атрибутом `login.last_url`, и он переживал попытку: на
+    второй вход маршрут находил прошлый адрес с прошлым портом, браузер уходил туда, а того порта
+    уже не было — страница `/callback` падала с «не удаётся подключиться». Общего состояния между
+    попытками здесь больше нет.
+
+    Возвращает {ok, user} либо {ok:False, error}.
     """
     verifier = _b64(secrets.token_bytes(48))
     challenge = _b64(hashlib.sha256(verifier.encode()).digest())
@@ -101,20 +121,26 @@ def login(idp: str = "github", timeout_s: int = 300) -> dict:
     class Handler(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
-            holder["code"] = (q.get("code") or [None])[0]
-            holder["state"] = (q.get("state") or [None])[0]
+            код = (q.get("code") or [None])[0]
+            ошибка = (q.get("error_description") or q.get("error") or [None])[0]
+            if код:
+                holder["code"] = код
+                holder["state"] = (q.get("state") or [None])[0]
+            elif ошибка:
+                holder["error"] = str(ошибка)[:300]
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
-            self.wfile.write(
-                "<html><body style='font-family:sans-serif;text-align:center;padding-top:60px;"
-                "background:#0B0F14;color:#E6EDF3'><h2>Вход выполнен ✓</h2>"
-                "<p>Можно вернуться в приложение и закрыть вкладку.</p></body></html>".encode())
+            # Отказ в Keycloak (закрыли окно, нет прав) должен читаться с экрана, а не выглядеть
+            # как успешный вход, после которого приложение почему-то не вошло.
+            self.wfile.write(СТРАНИЦА_ОК.encode() if код else _страница_отказа(
+                ошибка or "Keycloak не прислал код авторизации."))
 
         def log_message(self, *a):
             pass
 
     srv = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    srv.timeout = 1
     port = srv.server_address[1]
     redirect = f"http://127.0.0.1:{port}/callback"
     params = {"client_id": config.CLIENT, "response_type": "code", "scope": "openid",
@@ -122,17 +148,40 @@ def login(idp: str = "github", timeout_s: int = 300) -> dict:
               "code_challenge": challenge, "code_challenge_method": "S256", "kc_idp_hint": idp}
     url = config.KC + "/auth?" + urllib.parse.urlencode(params)
 
-    threading.Thread(target=srv.handle_request, daemon=True).start()
-    # url отдаём наружу заранее — Electron откроет системный браузер сам
-    login.last_url = url  # type: ignore[attr-defined]
+    # Сервер слушает, ПОКА не придёт код. Прежде он обрабатывал ровно один запрос
+    # (`handle_request` в потоке): любое обращение браузера до кода — предварительное соединение,
+    # `/favicon.ico`, повтор страницы — съедало единственный заход, и настоящий `/callback`
+    # получал отказ соединения.
+    стоп = threading.Event()
+
+    def _слушать():
+        while not стоп.is_set() and not holder.get("code"):
+            srv.handle_request()          # srv.timeout=1 → цикл проверяет флаг раз в секунду
+
+    поток = threading.Thread(target=_слушать, daemon=True)
+    поток.start()
+    if callable(on_url):
+        on_url(url)
+    login.last_url = url  # type: ignore[attr-defined]   # совместимость: прежние вызывающие
 
     for _ in range(timeout_s):
-        if "code" in holder:
+        if holder.get("code") or holder.get("error"):
             break
         time.sleep(1)
+    # Сначала дожидаемся, пока слушающий поток выйдет, и только потом закрываем сокет. Закрытие
+    # «из-под» потока, сидящего в select, на Windows даёт WinError 10038 (операция на объекте, не
+    # являющемся сокетом) — поймано тестом входа.
+    стоп.set()
+    поток.join(timeout=3)
     srv.server_close()
-    if not holder.get("code") or holder.get("state") != state:
-        return {"ok": False, "error": "Вход не завершён (таймаут или отказ)."}
+    if holder.get("error"):
+        return {"ok": False, "error": f"Keycloak отказал во входе: {holder['error']}"}
+    if not holder.get("code"):
+        return {"ok": False, "error": ("Вход не завершён: код авторизации не пришёл. Проверьте, что "
+                                       f"{config.KC.split('/realms')[0]} доступен с этого компьютера "
+                                       "(VPN, прокси, брандмауэр).")}
+    if holder.get("state") != state:
+        return {"ok": False, "error": "Ответ не совпал с запросом входа (state) — попробуйте снова."}
     try:
         tok = _post_form(config.KC + "/token", urllib.parse.urlencode({
             "grant_type": "authorization_code", "client_id": config.CLIENT,

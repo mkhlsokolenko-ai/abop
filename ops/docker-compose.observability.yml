@@ -2,6 +2,12 @@
 # Запуск на сервере:  docker compose -f ops/docker-compose.observability.yml up -d
 # ABOP Web API работает с --network host на :8091 → Prometheus тянет метрики через host-gateway.
 # Grafana: http://<server>:3300 (admin/admin по умолчанию — сменить при первом входе).
+#
+# Два источника данных, и они отвечают на разные вопросы:
+#   * Prometheus — как работает СИСТЕМА: глубина очереди, память, задержки;
+#   * ABOP Postgres — что сделали ЛЮДИ и их агенты: прогоны, стоимость, решения (дашборд
+#     «ABOP — срезы руководителя»). Нужна роль только на чтение, см. grafana/provisioning/
+#     datasources/postgres.yml; пароль — в переменной GF_DS_PG_PASSWORD.
 services:
   prometheus:
     image: prom/prometheus:latest
@@ -23,6 +29,10 @@ services:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
       GF_USERS_ALLOW_SIGN_UP: "false"
+      # Пароль роли только на чтение к журналу прогонов (датасорс ABOP Postgres). В репозитории
+      # его нет: берётся из среды сервера. Не задан — панели срезов руководителя покажут ошибку
+      # подключения, и это честнее, чем пустые графики, которые читаются как «работы не было».
+      GF_DS_PG_PASSWORD: ${GF_DS_PG_PASSWORD:-}
     volumes:
       - abop_grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro   # datasource Prometheus + провайдер дашбордов

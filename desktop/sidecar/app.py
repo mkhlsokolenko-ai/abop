@@ -209,21 +209,21 @@ def do_login() -> dict:
     """Блокирующий loopback-PKCE вход; браузер открываем на стороне сайдкара."""
     holder: dict = {}
 
+    def _открыть(url: str) -> None:
+        # Браузер открываем по адресу ЭТОЙ попытки. Прежде адрес читался из атрибута
+        # `auth.login.last_url`, который переживал попытку: на второй вход опрос находил прошлый
+        # адрес с прошлым портом мгновенно, браузер уходил туда, и страница /callback падала —
+        # того порта уже не существовало.
+        try:
+            webbrowser.open(url)
+        except Exception:  # noqa: BLE001 — браузер мог не открыться; адрес вернём ответом
+            pass
+
     def _run():
-        holder["res"] = auth.login()
+        holder["res"] = auth.login(on_url=_открыть)
 
     t = threading.Thread(target=_run, daemon=True)
     t.start()
-    # дождёмся, пока auth.login выставит url, и откроем браузер
-    for _ in range(50):
-        url = getattr(auth.login, "last_url", None)
-        if url:
-            try:
-                webbrowser.open(url)
-            except Exception:
-                pass
-            break
-        threading.Event().wait(0.1)
     t.join()
     res = holder.get("res", {"ok": False, "error": "internal"})
     if res.get("ok"):

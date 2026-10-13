@@ -1335,6 +1335,9 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, sta
     except Exception as ex:  # noqa: BLE001
         result["delivery_error"] = (result.get("delivery_error") or "") + f" templates: {type(ex).__name__}: {ex}"
     result["started_by"] = started_by
+    # Отдел прогона — факт о прогоне, а не вывод из текущей карточки агента: агента могут перевести
+    # в другую семью, и прошлые прогоны «переехали» бы вместе с ним (ADR-065).
+    result["family"] = agent.get("family") or ""
     # Least-privilege манифест агента (ABAC): какие системы реестра доступны его семье, Qdrant-тенант,
     # и какие сущности закрыты на пути данных (система вне scope).
     try:

@@ -21,6 +21,15 @@ CREATE INDEX IF NOT EXISTS idx_runs_agent ON runs (agent_id);
 -- Арендатор (шаг 5): журнал прогонов — это находки и деньги конкретной компании.
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS tenant TEXT NOT NULL DEFAULT 'default';
 CREATE INDEX IF NOT EXISTS idx_runs_tenant ON runs (tenant, created_at DESC);
+-- Управленческие поля колонками (ADR-065): по ним считаются срезы руководителя в Grafana. Лежали
+-- в payload (`started_by`, `run_metrics.cost.rub`, тайминги), а отдел не хранился вовсе — его
+-- доставали join'ом по агентам. SQL-панель с тремя стрелками в JSONB никто не станет править.
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS actor    TEXT;
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS family   TEXT;
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS cost_rub NUMERIC(12,4);
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS seconds  NUMERIC(10,2);
+CREATE INDEX IF NOT EXISTS idx_runs_family ON runs (tenant, family, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_runs_actor ON runs (tenant, actor, created_at DESC);
 """
 SCHEMA += tenancy.миграция_ключа("runs", "id")
 
@@ -32,12 +41,34 @@ def _has_pg() -> bool:
     return bool(settings.pg_dsn)
 
 
+ДОСЫПКА = """
+UPDATE runs SET
+    actor    = COALESCE(actor,    payload->>'started_by'),
+    family   = COALESCE(family,   payload->>'family'),
+    cost_rub = COALESCE(cost_rub, NULLIF(payload->'run_metrics'->'cost'->>'rub','')::numeric),
+    seconds  = COALESCE(seconds,
+                        NULLIF(payload->'run_metrics'->'timings'->>'total_ms','')::numeric / 1000)
+WHERE actor IS NULL OR family IS NULL OR cost_rub IS NULL OR seconds IS NULL
+"""
+
+
 async def init() -> None:
     if not _has_pg():
         return
     from .db import _conn
     async with _conn() as conn:
         await conn.execute(SCHEMA)
+        # Досыпка задним числом: без неё срезы руководителя начинались бы с сегодняшнего дня, а
+        # журнал за месяц выглядел бы пустым — и это читалось бы как «мы ничего не делали».
+        # Один UPDATE, идемпотентный (COALESCE + WHERE по NULL): реплик может быть несколько,
+        # выбирать среди них главную ради миграции незачем. Прогон без стоимости в payload так и
+        # останется с NULL — врать нулём там, где числа не было, нельзя.
+        try:
+            await conn.execute(ДОСЫПКА)
+        except Exception as ex:  # noqa: BLE001 — журнал мог быть пуст или колонки только созданы
+            from . import observability as obs
+
+            obs.log_event("warn", "runs.backfill_fail", error=f"{type(ex).__name__}: {ex}")
 
 
 async def _next_id(agent_id: str) -> str:
@@ -69,14 +100,22 @@ async def save(run: dict) -> dict:
         return row
     from .db import _conn
     v = run.get("verdict") or {}
-    g = (run.get("run_metrics") or {}).get("governance") or {}
+    м = run.get("run_metrics") or {}
+    g = м.get("governance") or {}
+    цена = (м.get("cost") or {}).get("rub")
+    мс = (м.get("timings") or {}).get("total_ms")
     async with _conn() as conn:
         await conn.execute(
-            "INSERT INTO runs (id,agent_id,contract_audit_id,verdict_ok,autonomy_used,hitl_count,payload,tenant) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+            "INSERT INTO runs (id,agent_id,contract_audit_id,verdict_ok,autonomy_used,hitl_count,"
+            "payload,tenant,actor,family,cost_rub,seconds) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (rid, run["agent_id"], run.get("contract_audit_id"), bool(v.get("ok")),
              v.get("autonomy_used"), int(g.get("hitl_count") or 0), json.dumps(run),
-             tenancy.текущий()))
+             tenancy.текущий(), run.get("started_by"), run.get("family"),
+             # NULL, а не 0: прогон без обращений к модели стоит ноль, а прогон, в котором
+             # стоимость не посчиталась, — неизвестно сколько. В сводке это разные вещи.
+             float(цена) if цена is not None else None,
+             round(float(мс) / 1000, 2) if мс is not None else None))
     out = await get(rid)
     if out is not None:
         out["id"] = rid  # payload хранит run без id — восстанавливаем
@@ -139,12 +178,9 @@ async def list_runs(agent_id: str | None = None, limit: int = 100) -> list[dict]
                         # чем знает (ADR-044).
                         "source": r.get("source") or "abop",
                         "reported_by": r.get("reported_by"),
-                        # Прогон чужого агента приходит ОТЧЁТОМ по MCP, а не исполняется нами.
-                        # Подтверждение участка такими прогонами слабее — и это обязано быть
-                        # видно до самого экрана, иначе карта снова начнёт утверждать больше,
-                        # чем знает (ADR-044).
-                        "source": r.get("source") or "abop",
-                        "reported_by": r.get("reported_by"),
+                        "family": r.get("family"),
+                        "seconds": (round(float(((r.get("run_metrics") or {}).get("timings") or {})
+                                                .get("total_ms") or 0) / 1000, 2) or None),
                         "cost": (r.get("run_metrics") or {}).get("cost") or {}})
         return out
     from .db import _conn
@@ -152,7 +188,7 @@ async def list_runs(agent_id: str | None = None, limit: int = 100) -> list[dict]
     # идентификаторов — сводка остаётся лёгкой, тянуть payload целиком ради этого не нужно.
     cols = ("id,agent_id,contract_audit_id,verdict_ok,autonomy_used,hitl_count,created_at,"
             "payload->>'started_by',payload->'run_metrics'->'cost',payload->'op_ids',"
-            "payload->>'source',payload->>'reported_by'")
+            "payload->>'source',payload->>'reported_by',family,seconds")
     async with _conn() as conn:
         if agent_id:
             cur = await conn.execute(
@@ -167,7 +203,9 @@ async def list_runs(agent_id: str | None = None, limit: int = 100) -> list[dict]
              "autonomy_used": r[4], "hitl_count": r[5],
              "created_at": r[6].isoformat() if r[6] else None, "started_by": r[7],
              "cost": r[8] or {}, "op_ids": r[9] or [],
-             "source": r[10] or "abop", "reported_by": r[11]} for r in rows]
+             "source": r[10] or "abop", "reported_by": r[11],
+             "family": r[12], "seconds": float(r[13]) if r[13] is not None else None}
+            for r in rows]
 
 
 async def get(run_id: str) -> dict | None:
