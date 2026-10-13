@@ -536,6 +536,9 @@ async def _startup() -> None:
     for _wi in range(run_queue.WORKERS):
         _asyncio.create_task(run_bus.worker_loop(f"{os.getenv('HOSTNAME', 'api')}-w{_wi}", _handle_job))
     _asyncio.create_task(run_queue.gauges_loop())   # глубина очереди/RSS/ожидание → Prometheus/Grafana
+    # Неотправленные черновики живут 30 дней и убираются сами (PRD, решение 2): иначе «Результаты»
+    # зарастают тем, по чему решение так и не приняли, и полка перестаёт быть полезной.
+    _asyncio.create_task(hitl_store.уборка_loop())
     obs.log_event("info", "run_queue.started", workers=run_queue.WORKERS, bus=run_bus.describe().get("bus"))
     await _refresh_skill_ds_cache()  # инжект data-need оверрайдов из PG в ape
     await dataplane_store.init()
@@ -967,15 +970,25 @@ async def _pipeline_job(job: dict) -> dict:
                                "investigations_total": len(result.get("investigations") or []),
                                "delivery": result.get("delivery") or [], "verdict": result.get("verdict") or {},
                                "trace_id": result.get("trace_id") or ""})
-            waits = [d.get("hitl_id") for d in (result.get("delivery") or []) if d.get("mode") == "awaiting_hitl" and d.get("hitl_id")]
+            ждущие = [d for d in (result.get("delivery") or [])
+                      if d.get("mode") == "awaiting_hitl" and d.get("hitl_id")]
+            waits = [d["hitl_id"] for d in ждущие]
+            # Цепочка ЖДЁТ только то, у чего нет обратимого пути (PRD, раздел 3). Письмо, ждущее
+            # отправки, лежит готовым черновиком — следующему шагу он доступен, и останавливать
+            # работу из-за решения, которое ничего не меняет для downstream, значит не выполнить
+            # обещание бизнесу из-за формальности. Прежде вставало ЛЮБОЕ ожидание.
+            стоп = [d["hitl_id"] for d in ждущие if d.get("ждать")]
         except Exception as ex:  # noqa: BLE001 — сбой шага не рушит цепочку
             done_steps.append({"agent_id": agent["id"], "agent_name": agent.get("name"), "error": str(ex)[:300]})
-            waits = []
+            waits = стоп = []
         i += 1
         cp.update(_pipeline_checkpoint(i, len(steps), done_steps, prev_ctx, prev_src))
+        if waits:
+            # Что осталось черновиком — видно в карточке цепочки, даже если она дошла до конца.
+            cp["черновики"] = sorted(set((cp.get("черновики") or []) + waits))
         await run_queue.set_checkpoint(job["id"], cp)
-        if waits and i < len(steps):   # HITL-пауза: следующий шаг только после решения оператора
-            cp["hitl_ids"] = waits
+        if стоп and i < len(steps):   # обратимого пути нет — следующий шаг только после решения
+            cp["hitl_ids"] = стоп
             return {"await_hitl": cp}
     await audit_store.record(actor, "pipeline.run", p.get("pid") or "", {"steps": len(done_steps), "job_id": job["id"]})
     return {"checkpoint": cp}

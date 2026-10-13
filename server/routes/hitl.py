@@ -83,10 +83,22 @@ async def out_channels(family: str = "", u: dict = Depends(user)) -> dict:
 
 
 @router.get("/api/hitl/queue")
-async def hitl_queue(u: dict = Depends(user)) -> dict:
-    """Очередь HITL-подтверждений: pending-заявки на доставку наружу (ABAC по семье агента)."""
+async def hitl_queue(u: dict = Depends(user), mine: str = "") -> dict:
+    """Решения, ждущие человека: что готово, не отправлено и чьего слова ждёт (ABAC по семье).
+
+    `?mine=1` — только свои: заявки, рождённые собственными прогонами. Это и есть раздел «Решения»
+    исполнителя (PRD, 5.4): У2 решает тот, чей прогон, и смотреть ему надо своё, а не всё, что
+    видно отделу. Без фильтра — прежнее поведение, нужное руководителю и дежурному.
+    """
     items = await hitl_store.list_pending()
-    return {"queue": [i for i in items if can_see_family(u, i.get("family"))]}
+    видно = [i for i in items if can_see_family(u, i.get("family"))]
+    # Имя параметра латиницей намеренно: кириллица в строке запроса уехала бы процентной
+    # кодировкой в каждый вызов клиента, а однажды на этом уже обожглись — Starlette принимает
+    # кириллический параметр ПУТИ за литерал, и маршрут молча не совпадал.
+    if str(mine or "").lower() in ("1", "true", "yes"):
+        кто = {str(u.get("name") or ""), str(u.get("sub") or "")} - {""}
+        видно = [i for i in видно if str(i.get("requested_by") or "") in кто]
+    return {"queue": видно, "всего": len(видно)}
 
 
 @router.get("/api/hitl/{item_id}")

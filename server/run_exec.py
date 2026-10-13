@@ -31,7 +31,7 @@ from cli import ape
 
 from . import access, admin_store, assembly, audit_store, blackboard, clients, dataplane_store
 from . import delivery as delivery_mod
-from . import doclink, hitl_store, identity_store, langfuse_trace
+from . import doclink, hitl_store, identity_store, langfuse_trace, levels
 from . import observability as obs
 from . import report_compose, report_store, run_cache_store, run_parts_store, run_queue
 from . import run_store, runner, schema_store, skill_store, skill_templates, skill_tools
@@ -631,20 +631,49 @@ async def _deliver_out_nodes(agent: dict, result: dict, actor: str, deliver_filt
             # возможности прочитать, что именно уходит и кому.
             cfg = {**cfg, "hitl": True}
         if cfg.get("hitl"):
-            # заявка в очередь HITL — оператор подтвердит, тогда отправим реально
+            # ── точка решения с путём по умолчанию (PRD, раздел 3) ────────────────────────────
+            #
+            # Прежде здесь было только «ожидает подтверждения оператора»: заявка создавалась, а
+            # что СТАЛО с работой агента, карточка не говорила. Человек видел ожидание, а не
+            # готовый документ, и цепочка вставала.
+            #
+            # Теперь у точки решения объявлен обратимый аналог: письмо не отправляется, а лежит
+            # готовым черновиком; задача не создаётся, а готова заготовкой. Решение человека —
+            # не «можно ли продолжать», а «превратить ли обратимое в необратимое».
+            адресат = str(cfg.get("to") or cfg.get("book_id") or "")
+            класс = levels.класс_действия(channel or "", адресат=адресат,
+                                          объявлен=levels.объявленный_класс(cfg))
+            у = levels.уровень(класс)
+            черновик = levels.обратимое_вместо(channel or "")
+            # Ждать цепочке приходится только там, где обратимого аналога нет: придумывать
+            # «черновик команды в шине» нельзя — команда либо ушла, либо нет. Автор узла может
+            # потребовать ожидания явно (`wait`), если следующий шаг читает то, что отправлено.
+            ждать = bool(cfg.get("wait") or cfg.get("ждать")) or not черновик
             item = await hitl_store.create(
                 run_id=str(run_id), agent_id=agent.get("id") or "", family=fam,
                 node=n.get("id") or "", title=n.get("title") or channel,
-                channel=channel or "", to_addr=str(cfg.get("to") or cfg.get("book_id") or ""),
+                channel=channel or "", to_addr=адресат,
                 payload={"cfg": cfg, "html": node_html, "agent_name": agent.get("name"),
-                         "job_id": run_queue.CURRENT_JOB.get()},
+                         "job_id": run_queue.CURRENT_JOB.get(),
+                         # Класс и уровень — для карточки решения и журнала. Права при решении
+                         # считаются заново (`routes/hitl._уровень_заявки`): перечень доменов мог
+                         # поменяться, и действовать надо по текущему правилу, а не по записанному.
+                         "класс": класс, "уровень": у, "решает": levels.кто_решает(у),
+                         "основание": levels.основание(у), "черновик": черновик,
+                         "живёт_с": _time.time(), "живёт_сек": levels.ЖИВЁТ_ЧЕРНОВИК},
                 requested_by=actor)
             deliveries.append({"node": n.get("id"), "title": n.get("title"), "channel": channel,
                                "to": cfg.get("to"), "format": cfg.get("format"),
                                "mode": "awaiting_hitl", "hitl_id": item["id"],
-                               "result": f"ожидает подтверждения оператора (заявка {item['id']})"})
+                               "уровень": у, "класс": класс, "решает": levels.кто_решает(у),
+                               "основание": levels.основание(у),
+                               "черновик": черновик, "не_отправлено": True, "ждать": ждать,
+                               "result": (f"{черновик} готов, не отправлено — ждёт вашего решения "
+                                          f"(заявка {item['id']})") if черновик else
+                                         f"ожидает решения человека (заявка {item['id']})"})
             await audit_store.record(actor, "agent.deliver", agent.get("id"),
-                                     {"channel": channel, "mode": "awaiting_hitl", "hitl_id": item["id"]},
+                                     {"channel": channel, "mode": "awaiting_hitl",
+                                      "hitl_id": item["id"], "уровень": у, "класс": класс},
                                      severity="info")
             continue
         real = str(cfg.get("run")).lower() == "true"

@@ -86,16 +86,83 @@ async def get(item_id: str) -> dict | None:
 
 
 async def list_pending() -> list[dict]:
+    """Ждущие решения заявки. Несут то, что нужно карточке: КТО просил, что лежит готовым, уровень.
+
+    Прежде список отдавал только «что и куда», и по нему нельзя было ни отобрать свои решения, ни
+    показать «не отправлено»: карточка показывала ожидание вместо готового документа.
+    """
     if not _has_pg():
-        return [dict(v) for v in _MEM.values() if v.get("state") == "pending"]
+        итог = []
+        for v in _MEM.values():
+            if v.get("state") != "pending":
+                continue
+            пз = v.get("payload") or {}
+            итог.append({**{k: v.get(k) for k in
+                            ("id", "run_id", "agent_id", "family", "node", "title", "channel",
+                             "to_addr", "requested_by", "created_at")},
+                         "черновик": пз.get("черновик") or "", "уровень": пз.get("уровень"),
+                         "основание": пз.get("основание") or "", "решает": пз.get("решает") or ""})
+        return итог
     from .db import _conn
     async with _conn() as conn:
         cur = await conn.execute(
-            "SELECT id,run_id,agent_id,family,node,title,channel,to_addr,created_at FROM hitl_items "
-            "WHERE state='pending' ORDER BY created_at DESC LIMIT 100")
+            "SELECT id,run_id,agent_id,family,node,title,channel,to_addr,created_at,requested_by,"
+            "payload->>'черновик',payload->>'уровень',payload->>'основание',payload->>'решает' "
+            "FROM hitl_items WHERE state='pending' ORDER BY created_at DESC LIMIT 100")
         rows = await cur.fetchall()
-    keys = ["id", "run_id", "agent_id", "family", "node", "title", "channel", "to_addr", "created_at"]
+    keys = ["id", "run_id", "agent_id", "family", "node", "title", "channel", "to_addr",
+            "created_at", "requested_by", "черновик", "уровень", "основание", "решает"]
     return [dict(zip(keys, r)) for r in rows]
+
+
+async def просрочить_черновики(старше_сек: int | None = None) -> int:
+    """Черновики старше срока уходят в `expired`. Возвращает число убранных.
+
+    **Почему закрытие, а не удаление.** Черновик — работа агента и след решения, которого не
+    приняли; стереть его значит потерять ответ на вопрос «что мы не отправили и почему». Он
+    перестаёт лежать в «Результатах», но остаётся в журнале.
+
+    Срок — 30 дней (`levels.ЖИВЁТ_ЧЕРНОВИК`, решение владельца 13.10). Один UPDATE, идемпотентный:
+    реплик может быть несколько, и выбирать среди них главную ради уборки незачем.
+    """
+    from . import levels
+
+    срок = int(старше_сек if старше_сек is not None else levels.ЖИВЁТ_ЧЕРНОВИК)
+    причина = f"решение не принято за {срок // 86400} дн. — черновик закрыт фоновой уборкой"
+    if not _has_pg():
+        import time as _t
+
+        убрано = 0
+        for v in _MEM.values():
+            родился = float((v.get("payload") or {}).get("живёт_с") or 0)
+            if v.get("state") == "pending" and родился and _t.time() - родился > срок:
+                v.update({"state": "expired", "decided_by": "система", "reason": причина})
+                убрано += 1
+        return убрано
+    from .db import _conn
+    async with _conn() as conn:
+        cur = await conn.execute(
+            "UPDATE hitl_items SET state='expired', decided_by='система', reason=%s, "
+            "decided_at=now() WHERE state='pending' "
+            "AND created_at < now() - (%s || ' seconds')::interval",
+            (причина, str(срок)))
+        return int(getattr(cur, "rowcount", 0) or 0)
+
+
+async def уборка_loop(период: int = 3600) -> None:
+    """Фоновая уборка просроченных черновиков. Сбой одного круга не должен ронять цикл."""
+    import asyncio
+
+    while True:
+        try:
+            убрано = await просрочить_черновики()
+            if убрано:
+                from . import observability as obs
+
+                obs.inc("abop_hitl_expired_total", убрано)
+        except Exception:  # noqa: BLE001 — уборка не критична, цикл обязан выжить
+            pass
+        await asyncio.sleep(период)
 
 
 async def update_payload(item_id: str, patch: dict) -> None:
