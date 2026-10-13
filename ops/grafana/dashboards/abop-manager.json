@@ -65,7 +65,8 @@
       "options": {
         "mode": "markdown",
         "content": "Источник — **журнал прогонов** (`runs`): одна строка на выполненный прогон, записанная в момент исполнения. Стоимость — реальные токены по тарифу (`run_metrics.cost`), время — от начала до конца прогона. **Пустое значение стоимости означает «не посчиталось», а не «ноль»** — на своём боксе прогон стоит 0 ₽, и это записано нулём явно. Время человека у экрана здесь не показывается: его мерит приложение на компьютере и хранит у себя (ADR-064)."
-      }
+      },
+      "id": 1
     },
     {
       "type": "stat",
@@ -90,9 +91,31 @@
       "targets": [
         {
           "format": "table",
-          "rawSql": "SELECT count(*) AS \"прогонов\" FROM runs WHERE tenant = '$tenant' AND ($__timeFilter(created_at)) AND COALESCE(NULLIF(family,''),'(не указан)') ~ '${family:regex}'"
+          "rawSql": "SELECT count(*) AS \"прогонов\" FROM runs WHERE tenant = '$tenant' AND ($__timeFilter(created_at)) AND COALESCE(NULLIF(family,''),'(не указан)') ~ '${family:regex}'",
+          "refId": "A",
+          "rawQuery": true,
+          "editorMode": "code",
+          "datasource": {
+            "type": "postgres",
+            "uid": "abop-pg"
+          }
         }
-      ]
+      ],
+      "id": 2,
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "auto",
+        "orientation": "horizontal"
+      }
     },
     {
       "type": "stat",
@@ -117,9 +140,31 @@
       "targets": [
         {
           "format": "table",
-          "rawSql": "SELECT COALESCE(sum(cost_rub),0) AS \"рублей\" FROM runs WHERE tenant = '$tenant' AND ($__timeFilter(created_at)) AND COALESCE(NULLIF(family,''),'(не указан)') ~ '${family:regex}'"
+          "rawSql": "SELECT COALESCE(sum(cost_rub),0) AS \"рублей\" FROM runs WHERE tenant = '$tenant' AND ($__timeFilter(created_at)) AND COALESCE(NULLIF(family,''),'(не указан)') ~ '${family:regex}'",
+          "refId": "A",
+          "rawQuery": true,
+          "editorMode": "code",
+          "datasource": {
+            "type": "postgres",
+            "uid": "abop-pg"
+          }
         }
-      ]
+      ],
+      "id": 3,
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "auto",
+        "orientation": "horizontal"
+      }
     },
     {
       "type": "stat",
@@ -145,9 +190,31 @@
       "targets": [
         {
           "format": "table",
-          "rawSql": "SELECT COALESCE(sum(seconds),0) AS \"секунд\" FROM runs WHERE tenant = '$tenant' AND ($__timeFilter(created_at)) AND COALESCE(NULLIF(family,''),'(не указан)') ~ '${family:regex}'"
+          "rawSql": "SELECT COALESCE(sum(seconds),0) AS \"секунд\" FROM runs WHERE tenant = '$tenant' AND ($__timeFilter(created_at)) AND COALESCE(NULLIF(family,''),'(не указан)') ~ '${family:regex}'",
+          "refId": "A",
+          "rawQuery": true,
+          "editorMode": "code",
+          "datasource": {
+            "type": "postgres",
+            "uid": "abop-pg"
+          }
         }
-      ]
+      ],
+      "id": 4,
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "auto",
+        "orientation": "horizontal"
+      }
     },
     {
       "type": "stat",
@@ -173,9 +240,31 @@
       "targets": [
         {
           "format": "table",
-          "rawSql": "SELECT count(*) FILTER (WHERE payload->>'срок_отмечен' IS NULL) AS \"ждут\", count(*) FILTER (WHERE payload->>'срок_отмечен' IS NOT NULL) AS \"просрочено\" FROM hitl_items WHERE state = 'pending'"
+          "rawSql": "SELECT count(*) FILTER (WHERE payload->>'срок_отмечен' IS NULL) AS \"ждут\", count(*) FILTER (WHERE payload->>'срок_отмечен' IS NOT NULL) AS \"просрочено\" FROM hitl_items WHERE state = 'pending'",
+          "refId": "A",
+          "rawQuery": true,
+          "editorMode": "code",
+          "datasource": {
+            "type": "postgres",
+            "uid": "abop-pg"
+          }
         }
-      ]
+      ],
+      "id": 5,
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "auto",
+        "orientation": "horizontal"
+      }
     },
     {
       "type": "timeseries",
@@ -203,9 +292,17 @@
       "targets": [
         {
           "format": "time_series",
-          "rawSql": "SELECT date_trunc('day', created_at) AS time, COALESCE(NULLIF(family,''),'(не указан)') AS metric, count(*) AS value FROM runs WHERE tenant = '$tenant' AND ($__timeFilter(created_at)) AND COALESCE(NULLIF(family,''),'(не указан)') ~ '${family:regex}' GROUP BY 1, 2 ORDER BY 1"
+          "rawSql": "SELECT date_trunc('day', created_at) AS time, COALESCE(NULLIF(family,''),'(не указан)') AS metric, count(*) AS value FROM runs WHERE tenant = '$tenant' AND ($__timeFilter(created_at)) AND COALESCE(NULLIF(family,''),'(не указан)') ~ '${family:regex}' GROUP BY 1, 2 ORDER BY 1",
+          "refId": "A",
+          "rawQuery": true,
+          "editorMode": "code",
+          "datasource": {
+            "type": "postgres",
+            "uid": "abop-pg"
+          }
         }
-      ]
+      ],
+      "id": 6
     },
     {
       "type": "timeseries",
@@ -233,9 +330,17 @@
       "targets": [
         {
           "format": "time_series",
-          "rawSql": "SELECT date_trunc('day', created_at) AS time, COALESCE(NULLIF(family,''),'(не указан)') AS metric, COALESCE(sum(cost_rub),0) AS value FROM runs WHERE tenant = '$tenant' AND ($__timeFilter(created_at)) AND COALESCE(NULLIF(family,''),'(не указан)') ~ '${family:regex}' GROUP BY 1, 2 ORDER BY 1"
+          "rawSql": "SELECT date_trunc('day', created_at) AS time, COALESCE(NULLIF(family,''),'(не указан)') AS metric, COALESCE(sum(cost_rub),0) AS value FROM runs WHERE tenant = '$tenant' AND ($__timeFilter(created_at)) AND COALESCE(NULLIF(family,''),'(не указан)') ~ '${family:regex}' GROUP BY 1, 2 ORDER BY 1",
+          "refId": "A",
+          "rawQuery": true,
+          "editorMode": "code",
+          "datasource": {
+            "type": "postgres",
+            "uid": "abop-pg"
+          }
         }
-      ]
+      ],
+      "id": 7
     },
     {
       "type": "table",
@@ -287,9 +392,28 @@
       "targets": [
         {
           "format": "table",
-          "rawSql": "SELECT COALESCE(NULLIF(actor,''),'(не указан)') AS \"человек\", COALESCE(NULLIF(family,''),'(не указан)') AS \"отдел\", count(*) AS \"прогонов\", count(*) FILTER (WHERE verdict_ok IS FALSE) AS \"с замечаниями\", COALESCE(sum(cost_rub),0) AS \"рублей\", COALESCE(sum(seconds),0) AS \"работали агенты\" FROM runs WHERE tenant = '$tenant' AND ($__timeFilter(created_at)) AND COALESCE(NULLIF(family,''),'(не указан)') ~ '${family:regex}' GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 50"
+          "rawSql": "SELECT COALESCE(NULLIF(actor,''),'(не указан)') AS \"человек\", COALESCE(NULLIF(family,''),'(не указан)') AS \"отдел\", count(*) AS \"прогонов\", count(*) FILTER (WHERE verdict_ok IS FALSE) AS \"с замечаниями\", COALESCE(sum(cost_rub),0) AS \"рублей\", COALESCE(sum(seconds),0) AS \"работали агенты\" FROM runs WHERE tenant = '$tenant' AND ($__timeFilter(created_at)) AND COALESCE(NULLIF(family,''),'(не указан)') ~ '${family:regex}' GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 50",
+          "refId": "A",
+          "rawQuery": true,
+          "editorMode": "code",
+          "datasource": {
+            "type": "postgres",
+            "uid": "abop-pg"
+          }
         }
-      ]
+      ],
+      "id": 8,
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false
+        }
+      }
     },
     {
       "type": "table",
@@ -312,9 +436,28 @@
       "targets": [
         {
           "format": "table",
-          "rawSql": "SELECT decided_at AS \"когда\", COALESCE(NULLIF(decided_by,''),'—') AS \"решил\", channel AS \"канал\", COALESCE(NULLIF(to_addr,''),'—') AS \"кому\", COALESCE(payload->>'уровень','?') AS \"уровень\" FROM hitl_items WHERE state = 'approved' AND ($__timeFilter(decided_at)) ORDER BY decided_at DESC LIMIT 100"
+          "rawSql": "SELECT decided_at AS \"когда\", COALESCE(NULLIF(decided_by,''),'—') AS \"решил\", channel AS \"канал\", COALESCE(NULLIF(to_addr,''),'—') AS \"кому\", COALESCE(payload->>'уровень','?') AS \"уровень\" FROM hitl_items WHERE state = 'approved' AND ($__timeFilter(decided_at)) ORDER BY decided_at DESC LIMIT 100",
+          "refId": "A",
+          "rawQuery": true,
+          "editorMode": "code",
+          "datasource": {
+            "type": "postgres",
+            "uid": "abop-pg"
+          }
         }
-      ]
+      ],
+      "id": 9,
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false
+        }
+      }
     },
     {
       "type": "table",
@@ -337,9 +480,28 @@
       "targets": [
         {
           "format": "table",
-          "rawSql": "SELECT COALESCE(decided_at, created_at) AS \"когда\", state AS \"состояние\", channel AS \"канал\", COALESCE(NULLIF(to_addr,''),'—') AS \"кому\", COALESCE(NULLIF(requested_by,''),'—') AS \"чей прогон\", COALESCE(NULLIF(addressed_to,''),'(отделу)') AS \"кого ждали\", COALESCE(NULLIF(reason,''), payload->>'срок_почему', '—') AS \"почему\" FROM hitl_items WHERE state IN ('rejected','expired') OR (state = 'pending' AND payload->>'срок_отмечен' IS NOT NULL) ORDER BY 1 DESC LIMIT 100"
+          "rawSql": "SELECT COALESCE(decided_at, created_at) AS \"когда\", state AS \"состояние\", channel AS \"канал\", COALESCE(NULLIF(to_addr,''),'—') AS \"кому\", COALESCE(NULLIF(requested_by,''),'—') AS \"чей прогон\", COALESCE(NULLIF(addressed_to,''),'(отделу)') AS \"кого ждали\", COALESCE(NULLIF(reason,''), payload->>'срок_почему', '—') AS \"почему\" FROM hitl_items WHERE state IN ('rejected','expired') OR (state = 'pending' AND payload->>'срок_отмечен' IS NOT NULL) ORDER BY 1 DESC LIMIT 100",
+          "refId": "A",
+          "rawQuery": true,
+          "editorMode": "code",
+          "datasource": {
+            "type": "postgres",
+            "uid": "abop-pg"
+          }
         }
-      ]
+      ],
+      "id": 10,
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false
+        }
+      }
     }
   ]
 }
