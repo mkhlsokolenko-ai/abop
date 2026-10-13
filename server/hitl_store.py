@@ -34,6 +34,10 @@ CREATE TABLE IF NOT EXISTS hitl_items (
     decided_at   TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS idx_hitl_state ON hitl_items (state, created_at DESC);
+-- Адресность (ADR-063): кому именно адресовано решение. Пусто ⇒ видно отделу, как раньше.
+ALTER TABLE hitl_items ADD COLUMN IF NOT EXISTS addressed_to TEXT NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_hitl_addressed ON hitl_items (addressed_to, state)
+    WHERE state = 'pending';
 """
 
 _MEM: dict[str, dict] = {}
@@ -52,10 +56,13 @@ async def init() -> None:
 
 
 async def create(*, run_id: str, agent_id: str, family: str, node: str, title: str,
-                 channel: str, to_addr: str, payload: dict, requested_by: str) -> dict:
+                 channel: str, to_addr: str, payload: dict, requested_by: str,
+                 addressed_to: str = "") -> dict:
+    """Создать заявку. `addressed_to` — КОМУ адресовано решение; пусто ⇒ отделу, как раньше."""
     item = {"id": "hitl-" + uuid.uuid4().hex[:12], "run_id": run_id, "agent_id": agent_id,
             "family": family, "node": node, "title": title, "channel": channel, "to_addr": to_addr,
-            "payload": payload, "state": "pending", "requested_by": requested_by}
+            "payload": payload, "state": "pending", "requested_by": requested_by,
+            "addressed_to": addressed_to}
     if not _has_pg():
         _MEM[item["id"]] = item
         return item
@@ -63,9 +70,9 @@ async def create(*, run_id: str, agent_id: str, family: str, node: str, title: s
     async with _conn() as conn:
         await conn.execute(
             "INSERT INTO hitl_items (id,run_id,agent_id,family,node,title,channel,to_addr,payload,"
-            "state,requested_by) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'pending',%s)",
+            "state,requested_by,addressed_to) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'pending',%s,%s)",
             (item["id"], run_id, agent_id, family, node, title, channel, to_addr,
-             json.dumps(payload, ensure_ascii=False), requested_by))
+             json.dumps(payload, ensure_ascii=False), requested_by, addressed_to))
     return item
 
 
@@ -76,12 +83,12 @@ async def get(item_id: str) -> dict | None:
     async with _conn() as conn:
         cur = await conn.execute(
             "SELECT id,run_id,agent_id,family,node,title,channel,to_addr,payload,state,requested_by,"
-            "decided_by,reason FROM hitl_items WHERE id=%s", (item_id,))
+            "decided_by,reason,addressed_to FROM hitl_items WHERE id=%s", (item_id,))
         r = await cur.fetchone()
     if not r:
         return None
     keys = ["id", "run_id", "agent_id", "family", "node", "title", "channel", "to_addr", "payload",
-            "state", "requested_by", "decided_by", "reason"]
+            "state", "requested_by", "decided_by", "reason", "addressed_to"]
     return dict(zip(keys, r))
 
 
@@ -99,7 +106,7 @@ async def list_pending() -> list[dict]:
             пз = v.get("payload") or {}
             итог.append({**{k: v.get(k) for k in
                             ("id", "run_id", "agent_id", "family", "node", "title", "channel",
-                             "to_addr", "requested_by", "created_at")},
+                             "to_addr", "requested_by", "addressed_to", "created_at")},
                          "черновик": пз.get("черновик") or "", "уровень": пз.get("уровень"),
                          "основание": пз.get("основание") or "", "решает": пз.get("решает") or "",
                          "срок_до": пз.get("срок_до"), "срок_истёк": bool(пз.get("срок_отмечен"))})
@@ -109,12 +116,12 @@ async def list_pending() -> list[dict]:
         cur = await conn.execute(
             "SELECT id,run_id,agent_id,family,node,title,channel,to_addr,created_at,requested_by,"
             "payload->>'черновик',payload->>'уровень',payload->>'основание',payload->>'решает',"
-            "payload->>'срок_до',(payload->>'срок_отмечен') IS NOT NULL "
+            "payload->>'срок_до',(payload->>'срок_отмечен') IS NOT NULL,addressed_to "
             "FROM hitl_items WHERE state='pending' ORDER BY created_at DESC LIMIT 100")
         rows = await cur.fetchall()
     keys = ["id", "run_id", "agent_id", "family", "node", "title", "channel", "to_addr",
             "created_at", "requested_by", "черновик", "уровень", "основание", "решает",
-            "срок_до", "срок_истёк"]
+            "срок_до", "срок_истёк", "addressed_to"]
     return [dict(zip(keys, r)) for r in rows]
 
 
@@ -131,11 +138,11 @@ async def ждущие_с_payload(limit: int = 500) -> list[dict]:
     async with _conn() as conn:
         cur = await conn.execute(
             "SELECT id,run_id,agent_id,family,node,title,channel,to_addr,payload,requested_by,"
-            "created_at FROM hitl_items WHERE state='pending' ORDER BY created_at LIMIT %s",
-            (int(limit),))
+            "addressed_to,created_at FROM hitl_items WHERE state='pending' "
+            "ORDER BY created_at LIMIT %s", (int(limit),))
         rows = await cur.fetchall()
     keys = ["id", "run_id", "agent_id", "family", "node", "title", "channel", "to_addr", "payload",
-            "requested_by", "created_at"]
+            "requested_by", "addressed_to", "created_at"]
     return [dict(zip(keys, r)) for r in rows]
 
 

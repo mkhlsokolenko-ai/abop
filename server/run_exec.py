@@ -33,7 +33,8 @@ from . import access, admin_store, assembly, audit_store, blackboard, clients, d
 from . import delivery as delivery_mod
 from . import decisions, doclink, hitl_store, identity_store, langfuse_trace, levels
 from . import observability as obs
-from . import report_compose, report_store, run_cache_store, run_parts_store, run_queue
+from . import process_store, report_compose, report_store, run_cache_store, run_parts_store
+from . import run_queue
 from . import run_store, runner, schema_store, skill_store, skill_templates, skill_tools
 from . import slava, systems_store
 from .config import settings
@@ -650,10 +651,21 @@ async def _deliver_out_nodes(agent: dict, result: dict, actor: str, deliver_filt
             # потребовать ожидания явно (`wait`), если следующий шаг читает то, что отправлено.
             ждать = bool(cfg.get("wait") or cfg.get("ждать")) or not черновик
             _срок = decisions.срок_решения(cfg)
+            # Кому адресовано решение (ADR-063). У2 — исполнителю прогона: решает тот, чей он.
+            # У3 — владельцу операции в карте процессов; не нашёлся — пусто, и заявка видна
+            # отделу, как раньше. Выдумывать адресата нельзя: заявка, адресованная никому,
+            # хуже заявки, адресованной отделу.
+            кому = actor
+            if у >= 3:
+                кому = ""
+                for _op in (await _seat_ops(agent)):
+                    кому = await process_store.владелец(_op)
+                    if кому:
+                        break
             item = await hitl_store.create(
                 run_id=str(run_id), agent_id=agent.get("id") or "", family=fam,
                 node=n.get("id") or "", title=n.get("title") or channel,
-                channel=channel or "", to_addr=адресат,
+                channel=channel or "", to_addr=адресат, addressed_to=кому,
                 payload={"cfg": cfg, "html": node_html, "agent_name": agent.get("name"),
                          "job_id": run_queue.CURRENT_JOB.get(),
                          # Класс и уровень — для карточки решения и журнала. Права при решении
@@ -673,6 +685,7 @@ async def _deliver_out_nodes(agent: dict, result: dict, actor: str, deliver_filt
                                "уровень": у, "класс": класс, "решает": levels.кто_решает(у),
                                "основание": levels.основание(у),
                                "черновик": черновик, "не_отправлено": True, "ждать": ждать,
+                               "кому": кому,
                                "result": (f"{черновик} готов, не отправлено — ждёт вашего решения "
                                           f"(заявка {item['id']})") if черновик else
                                          f"ожидает решения человека (заявка {item['id']})"})
