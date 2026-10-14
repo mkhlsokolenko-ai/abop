@@ -187,6 +187,152 @@ def _passes(item: Any, where: dict | None) -> bool:
     return True
 
 
+# ── Очистка того, что уходит В СИСТЕМУ ───────────────────────────────────────────────────────────
+# Вход мы чистим давно, а выход уходил как есть — и в Redmine появлялись задачи из одних заголовков
+# («h2. Рейтинг» и пусто под ним), темы с висячим разделителем («…· порог ») и заголовки страниц
+# в 190 символов, обрезанные посреди слова. Для человека на той стороне это мусор, который он
+# разбирает руками; для нас — следы шаблона, а не содержание.
+_УПРАВЛЯЮЩИЕ = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+_ЗАГОЛОВОК_РАЗДЕЛА = re.compile(r"^(?:h[1-6]\.\s+|#{1,6}\s+)(.+?)\s*$")
+_ВИСЯЧИЙ_ХВОСТ = re.compile(r"[\s·—–:;,|/\-]+$")
+# Для СТРОК ТЕЛА класс уже: «|» и «-» — это разметка таблиц и разделителей markdown, и срезать их
+# значит сломать таблицу («| --- | --- |» превращался в «| ---»). Первая версия ровно это и делала.
+_ХВОСТ_СТРОКИ = re.compile(r"[\s·—–:;,]+$")
+_ПУСТОЙ_МАРКЕР = re.compile(r"^\s*[-*•]\s*$")
+_КЛЮЧИ_ЗАГОЛОВКА = ("subject", "title", "name")
+_КЛЮЧИ_ТЕЛА = ("description", "body", "markdown", "html", "text", "comment", "note")
+
+
+def _без_управляющих(s: str) -> str:
+    """Управляющие символы в теле письма или задачи — всегда след сбоя, а не содержание."""
+    return _УПРАВЛЯЮЩИЕ.sub("", s)
+
+
+def очистить_заголовок(s: str, предел: int = 180) -> str:
+    """Заголовок: одна строка, без висячего хвоста, обрезка по границе слова.
+
+    Обрезка ровно по лимиту (так делает коннектор и делал прежний `title[:200]`) рвёт слово
+    пополам — в вики это видно в оглавлении и читается как поломка.
+    """
+    s = re.sub(r"\s+", " ", _без_управляющих(str(s or ""))).strip()
+    s = _ВИСЯЧИЙ_ХВОСТ.sub("", s)
+    if len(s) <= предел:
+        return s
+    край = s[:предел]
+    пробел = край.rfind(" ")
+    return (край[:пробел] if пробел > предел * 0.6 else край).rstrip(" ·—–:;,|/-") + "…"
+
+
+_ПОДПИСЬ = re.compile(r"(?mi)^\s*(?:-{3,}\s*\n+)?\s*сформировано ABOP\b")
+
+
+def _отделить_подпись(текст: str) -> tuple:
+    """Отрезать служебную подпись «— Сформировано ABOP (навык …)» от содержания.
+
+    Отрезать нужно ДО выбрасывания пустых разделов: иначе подпись считается содержанием последнего
+    раздела, и заголовок без данных остаётся жив вместе с ней — ровно так в Redmine приезжали
+    задачи «h2. Итог» и подпись под ним.
+    """
+    m = _ПОДПИСЬ.search(текст)
+    if not m:
+        return текст, ""
+    return текст[:m.start()], текст[m.start():].strip()
+
+
+def очистить_тело(s: str) -> str:
+    """Тело: выбросить разделы без содержания, схлопнуть пустоту, снять висячие хвосты.
+
+    Раздел пуст, когда под его заголовком до следующего заголовка нет ни одной непустой строки
+    (пустые маркеры списка не в счёт). Такой раздел не «оформление»: он обещает читателю рейтинг,
+    которого в ответе нет. Если содержания не осталось вовсе — уходит и подпись: письмо из одной
+    подписи отправлять незачем.
+    """
+    текст = _без_управляющих(str(s or "")).replace("\r\n", "\n").replace("\r", "\n")
+    текст, подпись = _отделить_подпись(текст)
+    строки = [("" if _ПУСТОЙ_МАРКЕР.match(l) else l.rstrip()) for l in текст.split("\n")]
+    итог = []
+    i = 0
+    while i < len(строки):
+        if not _ЗАГОЛОВОК_РАЗДЕЛА.match(строки[i]):
+            итог.append(строки[i])
+            i += 1
+            continue
+        j = i + 1
+        есть_содержание = False
+        тело = []
+        while j < len(строки) and not _ЗАГОЛОВОК_РАЗДЕЛА.match(строки[j]):
+            тело.append(строки[j])
+            if строки[j].strip() and строки[j].strip() not in ("---", "—"):
+                есть_содержание = True
+            j += 1
+        if есть_содержание:
+            итог.append(строки[i])
+            итог.extend(тело)
+        i = j
+    out = "\n".join(итог)
+    out = re.sub(r"\n{3,}", "\n\n", out)
+    out = "\n".join(l if l.lstrip().startswith("|") else _ХВОСТ_СТРОКИ.sub("", l) if l.strip() else ""
+                    for l in out.split("\n")).strip()
+    if not out:
+        return ""
+    return out + ("\n\n" + подпись if подпись else "")
+
+
+def _только_служебное(тело: str) -> bool:
+    """Осталась одна подпись «Сформировано ABOP…» — содержания нет, отправлять нечего."""
+    без = re.sub(r"(?m)^-{3,}\s*$", "", тело)
+    без = re.sub(r"(?mi)^\s*сформировано ABOP.*$", "", без)
+    return not без.strip()
+
+
+def очистить_payload(payload: dict) -> tuple:
+    """Привести команду к виду, пригодному для чужой системы. Возвращает (payload, пусто_по_сути).
+
+    `пусто_по_сути` — в шаблоне был содержательный раздел (description/body/…), а после очистки от
+    него ничего не осталось: команду создавать нельзя, иначе в трекере появится пустая задача.
+    """
+    было_тело = any(k in payload for k in _КЛЮЧИ_ТЕЛА)
+    out = {}
+    for k, v in payload.items():
+        if not isinstance(v, str):
+            out[k] = v
+            continue
+        if k in _КЛЮЧИ_ЗАГОЛОВКА:
+            v = очистить_заголовок(v)
+        elif k in _КЛЮЧИ_ТЕЛА:
+            v = очистить_тело(v)
+            if _только_служебное(v):
+                v = ""
+        else:
+            v = _без_управляющих(v).strip()
+        if v != "":
+            out[k] = v
+    стало_тело = any(k in out for k in _КЛЮЧИ_ТЕЛА)
+    return out, (было_тело and not стало_тело)
+
+
+def _рендер_заголовка(шаблон: str, it: dict, struct: dict) -> str:
+    """Заголовок посегментно («·»): сегмент, подстановка в котором пуста, выбрасывается целиком.
+
+    Иначе остаётся ярлык без значения — «Аудит 1С · рейтинг находок · порог», где порога нет.
+    """
+    куски = []
+    for сегмент in str(шаблон or "").split("·"):
+        if not сегмент.strip():
+            continue
+        отрисован = render(сегмент, it, struct, "text").strip()
+        если_пусто = not _ВИСЯЧИЙ_ХВОСТ.sub("", отрисован)
+        if _VAR.search(сегмент):
+            if если_пусто:
+                continue                       # в сегменте была подстановка, и она пуста
+            ярлык = _ВИСЯЧИЙ_ХВОСТ.sub("", _VAR.sub("", сегмент).strip())
+            if ярлык and отрисован.strip() == ярлык:
+                continue                       # остался один ярлык, значение не пришло
+        if отрисован:
+            куски.append(отрисован)
+    return " · ".join(куски)
+
+
 def build_commands(spec: dict, struct: dict, *, skill: str = "") -> list[dict]:
     """Команды коннектора из структурированного ответа навыка по секции delivery."""
     if validate_delivery(spec) or not isinstance(struct, dict):
@@ -207,15 +353,23 @@ def build_commands(spec: dict, struct: dict, *, skill: str = "") -> list[dict]:
     skipped: list[dict] = []
     for it in items:
         payload = {k: (render(v, it, struct, fmt) if isinstance(v, str) else v) for k, v in tpl_payload.items()}
+        for ключ in _КЛЮЧИ_ЗАГОЛОВКА:                  # тема/заголовок — посегментно, без висячих ярлыков
+            if isinstance(tpl_payload.get(ключ), str):
+                payload[ключ] = _рендер_заголовка(tpl_payload[ключ], it, struct)
         payload = {k: v for k, v in payload.items() if v not in ("", None)}
+        payload, пусто_по_сути = очистить_payload(payload)
+        if пусто_по_сути:
+            skipped.append({"reason": "после очистки отправлять нечего: разделы шаблона пусты",
+                            "item": _scalar(it.get("id") or "")[:80] if isinstance(it, dict) and it is not struct else ""})
+            continue
         miss = sorted(k for k in required if k not in payload)
         if miss or not payload:
             skipped.append({"reason": ("пустые обязательные поля: " + ", ".join(miss)) if miss else "нечего отправлять",
                             "item": _scalar(it.get("id") or "")[:80] if isinstance(it, dict) and it is not struct else ""})
             continue
-        title = render(spec.get("title") or "", it, struct, "text").strip() or f"{spec['system']}/{spec['type']}"
+        title = _рендер_заголовка(spec.get("title") or "", it, struct) or f"{spec['system']}/{spec['type']}"
         ref = _scalar(it.get("id") or it.get("заголовок") or it.get("название") or "") if it is not struct else ""
-        out.append({"system": spec["system"], "type": spec["type"], "payload": payload, "title": title[:200],
+        out.append({"system": spec["system"], "type": spec["type"], "payload": payload, "title": очистить_заголовок(title, 200),
                     "source": {"skill": skill, "item": ref[:80]}})
     if skipped:
         out.append({"_skipped": skipped, "system": spec["system"], "type": spec["type"]})
