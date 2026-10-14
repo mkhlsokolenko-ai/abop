@@ -140,12 +140,20 @@ async def data_entities(u: dict = Depends(user)) -> dict:
     out: dict[str, dict] = {e: {"entity": e, "known": True, "hint": v.get("hint") or "",
                                 "required": v.get("required") or [], "rows": 0, "skills": 0}
                             for e, v in known.items()}
-    # что лежит в хранилище: имя сущности = имя файла canonical store
+    # Что лежит в хранилище. Перечислять ТОЛЬКО файлы нельзя: с переносом канонического стора в
+    # Postgres (08.10) у сущности файла может не быть вовсе — и она показывалась с «0 строк», хотя
+    # записи есть. Это не косметика: по этому экрану делают вывод «навыкам не на чем работать», и
+    # вывод выходит ложным. Поэтому имена берём из стора (он же режет по арендатору) И из наследия.
+    имена: set = set()
+    try:
+        имена |= set(await _asyncio.to_thread(dataplane_records.entities))
+    except Exception:  # noqa: BLE001 — нет БД/стора: остаётся файловое наследие ниже
+        pass
     import glob as _glob
     import os as _os
     _dir = _os.path.dirname(ape._data_path("x"))
-    for path in _glob.glob(_os.path.join(_dir, "*.jsonl")):
-        e = _os.path.basename(path)[:-6]
+    имена |= {_os.path.basename(p)[:-6] for p in _glob.glob(_os.path.join(_dir, "*.jsonl"))}
+    for e in sorted(имена):
         row = out.setdefault(e, {"entity": e, "known": False, "hint": "", "required": ["id"],
                                  "rows": 0, "skills": 0})
         try:
