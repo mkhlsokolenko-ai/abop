@@ -123,7 +123,7 @@ PyInstaller, у которого кросс-сборки нет вовсе. По
 cd desktop
 python -m pip install -r sidecar/requirements.txt pyinstaller
 python -m PyInstaller --noconfirm --clean build-sidecar.spec   # → dist/ape-sidecar/
-npm ci && npm run dist:mac                                      # → dist/ABOP-Desktop-<версия>-<арка>.dmg
+npm ci && npm run dist:mac                                      # → dist/ABOP-Desktop-<версия>-mac-<арка>.dmg
 ```
 
 **Подпись — ad-hoc, и это не формальность.** На Apple Silicon ядро отказывается исполнять Mach-O

@@ -35,7 +35,7 @@
       "category": "public.app-category.productivity",
       "darkModeSupport": true,
       "identity": null,
-      "artifactName": "ABOP-Desktop-${version}-${arch}.${ext}"
+      "artifactName": "ABOP-Desktop-${version}-mac-${arch}.${ext}"
     },
     "dmg": {
       "title": "ABOP Desktop ${version}"
