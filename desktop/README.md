@@ -112,6 +112,47 @@ CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist             # → dist/APE Deskto
 - Инсталлятор **без подписи** → при первом запуске Windows SmartScreen покажет предупреждение
   («Подробнее → Выполнить в любом случае»). Для тихой установки позже добавить code-signing сертификат.
 
+## Сборка под macOS (DMG) — только на macOS-раннере
+
+DMG нельзя собрать с Windows: образ делается инструментами macOS, а сайдкар — нативный бинарь
+PyInstaller, у которого кросс-сборки нет вовсе. Поэтому маки собирает CI, по раннеру на архитектуру:
+`macos-14` → **arm64** (Apple Silicon), `macos-13` → **x64** (Intel). Локально на Mac — то же самое
+руками:
+
+```bash
+cd desktop
+python -m pip install -r sidecar/requirements.txt pyinstaller
+python -m PyInstaller --noconfirm --clean build-sidecar.spec   # → dist/ape-sidecar/
+npm ci && npm run dist:mac                                      # → dist/ABOP-Desktop-<версия>-<арка>.dmg
+```
+
+**Подпись — ad-hoc, и это не формальность.** На Apple Silicon ядро отказывается исполнять Mach-O
+без подписи: совсем неподписанное приложение не «ругается Gatekeeper'ом», а не открывается с
+«повреждено». Developer ID у нас нет, поэтому `build/afterPack.js` подписывает бандл ad-hoc
+(`codesign --sign -`) между упаковкой `.app` и сборкой DMG и тут же проверяет печать. Что это
+значит для пользователя:
+
+- при первом запуске Gatekeeper скажет «разработчик не может быть проверен» → **правой кнопкой по
+  приложению → «Открыть»** (или «Системные настройки → Конфиденциальность и безопасность → Всё
+  равно открыть»). Двойной клик в первый раз не поможет — это поведение самой macOS;
+- **авто-обновления на Mac нет**: `electron-updater` проверяет подпись скачанного бандла и ad-hoc
+  не принимает, поэтому в `main.js` ветка `darwin` выключена явно — баннер, который падает на
+  кнопке «Установить», хуже отсутствия баннера. Обновление = скачать новый DMG;
+- и то, и другое снимается покупкой Apple Developer ID ($99/год): появится сертификат — убрать
+  ветку `darwin` в `setupUpdater` и выдать CI `CSC_LINK`/`CSC_KEY_PASSWORD`, остальное уже готово.
+
+**Чем Mac-сборка отличается в поведении:**
+
+| | Windows | macOS |
+|---|---|---|
+| Трей | `icon.ico` | `icon.png` 18px (`.ico` macOS не декодирует — значок был бы невидим) |
+| Авто-обновление | есть (electron-updater) | нет (нужен Developer ID) |
+| Хоткей «разобрать выделенное» | забирает выделение через SendKeys | SendKeys нет: берётся текущий буфер обмена |
+
+Иконка для macOS — `build/icon-1024.png` (electron-builder сам соберёт `.icns`). Она получена
+апскейлом 256→1024: векторного исходника у иконки нет, поэтому на крупных размерах она мягче, чем
+могла бы быть. Появится вектор — положить его и заменить файл.
+
 ## Авто-доставка обновлений (без ручной переустановки)
 
 Гибрид, чтобы не переставлять приложение на каждое изменение:
@@ -124,9 +165,14 @@ CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist             # → dist/APE Deskto
   проверяет версию, докачивает, ставит на перезапуск. Конфиг `build.publish` (github owner/repo) в
   `package.json`; проверка — в `main.js` (`checkUpdates()`, только `app.isPackaged`).
 
-**CI (`.github/workflows/desktop-release.yml`):** пуш тега `desktop-vX.Y.Z` → windows-раннер собирает
-сайдкар (PyInstaller) + инсталлятор (electron-builder) и **публикует в GitHub Releases** (`GITHUB_TOKEN`).
-Клиенты подхватывают апдейт сами.
+**CI (`.github/workflows/desktop-release.yml`):** пуш тега `desktop-vX.Y.Z` → три раннера
+(windows-latest, macos-14 arm64, macos-13 x64) собирают сайдкар (PyInstaller) + установщики
+(electron-builder) и **публикуют в GitHub Releases** (`GITHUB_TOKEN`). Windows-клиенты подхватывают
+апдейт сами; маки обновляются скачиванием DMG (см. выше).
+
+Проверить изменения сборки, **не выпуская релиз**: Actions → desktop-release → Run workflow с
+`publish = false` (или `gh workflow run desktop-release.yml -f publish=false`) — те же шаги, но
+результат уходит в артефакты и канал обновления у живых клиентов не трогается.
 
 Релиз вручную (локально): `set GH_TOKEN=... && npm run publish` (или через CI по тегу).
 Первый релиз нужно опубликовать один раз — дальше авто-апдейт от него отсчитывается.

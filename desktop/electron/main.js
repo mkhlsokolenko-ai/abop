@@ -91,7 +91,7 @@ async function createWindow() {
     minWidth: 900,
     minHeight: 600,
     backgroundColor: "#0f172a",   // = --bg темы (без «чужой» вспышки при старте)
-    icon: path.join(__dirname, "..", "build", "icon.ico"),
+    icon: path.join(__dirname, "..", "build", process.platform === "win32" ? "icon.ico" : "icon.png"),
     title: "ABOP Desktop",
     webPreferences: {
       contextIsolation: true,
@@ -144,10 +144,17 @@ let выходим = false;
 let былоПодсказки = false;
 let ждут = 0;
 
-function значок() {
-  const ico = path.join(__dirname, "..", "build", "icon.ico");
-  const img = nativeImage.createFromPath(ico);
-  return img.isEmpty() ? nativeImage.createEmpty() : img;
+function значок(размер) {
+  // macOS не декодирует .ico — nativeImage отдаёт пустую картинку, и трей выходит НЕВИДИМЫМ.
+  // На Mac это не косметика: окно там закрывают крестиком постоянно, приложение остаётся жить в
+  // фоне (см. window-all-closed), и трей — единственный путь обратно. Поэтому вне Windows берём
+  // .png. Размер просим только для трея: в уведомление нужна полноразмерная картинка.
+  const win32 = process.platform === "win32";
+  const файл = path.join(__dirname, "..", "build", win32 ? "icon.ico" : "icon.png");
+  let img = nativeImage.createFromPath(файл);
+  if (img.isEmpty()) return nativeImage.createEmpty();
+  if (размер) img = img.resize({ width: размер, height: размер });
+  return img;
 }
 
 function обновитьТрей() {
@@ -185,7 +192,7 @@ function уведомить({ title, body, куда }) {
 function создатьТрей() {
   if (tray) return;
   try {
-    tray = new Tray(значок());
+    tray = new Tray(значок(process.platform === "win32" ? 0 : 18));
     tray.on("double-click", () => показать());
     обновитьТрей();
   } catch (e) {
@@ -209,6 +216,14 @@ ipcMain.handle("os:badge", (_e, n) => { ждут = Math.max(0, Number(n) || 0); 
 let updater = null;
 function setupUpdater() {
   if (!app.isPackaged) return;
+  if (process.platform === "darwin") {
+    // electron-updater на macOS ПРОВЕРЯЕТ подпись скачанного бандла, а Developer ID у сборки нет
+    // (ad-hoc). Баннер «Найдено обновление» довёл бы до кнопки, которая падает на установке —
+    // это хуже, чем честное отсутствие баннера. Обновление на Mac — скачать новый DMG.
+    // Появится Developer ID — убрать эту ветку, остальной код уже готов.
+    console.warn("[updater] macOS: авто-обновление выключено (сборка без Developer ID)");
+    return;
+  }
   try {
     const { autoUpdater } = require("electron-updater");
     updater = autoUpdater;
