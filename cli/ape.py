@@ -2658,14 +2658,67 @@ def _guard_url(url: str) -> str:
     return url
 
 
+def _fill_template(шаблон: str, row: dict) -> str:
+    """«…/api/pages/{id}» + строка → URL. Поля берём через _dig (работает и по вложенным путям)."""
+    def _значение(m):
+        v = _dig(row, m.group(1))
+        return "" if v is None or v == "" else str(v)   # не `or ""`: id=0 — валидный идентификатор
+    return re.sub(r"\{([\w.]+)\}", _значение, str(шаблон))
+
+
+def _http_detail(rows: list, det: dict, headers: dict) -> list:
+    """Дозапрос карточки по каждой строке списка.
+
+    Список REST API почти никогда не отдаёт содержимое: BookStack `/api/pages` возвращает имя без
+    `html`, Redmine `/issues` — без `description`. Без дозапроса сущность `document` приезжает
+    из одних заголовков, и навык «читает документ», которого в записи нет. Ровно этот приём уже
+    делает адаптер Mailpit (тело письма берётся отдельным запросом) — здесь он обобщён на REST.
+
+    Сбой карточки НЕ валит рецепт: строка остаётся без обогащения, остальные доезжают. Предел
+    `limit` — предохранитель: рецепт на тысячу строк не должен превращаться в тысячу запросов.
+    """
+    шаблон = det.get("url") or ""
+    поля = det.get("fields") or []
+    предел = int(det.get("limit") or 200)
+    out = []
+    for i, row in enumerate(rows):
+        if not isinstance(row, dict) or i >= предел:
+            out.append(row)
+            continue
+        try:
+            req = urllib.request.Request(_guard_url(_fill_template(шаблон, row)), headers=headers or {})
+            with urllib.request.urlopen(req, timeout=30) as r:
+                карточка = json.loads(r.read().decode("utf-8", "replace"))
+        except Exception:  # noqa: BLE001 — недоступная карточка не должна ронять весь прогон
+            out.append(row)
+            continue
+        if not isinstance(карточка, dict):
+            out.append(row)
+            continue
+        доп = {k: карточка.get(k) for k in поля} if поля else карточка
+        out.append({**row, **{k: v for k, v in доп.items() if v is not None}})
+    return out
+
+
 def _adapter_http(src: dict) -> list:
     """pull-адаптер REST API→JSON. egress=external: URL валидируется (анти-SSRF); ответ — данные, не команды.
-    Поддержка: headers (авторизация), root (ключ массива в ответе)."""
+    Поддержка: headers (авторизация), root (ключ массива в ответе), detail (дозапрос карточки:
+    `detail.url` с подстановкой `{поле}` из строки, `detail.fields` — что подмешать, `detail.limit`).
+    Плоские `detail_url`/`detail_fields` принимаются как синонимы — ими рецепт задаётся из UI."""
     url = _guard_url(src["url"])
     req = urllib.request.Request(url, headers=src.get("headers", {}) or {})
     with urllib.request.urlopen(req, timeout=30) as r:
         data = json.loads(r.read().decode("utf-8", "replace"))
-    return _extract_rows(data, src.get("root", ""))
+    rows = _extract_rows(data, src.get("root", ""))
+    det = dict(src.get("detail") or {})
+    if not det.get("url") and src.get("detail_url"):
+        поля = src.get("detail_fields") or []
+        if isinstance(поля, str):
+            поля = [x.strip() for x in поля.split(",") if x.strip()]
+        det = {"url": src["detail_url"], "fields": поля, "limit": src.get("detail_limit")}
+    if det.get("url"):
+        rows = _http_detail(rows, det, src.get("headers", {}) or {})
+    return rows
 
 
 _MAILPIT_TEXT_EXT = (".txt", ".csv", ".json", ".md", ".log", ".xml", ".yaml", ".yml", ".ini", ".tsv")
@@ -2918,7 +2971,11 @@ register_adapter("http", _adapter_http, {
     "label": "REST API", "category": "api", "egress": "external", "read_only": True,
     "badge": "egress → анти-SSRF", "requires": [],
     "src_fields": [{"key": "url", "label": "URL источника", "placeholder": "https://erp.internal/api/v2/tx"},
-                   {"key": "root", "label": "ключ массива (опц.)", "placeholder": "items"}]})
+                   {"key": "root", "label": "ключ массива (опц.)", "placeholder": "items"},
+                   {"key": "detail_url", "label": "URL карточки (опц.)",
+                    "placeholder": "https://wiki.internal/api/pages/{id}"},
+                   {"key": "detail_fields", "label": "поля карточки через запятую (опц.)",
+                    "placeholder": "html, markdown"}]})
 register_adapter("mailpit", _adapter_mailpit, {
     "label": "Почта Mailpit (с вложениями)", "category": "api", "egress": "external", "read_only": True,
     "badge": "тело + текст вложений", "requires": [],
@@ -3155,6 +3212,11 @@ def _cast(v, t):
             return int(float(str(s)))
         except Exception:
             return None
+    if t in ("text", "plain"):
+        import html as _html
+        txt = re.sub(r"(?is)<(?:script|style)[^>]*>.*?</(?:script|style)>", " ", str(s))
+        txt = re.sub(r"(?s)<[^>]+>", " ", txt)
+        return re.sub(r"\s+", " ", _html.unescape(txt)).strip()
     if t == "lower":
         return str(s).lower()
     if t == "upper":
