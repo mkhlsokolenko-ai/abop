@@ -116,7 +116,8 @@ CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist             # → dist/APE Deskto
 
 DMG нельзя собрать с Windows: образ делается инструментами macOS, а сайдкар — нативный бинарь
 PyInstaller, у которого кросс-сборки нет вовсе. Поэтому маки собирает CI, по раннеру на архитектуру:
-`macos-14` → **arm64** (Apple Silicon), `macos-13` → **x64** (Intel). Локально на Mac — то же самое
+`macos-14` → **arm64** (Apple Silicon), `macos-15-intel` → **x64** (Intel: образ `macos-13`
+снят с обслуживания 04.12.2025, а сам Intel на раннерах GitHub доживает до осени 2027). Локально на Mac — то же самое
 руками:
 
 ```bash
@@ -169,7 +170,7 @@ npm ci && npm run dist:mac                                      # → dist/ABOP-
   `package.json`; проверка — в `main.js` (`checkUpdates()`, только `app.isPackaged`).
 
 **CI (`.github/workflows/desktop-release.yml`):** пуш тега `desktop-vX.Y.Z` → три раннера
-(windows-latest, macos-14 arm64, macos-13 x64) собирают сайдкар (PyInstaller) + установщики
+(windows-latest, macos-14 arm64, macos-15-intel x64) собирают сайдкар (PyInstaller) + установщики
 (electron-builder) и **публикуют в GitHub Releases** (`GITHUB_TOKEN`). Windows-клиенты подхватывают
 апдейт сами; маки обновляются скачиванием DMG (см. выше).
 

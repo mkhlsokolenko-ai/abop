@@ -5,7 +5,8 @@
 # для него нет, каждая платформа и архитектура собирает себя сама.
 #   windows-latest → .exe (NSIS)       — канал авто-обновления electron-updater
 #   macos-14       → .dmg/.zip arm64   — Apple Silicon
-#   macos-13       → .dmg/.zip x64     — Intel-маки
+#   macos-15-intel → .dmg/.zip x64     — Intel-маки (macos-13 снят с обслуживания 04.12.2025;
+#                                        сам Intel на раннерах живёт до осени 2027)
 #
 # `workflow_dispatch` с publish=false прогоняет ровно ту же сборку, но складывает результат в
 # артефакты и НИЧЕГО не публикует — так проверяют изменения сборки, не выпуская релиз и не трогая
@@ -82,7 +83,7 @@ jobs:
         include:
           - runner: macos-14   # Apple Silicon
             arch: arm64
-          - runner: macos-13   # Intel
+          - runner: macos-15-intel   # Intel (бывший macos-13 — снят, джоб вис в очереди навсегда)
             arch: x64
     runs-on: ${{ matrix.runner }}
     defaults:
