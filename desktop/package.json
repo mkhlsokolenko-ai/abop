@@ -32,7 +32,6 @@
     "afterPack": "build/afterPack.js",
     "mac": {
       "target": ["dmg", "zip"],
-      "icon": "build/icon-1024.png",
       "category": "public.app-category.productivity",
       "darkModeSupport": true,
       "identity": null,

@@ -1,7 +1,14 @@
 # Desktop-клиент ABOP: не тащим в git тяжёлые/генерируемые артефакты
 node_modules/
 dist/
-build/
+# PyInstaller складывает промежуточные файлы в build/<spec>/ — их в git не тащим. Но там же лежат
+# РЕСУРСЫ сборки (иконки, хук electron-builder), и игнор каталога ЦЕЛИКОМ означает, что новый файл
+# молча не доедет до CI: ровно на этом упал первый прогон mac-сборки («Cannot find module
+# build/afterPack.js»). `build/*` вместо `build/` — чтобы работали исключения ниже.
+build/*
+!build/icon.ico
+!build/icon.png
+!build/afterPack.js
 _smoke_home/
 __pycache__/
 *.pyc

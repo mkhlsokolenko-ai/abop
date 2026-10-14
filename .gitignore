@@ -17,6 +17,11 @@ venv/
 *.egg-info/
 dist/
 build/
+# Исключение из правила выше: desktop/build — это РЕСУРСЫ сборки (иконки, хук electron-builder),
+# а не её продукт (продукт в desktop/dist). Каталог обязан быть виден гиту: из исключённого
+# каталога отдельный файл обратно не вернёшь, и новый build/afterPack.js молча не доехал до CI.
+# Что внутри пускать, решает desktop/.gitignore.
+!desktop/build/
 # Артефакты сборки PyInstaller-сайдкара (desktop)
 desktop/build-sidecar/
 desktop/dist/
