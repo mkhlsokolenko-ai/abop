@@ -21,13 +21,16 @@ from . import run_bus
 from . import safety as safety_mod
 
 TOOL_STEPS = max(0, int(os.getenv("ABOP_TOOL_STEPS", "2")))
-READ_BASE = ["data_query", "data_get", "data_schema"]
+# doc_template в базе намеренно: документ организации собирают по форме организации, и это
+# касается любого навыка, который что-то пишет наружу, а не отдельного класса.
+READ_BASE = ["data_query", "data_get", "data_schema", "doc_template"]
 ACTION_TOOLS = {"email_send", "bookstack_publish", "redmine_create_issue", "bus_publish"}
 
 DESCRIPTIONS = {
     "data_query": 'выборка из Data Plane — args: {"entity":"...","filter":{...},"fields":[...],"limit":30}',
     "data_get": 'одна запись по id — args: {"entity":"...","id":"..."}',
     "data_schema": 'Data Contract сущности — args: {"entity":"..."}',
+    "doc_template": 'шаблон документа ОРГАНИЗАЦИИ из вики (форма, по которой собирать документ) — args: {"name":"письмо заказчику"}; без name — перечень',
     "audit1c_graph": 'граф связей документов 1С (basis-цепочки, счета, ИНН) — args: {}',
     "audit1c_checks": 'детерминированные проверки A/B/C/D по графу 1С — args: {"класс":"A|B|C|D"} (опц.)',
     "feed_checks": 'нарушения требований витрины по карточкам фида (считает код: атрибуты, единицы, маркировка, запреты, категория) — args: {"код":"ATTR_MISSING|…","карточка":"SKU-…"} (опц.)',

@@ -3041,6 +3041,8 @@ CANONICAL_SCHEMAS = {
                     "hint": "тикет: title/status/assignee"},
     "document":    {"required": ["id"],                    "join": ["id"],
                     "hint": "документ: kind/title/text"},
+    "template":    {"required": ["id", "title"],           "join": ["id"],
+                    "hint": "шаблон документа организации из вики: title/text/источник"},
     "meeting":     {"required": ["id"],                    "join": ["id"],
                     "hint": "встреча: attendees/decisions/actions"},
     # 1С-Аудитор (демо-вертикаль): имена сущностей ASCII (иначе _data_path схлопнет кириллицу в «_»)
@@ -4674,6 +4676,36 @@ def _json_в_пределе(данные, предел: int = ПРЕДЕЛ_ОТ�
                        "text": целиком[:предел - 200]}, ensure_ascii=False)
 
 
+def _t_doc_template(a: dict) -> str:
+    """Шаблон документа ОРГАНИЗАЦИИ из Data Plane (сущность `template`, наполняется из вики).
+
+    Документ агента должен быть по форме организации, а не по фантазии модели: в вики уже лежат
+    «Шаблон письма заказчику», «Шаблон ТЗ ГОСТ 34», «Шаблон коммерческого предложения». Это и есть
+    переиспользование действующих регламентов — и заодно проверка, что они вообще живые.
+
+    Без `name` возвращает перечень — агент выбирает сам и не угадывает имя.
+    """
+    записи = data_query("template", None, None, 50) or []
+    if not записи:
+        return ("шаблонов нет: сущность template пуста. Её наполняет рецепт из вики — "
+                "см. руководство методолога (docs/METODOLOG_GUIDE.md)")
+    имя = str(a.get("name") or a.get("имя") or "").strip().lower()
+    if not имя:
+        return json.dumps([{"id": r.get("id"), "title": r.get("title")} for r in записи], ensure_ascii=False)
+    точные = [r for r in записи if имя == str(r.get("title", "")).strip().lower()]
+    похожие = точные or [r for r in записи if имя in str(r.get("title", "")).lower()]
+    if not похожие:
+        перечень = "; ".join(str(r.get("title") or "") for r in записи)
+        return f"шаблон «{имя}» не найден. Есть: {перечень[:800]}"
+    r = похожие[0]
+    текст = str(r.get("text") or "").strip()
+    if not текст:
+        return (f"шаблон «{r.get('title')}» найден, но пуст: в вики у страницы нет содержимого "
+                "(или рецепт собран без дозапроса карточки — см. руководство методолога)")
+    return json.dumps({"title": r.get("title"), "текст": текст[:6000],
+                       "источник": r.get("источник") or r.get("url") or ""}, ensure_ascii=False)
+
+
 AGENT_TOOLS = {
     "read_file": (_t_read, 'прочитать локальный файл — args: {"path": "..."}'),
     "write_file": (_t_write, 'записать файл в ./ape_work — args: {"path": "...", "content": "..."}'),
@@ -4693,6 +4725,8 @@ AGENT_TOOLS = {
                  'одна каноническая запись по id — args: {"entity":"...","id":"..."}'),
     "data_schema": (lambda a: json.dumps(data_schema(a.get("entity", "")), ensure_ascii=False),
                     'Data Contract сущности (обязательные поля) — args: {"entity":"..."}'),
+    "doc_template": (_t_doc_template,
+                     'шаблон документа организации из вики — args: {"name":"письмо заказчику"}; без name — перечень'),
     "audit1c_graph": (_t_audit1c_graph,
                       'детерминированный граф связей реальной 1С (документы/basis-цепочки/счета/ИНН) — args: {}'),
     "audit1c_checks": (_t_audit1c_checks,
