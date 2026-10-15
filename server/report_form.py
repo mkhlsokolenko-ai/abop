@@ -24,6 +24,7 @@ web_api.
 from __future__ import annotations
 
 import html as _html
+import re
 
 from . import report_store
 
@@ -95,6 +96,37 @@ def field(it: dict, name: str):
     return None
 
 
+_ДАТА_ISO = re.compile(r"^(\d{4})-(\d{2})-(\d{2})(?:[T ].*)?$")
+
+
+def _дата(v: str) -> str:
+    """ISO-дата → 23.01.26. В служебном документе дата пишется одним способом, а не так, как её
+    отдала выгрузка: «2026-08-14» рядом с «14.08.2026» читается как разные источники."""
+    m = _ДАТА_ISO.match(str(v).strip())
+    return f"{m.group(3)}.{m.group(2)}.{m.group(1)[2:]}" if m else str(v)
+
+
+def _деньги(v) -> str:
+    """Разрядка тысяч неразрывным пробелом: 13000000 → 13 000 000.
+
+    Только от 10 000 по модулю — иначе разрядку получили бы коды строк формы (4110) и годы,
+    которые числами в этом смысле не являются.
+    """
+    s = str(v if v is not None else "").strip()
+    if not s:
+        return s
+    знак = "-" if s.startswith("-") else ""
+    тело = s.lstrip("+-").replace(" ", "").replace(" ", "")
+    целое, точка, дробь = тело.partition(".")
+    if not целое.isdigit() or len(целое) < 5:
+        return s
+    куски = []
+    while целое:
+        куски.insert(0, целое[-3:])
+        целое = целое[:-3]
+    return знак + " ".join(куски) + (("," + дробь) if точка and дробь else "")
+
+
 def _flat(v) -> str:
     """Значение одной графой: список — через « · », объект — «ключ: значение», скаляр — как есть."""
     if isinstance(v, list):
@@ -103,7 +135,7 @@ def _flat(v) -> str:
         return " · ".join(f"{report_store.label(k)}: {_flat(x)}" for k, x in v.items() if x not in _EMPTY)
     if isinstance(v, bool):
         return "да" if v else "нет"
-    return str(v if v is not None else "")
+    return _дата(v if v is not None else "")
 
 
 def _rows(v) -> list[dict]:
@@ -319,7 +351,9 @@ def _b_register(b: dict, result: dict, ctx: dict) -> str:
     head = "".join(f"<th{' class=n' if f in num else ''}>{esc(lbl)}</th>" for lbl, f in cols)
     body = []
     for it in items[:_MAX_ROWS]:
-        tds = "".join(f"<td{' class=n' if f in num else ''}>{esc(_flat(field(it, f)))}</td>" for _l, f in cols)
+        tds = "".join(f"<td{' class=n' if f in num else ''}>"
+                      f"{esc(_деньги(_flat(field(it, f))) if f in num else _flat(field(it, f)))}</td>"
+                      for _l, f in cols)
         body.append(f"<tr>{tds}</tr>")
     more = f" · показаны первые {_MAX_ROWS} из {len(items)}" if len(items) > _MAX_ROWS else ""
     return (_h2(b) + f"<table class='tbl'><tr>{head}</tr>{''.join(body)}</table>"
