@@ -1,10 +1,95 @@
 {
-  "name": "Подготовка ОДДС",
-  "contract_audit_id": "oddc-2026q3",
-  "graph": {
-    "nodes": [
-      { "id": "oddc-build", "kind": "skill", "skill": "oddc-build", "autonomy": "A1", "hitl": true }
-    ],
-    "edges": []
-  }
+ "name": "Подготовка ОДДС",
+ "contract_audit_id": "oddc-2026q3",
+ "family": "finance",
+ "graph": {
+  "nodes": [
+   {
+    "id": "src_cash",
+    "kind": "source",
+    "title": "Движения по счетам 50/51/52/55 · 1С",
+    "entity": "cash_movement"
+   },
+   {
+    "id": "src_lines",
+    "kind": "source",
+    "title": "Строки формы 0710005 · справочник",
+    "entity": "oddc_line"
+   },
+   {
+    "id": "src_rules",
+    "kind": "source",
+    "title": "Правила ПБУ 23/2011 · что исключать и сворачивать",
+    "entity": "oddc_rule"
+   },
+   {
+    "id": "src_purposes",
+    "kind": "source",
+    "title": "Правила назначения платежа · какую статью предложить",
+    "entity": "payment_purpose_rule"
+   },
+   {
+    "id": "src_balances",
+    "kind": "source",
+    "title": "Остатки и баланс · увязка п. 21–25",
+    "entity": "cash_balance"
+   },
+   {
+    "id": "src_rollup",
+    "kind": "source",
+    "title": "Раскладка по форме · считает код, не модель",
+    "entity": "oddc_report_line"
+   },
+   {
+    "id": "oddc-build",
+    "kind": "skill",
+    "skill": "oddc-build",
+    "autonomy": "A1",
+    "hitl": true
+   },
+   {
+    "id": "out_mail",
+    "kind": "out",
+    "title": "Отчёт ОДДС → почта главбуха",
+    "out": {
+     "channel": "yandex",
+     "to": "mkhlsokolenko@gmail.com",
+     "subject": "ОДДС за 3 квартал 2026 — проект отчёта по форме 0710005",
+     "format": "pdf",
+     "run": false,
+     "hitl": true
+    }
+   }
+  ],
+  "edges": [
+   {
+    "from": "src_cash",
+    "to": "oddc-build"
+   },
+   {
+    "from": "src_lines",
+    "to": "oddc-build"
+   },
+   {
+    "from": "src_rules",
+    "to": "oddc-build"
+   },
+   {
+    "from": "src_purposes",
+    "to": "oddc-build"
+   },
+   {
+    "from": "src_balances",
+    "to": "oddc-build"
+   },
+   {
+    "from": "src_rollup",
+    "to": "oddc-build"
+   },
+   {
+    "from": "oddc-build",
+    "to": "out_mail"
+   }
+  ]
+ }
 }
