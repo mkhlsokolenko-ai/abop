@@ -164,6 +164,11 @@ def _service_html(agent: dict, result: dict, esc) -> str:
     """
     import datetime as _dtm
     when = str(result.get("created_at") or "")[:16].replace("T", " ") or         _dtm.datetime.now().strftime("%Y-%m-%d %H:%M")
+    # Служебная отметка — такая же дата документа, как и все прочие: в одном виде (15.10.26 15:58).
+    # Иначе внизу стоит «2026-10-15», а в графах «14.08.26», и документ выглядит склеенным.
+    from .report_form import _дата
+    дата_ч, _, время = when.partition(" ")
+    when = (_дата(дата_ч) + (" " + время if время else "")).strip()
     skills = ", ".join(str(o.get("skill") or "") for o in (result.get("skill_outputs") or []) if o.get("skill"))
     cells = [("документ", str(agent.get("name") or "Отчёт ABOP")), ("сформирован", when),
              ("запустил", result.get("started_by") or "—")]
