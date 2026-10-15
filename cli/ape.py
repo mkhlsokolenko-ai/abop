@@ -3234,6 +3234,18 @@ def _cast(v, t):
         txt = re.sub(r"(?is)<(?:script|style)[^>]*>.*?</(?:script|style)>", " ", str(s))
         txt = re.sub(r"(?s)<[^>]+>", " ", txt)
         return re.sub(r"\s+", " ", _html.unescape(txt)).strip()
+    if t in ("date", "date_iso"):
+        # REST-источники отдают дату меткой времени (Dolibarr: date=1783036800). В канонической
+        # записи дата обязана быть читаемой и сравнимой строкой, иначе фильтр по периоду и бланк
+        # работают с числом, которое человек прочитать не может.
+        try:
+            import datetime as _dt
+            n = float(str(s).strip())
+            if n > 10_000_000:
+                return _dt.datetime.utcfromtimestamp(n).strftime("%Y-%m-%d")
+        except (TypeError, ValueError):
+            pass
+        return s
     if t == "lower":
         return str(s).lower()
     if t == "upper":
