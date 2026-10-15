@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from .. import audit_store, identity_store, userdata_store
+from .. import audit_store, identity_store, personal_kb, userdata_store
 from ..deps import _uid_of, require_level, user
 
 from .. import admin_store, agent_store, run_store
@@ -167,3 +167,59 @@ async def billing(u: dict = Depends(user)) -> dict:
             "tokens_pct": min(100, round(tokens / tok_quota * 100)) if tok_quota else 0,
             "calls": calls, "avg_call_rub": round(total_rub / calls, 4) if calls else 0.0,
             "by_model": by_model, "by_run": by_run[:12], "source": "run_metrics"}
+
+
+# ── Личное пространство человека ──────────────────────────────────────────────────────────────
+# Зачем: навыки вроде `bft-draft` объявляют вход «из контекста» — расшифровку интервью может
+# принести только человек, вставив её в чат. Личное пространство кладёт этот материал на сервер,
+# и агент находит его сам. Чужое личное не видно НИКОМУ, включая администратора: область `*` даёт
+# право на системы организации, а не на чужие черновики.
+
+
+@router.get("/api/me/kb")
+async def my_kb(u: dict = Depends(user)) -> dict:
+    """Мои личные документы (без текста) и имя личной коллекции."""
+    sub = _uid_of(u)
+    документы = await personal_kb.documents(sub)
+    return {"документы": [personal_kb.карточка_для_ui(d) for d in документы],
+            "коллекция": personal_kb.collection_for(sub),
+            "правило": "личное годится, чтобы сформулировать и составить; считать и сверять по нему нельзя"}
+
+
+@router.post("/api/me/kb")
+async def my_kb_add(body: dict, u: dict = Depends(user)) -> dict:
+    """Положить документ в личное пространство: {name, text, kind?, source?}."""
+    sub = _uid_of(u)
+    try:
+        карточка = await personal_kb.add(sub, str((body or {}).get("name") or ""),
+                                         str((body or {}).get("text") or ""),
+                                         kind=str((body or {}).get("kind") or "note"),
+                                         source=str((body or {}).get("source") or "desktop"))
+    except ValueError as ex:
+        raise HTTPException(422, str(ex))
+    except Exception as ex:  # noqa: BLE001 — хранилище знаний недоступно: честный отказ, не «ок»
+        raise HTTPException(502, f"личное хранилище не приняло документ: {type(ex).__name__}")
+    await audit_store.record(u.get("name") or sub, "me.kb.add", карточка["id"],
+                             {"символов": карточка["chars"], "вид": карточка["kind"]})
+    return {"документ": personal_kb.карточка_для_ui(карточка)}
+
+
+@router.post("/api/me/kb/search")
+async def my_kb_search(body: dict | None = None, u: dict = Depends(user)) -> dict:
+    """Поиск по моему личному пространству: {q, top_k?}. Имя документа едет вместе с куском."""
+    sub = _uid_of(u)
+    тело = body or {}
+    куски = await personal_kb.search(sub, str(тело.get("q") or ""),
+                                     top_k=max(1, min(int(тело.get("top_k") or 4), 20)))
+    return {"куски": куски, "сколько": len(куски)}
+
+
+@router.delete("/api/me/kb/{doc_id}")
+async def my_kb_remove(doc_id: str, u: dict = Depends(user)) -> dict:
+    """Убрать свой документ из личного пространства."""
+    sub = _uid_of(u)
+    убрано = await personal_kb.remove(sub, doc_id)
+    if not убрано:
+        raise HTTPException(404, "нет такого документа в вашем личном пространстве")
+    await audit_store.record(u.get("name") or sub, "me.kb.remove", doc_id, {})
+    return {"id": doc_id, "удалён": True}

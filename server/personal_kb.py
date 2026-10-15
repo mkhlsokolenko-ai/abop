@@ -31,6 +31,7 @@ import uuid
 
 from . import observability as obs
 from . import slava, tenancy
+from .config import settings
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS personal_docs (
@@ -52,8 +53,9 @@ _TEXT: dict[str, str] = {}                # текст документа для
 
 
 def _has_pg() -> bool:
-    from .db import _pool
-    return _pool is not None
+    # По настройке, а не по импорту пула: `server.db` тянет psycopg_pool, которого нет в
+    # окружении CLI и тестов — и импорт ради проверки ронял бы всё, что сюда заглянет.
+    return bool(settings.pg_dsn)
 
 
 async def init() -> None:

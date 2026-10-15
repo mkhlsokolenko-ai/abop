@@ -33,7 +33,7 @@ from . import access, admin_store, assembly, audit_store, blackboard, clients, d
 from . import delivery as delivery_mod
 from . import decisions, doclink, hitl_store, identity_store, langfuse_trace, levels
 from . import observability as obs
-from . import process_store, report_compose, report_store, run_cache_store, run_card
+from . import personal_kb, process_store, report_compose, report_store, run_cache_store, run_card
 from . import run_parts_store
 from . import run_queue
 from . import run_store, runner, schema_store, skill_store, skill_templates, skill_tools
@@ -72,6 +72,37 @@ async def _gate_agent_data(agent: dict, fam_key: str, actor: str) -> tuple[set, 
             denied.append({"entity": e, "systems": sorted(sids)})
             await access.audit_denial(actor, fam_key, ",".join(sorted(sids)), "data:" + e, "система сущности вне scope")
     return blocked, denied
+
+
+def _personal_fn(actor_sub: str, skill_schemas: dict):
+    """Личное пространство — только навыкам, объявившим вход `{from: "personal"}` в контракте.
+
+    Порядок задаёт НАВЫК, а не глобальная настройка: «составь БФТ» вправе опереться на заметки
+    человека, «сверь ОДДС» — нет. Объявление входом видно в карточке навыка и в документации
+    контракта, поэтому правило не прячется в коде сервера.
+    """
+    if not actor_sub:
+        return None                      # без личности личное пространство не адресуется
+    разрешено = set()
+    for sid, схема in (skill_schemas or {}).items():
+        вх = (схема or {}).get("inputs") or {}
+        for ветка in ("required", "optional"):
+            for i in вх.get(ветка) or []:
+                if isinstance(i, dict) and i.get("from") == "personal":
+                    разрешено.add(sid)
+    if not разрешено:
+        return None
+
+    async def _fn(sid, entities, hint: str = ""):
+        if sid not in разрешено:
+            return []
+        запрос = ((hint or "")[:400] + " " + " ".join(entities or [])).strip()
+        куски = await personal_kb.search(actor_sub, запрос or "личные материалы", top_k=4)
+        if куски:
+            obs.log_event("info", "personal_kb.used", skill=sid, chunks=len(куски))
+        return куски
+
+    return _fn
 
 
 def _agent_knowledge_fn(agent: dict, actor: str):
@@ -1381,6 +1412,7 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, sta
                                    chat_fn=clients.chat, blocked_entities=blocked, data_scope=data_scope,
                                    budget=budget,
                                    knowledge_fn=_agent_knowledge_fn(agent, started_by),
+                                   personal_fn=_personal_fn(started_by_sub, _skill_schemas),
                                    skill_schemas=_skill_schemas,
                                    findings_context=_ctx, user_context=user_context,
                                    should_cancel=(lambda: run_queue.cancel_requested(job_id)) if job_id else None,

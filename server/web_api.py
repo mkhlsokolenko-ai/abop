@@ -30,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, arbiter, assembly, audit_store, backlog_store, blackboard, planner, cachebus, channel_tokens, charts, clients, compute, contract_store, cost_estimate, dataplane_store, decisions, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, bpmn_import, dataplane_records, mcp_server, pipeline_store, process_deploy, process_store, rbac_map, reglament_store, chat_store, orchestrator, report_compose, report_store, choice_store, doclink, rules_store, run_cache_store, run_parts_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, arbiter, assembly, audit_store, backlog_store, blackboard, planner, cachebus, channel_tokens, charts, clients, compute, contract_store, cost_estimate, dataplane_store, decisions, delivery as delivery_mod, dlq_store, families_store, lexicon, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, bpmn_import, dataplane_records, mcp_server, personal_kb, pipeline_store, process_deploy, process_store, rbac_map, reglament_store, chat_store, orchestrator, report_compose, report_store, choice_store, doclink, rules_store, run_cache_store, run_parts_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 from .vectors import cosine as _cosine  # noqa: E402
 from .nlu import nlu_config  # noqa: E402  (пороги подбора переехали к разбору фразы)
@@ -485,6 +485,7 @@ async def _startup() -> None:
     await skill_store.init()
     await admin_store.init()
     await userdata_store.init()
+    await personal_kb.init()         # реестр личных документов (личное пространство человека)
     await systems_store.init()
     await systems_store.seed_if_empty()  # одноразовый сид реестра из server-inventory (демо-стенд)
     await identity_store.init()

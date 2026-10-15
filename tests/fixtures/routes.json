@@ -481,6 +481,22 @@
  ],
  [
   "GET",
+  "/api/me/kb"
+ ],
+ [
+  "POST",
+  "/api/me/kb"
+ ],
+ [
+  "POST",
+  "/api/me/kb/search"
+ ],
+ [
+  "DELETE",
+  "/api/me/kb/{doc_id}"
+ ],
+ [
+  "GET",
   "/api/me/scenarios"
  ],
  [

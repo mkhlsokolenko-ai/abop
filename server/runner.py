@@ -495,7 +495,8 @@ def _apply_scope(rows: list, scope: dict) -> list:
 
 
 async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_sources,
-                   load_body, chat_fn, blocked_entities=None, knowledge_fn=None, data_scope=None,
+                   load_body, chat_fn, blocked_entities=None, knowledge_fn=None, personal_fn=None,
+                   data_scope=None,
                    findings_context=None, user_context="", skill_schemas=None, should_cancel=None,
                    tool_loop=None, actor: str = "", trace_id: str = "", on_progress=None,
                    budget: dict | None = None, board=None, data_snapshot: dict | None = None,
@@ -664,6 +665,19 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
             if chunks:
                 know_block = ("=== НОРМЫ/ЗНАНИЕ (RAG из корпуса семьи, sLAVA) ===\n"
                               + "\n---\n".join(c[:800] for c in chunks[:4]) + "\n\n")
+        # Личное пространство человека — ОТДЕЛЬНЫМ блоком и только тем навыкам, которые объявили
+        # такой вход в контракте. Смешать личную заметку с нормами нельзя: в одном блоке она
+        # становится «корпоративной истиной» и уезжает в документ заказчику. Считать по личному
+        # тоже нельзя — об этом сказано в самом блоке (см. server/personal_kb.py).
+        personal_block = ""
+        if personal_fn:
+            try:
+                личные = await personal_fn(sid, entities, body)
+            except Exception:  # noqa: BLE001 — личное хранилище недоступно → работаем без него
+                личные = []
+            if личные:
+                from . import personal_kb as _pkb
+                personal_block = _pkb.блок_для_промпта(личные)
         # Пользовательский контекст из десктоп-чата (задача своими словами + текст приложенного файла/ссылка).
         # Помечен явно как ЗАДАЧА/ДОКУМЕНТ — НЕ путать с истинными находками детерминир. движка (explain).
         # red-team #4/#5/#24/#27 (OWASP LLM01): методика — ТОЛЬКО в system; ввод пользователя, знание и данные —
@@ -696,6 +710,7 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
                               _kind, "ДОЛГАЯ ДОСКА")
                 long_block += _bb.block_of(long_boards.get(_kind) or [], _want, title=_title)
         _head = (uc_block
+                 + personal_block
                  + know_block
                  + up_block
                  + board_block
@@ -716,7 +731,7 @@ async def run_live(agent: dict, contract: dict, safety_of, *, data_query, skill_
         _has_docs = "=== ДОКУМЕНТЫ ПО ССЫЛКЕ" in (user_context or "")
         _has_sources = (bool(entities and any(data.values()))
                         or bool(know_block or up_block or board_block or run_block) or _has_docs)
-        _has_material = bool((user_context or "").strip())
+        _has_material = bool((user_context or "").strip()) or bool(personal_block)
         _knowledge_mode = not _has_sources
         # GROUNDED-режим: если детерминированный движок уже посчитал находки (истина), навык их ОБЪЯСНЯЕТ,
         # а не ищет заново на сэмпле (иначе на дайджесте LLM ложно пишет «расхождений нет» — противоречит коду).

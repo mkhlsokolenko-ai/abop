@@ -44,6 +44,10 @@ web_api НЕ дублирует логику — только выставляе
 |---|---|---|---|
 | `GET /api/health` | — | `{ok, families, skills, adapters}` | — |
 | `GET /api/me` | JWT | `{user:{sub,name,roles,dev}}` | Shell |
+| `GET /api/me/kb` | `personal_docs` + sLAVA | `{документы:[{id,name,kind,chars,source,created_at}], коллекция, правило}` | моё личное пространство |
+| `POST /api/me/kb` `{name,text,kind?,source?}` | sLAVA ingest + реестр | `{документ}`; **422** на пустой или слишком большой документ, **502** если хранилище знаний не приняло | положить свой материал |
+| `POST /api/me/kb/search` `{q,top_k?}` | личная коллекция | `{куски:[{текст,документ}], сколько}` | поиск по своему (имя документа едет с куском) |
+| `DELETE /api/me/kb/{doc_id}` | реестр личных документов | `{id, удалён}`; **404**, если документ не ваш | убрать свой документ |
 | `GET /api/families` | `AGENT_FAMILIES` | `{families:[{id,title,profile,mission,kind,members:[{key,title,skills[]}]}]}` | §4/§6 палитра |
 | `GET /api/skills` | `SKILLS`+`skill_safety` | `{count, skills:[{id,title,short,safety:{mode,egress,cite},scope,families[]}]}` | §4 каталог |
 | `GET /api/skills/{id}` | `load_skill_body` | `{id,title,short,safety,scope,body}` (полное тело SKILL.md) | §4 drawer |
