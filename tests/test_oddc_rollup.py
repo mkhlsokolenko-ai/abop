@@ -35,7 +35,8 @@ def _загрузить():
     ape.set_record_store(dr)
     for сущность, файл in (("oddc_line", "lines.json"), ("cash_movement", "cash.json"),
                            ("cash_balance", "balances.json"),
-                           ("payment_purpose_rule", "purposes.json")):
+                           ("payment_purpose_rule", "purposes.json"),
+                           ("oddc_rule", "rules.json")):
         записи = json.load(io.open(КОРЕНЬ / "demo" / "oddc" / файл, encoding="utf-8"))
         dr.append(сущность, [{**з, "provenance": {"fetched_at": 1, "recipe": "demo", "source": файл}}
                              for з in записи])
@@ -158,3 +159,46 @@ def test_ни_одно_движение_не_потерялось():
     assert к["к_дозаполнению"] == 3
     assert к["спорных"] == 0, "в этом наборе код классифицирует всё сам"
     assert к["разнесено"] + к["исключено_движений"] + к["к_дозаполнению"] + к["спорных"] == 28
+
+
+def test_правила_раскладки_это_данные():
+    """Признаки исключений и состав разделов формы — данные, а не константы в коде.
+
+    Проверяем подменой: выключаем правило про депозит — и сорок миллионов, которые раздували
+    оборот, возвращаются в поток. Код при этом не менялся.
+    """
+    _загрузить()
+    try:
+        правила = [п for п in json.load(io.open(КОРЕНЬ / "demo" / "oddc" / "rules.json", encoding="utf-8"))
+                   if п["id"] != "депозит"]
+        dr._сброс_для_тестов()
+        dr.init()
+        for сущность, файл in (("oddc_line", "lines.json"), ("cash_movement", "cash.json"),
+                               ("cash_balance", "balances.json"),
+                               ("payment_purpose_rule", "purposes.json")):
+            записи = json.load(io.open(КОРЕНЬ / "demo" / "oddc" / файл, encoding="utf-8"))
+            dr.append(сущность, [{**з, "provenance": {"fetched_at": 1}} for з in записи])
+        dr.append("oddc_rule", [{**п, "provenance": {"fetched_at": 1}} for п in правила])
+        р = json.loads(ape._t_oddc_rollup({"период_с": "2026-07-01", "период_по": "2026-09-30"}))
+    finally:
+        ape.set_record_store(None)
+        dr._сброс_для_тестов()
+    виды = {и["что"] for и in р["исключено"]}
+    assert "депозит" not in виды, "правило выключено — исключения больше нет"
+    assert р["контроль"]["исключено_движений"] == 6, "два депозитных движения вернулись в разбор"
+
+
+def test_без_правил_раскладка_честно_отказывается():
+    """Пустой справочник правил не означает «нарушений и исключений нет»."""
+    dr._сброс_для_тестов()
+    dr.init()
+    ape.set_record_store(dr)
+    try:
+        for сущность, файл in (("oddc_line", "lines.json"), ("cash_movement", "cash.json")):
+            записи = json.load(io.open(КОРЕНЬ / "demo" / "oddc" / файл, encoding="utf-8"))
+            dr.append(сущность, [{**з, "provenance": {"fetched_at": 1}} for з in записи])
+        ответ = ape._t_oddc_rollup({"период_с": "2026-07-01", "период_по": "2026-09-30"})
+    finally:
+        ape.set_record_store(None)
+        dr._сброс_для_тестов()
+    assert "нет правил раскладки" in ответ
