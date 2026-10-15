@@ -1,0 +1,10 @@
+{
+  "name": "Подготовка ОДДС",
+  "contract_audit_id": "oddc-2026q3",
+  "graph": {
+    "nodes": [
+      { "id": "oddc-build", "kind": "skill", "skill": "oddc-build", "autonomy": "A1", "hitl": true }
+    ],
+    "edges": []
+  }
+}

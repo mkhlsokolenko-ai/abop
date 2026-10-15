@@ -1,0 +1,35 @@
+{
+  "capability_request": {
+    "schema": "luda.capability_request/1.0",
+    "audit_id": "oddc-2026q3",
+    "segment": "Отчёт о движении денежных средств (ОКУД 0710005): подготовка и проверка перед аудитом",
+    "family": "finance",
+    "skills": [
+      {"id": "oddc-build"}
+    ],
+    "modules": [
+      {"id": "Движения по счетам 50/51/52/55 · cash_movement", "access": "read"},
+      {"id": "Справочник строк формы 0710005 · oddc_line", "access": "read"}
+    ],
+    "evidence": ["ev:oddc2026q3"]
+  },
+  "deployment_contract": {
+    "schema": "luda.deployment_contract/1.0",
+    "audit_id": "oddc-2026q3",
+    "segment": "Отчёт о движении денежных средств (ОКУД 0710005): подготовка и проверка перед аудитом",
+    "autonomy_level": "A1",
+    "limiting_axis": "отчётность, которую подписывает главный бухгалтер: ошибка в строке — отказ аудитора в положительном заключении",
+    "criticality": "T2",
+    "hitl_points": [
+      {"id": "главбух-принимает-отчёт"}
+    ],
+    "data_residency": {
+      "zone": "on-prem",
+      "egress": "нет: расчёт идёт по каноническим данным, наружу ничего не уходит"
+    },
+    "acceptance": {
+      "first_time_right": 0.9,
+      "escalation_rate": 0.15
+    }
+  }
+}
