@@ -893,6 +893,20 @@ async def _refresh_source_data(agent: dict) -> None:
     наполняются бэкфиллом) НЕ трогаем. Best-effort: недоступный источник не валит прогон (работаем на store)."""
     ents = {n.get("entity") for n in (agent.get("graph") or {}).get("nodes") or []
             if n.get("kind") in ("source", "doc") and n.get("entity")}
+    # Вычисляемый источник может не иметь узла на канве: раскладка ОДДС приходит навыку ВХОДОМ
+    # контракта, и агент собирается из одного узла-навыка. Потребность в свежих данных от этого
+    # не меняется — иначе отчёт собирается по прошлому пересчёту и никто этого не замечает.
+    for n in (agent.get("graph") or {}).get("nodes") or []:
+        if n.get("kind") != "skill" or not n.get("skill"):
+            continue
+        try:
+            вх = ((await schema_store.get(str(n["skill"]))) or {}).get("inputs") or {}
+        except Exception:  # noqa: BLE001 — нет контракта не повод отказываться от обновления
+            continue
+        for ветка in ("required", "optional"):
+            for i in вх.get(ветка) or []:
+                if isinstance(i, dict) and i.get("from") == "data" and i.get("entity"):
+                    ents.add(str(i["entity"]))
     if not ents:
         return
     try:
@@ -984,6 +998,8 @@ def _input_received(user_context: str, src: dict | None) -> dict | None:
 # действует тот же порядок, что и с находками аудита: детерминированное — из данных, модели
 # остаются пояснения и вывод. Раскладку не пересчитываем — берём ровно те записи
 # `oddc_report_line`, которые эфемерный адаптер положил перед прогоном и отдал навыку.
+import datetime as _dt
+
 _ОДДС_РАЗДЕЛЫ = ("текущие", "инвестиционные", "финансовые")
 
 
@@ -1008,6 +1024,11 @@ def _оддс_из_данных() -> tuple[dict, int]:
             for r in по_виду.get("строка", []) if str(r.get("раздел") or "") == раздел]
     блоки["итоги"] = {str(r.get("наименование") or ""): str(r.get("отчётный") or "")
                       for r in по_виду.get("итог", [])}
+    for r in по_виду.get("период", []):
+        с, по = str(r.get("дата") or ""), str(r.get("отчётный") or "")
+        if с and по:
+            блоки["отчётный_период"] = с + " — " + по   # бланк сам приведёт даты к дд.мм.гг
+    блоки["дата"] = _dt.date.today().isoformat()
     блоки["увязка"] = {str(r.get("наименование") or ""): str(r.get("отчётный") or "")
                        for r in по_виду.get("увязка", [])}
     блоки["исключено"] = [{"что": str(r.get("наименование") or ""),
