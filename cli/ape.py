@@ -3393,7 +3393,10 @@ def _normalize_recipe(spec: dict) -> dict:
     Устойчив к кривым типам из UI (map_rows не список / map не словарь / rules не список)."""
     r = dict(spec or {})
     r["source"] = _norm_source(r.get("source", {"kind": r.get("adapter", "csv"), "target": r.get("target", "")}))
-    if "map" not in r and isinstance(r.get("map_rows"), list):
+    # `map_rows` — редактируемая форма карты, `map` — её развёрнутый вид. Если пришли обе,
+    # ведёт map_rows: иначе правка карты молча не применяется (добавил графу — рецепт продолжает
+    # грузить по-старому, и поле в сущности не появляется). Ровно это и произошло с полем «роль».
+    if isinstance(r.get("map_rows"), list) and r["map_rows"]:
         r["map"] = {row["field"]: _norm_map_spec(row.get("spec", row))
                     for row in r["map_rows"] if isinstance(row, dict) and row.get("field")}
     src_map = r.get("map") if isinstance(r.get("map"), dict) else {}
