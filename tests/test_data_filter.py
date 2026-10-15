@@ -80,3 +80,27 @@ def test_выборка_целиком_через_data_query(tmp_path, monkeypat
             os.remove(путь)
         except OSError:
             pass
+
+
+def test_смещение_позволяет_дочитать_выборку(tmp_path, monkeypatch):
+    """Без offset обрезанную по размеру выдачу нельзя продолжить: агент считал по 15 записям из 26."""
+    monkeypatch.setenv("APE_HOME", str(tmp_path))
+    ape.set_record_store(None)
+    import json
+    путь = ape._data_path("cash_movement")
+    os.makedirs(os.path.dirname(путь), exist_ok=True)
+    with open(путь, "w", encoding="utf-8") as f:
+        for i in range(26):
+            f.write(json.dumps({"id": f"БВ-{i:03d}", "сумма": i,
+                                "provenance": {"fetched_at": 1}}, ensure_ascii=False) + "\n")
+    try:
+        первая = ape.data_query("cash_movement", None, None, 15)
+        вторая = ape.data_query("cash_movement", None, None, 15, False, 15)
+        assert len(первая) == 15 and len(вторая) == 11
+        все = {r["id"] for r in первая} | {r["id"] for r in вторая}
+        assert len(все) == 26, "две страницы вместе дают всю выборку без пересечений"
+    finally:
+        try:
+            os.remove(путь)
+        except OSError:
+            pass

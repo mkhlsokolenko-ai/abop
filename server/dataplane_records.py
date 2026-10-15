@@ -124,7 +124,7 @@ def append(entity: str, records: list[dict], *, reset: bool = False) -> int:
 # ── чтение ───────────────────────────────────────────────────────────────────────────────────────
 
 def query(entity: str, filters: dict | None = None, fields: list | None = None,
-          limit: int = 50, include_stale: bool = False) -> list[dict]:
+          limit: int = 50, include_stale: bool = False, offset: int = 0) -> list[dict]:
     """Та же семантика, что у файлового `ape.data_query`."""
     арендатор = tenancy.текущий()
     if not _has_pg():
@@ -151,7 +151,8 @@ def query(entity: str, filters: dict | None = None, fields: list | None = None,
         res = [r for r in res if фильтр_проходит(r, k, v)]
     if fields:
         res = [{k: r.get(k) for k in fields} for r in res]
-    return res[:limit]
+    off = max(0, int(offset or 0))
+    return res[off:off + limit]
 
 
 def _строка(payload) -> dict:
