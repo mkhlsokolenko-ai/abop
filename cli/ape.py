@@ -3590,6 +3590,65 @@ def _fresh(rec: dict, now: float) -> bool:
     return _rec_ts(rec) + float(ttl) >= now
 
 
+# ── Фильтр выборки: равенство и простые операторы ────────────────────────────────────────────────
+# Раньше любое значение фильтра сравнивалось строгим равенством строк. Условие-словарь
+# ({"дата": {">=": "2026-01-01"}}) превращалось в строку и не совпадало ни с чем — выборка молча
+# отдавала ноль. Для агента это неотличимо от «данных нет»: он трижды спросил период, трижды
+# получил пусто и построил пустой отчёт. Поэтому диапазон теперь работает, а непонятное условие
+# не притворяется отсутствием данных, а говорит о себе.
+_ОПЕРАТОРЫ = {"=": "eq", "==": "eq", "eq": "eq", "!=": "ne", "ne": "ne",
+              ">": "gt", "gt": "gt", ">=": "gte", "gte": "gte",
+              "<": "lt", "lt": "lt", "<=": "lte", "lte": "lte",
+              "in": "in", "contains": "contains"}
+
+
+def _сравнимо(значение, образец):
+    """Числа сравниваем числами, остальное — строками. Даты в ISO сравниваются строками корректно."""
+    try:
+        return float(значение), float(образец)
+    except (TypeError, ValueError):
+        return str(значение if значение is not None else "").lower(), str(образец).lower()
+
+
+def фильтр_проходит(запись: dict, поле: str, условие) -> bool:
+    """Проходит ли запись по одному условию фильтра. Непонятный оператор — ValueError, не «нет»."""
+    значение = запись.get(поле)
+    if isinstance(условие, dict):
+        for сырой, образец in условие.items():
+            оп = _ОПЕРАТОРЫ.get(str(сырой).strip().lstrip("$").lower())
+            if оп is None:
+                raise ValueError(
+                    f"фильтр по полю «{поле}»: оператор «{сырой}» не поддержан. "
+                    f"Доступны: {', '.join(sorted(set(_ОПЕРАТОРЫ)))}. "
+                    "Пример: {\"дата\": {\">=\": \"2026-07-01\", \"<=\": \"2026-09-30\"}}")
+            if оп == "in":
+                допустимые = образец if isinstance(образец, (list, tuple, set)) else [образец]
+                if str(значение).lower() not in [str(x).lower() for x in допустимые]:
+                    return False
+                continue
+            if оп == "contains":
+                if str(образец).lower() not in str(значение or "").lower():
+                    return False
+                continue
+            л, п = _сравнимо(значение, образец)
+            if оп == "eq" and not л == п:
+                return False
+            if оп == "ne" and not л != п:
+                return False
+            if оп == "gt" and not л > п:
+                return False
+            if оп == "gte" and not л >= п:
+                return False
+            if оп == "lt" and not л < п:
+                return False
+            if оп == "lte" and not л <= п:
+                return False
+        return True
+    if isinstance(условие, (list, tuple, set)):
+        return str(значение).lower() in [str(x).lower() for x in условие]
+    return str(значение if значение is not None else "").lower() == str(условие).lower()
+
+
 def data_query(entity: str, filters: dict = None, fields: list = None, limit: int = 50,
                include_stale: bool = False) -> list:
     """Чтение canonical store с ВЕРСИОННОЙ семантикой (решение владельца 2026-09-18):
@@ -3614,7 +3673,7 @@ def data_query(entity: str, filters: dict = None, fields: list = None, limit: in
                 latest[k] = r                   # оставляем последнюю СОЗДАННУЮ версию id
         res = list(latest.values())             # последняя версия всегда отдаётся (не по wall-clock)
     for k, v in (filters or {}).items():
-        res = [r for r in res if str(r.get(k, "")).lower() == str(v).lower()]
+        res = [r for r in res if фильтр_проходит(r, k, v)]
     if fields:
         res = [{k: r.get(k) for k in fields} for r in res]
     return res[:limit]

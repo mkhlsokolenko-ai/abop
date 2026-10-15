@@ -144,8 +144,11 @@ def query(entity: str, filters: dict | None = None, fields: list | None = None,
                 "WHERE entity=%s AND tenant=%s "
                 "ORDER BY rec_id, fetched_at DESC, seq DESC", (entity, арендатор))
             res = [_строка(x[0]) for x in cur.fetchall()]
+    # Семантика фильтра — одна с файловым путём ядра, поэтому и функция одна: иначе выборка из БД
+    # и из файла однажды ответят по-разному, и объяснить это будет нечем.
+    from cli.ape import фильтр_проходит
     for k, v in (filters or {}).items():
-        res = [r for r in res if str(r.get(k, "")).lower() == str(v).lower()]
+        res = [r for r in res if фильтр_проходит(r, k, v)]
     if fields:
         res = [{k: r.get(k) for k in fields} for r in res]
     return res[:limit]

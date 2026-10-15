@@ -5,13 +5,23 @@
     "segment": "Отчёт о движении денежных средств (ОКУД 0710005): подготовка и проверка перед аудитом",
     "family": "finance",
     "skills": [
-      {"id": "oddc-build"}
+      {
+        "id": "oddc-build"
+      }
     ],
     "modules": [
-      {"id": "Движения по счетам 50/51/52/55 · cash_movement", "access": "read"},
-      {"id": "Справочник строк формы 0710005 · oddc_line", "access": "read"}
+      {
+        "id": "Движения по счетам 50/51/52/55 · cash_movement",
+        "access": "read"
+      },
+      {
+        "id": "Справочник строк формы 0710005 · oddc_line",
+        "access": "read"
+      }
     ],
-    "evidence": ["ev:oddc2026q3"]
+    "evidence": [
+      "ev:edaa2c1e95"
+    ]
   },
   "deployment_contract": {
     "schema": "luda.deployment_contract/1.0",
@@ -21,7 +31,9 @@
     "limiting_axis": "отчётность, которую подписывает главный бухгалтер: ошибка в строке — отказ аудитора в положительном заключении",
     "criticality": "T2",
     "hitl_points": [
-      {"id": "главбух-принимает-отчёт"}
+      {
+        "id": "главбух-принимает-отчёт"
+      }
     ],
     "data_residency": {
       "zone": "on-prem",
@@ -31,5 +43,27 @@
       "first_time_right": 0.9,
       "escalation_rate": 0.15
     }
-  }
+  },
+  "baseline_measurement": {
+    "schema": "luda.baseline_measurement/1.0",
+    "audit_id": "oddc-2026q3",
+    "methodology_version": "1.0",
+    "metrics": {
+      "first_time_right": {
+        "value": 0.2,
+        "evidence": [
+          "ev:edaa2c1e95"
+        ]
+      },
+      "escalation_rate": {
+        "value": 0.6,
+        "evidence": [
+          "ev:edaa2c1e95"
+        ]
+      }
+    }
+  },
+  "evidence_pack": [
+    "edaa2c1e956b43c84cd2288cc9ac5ec9348bd699b4b49774db72dafd547402e5"
+  ]
 }
