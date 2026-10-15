@@ -102,8 +102,14 @@ _ДАТА_ISO = re.compile(r"^(\d{4})-(\d{2})-(\d{2})(?:[T ].*)?$")
 def _дата(v: str) -> str:
     """ISO-дата → 23.01.26. В служебном документе дата пишется одним способом, а не так, как её
     отдала выгрузка: «2026-08-14» рядом с «14.08.2026» читается как разные источники."""
-    m = _ДАТА_ISO.match(str(v).strip())
-    return f"{m.group(3)}.{m.group(2)}.{m.group(1)[2:]}" if m else str(v)
+    s = str(v).strip()
+    m = _ДАТА_ISO.match(s)
+    if m:
+        return f"{m.group(3)}.{m.group(2)}.{m.group(1)[2:]}"
+    if "://" in s:
+        return s
+    return re.sub(r"\b(\d{4})-(\d{2})-(\d{2})\b",
+                  lambda g: f"{g.group(3)}.{g.group(2)}.{g.group(1)[2:]}", s)
 
 
 def _деньги(v) -> str:
@@ -254,7 +260,8 @@ def _b_kpi(b: dict, result: dict, ctx: dict) -> str:
             continue
         if isinstance(v, list):
             v = len(v)
-        cells.append(f"<div class='kpi'><span class='k'>{esc(lbl)}</span><span class='v'>{esc(_flat(v))}</span></div>")
+        показ = _деньги(_flat(v)) if report_store.is_number(v) else _flat(v)
+        cells.append(f"<div class='kpi'><span class='k'>{esc(lbl)}</span><span class='v'>{esc(показ)}</span></div>")
     return (_h2(b) + f"<div class='kpis'>{''.join(cells)}</div>") if cells else ""
 
 
