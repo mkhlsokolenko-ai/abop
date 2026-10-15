@@ -94,7 +94,9 @@ async def add(user_sub: str, name: str, text: str, *, kind: str = "note",
                 "chars": len(text), "source": (source or "desktop")[:40],
                 "created_at": _dt.datetime.now(_dt.timezone.utc).isoformat()}
     # Сначала индексируем, потом регистрируем: карточка без индекса обещает поиск, которого нет.
+    # Личная коллекция заводится первым документом: человек кладёт заметку, а не создаёт корпус.
     try:
+        await slava.ensure_collection(collection_for(user_sub))
         await slava.ingest(collection_for(user_sub), name + ".txt", text,
                            tenant="abop", doc_id=did)
     except Exception as ex:  # noqa: BLE001 — хранилище знаний недоступно → документ не принят

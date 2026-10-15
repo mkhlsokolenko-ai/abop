@@ -42,6 +42,9 @@ def _без_сети(monkeypatch):
     """
     async def _нет(*a, **k):
         raise RuntimeError("sLAVA недоступна (тест)")
+    async def _есть(*a, **k):
+        return True
+    monkeypatch.setattr(personal_kb.slava, "ensure_collection", _есть)
     monkeypatch.setattr(personal_kb.slava, "ingest", _нет)
     monkeypatch.setattr(personal_kb.slava, "query", _нет)
 

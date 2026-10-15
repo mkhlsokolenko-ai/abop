@@ -27,6 +27,29 @@ def fam_collection(family: str) -> str:
     return "slava_fam_" + (k if k and k != "_" else "shared")
 
 
+async def ensure_collection(collection: str, *, tenant: str = "abop") -> bool:
+    """Создать коллекцию, если её нет. Возвращает True, если коллекция теперь есть.
+
+    `ingest` в чужую коллекцию отвечает 404 «Коллекция не найдена» — и это правильно: молча
+    создавать корпус на каждую опечатку в имени нельзя. Но личное пространство человека заводится
+    в момент, когда он кладёт первый документ, и ждать от него ручного создания корпуса незачем.
+    """
+    async with httpx.AsyncClient(timeout=30) as cli:
+        r = await cli.get(f"{_base()}/api/v1/collections")
+        if r.status_code == 200:
+            есть = {str((c or {}).get("name") or "") for c in (r.json() or {}).get("collections") or []}
+            if collection in есть:
+                return True
+        r = await cli.post(f"{_base()}/api/v1/collections",
+                           json={"name": collection, "tenant_id": tenant},
+                           headers={"x-tenant-id": tenant})
+        # 409/400 — «уже есть»: для вызывающего это тот же успех, что и создание.
+        if r.status_code in (200, 201, 409):
+            return True
+        r.raise_for_status()
+        return True
+
+
 async def ingest(collection: str, filename: str, content, *, tenant: str = "abop",
                  replace: bool = False, doc_id: str | None = None) -> dict:
     """Загрузить документ в коллекцию sLAVA (чанкинг+эмбеддинг+upsert). content — str/bytes."""
