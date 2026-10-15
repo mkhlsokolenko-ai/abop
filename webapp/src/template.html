@@ -1570,19 +1570,32 @@
               <sc-if value="{{ rulesListView }}" hint-placeholder-val="{{ true }}">
                 <div style="display: flex; flex-direction: column; gap: 14px;">
                   <span style="font-size: 12.5px; color: var(--w55);">{{ rulesLibHint }}</span>
-                  <sc-if value="{{ rulesEmpty }}" hint-placeholder-val="{{ false }}"><div style="padding: 44px; border-radius: 16px; border: 1px dashed var(--w14); text-align: center; color: var(--w60); font-size: 13.5px;">Наборов правил нет — они приезжают с пакетом вертикали.</div></sc-if>
+                  <sc-if value="{{ rulesEmpty }}" hint-placeholder-val="{{ false }}"><div style="padding: 36px; border-radius: 16px; border: 1px dashed var(--w14); text-align: center; color: var(--w60); font-size: 13.5px; line-height: 1.6;">Наборов правил пока нет. Они приезжают с пакетом вертикали — или заводятся здесь: правило это предикат из библиотеки с параметрами, и проверка начинает считать находки без релиза.</div></sc-if>
                   <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px;">
                     <sc-for list="{{ rulesCards }}" as="n" hint-placeholder-count="3">
-                      <div onClick="{{ n.open }}" style="padding: 20px; border-radius: 16px; background: var(--w5); border: 1px solid {{ n.border }}; display: flex; flex-direction: column; gap: 10px; cursor: pointer;" style-hover="transform: translateY(-3px); background: var(--w8);">
+                      <div sc-camel-on-click="{{ n.open }}" style="position: relative; padding: 20px; border-radius: 16px; background: var(--w5); border: 1px solid {{ n.border }}; backdrop-filter: blur(16px); display: flex; flex-direction: column; gap: 12px; cursor: pointer;" style-hover="transform: translateY(-4px); background: var(--w8);">
                         <div style="display: flex; align-items: center; gap: 10px;">
-                          <span style="flex: 1; min-width: 0; font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ n.title }}</span>
-                          <span style="padding: 4px 10px; border-radius: 9999px; background: {{ n.sourceBg }}; color: {{ n.sourceFg }}; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; font-weight: 600; flex: none;">{{ n.source }}</span>
+                          <span style="width: 36px; height: 36px; border-radius: 10px; background: {{ n.iconBg }}; display: flex; align-items: center; justify-content: center; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; color: var(--ink); flex: none;">{{ n.abbr }}</span>
+                          <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;">
+                            <span style="font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ n.title }}</span>
+                            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w42); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">предмет: {{ n.subject }}</span>
+                          </span>
+                          <span title="{{ n.dotTitle }}" style="width: 8px; height: 8px; border-radius: 9999px; background: {{ n.dot }}; box-shadow: 0 0 0 4px {{ n.dotGlow }}; flex: none;"></span>
                         </div>
-                        <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w42);">предмет: {{ n.subject }} · {{ n.count }}</span>
+                        <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                          <span style="padding: 5px 11px; border-radius: 9999px; background: {{ n.sourceBg }}; border: 1px solid {{ n.sourceBorder }}; color: {{ n.sourceFg }}; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600;">{{ n.source }}</span>
+                          <span style="padding: 5px 11px; border-radius: 9999px; background: var(--w6); color: var(--w55); font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600;">{{ n.count }}</span>
+                        </div>
                         <span style="font-size: 11.5px; color: var(--w50); line-height: 1.5; overflow: hidden; text-overflow: ellipsis;">{{ n.codes }}</span>
                         <sc-if value="{{ n.bad }}" hint-placeholder-val="{{ false }}"><span style="padding: 7px 10px; border-radius: 9px; background: rgba(239,68,68,.12); border: 1px solid rgba(239,68,68,.35); color: var(--err-ink); font-size: 11.5px;">набор не пройдёт проверку: {{ n.badWhy }}</span></sc-if>
+                        <div style="display: flex; gap: 8px; margin-top: auto;">
+                          <button sc-camel-on-click="{{ n.open }}" style="padding: 8px 14px; border: 1px solid rgba(129,140,248,.3); border-radius: 9px; background: rgba(129,140,248,.1); color: var(--acc-ink2); font-size: 12px; font-weight: 600;" style-hover="background: rgba(129,140,248,.22);">Правила</button>
+                          <button sc-camel-on-click="{{ n.dry }}" title="Прогнать набор на выборке и увидеть, срабатывает ли правило" style="padding: 8px 14px; border: 1px solid rgba(52,211,153,.3); border-radius: 9px; background: rgba(52,211,153,.1); color: var(--ok-ink); font-size: 12px; font-weight: 600;" style-hover="background: rgba(52,211,153,.22);">Прогнать</button>
+                          <sc-if value="{{ n.canRemove }}" hint-placeholder-val="{{ false }}"><button sc-camel-on-click="{{ n.remove }}" title="Удалить набор, заведённый в интерфейсе" style="margin-left: auto; padding: 8px 12px; border: 1px solid rgba(239,68,68,.3); border-radius: 9px; background: rgba(239,68,68,.1); color: var(--err-ink); font-size: 12px; font-weight: 600;" style-hover="background: rgba(239,68,68,.22);">Удалить</button></sc-if>
+                        </div>
                       </div>
                     </sc-for>
+                    <button sc-camel-on-click="{{ openNewRuleSet }}" style="padding: 20px; border-radius: 16px; border: 1px dashed var(--w18); background: transparent; color: var(--w60); font-size: 13.5px; font-weight: 600; min-height: 190px;" style-hover="border-color: #818cf8; color: var(--ink);">＋ Новый набор правил</button>
                   </div>
                 </div>
               </sc-if>
@@ -1591,10 +1604,21 @@
                 <div style="display: flex; flex-direction: column; gap: 16px;">
                   <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
                     <button onClick="{{ closeRuleSet }}" style="padding: 8px 13px; border: 1px solid var(--w14); border-radius: 9px; background: var(--w5); color: var(--w70); font-size: 12px; font-weight: 600;">← к наборам</button>
-                    <span style="display: flex; flex-direction: column; gap: 2px;">
-                      <span style="font-size: 15px; font-weight: 700;">{{ ruleTitle }}</span>
-                      <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w45);">предмет: {{ ruleSubject }} · {{ ruleEditedLine }}</span>
-                    </span>
+                    <sc-if value="{{ ruleIsNew }}" hint-placeholder-val="{{ false }}">
+                      <span style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+                        <input value="{{ ruleNewId }}" onChange="{{ setRuleNewId }}" placeholder="id набора (латиницей)" aria-label="Идентификатор набора правил" style="width: 190px; padding: 8px 10px; border: 1px solid var(--w12); border-radius: 9px; background: var(--w5); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 12px;" style-focus="border-color: #6366f1;">
+                        <input value="{{ ruleNewTitle }}" onChange="{{ setRuleNewTitle }}" placeholder="название набора" aria-label="Название набора правил" style="width: 230px; padding: 8px 10px; border: 1px solid var(--w12); border-radius: 9px; background: var(--w5); color: var(--ink); font-size: 12px;" style-focus="border-color: #6366f1;">
+                        <select value="{{ ruleNewSubject }}" onChange="{{ setRuleNewSubject }}" aria-label="Предмет проверки" style="padding: 8px 10px; border: 1px solid var(--w12); border-radius: 9px; background: var(--s70); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 12px;">
+                          <sc-for list="{{ ruleSubjectOpts }}" as="o" hint-placeholder-count="2"><option value="{{ o.value }}">{{ o.label }}</option></sc-for>
+                        </select>
+                      </span>
+                    </sc-if>
+                    <sc-if value="{{ ruleIsSaved }}" hint-placeholder-val="{{ true }}">
+                      <span style="display: flex; flex-direction: column; gap: 2px;">
+                        <span style="font-size: 15px; font-weight: 700;">{{ ruleTitle }}</span>
+                        <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w45);">предмет: {{ ruleSubject }} · {{ ruleEditedLine }}</span>
+                      </span>
+                    </sc-if>
                     <span style="margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap;">
                       <button onClick="{{ dryRunRules }}" style="padding: 9px 15px; border: 1px solid rgba(129,140,248,.4); border-radius: 10px; background: rgba(99,102,241,.14); color: var(--acc-ink2); font-size: 12.5px; font-weight: 600;">{{ ruleDryLabel }}</button>
                       <sc-if value="{{ ruleEdited }}" hint-placeholder-val="{{ false }}"><button onClick="{{ revertRuleSet }}" title="Снять правку: набор снова такой, каким приехал в пакете" style="padding: 9px 15px; border: 1px solid rgba(245,158,11,.4); border-radius: 10px; background: rgba(245,158,11,.12); color: var(--warn-ink); font-size: 12.5px; font-weight: 600;">Вернуть версию пакета</button></sc-if>
@@ -2808,6 +2832,44 @@ class Component extends DCLogic {
     this.setState({ ruleSel: null, ruleDraft: null, ruleCard: null, ruleDry: null, ruleDirty: false, ruleErr: '' });
   }
 
+  // Новый набор заводится тут же, а не «приезжает с пакетом»: предикаты уже в библиотеке, и
+  // методологу нужна только форма. Предмет — каноническая сущность: по ней прогон берёт записи.
+  openNewRuleSet() {
+    if (!this._canMutate()) { this.showToast('Только чтение — недостаточно прав'); return; }
+    var предметы = ((this.state.entityList || []).map(function (e) { return e.entity; }));
+    this.setState({
+      ruleSel: '__new__', ruleCard: null, ruleDry: null, ruleDirty: true, ruleErr: '',
+      ruleDraft: { id: '', название: '', предмет: предметы[0] || 'transaction', область: '',
+                   источник: 'интерфейс', правила: [] }
+    });
+  }
+
+  removeRuleSet(id) {
+    if (!this._canMutate()) { this.showToast('Только чтение — недостаточно прав'); return; }
+    this.setState({ modal: 'confirm', confirmKind: 'deleteRuleSet', drainId: id,
+                    pendingDeleteName: id, confirmText: '' });
+  }
+
+  removeRuleSetNow(id) {
+    var self = this;
+    fetch('/api/data/rules/' + encodeURIComponent(id), { method: 'DELETE' })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (!res.ok) { self.showToast(String((res.j && res.j.detail) || 'набор не удалён')); return; }
+        self.showToast('Набор правил «' + id + '» удалён');
+        if (self.state.ruleSel === id) self.closeRuleSet();
+        self.loadRules();
+      }).catch(function () { self.showToast('ABOP недоступен — набор не удалён'); });
+  }
+
+  dryRunRuleSet(id) {
+    // Прогон с карточки: открываем набор и считаем сразу — методолог спрашивает «срабатывает ли»,
+    // а не «покажи мне форму».
+    var self = this;
+    this.openRuleSet(id);
+    setTimeout(function () { if (self.state.ruleSel === id) self.dryRunRules(); }, 350);
+  }
+
   _правкаНабора(изменить) {
     var черновик = JSON.parse(JSON.stringify(this.state.ruleDraft || {}));
     изменить(черновик);
@@ -2879,13 +2941,35 @@ class Component extends DCLogic {
     }).catch(function () { self.setState({ ruleBusy: false, ruleErr: 'ABOP недоступен' }); });
   }
 
+  // id нового набора: пустой сохранить нельзя — такой набор потом не найти ни в прогоне, ни в
+  // списке. Возвращает id или пустую строку, выставив причину отказа в ruleErr.
+  _идНовогоНабора() {
+    var черновик = this.state.ruleDraft || {};
+    var id = String(черновик.id || '').trim().toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48);
+    if (!id) {
+      this.setState({ ruleErr: 'нужен id набора латиницей — по нему набор ищут в прогоне' });
+      return '';
+    }
+    if (!String(черновик.предмет || '').trim()) {
+      this.setState({ ruleErr: 'нужен предмет: какую каноническую сущность проверяем' });
+      return '';
+    }
+    this.setState({ ruleSel: id, ruleDraft: Object.assign({}, черновик, { id: id,
+      название: String(черновик.название || '').trim() || id }) });
+    return id;
+  }
+
   saveRuleSet() {
     if (!this._canMutate()) { this.showToast('Только чтение — недостаточно прав'); return; }
     var self = this, id = this.state.ruleSel;
+    if (id === '__new__') { id = this._идНовогоНабора(); if (!id) return; }
     self.setState({ ruleBusy: true, ruleErr: '' });
+    var набор = Object.assign({}, self.state.ruleDraft, { id: id });
+    if (!набор.название) набор.название = id;
     fetch('/api/data/rules/' + encodeURIComponent(id), {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ набор: self.state.ruleDraft })
+      body: JSON.stringify({ набор: набор })
     }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); }).then(function (res) {
       if (!res.ok) {
         // Невалидный набор не сохраняется — и причина показывается целиком: «правило не сработает»
@@ -3990,6 +4074,13 @@ class Component extends DCLogic {
       : s.confirmKind === 'deleteConnector'
       ? { title: 'Удалить коннектор «' + (s.pendingDeleteName || '') + '»?', note: последствия,
           word: 'УДАЛИТЬ', btn: 'Удалить коннектор' }
+      : s.confirmKind === 'deleteRuleSet'
+      ? { title: 'Удалить набор правил «' + (s.pendingDeleteName || '') + '»?',
+          note: 'Проверки этого набора перестанут считаться: записи останутся, но находки по ним '
+                + 'больше не появятся, и прогоны будут выглядеть «чистыми». Уже записанные находки '
+                + 'в журнале сохранятся. Поставочные наборы так не удаляются — у них есть «Вернуть '
+                + 'версию пакета».',
+          word: 'УДАЛИТЬ', btn: 'Удалить набор' }
       : s.confirmKind === 'deleteAgent'
       ? { title: 'Удалить агента навсегда?', note: 'Будут удалены все версии агента «' + (s.pendingDeleteName || '') + '». Расписания и цепочки с ним перестанут работать. Отменить нельзя — обратимый вариант: «В Лимб».', word: 'УДАЛИТЬ', btn: 'Удалить навсегда' }
       : s.confirmKind === 'retireAgent'
@@ -5035,6 +5126,12 @@ class Component extends DCLogic {
           if (_it) this.scheduleDelete(_k, _it);
           return;
         }
+        if (s.confirmKind === 'deleteRuleSet') {
+          const _rid = s.drainId;
+          this.setState({ modal: null, confirmText: '', pendingDeleteName: '' });
+          this.removeRuleSetNow(_rid);
+          return;
+        }
         if (s.confirmKind === 'deleteAgent') { const _id = s.drainId; this.setState({ modal: null, confirmText: '', pendingDeleteName: '' }); this.deleteAgentNow(_id); return; }
         if (s.confirmKind === 'retireAgent') { const _id2 = s.drainId; this.setState({ modal: null, confirmText: '' }); this.retireAgent(_id2); setTimeout(() => this.loadPassport(), 600); return; }
         if (s.confirmKind === 'retire') {
@@ -5627,13 +5724,37 @@ class Component extends DCLogic {
       rulesListView: s.dataTab === 'rules' && !s.ruleSel,
       rulesEditView: s.dataTab === 'rules' && !!s.ruleSel,
       rulesEmpty: !(s.rulesList || []).length && !s.rulesLoading,
+      openNewRuleSet: () => this.openNewRuleSet(),
+      ruleIsNew: s.ruleSel === '__new__',
+      ruleIsSaved: !!s.ruleSel && s.ruleSel !== '__new__',
+      ruleNewId: ((s.ruleDraft || {}).id) || '',
+      ruleNewTitle: ((s.ruleDraft || {}).название) || '',
+      ruleNewSubject: ((s.ruleDraft || {}).предмет) || '',
+      setRuleNewId: (e) => this._правкаНабора(d => { d.id = e.target.value; }),
+      setRuleNewTitle: (e) => this._правкаНабора(d => { d.название = e.target.value; }),
+      setRuleNewSubject: (e) => this._правкаНабора(d => { d.предмет = e.target.value; }),
+      // Предмет — каноническая сущность Data Plane: список берём из Data Plane, а не из памяти фронта.
+      ruleSubjectOpts: (((s.entityList || []).length ? (s.entityList || []).map(e => e.entity)
+        : ['transaction', 'document', 'customer', 'issue', 'doc1c', 'close_doc', 'cash_movement'])
+        .map(e => ({ value: e, label: e }))),
       rulesCards: (s.rulesList || []).map(н => ({
         id: н.id, title: н.название, subject: н.предмет || '—',
+        abbr: String(н.предмет || н.id || '?').replace(/[^a-zA-Zа-яА-Я0-9]/g, '').slice(0, 3).toUpperCase(),
+        iconBg: н.валиден ? 'linear-gradient(135deg,#6366f1,#8b5cf6)' : 'linear-gradient(135deg,#ef4444,#f97316)',
+        dot: н.валиден ? '#34d399' : '#ef4444',
+        dotGlow: н.валиден ? 'rgba(52,211,153,.18)' : 'rgba(239,68,68,.18)',
+        dotTitle: н.валиден ? 'набор валиден — правила сработают' : 'набор не пройдёт проверку',
         count: н.правил + ' ' + (н.правил === 1 ? 'правило' : (н.правил < 5 ? 'правила' : 'правил')),
         codes: (н.коды || []).join(' · ') || '— правил нет',
         source: н.правка ? ('правка v' + н.версия_правки + (н.кто ? ' · ' + н.кто : '')) : ('пакет' + (н.пакет ? ' ' + н.пакет : '')),
         sourceBg: н.правка ? 'rgba(99,102,241,.16)' : 'var(--w6)',
+        sourceBorder: н.правка ? 'rgba(129,140,248,.32)' : 'var(--w10)',
         sourceFg: н.правка ? 'var(--acc-ink2)' : 'var(--w55)',
+        // Удалить можно только то, что заведено в интерфейсе: поставочный набор вернётся с пакетом,
+        // и кнопка «Удалить» на нём обещала бы невозможное.
+        canRemove: !н.пакет,
+        dry: () => this.dryRunRuleSet(н.id),
+        remove: () => this.removeRuleSet(н.id),
         // Невалидный набор не «почти работает»: правила по нему молча не сработают, и записи
         // окажутся «чистыми». Поэтому это красная плашка в списке, а не мелкая пометка внутри.
         bad: !н.валиден, badWhy: (н.ошибки || []).join('; '),

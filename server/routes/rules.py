@@ -133,6 +133,29 @@ async def rule_revert(rid: str, u: dict = Depends(user)) -> dict:
     return {**_сводка(rid, пакет, None), "набор": пакет, "снято": снято}
 
 
+@router.delete("/api/data/rules/{rid}")
+async def rule_delete(rid: str, u: dict = Depends(user)) -> dict:
+    """Удалить набор, заведённый в интерфейсе.
+
+    Для поставочного набора удаления нет и быть не может: пакет неизменяем, а «убрать» его правку
+    — это «Вернуть версию пакета». Иначе в интерфейсе появилась бы кнопка, которая обещает удалить
+    то, что вернётся при следующей установке вертикали.
+    """
+    require_level(u, "manager")
+    пакет = await _asyncio.to_thread(ape.набор_из_пакета, rid)
+    if пакет:
+        raise HTTPException(422, f"набор «{rid}» приехал с пакетом вертикали — его правку "
+                                 f"снимают кнопкой «Вернуть версию пакета», а сам набор не удаляют")
+    if not await rules_store.get(rid):
+        raise HTTPException(404, f"нет набора правил «{rid}»")
+    снято = await rules_store.revert(rid)
+    await rules_store.refresh()
+    await cachebus.notify("rules")
+    кто = u.get("name") or u.get("sub") or "dev"
+    await audit_store.record(кто, "data.rules.delete", rid, {"удалён": снято})
+    return {"id": rid, "удалён": bool(снято)}
+
+
 @router.post("/api/data/rules/{rid}/dryrun")
 async def rule_dryrun(rid: str, body: dict | None = None, u: dict = Depends(user)) -> dict:
     """Прогон набора на выборке — без сохранения и без записи находок.

@@ -1,67 +1,11 @@
 [
  [
-  "DELETE",
-  "/api/agents/{agent_id}"
+  "MOUNT",
+  ""
  ],
  [
-  "DELETE",
-  "/api/agents/{agent_id}/triggers/{trigger_id}"
- ],
- [
-  "DELETE",
-  "/api/board/facts/{key}"
- ],
- [
-  "DELETE",
-  "/api/channels/{binding}"
- ],
- [
-  "DELETE",
-  "/api/chat/threads/{thread_id}"
- ],
- [
-  "DELETE",
-  "/api/control/permissions/{binding}"
- ],
- [
-  "DELETE",
-  "/api/data/connectors/{cid}"
- ],
- [
-  "DELETE",
-  "/api/data/recipes/{name}"
- ],
- [
-  "DELETE",
-  "/api/families/{fid}"
- ],
- [
-  "DELETE",
-  "/api/identity/{uid}/{system}"
- ],
- [
-  "DELETE",
-  "/api/pipelines/{pid}"
- ],
- [
-  "DELETE",
-  "/api/process/revision/{rev_id}"
- ],
- [
-  "DELETE",
-  "/api/report-templates/{tid}"
- ],
- [
-  "DELETE",
-  "/api/runs/{run_id}/findings/{finding_id}/label"
- ],
- [
-  "DELETE",
-  "/api/schema-templates/{tid}"
- ],
- [
-  "DELETE",
-  "/api/systems/{sid}"
+  "POST",
+  "/api/access/check"
  ],
  [
   "GET",
@@ -72,11 +16,23 @@
   "/api/admin/audit"
  ],
  [
+  "POST",
+  "/api/admin/cleanup"
+ ],
+ [
   "GET",
   "/api/admin/config"
  ],
  [
+  "POST",
+  "/api/admin/config"
+ ],
+ [
   "GET",
+  "/api/admin/llm"
+ ],
+ [
+  "POST",
   "/api/admin/llm"
  ],
  [
@@ -85,6 +41,10 @@
  ],
  [
   "GET",
+  "/api/admin/run-limits"
+ ],
+ [
+  "POST",
   "/api/admin/run-limits"
  ],
  [
@@ -100,8 +60,36 @@
   "/api/agents"
  ],
  [
+  "POST",
+  "/api/agents"
+ ],
+ [
+  "POST",
+  "/api/agents/author"
+ ],
+ [
+  "POST",
+  "/api/agents/check"
+ ],
+ [
+  "POST",
+  "/api/agents/external"
+ ],
+ [
+  "POST",
+  "/api/agents/match"
+ ],
+ [
   "GET",
   "/api/agents/spec"
+ ],
+ [
+  "POST",
+  "/api/agents/{agent_id:path}/step"
+ ],
+ [
+  "DELETE",
+  "/api/agents/{agent_id}"
  ],
  [
   "GET",
@@ -112,7 +100,27 @@
   "/api/agents/{agent_id}/lexicon"
  ],
  [
+  "POST",
+  "/api/agents/{agent_id}/lexicon"
+ ],
+ [
+  "POST",
+  "/api/agents/{agent_id}/lexicon/refresh"
+ ],
+ [
+  "POST",
+  "/api/agents/{agent_id}/restore"
+ ],
+ [
+  "POST",
+  "/api/agents/{agent_id}/retire"
+ ],
+ [
   "GET",
+  "/api/agents/{agent_id}/rollback"
+ ],
+ [
+  "POST",
   "/api/agents/{agent_id}/rollback"
  ],
  [
@@ -120,8 +128,32 @@
   "/api/agents/{agent_id}/slots"
  ],
  [
+  "POST",
+  "/api/agents/{agent_id}/status"
+ ],
+ [
+  "POST",
+  "/api/agents/{agent_id}/triggers"
+ ],
+ [
+  "DELETE",
+  "/api/agents/{agent_id}/triggers/{trigger_id}"
+ ],
+ [
   "GET",
   "/api/audit1c/norms/{name}"
+ ],
+ [
+  "POST",
+  "/api/auth/login"
+ ],
+ [
+  "POST",
+  "/api/auth/refresh"
+ ],
+ [
+  "POST",
+  "/api/backlog/apply"
  ],
  [
   "GET",
@@ -140,6 +172,14 @@
   "/api/board"
  ],
  [
+  "POST",
+  "/api/board/facts"
+ ],
+ [
+  "DELETE",
+  "/api/board/facts/{key}"
+ ],
+ [
   "GET",
   "/api/bus"
  ],
@@ -148,11 +188,27 @@
   "/api/bus/dlq"
  ],
  [
+  "POST",
+  "/api/bus/dlq/ack"
+ ],
+ [
+  "POST",
+  "/api/bus/dlq/replay"
+ ],
+ [
+  "POST",
+  "/api/bus/publish"
+ ],
+ [
   "GET",
   "/api/bus/tail"
  ],
  [
   "GET",
+  "/api/canvas/layout/{key}"
+ ],
+ [
+  "POST",
   "/api/canvas/layout/{key}"
  ],
  [
@@ -168,16 +224,64 @@
   "/api/channels"
  ],
  [
+  "DELETE",
+  "/api/channels/{binding}"
+ ],
+ [
+  "POST",
+  "/api/channels/{channel}/code"
+ ],
+ [
+  "POST",
+  "/api/channels/{channel}/exchange"
+ ],
+ [
+  "POST",
+  "/api/chat"
+ ],
+ [
+  "POST",
+  "/api/chat/stream"
+ ],
+ [
   "GET",
   "/api/chat/threads"
+ ],
+ [
+  "POST",
+  "/api/chat/threads"
+ ],
+ [
+  "DELETE",
+  "/api/chat/threads/{thread_id}"
+ ],
+ [
+  "PATCH",
+  "/api/chat/threads/{thread_id}"
  ],
  [
   "GET",
   "/api/chat/threads/{thread_id}/messages"
  ],
  [
+  "POST",
+  "/api/chat/threads/{thread_id}/messages"
+ ],
+ [
+  "PATCH",
+  "/api/chat/threads/{thread_id}/messages/{message_id}"
+ ],
+ [
+  "POST",
+  "/api/compute"
+ ],
+ [
   "GET",
   "/api/contracts"
+ ],
+ [
+  "POST",
+  "/api/contracts/ingest"
  ],
  [
   "GET",
@@ -188,12 +292,28 @@
   "/api/control/feed"
  ],
  [
+  "DELETE",
+  "/api/control/permissions/{binding}"
+ ],
+ [
   "GET",
   "/api/data/adapters"
  ],
  [
   "GET",
   "/api/data/connectors"
+ ],
+ [
+  "POST",
+  "/api/data/connectors"
+ ],
+ [
+  "POST",
+  "/api/data/connectors/test"
+ ],
+ [
+  "DELETE",
+  "/api/data/connectors/{cid}"
  ],
  [
   "GET",
@@ -212,32 +332,96 @@
   "/api/data/query/{entity}"
  ],
  [
+  "POST",
+  "/api/data/recipe/preview"
+ ],
+ [
   "GET",
   "/api/data/recipes"
+ ],
+ [
+  "POST",
+  "/api/data/recipes"
+ ],
+ [
+  "DELETE",
+  "/api/data/recipes/{name}"
  ],
  [
   "GET",
   "/api/data/recipes/{name}"
  ],
  [
+  "POST",
+  "/api/data/recipes/{name}/rebind"
+ ],
+ [
+  "POST",
+  "/api/data/recipes/{name}/run"
+ ],
+ [
   "GET",
   "/api/data/rules"
+ ],
+ [
+  "DELETE",
+  "/api/data/rules/{rid}"
  ],
  [
   "GET",
   "/api/data/rules/{rid}"
  ],
  [
+  "PUT",
+  "/api/data/rules/{rid}"
+ ],
+ [
+  "POST",
+  "/api/data/rules/{rid}/dryrun"
+ ],
+ [
+  "POST",
+  "/api/data/rules/{rid}/revert"
+ ],
+ [
   "GET",
   "/api/data/schema/{entity}"
+ ],
+ [
+  "POST",
+  "/api/demo/prepare"
  ],
  [
   "GET",
   "/api/families"
  ],
  [
+  "POST",
+  "/api/families"
+ ],
+ [
+  "DELETE",
+  "/api/families/{fid}"
+ ],
+ [
   "GET",
   "/api/family/collections"
+ ],
+ [
+  "POST",
+  "/api/family/ingest"
+ ],
+ [
+  "POST",
+  "/api/family/query"
+ ],
+ [
+  "POST",
+  "/api/family/seed"
+ ],
+ [
+  "POST",
+  "/api/family/seed-norms"
  ],
  [
   "GET",
@@ -264,12 +448,24 @@
   "/api/hitl/{item_id}"
  ],
  [
+  "POST",
+  "/api/hitl/{item_id}/approve"
+ ],
+ [
   "GET",
   "/api/identity/me"
  ],
  [
   "GET",
   "/api/identity/{uid}"
+ ],
+ [
+  "POST",
+  "/api/identity/{uid}"
+ ],
+ [
+  "DELETE",
+  "/api/identity/{uid}/{system}"
  ],
  [
   "GET",
@@ -288,7 +484,15 @@
   "/api/me/scenarios"
  ],
  [
+  "POST",
+  "/api/me/scenarios"
+ ],
+ [
   "GET",
+  "/api/memory/{scope}"
+ ],
+ [
+  "POST",
   "/api/memory/{scope}"
  ],
  [
@@ -300,12 +504,20 @@
   "/api/nlu/config"
  ],
  [
+  "POST",
+  "/api/nlu/config"
+ ],
+ [
   "GET",
   "/api/nlu/parse"
  ],
  [
   "GET",
   "/api/observability"
+ ],
+ [
+  "POST",
+  "/api/orchestrate"
  ],
  [
   "GET",
@@ -316,452 +528,16 @@
   "/api/pipelines"
  ],
  [
-  "GET",
-  "/api/plan/prefer"
- ],
- [
-  "GET",
-  "/api/plan/terms"
- ],
- [
-  "GET",
-  "/api/process/coverage"
- ],
- [
-  "GET",
-  "/api/process/diff"
- ],
- [
-  "GET",
-  "/api/process/graph"
- ],
- [
-  "GET",
-  "/api/process/history"
- ],
- [
-  "GET",
-  "/api/process/liveness"
- ],
- [
-  "GET",
-  "/api/process/map"
- ],
- [
-  "GET",
-  "/api/process/revision/{rev_id}/changes"
- ],
- [
-  "GET",
-  "/api/process/stream"
- ],
- [
-  "GET",
-  "/api/reglament"
- ],
- [
-  "GET",
-  "/api/report-templates"
- ],
- [
-  "GET",
-  "/api/report-templates/{tid}"
- ],
- [
-  "GET",
-  "/api/resolve/{entity}"
- ],
- [
-  "GET",
-  "/api/runs"
- ],
- [
-  "GET",
-  "/api/runs/groups/{group_id}"
- ],
- [
-  "GET",
-  "/api/runs/groups/{group_id}/board"
- ],
- [
-  "GET",
-  "/api/runs/groups/{group_id}/summary"
- ],
- [
-  "GET",
-  "/api/runs/jobs"
- ],
- [
-  "GET",
-  "/api/runs/jobs/{job_id}"
- ],
- [
-  "GET",
-  "/api/runs/queue"
- ],
- [
-  "GET",
-  "/api/runs/search"
- ],
- [
-  "GET",
-  "/api/runs/{run_id}"
- ],
- [
-  "GET",
-  "/api/runs/{run_id}/board"
- ],
- [
-  "GET",
-  "/api/runs/{run_id}/diff"
- ],
- [
-  "GET",
-  "/api/runs/{run_id}/findings"
- ],
- [
-  "GET",
-  "/api/runs/{run_id}/metrics"
- ],
- [
-  "GET",
-  "/api/runs/{run_id}/report"
- ],
- [
-  "GET",
-  "/api/runs/{run_id}/stream"
- ],
- [
-  "GET",
-  "/api/schema-templates"
- ],
- [
-  "GET",
-  "/api/schema-templates/{tid}"
- ],
- [
-  "GET",
-  "/api/skills"
- ],
- [
-  "GET",
-  "/api/skills/{sid}"
- ],
- [
-  "GET",
-  "/api/skills/{sid}/contract"
- ],
- [
-  "GET",
-  "/api/skills/{sid}/slots"
- ],
- [
-  "GET",
-  "/api/systems"
- ],
- [
-  "GET",
-  "/api/systems/{sid}"
- ],
- [
-  "GET",
-  "/api/triggers"
- ],
- [
-  "GET",
-  "/api/triggers/mine"
- ],
- [
-  "GET",
-  "/api/verticals"
- ],
- [
-  "GET",
-  "/api/verticals/{vid}"
- ],
- [
-  "GET",
-  "/desktop-ui-bundle"
- ],
- [
-  "GET",
-  "/docs"
- ],
- [
-  "GET",
-  "/docs/oauth2-redirect"
- ],
- [
-  "GET",
-  "/metrics"
- ],
- [
-  "GET",
-  "/openapi.json"
- ],
- [
-  "GET",
-  "/redoc"
- ],
- [
-  "HEAD",
-  "/docs"
- ],
- [
-  "HEAD",
-  "/docs/oauth2-redirect"
- ],
- [
-  "HEAD",
-  "/openapi.json"
- ],
- [
-  "HEAD",
-  "/redoc"
- ],
- [
-  "MOUNT",
-  ""
- ],
- [
-  "MOUNT",
-  "/desktop-ui"
- ],
- [
-  "MOUNT",
-  "/guide"
- ],
- [
-  "PATCH",
-  "/api/chat/threads/{thread_id}"
- ],
- [
-  "PATCH",
-  "/api/chat/threads/{thread_id}/messages/{message_id}"
- ],
- [
-  "POST",
-  "/api/access/check"
- ],
- [
-  "POST",
-  "/api/admin/cleanup"
- ],
- [
-  "POST",
-  "/api/admin/config"
- ],
- [
-  "POST",
-  "/api/admin/llm"
- ],
- [
-  "POST",
-  "/api/admin/run-limits"
- ],
- [
-  "POST",
-  "/api/agents"
- ],
- [
-  "POST",
-  "/api/agents/author"
- ],
- [
-  "POST",
-  "/api/agents/check"
- ],
- [
-  "POST",
-  "/api/agents/external"
- ],
- [
-  "POST",
-  "/api/agents/match"
- ],
- [
-  "POST",
-  "/api/agents/{agent_id:path}/step"
- ],
- [
-  "POST",
-  "/api/agents/{agent_id}/lexicon"
- ],
- [
-  "POST",
-  "/api/agents/{agent_id}/lexicon/refresh"
- ],
- [
-  "POST",
-  "/api/agents/{agent_id}/restore"
- ],
- [
-  "POST",
-  "/api/agents/{agent_id}/retire"
- ],
- [
-  "POST",
-  "/api/agents/{agent_id}/rollback"
- ],
- [
-  "POST",
-  "/api/agents/{agent_id}/status"
- ],
- [
-  "POST",
-  "/api/agents/{agent_id}/triggers"
- ],
- [
-  "POST",
-  "/api/auth/login"
- ],
- [
-  "POST",
-  "/api/auth/refresh"
- ],
- [
-  "POST",
-  "/api/backlog/apply"
- ],
- [
-  "POST",
-  "/api/board/facts"
- ],
- [
-  "POST",
-  "/api/bus/dlq/ack"
- ],
- [
-  "POST",
-  "/api/bus/dlq/replay"
- ],
- [
-  "POST",
-  "/api/bus/publish"
- ],
- [
-  "POST",
-  "/api/canvas/layout/{key}"
- ],
- [
-  "POST",
-  "/api/channels/{channel}/code"
- ],
- [
-  "POST",
-  "/api/channels/{channel}/exchange"
- ],
- [
-  "POST",
-  "/api/chat"
- ],
- [
-  "POST",
-  "/api/chat/stream"
- ],
- [
-  "POST",
-  "/api/chat/threads"
- ],
- [
-  "POST",
-  "/api/chat/threads/{thread_id}/messages"
- ],
- [
-  "POST",
-  "/api/compute"
- ],
- [
-  "POST",
-  "/api/contracts/ingest"
- ],
- [
-  "POST",
-  "/api/data/connectors"
- ],
- [
-  "POST",
-  "/api/data/connectors/test"
- ],
- [
-  "POST",
-  "/api/data/recipe/preview"
- ],
- [
-  "POST",
-  "/api/data/recipes"
- ],
- [
-  "POST",
-  "/api/data/recipes/{name}/rebind"
- ],
- [
-  "POST",
-  "/api/data/recipes/{name}/run"
- ],
- [
-  "POST",
-  "/api/data/rules/{rid}/dryrun"
- ],
- [
-  "POST",
-  "/api/data/rules/{rid}/revert"
- ],
- [
-  "POST",
-  "/api/demo/prepare"
- ],
- [
-  "POST",
-  "/api/families"
- ],
- [
-  "POST",
-  "/api/family/ingest"
- ],
- [
-  "POST",
-  "/api/family/query"
- ],
- [
-  "POST",
-  "/api/family/seed"
- ],
- [
-  "POST",
-  "/api/family/seed-norms"
- ],
- [
-  "POST",
-  "/api/hitl/{item_id}/approve"
- ],
- [
-  "POST",
-  "/api/identity/{uid}"
- ],
- [
-  "POST",
-  "/api/me/scenarios"
- ],
- [
-  "POST",
-  "/api/memory/{scope}"
- ],
- [
-  "POST",
-  "/api/nlu/config"
- ],
- [
-  "POST",
-  "/api/orchestrate"
- ],
- [
   "POST",
   "/api/pipelines"
  ],
  [
   "POST",
   "/api/pipelines/suggest"
+ ],
+ [
+  "DELETE",
+  "/api/pipelines/{pid}"
  ],
  [
   "POST",
@@ -788,12 +564,44 @@
   "/api/plan/feedback"
  ],
  [
+  "GET",
+  "/api/plan/prefer"
+ ],
+ [
+  "GET",
+  "/api/plan/terms"
+ ],
+ [
   "POST",
   "/api/process/conformance"
  ],
  [
+  "GET",
+  "/api/process/coverage"
+ ],
+ [
+  "GET",
+  "/api/process/diff"
+ ],
+ [
+  "GET",
+  "/api/process/graph"
+ ],
+ [
+  "GET",
+  "/api/process/history"
+ ],
+ [
   "POST",
   "/api/process/import/bpmn"
+ ],
+ [
+  "GET",
+  "/api/process/liveness"
+ ],
+ [
+  "GET",
+  "/api/process/map"
  ],
  [
   "POST",
@@ -804,12 +612,28 @@
   "/api/process/revision"
  ],
  [
+  "DELETE",
+  "/api/process/revision/{rev_id}"
+ ],
+ [
   "POST",
   "/api/process/revision/{rev_id}/apply"
  ],
  [
+  "GET",
+  "/api/process/revision/{rev_id}/changes"
+ ],
+ [
   "POST",
   "/api/process/revision/{rev_id}/submit"
+ ],
+ [
+  "GET",
+  "/api/process/stream"
+ ],
+ [
+  "GET",
+  "/api/reglament"
  ],
  [
   "POST",
@@ -818,6 +642,18 @@
  [
   "POST",
   "/api/reglament/ingest"
+ ],
+ [
+  "GET",
+  "/api/report-templates"
+ ],
+ [
+  "DELETE",
+  "/api/report-templates/{tid}"
+ ],
+ [
+  "GET",
+  "/api/report-templates/{tid}"
  ],
  [
   "POST",
@@ -832,6 +668,14 @@
   "/api/report-templates/{tid}/reset"
  ],
  [
+  "GET",
+  "/api/resolve/{entity}"
+ ],
+ [
+  "GET",
+  "/api/runs"
+ ],
+ [
   "POST",
   "/api/runs"
  ],
@@ -840,8 +684,28 @@
   "/api/runs/fan-out"
  ],
  [
+  "GET",
+  "/api/runs/groups/{group_id}"
+ ],
+ [
+  "GET",
+  "/api/runs/groups/{group_id}/board"
+ ],
+ [
   "POST",
   "/api/runs/groups/{group_id}/cancel"
+ ],
+ [
+  "GET",
+  "/api/runs/groups/{group_id}/summary"
+ ],
+ [
+  "GET",
+  "/api/runs/jobs"
+ ],
+ [
+  "GET",
+  "/api/runs/jobs/{job_id}"
  ],
  [
   "POST",
@@ -852,20 +716,72 @@
   "/api/runs/jobs/{job_id}/retry-step"
  ],
  [
+  "GET",
+  "/api/runs/queue"
+ ],
+ [
   "POST",
   "/api/runs/report"
+ ],
+ [
+  "GET",
+  "/api/runs/search"
+ ],
+ [
+  "GET",
+  "/api/runs/{run_id}"
+ ],
+ [
+  "GET",
+  "/api/runs/{run_id}/board"
+ ],
+ [
+  "GET",
+  "/api/runs/{run_id}/diff"
+ ],
+ [
+  "GET",
+  "/api/runs/{run_id}/findings"
+ ],
+ [
+  "DELETE",
+  "/api/runs/{run_id}/findings/{finding_id}/label"
  ],
  [
   "POST",
   "/api/runs/{run_id}/findings/{finding_id}/label"
  ],
  [
+  "GET",
+  "/api/runs/{run_id}/metrics"
+ ],
+ [
+  "GET",
+  "/api/runs/{run_id}/report"
+ ],
+ [
+  "GET",
+  "/api/runs/{run_id}/stream"
+ ],
+ [
   "POST",
   "/api/runs/{run_id}/to-board"
  ],
  [
+  "GET",
+  "/api/schema-templates"
+ ],
+ [
   "POST",
   "/api/schema-templates/import"
+ ],
+ [
+  "DELETE",
+  "/api/schema-templates/{tid}"
+ ],
+ [
+  "GET",
+  "/api/schema-templates/{tid}"
  ],
  [
   "POST",
@@ -876,27 +792,115 @@
   "/api/schema-templates/{tid}/reset"
  ],
  [
+  "GET",
+  "/api/skills"
+ ],
+ [
+  "GET",
+  "/api/skills/{sid}"
+ ],
+ [
   "POST",
   "/api/skills/{sid}"
+ ],
+ [
+  "GET",
+  "/api/skills/{sid}/contract"
  ],
  [
   "POST",
   "/api/skills/{sid}/datasources"
  ],
  [
+  "GET",
+  "/api/skills/{sid}/slots"
+ ],
+ [
+  "GET",
+  "/api/systems"
+ ],
+ [
+  "DELETE",
+  "/api/systems/{sid}"
+ ],
+ [
+  "GET",
+  "/api/systems/{sid}"
+ ],
+ [
   "POST",
   "/api/systems/{sid}"
+ ],
+ [
+  "GET",
+  "/api/triggers"
+ ],
+ [
+  "GET",
+  "/api/triggers/mine"
  ],
  [
   "POST",
   "/api/triggers/{agent_id}/{trigger_id}/fire"
  ],
  [
+  "GET",
+  "/api/verticals"
+ ],
+ [
+  "GET",
+  "/api/verticals/{vid}"
+ ],
+ [
   "POST",
   "/api/verticals/{vid}/install"
  ],
  [
-  "PUT",
-  "/api/data/rules/{rid}"
+  "MOUNT",
+  "/desktop-ui"
+ ],
+ [
+  "GET",
+  "/desktop-ui-bundle"
+ ],
+ [
+  "GET",
+  "/docs"
+ ],
+ [
+  "HEAD",
+  "/docs"
+ ],
+ [
+  "GET",
+  "/docs/oauth2-redirect"
+ ],
+ [
+  "HEAD",
+  "/docs/oauth2-redirect"
+ ],
+ [
+  "MOUNT",
+  "/guide"
+ ],
+ [
+  "GET",
+  "/metrics"
+ ],
+ [
+  "GET",
+  "/openapi.json"
+ ],
+ [
+  "HEAD",
+  "/openapi.json"
+ ],
+ [
+  "GET",
+  "/redoc"
+ ],
+ [
+  "HEAD",
+  "/redoc"
  ]
 ]
