@@ -165,7 +165,7 @@ function обновитьТрей() {
     { label: ждут ? `Ждут вашего решения: ${ждут}` : "Ничего не ждёт", enabled: false },
     { type: "separator" },
     { label: "Открыть ABOP", click: () => показать() },
-    { label: "Выход", click: () => { выходим = true; app.quit(); } },
+    { label: "Выход (полностью закрыть)", click: () => { выходим = true; stop(); app.quit(); } },
   ]));
   // Значок на иконке приложения поддерживают не все системы — там, где нет, остаётся трей.
   try { if (app.setBadgeCount) app.setBadgeCount(ждут); } catch (e) { /* не критично */ }
@@ -245,7 +245,19 @@ function setupUpdater() {
 
 // действия из UI
 ipcMain.handle("updater:check", () => { try { updater && updater.checkForUpdates(); } catch (e) { /* noop */ } });
-ipcMain.handle("updater:install", () => { try { updater && updater.quitAndInstall(); } catch (e) { /* noop */ } });
+ipcMain.handle("updater:install", () => {
+  // Выход должен быть НАСТОЯЩИМ: при живом трее приложение остаётся в фоне, а установщик
+  // упирается в запущенный процесс и встаёт. Поэтому снимаем трей, гасим сайдкар и только
+  // потом отдаём управление установщику.
+  выходим = true;
+  try { if (tray) { tray.destroy(); tray = null; } } catch (e) { /* noop */ }
+  stop();
+  try {
+    // isSilent=false: человек видит ход установки. isForceRunAfter=true: после установки
+    // приложение само поднимается — иначе выглядит так, будто обновление «закрыло программу».
+    updater && updater.quitAndInstall(false, true);
+  } catch (e) { /* noop */ }
+});
 
 // экспорт в PDF: рендерим HTML в скрытом окне → printToPDF → в «Загрузки» (кириллица ок, Chromium)
 // Готовый файл (отчёт, выгрузка) раньше показывался только путём в уведомлении: открыть его или
@@ -391,7 +403,15 @@ function installContextMenu(w) {
   });
 }
 
-app.whenReady().then(() => { installMenu(); createWindow(); registerHotkey(); создатьТрей(); });
+// Один экземпляр на машину. Вторая копия держала бы те же файлы в папке установки, и обновление
+// останавливалось бы, даже если «старую версию» человек закрыл: закрыл он одну из двух.
+const одинЭкземпляр = app.requestSingleInstanceLock();
+if (!одинЭкземпляр) {
+  app.quit();
+} else {
+  app.on("second-instance", () => { выходим = false; показать(); });
+  app.whenReady().then(() => { installMenu(); createWindow(); registerHotkey(); создатьТрей(); });
+}
 // Буфер обмена напрямую: `navigator.clipboard` в окне зависит от разрешений и фокуса документа и
 // молча отказывает — кнопка «копировать» тогда врёт. Модуль clipboard Electron таких условий не
 // имеет, поэтому интерфейсу нужен этот путь как основной.
@@ -404,10 +424,19 @@ app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
 function stop() {
-  if (sidecar) {
-    sidecar.kill();
-    sidecar = null;
+  if (!sidecar) return;
+  const pid = sidecar.pid;
+  sidecar.kill();
+  // На Windows kill() гасит ОДИН процесс, а `ape-sidecar.exe` живёт в папке установки и держит
+  // файлы: установщик обновления тогда останавливается на «нельзя закрыть приложение». Поэтому
+  // гасим дерево синхронно — к началу установки процесса не должно быть вовсе.
+  if (process.platform === "win32" && pid) {
+    try {
+      require("child_process").execFileSync("taskkill", ["/PID", String(pid), "/T", "/F"],
+                                            { stdio: "ignore", timeout: 8000 });
+    } catch (e) { /* процесс мог уже умереть — это и есть нужный исход */ }
   }
+  sidecar = null;
 }
 app.on("window-all-closed", () => {
   // Пока жив трей — приложение остаётся в фоне и может известить о конце прогона. Выход только

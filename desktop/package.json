@@ -1,8 +1,11 @@
 {
   "name": "abop-desktop",
-  "version": "1.0.26",
+  "version": "1.0.27",
   "description": "ABOP Desktop — тонкий клиент-рантайм ABOP (Electron + Python sidecar)",
-  "author": { "name": "ABOP", "email": "mkhlsokolenko@gmail.com" },
+  "author": {
+    "name": "ABOP",
+    "email": "mkhlsokolenko@gmail.com"
+  },
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",
@@ -22,16 +25,32 @@
   "build": {
     "appId": "pro.abop.desktop",
     "productName": "ABOP Desktop",
-    "files": ["electron/**", "ui/**", "build/icon.ico", "build/icon.png"],
+    "files": [
+      "electron/**",
+      "ui/**",
+      "build/icon.ico",
+      "build/icon.png"
+    ],
     "extraResources": [
-      { "from": "dist/ape-sidecar", "to": "ape-sidecar" }
+      {
+        "from": "dist/ape-sidecar",
+        "to": "ape-sidecar"
+      }
     ],
     "publish": [
-      { "provider": "github", "owner": "mkhlsokolenko-ai", "repo": "abop", "releaseType": "release" }
+      {
+        "provider": "github",
+        "owner": "mkhlsokolenko-ai",
+        "repo": "abop",
+        "releaseType": "release"
+      }
     ],
     "afterPack": "build/afterPack.js",
     "mac": {
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "category": "public.app-category.productivity",
       "darkModeSupport": true,
       "identity": null,
@@ -41,7 +60,9 @@
       "title": "ABOP Desktop ${version}"
     },
     "win": {
-      "target": ["nsis"],
+      "target": [
+        "nsis"
+      ],
       "icon": "build/icon.ico",
       "signAndEditExecutable": false
     },
@@ -50,7 +71,8 @@
       "allowToChangeInstallationDirectory": true,
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico",
-      "shortcutName": "ABOP Desktop"
+      "shortcutName": "ABOP Desktop",
+      "include": "build/installer.nsh"
     }
   }
 }

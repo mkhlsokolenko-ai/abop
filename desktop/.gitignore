@@ -9,6 +9,7 @@ build/*
 !build/icon.ico
 !build/icon.png
 !build/afterPack.js
+!build/installer.nsh
 _smoke_home/
 __pycache__/
 *.pyc
