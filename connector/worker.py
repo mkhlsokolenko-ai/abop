@@ -48,6 +48,8 @@ REDMINE_BASE = os.getenv("REDMINE_BASE", "http://5.129.192.63:3000").rstrip("/")
 REDMINE_API_KEY = os.getenv("REDMINE_API_KEY", "")
 REDMINE_PROJECT = os.getenv("REDMINE_PROJECT", "")
 BOOKSTACK_URL = os.getenv("BOOKSTACK_URL", "http://5.129.192.63:6875").rstrip("/")
+DOLIBARR_URL = os.getenv("DOLIBARR_URL", "http://5.129.192.63:8095").rstrip("/")
+DOLIBARR_API_KEY = os.getenv("DOLIBARR_API_KEY", "")
 BOOKSTACK_TOKEN = os.getenv("BOOKSTACK_TOKEN", "")          # "id:secret"
 MAILPIT_HOST = os.getenv("MAILPIT_HOST", "5.129.192.63")
 MAILPIT_PORT = int(os.getenv("MAILPIT_PORT", "1025"))
@@ -173,6 +175,40 @@ async def one_c_request_export(p: dict) -> dict:
     return {"request_id": rid, "path": path}
 
 
+async def dolibarr_create_invoice(p: dict) -> dict:
+    """Счёт покупателю в ERP Dolibarr. Создаём ЧЕРНОВИК и, только если явно просят, проводим.
+
+    Проведённый счёт — документ учёта: его нельзя удалить, он попадает в отчётность и в НДС.
+    Поэтому проведение требует отдельного `validate: true`, а не случается само по себе; по
+    умолчанию человек видит черновик и проводит его руками.
+    """
+    if not DOLIBARR_API_KEY:
+        raise RuntimeError("нет DOLIBARR_API_KEY у коннектора")
+    socid = p.get("socid") or p.get("контрагент_id")
+    if not socid:
+        raise RuntimeError("payload.socid пуст: счёт нельзя выставить без контрагента")
+    строки = p.get("lines") or [{"desc": str(p.get("описание") or "Услуги"),
+                                 "subprice": float(p.get("сумма") or 0), "qty": 1,
+                                 "tva_tx": float(p.get("ндс_ставка") or 20)}]
+    тело = {"socid": int(socid), "type": 0, "lines": строки}
+    if p.get("date"):
+        тело["date"] = p["date"]
+    h = {"DOLAPIKEY": DOLIBARR_API_KEY, "Content-Type": "application/json"}
+    r = await _http("POST", DOLIBARR_URL + "/api/index.php/invoices", json=тело, headers=h)
+    if r.status_code not in (200, 201):
+        raise RuntimeError(f"Dolibarr HTTP {r.status_code}: {r.text[:300]}")
+    try:
+        инвойс = int(r.json())
+    except (ValueError, TypeError):
+        raise RuntimeError(f"Dolibarr вернул не идентификатор счёта: {r.text[:200]}")
+    проведён = False
+    if p.get("validate") is True:
+        v = await _http("POST", f"{DOLIBARR_URL}/api/index.php/invoices/{инвойс}/validate", json={}, headers=h)
+        проведён = v.status_code in (200, 201)
+    return {"invoice_id": инвойс, "validated": проведён,
+            "url": f"{DOLIBARR_URL}/compta/facture/card.php?id={инвойс}"}
+
+
 async def echo(p: dict) -> dict:
     return {"echo": p}
 
@@ -182,8 +218,9 @@ ADAPTERS = {
     ("bookstack", "page.publish"): bookstack_publish_page,
     ("mailpit", "email.send"): mailpit_send_email,
     ("1c", "export.request"): one_c_request_export,
+    ("dolibarr", "invoice.create"): dolibarr_create_invoice,
 }
-for _sys in ("redmine", "bookstack", "mailpit", "1c", "gitea", "nocodb", "twenty", "minio", "kroki", "qdrant", "postgres", "keycloak", "routeai", "kafka"):
+for _sys in ("redmine", "bookstack", "mailpit", "1c", "dolibarr", "gitea", "nocodb", "twenty", "minio", "kroki", "qdrant", "postgres", "keycloak", "routeai", "kafka"):
     ADAPTERS[(_sys, "echo")] = echo   # диагностика: любая система отвечает эхом
 
 
