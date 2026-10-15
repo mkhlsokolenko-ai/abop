@@ -518,6 +518,8 @@ SKILLS = {
                        "точность, пропуски по причинам, что вне данных фида."),
     "audit1c-root-cause": ("Первопричины", "симптомы → корень",
                            "Сводов серию находок к процессу-причине с подтверждением фактами и охватом; отделяй корень от симптома, не плоди дубли."),
+    "oddc-build": ("ОДДС", "отчёт о движении денежных средств",
+                   "Собери ОДДС по форме ОКУД 0710005 (ФСБУ 4/2023) по правилам ПБУ 23/2011: исключи переводы между своими счетами и депозиты, сверни НДС, раскрой прочие, увяжи остаток с балансом; документы без статьи ДДС — в реестр на дозаполнение, а не в «прочие»."),
     "audit1c-rank": ("Ранжирование находок", "по существенности",
                      "Ранжируй находки по существенности (сумма влияния + налоговый/нормативный риск + охват), а не по алфавиту; применяй порог материальности."),
     "audit1c-explain": ("Объяснение находок", "отчёт + HITL",
@@ -660,6 +662,7 @@ SKILL_SAFETY = {
     "feed-fix": {"mode": "write", "egress": "internal", "cite": True},                 # кандидат, не отправка
     "feed-scorecard": {"mode": "read", "egress": "internal", "cite": True},            # метрика из лога отказов
     "audit1c-root-cause": {"mode": "read", "egress": "internal", "cite": True},
+    "oddc-build": {"mode": "read", "egress": "internal", "cite": True},   # отчётность: считаем, но не проводим
     "audit1c-rank": {"mode": "read", "egress": "internal", "cite": True},
     "audit1c-explain": {"mode": "write", "egress": "internal", "cite": True},           # отчёт-артефакт; наружу — под HITL
     "invest1c-trace": {"mode": "read", "egress": "internal", "cite": True},              # трассировка по графу; цепочки считает код
@@ -892,6 +895,9 @@ SKILL_DATASOURCES = {
     "feed-scorecard": [{"entity": "showcase_reject", "kind": "json", "note": "фактический лог отказов — разметка пилота"},
                        {"entity": "feed_card", "kind": "json", "note": "знаменатель: сколько карточек всего"}],
     "audit1c-root-cause": [{"entity": "doc1c", "kind": "audit1c", "note": "охват находок по документам/контрагентам"}],
+    "oddc-build": [{"entity": "doc1c", "kind": "audit1c", "note": "банковские и кассовые документы: статья ДДС, вид движения, основание"},
+                   {"entity": "transaction", "kind": "http", "note": "обороты по счетам 50/51/52/55 за период и сопоставимый предыдущий"},
+                   {"entity": "ref1c", "kind": "audit1c", "note": "справочник статей движения денежных средств"}],
     "audit1c-rank": [{"entity": "doc1c", "kind": "audit1c", "note": "суммы влияния для существенности"}],
     "audit1c-explain": [{"entity": "doc1c", "kind": "audit1c", "note": "первоисточник каждой находки (документ+проводка)"},
                         {"entity": "document", "kind": "slava", "note": "нормы НК РФ гл.21 / ФСБУ 5/2019 / ПБУ — коллекция slava_audit1c_norms в sLAVA; цитируется в блоке «Чем грозит»"}],
@@ -1086,7 +1092,7 @@ AGENT_FAMILIES = {
             "valuation": ("Оценка и инвестиции", ["dcf-valuation", "market-research", "unit-economics-checker"]),
             "controller": ("Контроллер / отчётность", ["finance-report", "dashboard-builder", "cost-estimator"]),
             # бухучёт/закрытие периода — покрытие вертикали LUDA finance_analyst (1С-закрытие)
-            "accounting": ("Бухгалтерия / закрытие", ["ledger_reconciliation", "period_close_orchestration", "variance_explanation"]),
+            "accounting": ("Бухгалтерия / закрытие", ["ledger_reconciliation", "period_close_orchestration", "variance_explanation", "oddc-build"]),
         },
     },
     "credit": {
