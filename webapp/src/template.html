@@ -3399,6 +3399,43 @@ class Component extends DCLogic {
 
   closeRunResult() { this.setState({ modal:null }); }
 
+  // Граф сохранённого агента → узлы канвы. Узел источника подписан сущностью, выход — каналом:
+  // на канве должно читаться, откуда данные и куда уходит результат, без открытия инспектора.
+  loadAgentGraphToCanvas(agentId, auditId) {
+    var self = this;
+    fetch('/api/agents/' + encodeURIComponent(agentId)).then(function (r) {
+      return r.ok ? r.json() : null;
+    }).then(function (a) {
+      var g = (a && a.graph) || null;
+      var gn = (g && g.nodes) || [];
+      if (!gn.length) return;                   // нечего показывать — остаётся цепочка контракта
+      var nodes = gn.map(function (n) {
+        var out = (n.out || {});
+        var title = n.title || n.skill || n.entity || n.id;
+        var meta = n.kind === 'source' ? (n.entity || '')
+          : (n.kind === 'out' ? ((out.channel || '') + (out.to ? ' · ' + out.to : ''))
+             : (n.autonomy ? ('автономия ' + n.autonomy + (n.hitl ? ' · HITL' : '')) : ''));
+        return { id: n.id, kind: n.kind || 'skill', title: title, meta: meta,
+                 skill: n.skill || '', entity: n.entity || '' };
+      });
+      var edges = ((g.edges || []).map(function (e) { return { from: e.from, to: e.to }; }));
+      var L = self.layoutFlow(nodes, edges);
+      self.setState({ canvasNodes: L.nodes, edges: edges,
+                      surfaceW: Math.max(1560, L.w), surfaceH: Math.max(1200, L.h),
+                      canvasDirty: false });
+      // Раскладка, которую человек подвинул руками, сильнее автоматической — она его.
+      self.loadLayout('agent:' + agentId, function (saved) {
+        if (saved) {
+          var byId = {}; saved.nodes.forEach(function (n) { byId[n.id] = n; });
+          self.setState({ canvasNodes: (self.state.canvasNodes || []).map(function (n) {
+            return byId[n.id] ? Object.assign({}, n, { x: byId[n.id].x, y: byId[n.id].y }) : n;
+          }) });
+        }
+        setTimeout(function () { self.fitZoom(); }, 60);
+      });
+    }).catch(function () { /* агент недоступен → остаётся цепочка контракта */ });
+  }
+
   openContractInCanvas(auditId) {
     var self=this;
     fetch('/api/contracts/'+encodeURIComponent(auditId)).then(function(r){return r.json();}).then(function(cs){
@@ -3410,6 +3447,10 @@ class Component extends DCLogic {
       // ПЕТЛЯ: подхватить последний прогон агента контракта → оверлей канвы + lastRun для «Прогона» (идемпотентно)
       fetch('/api/agents?contract='+encodeURIComponent(cs.audit_id)).then(function(r){return r.json();}).then(function(ad){
         var ags=(ad&&ad.agents)||[]; if(!ags.length) return;
+        // Граф агента важнее цепочки, собранной из контракта: на канве должно быть видно то, что
+        // исполняется. У агента ОДДС это шесть источников, навык и выход в почту — линейная
+        // цепочка «источник → навык → результат» показывала бы процесс, которого нет.
+        self.loadAgentGraphToCanvas(ags[0].id, cs.audit_id);
         fetch('/api/runs?agent_id='+encodeURIComponent(ags[0].id)).then(function(r){return r.json();}).then(function(rd){
           var runs=(rd&&rd.runs)||[]; if(!runs.length) return;
           fetch('/api/runs/'+encodeURIComponent(runs[0].id)).then(function(r){return r.json();}).then(function(run){
