@@ -913,7 +913,7 @@ def _run_cache_key(agent: dict) -> str:
     return f"{agent.get('id')}::{_data_fingerprint(agent)}::{hashlib.sha256(cfg.encode()).hexdigest()[:8]}"
 
 
-_EPHEMERAL_ADAPTERS = ("mailpit", "http", "vector", "oddc")   # сетевые и вычисляемые источники —
+_EPHEMERAL_ADAPTERS = ("mailpit", "http", "vector", "oddc", "plan")   # сетевые и вычисляемые источники —
 # свежесть важна, гоним перед прогоном. «oddc» вычисляется по данным Data Plane: если его не
 # пересчитать, агент соберёт отчёт по прошлой выгрузке и не заметит этого.
 
