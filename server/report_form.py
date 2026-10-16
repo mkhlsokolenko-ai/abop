@@ -217,7 +217,12 @@ def _b_attrs(b: dict, result: dict, ctx: dict) -> str:
             filled += 1
         elif lean:
             continue
-        rows.append(f"<tr><th>{esc(lbl)}</th><td>{esc(_flat(v)) or 'не указано'}</td></tr>")
+        # Деньги в реквизитах разряжаются так же, как в таблицах: «7231800» рядом с «7 231 800»
+        # в одном документе читается как два разных числа из разных источников.
+        текст = _flat(v)
+        if report_store.is_number(текст):
+            текст = _деньги(текст)
+        rows.append(f"<tr><th>{esc(lbl)}</th><td>{esc(текст) or 'не указано'}</td></tr>")
     if not filled:
         return ""
     return (_h2(b) + f"<table class='at'>{''.join(rows)}</table>")
@@ -341,6 +346,22 @@ def _b_cards(b: dict, result: dict, ctx: dict) -> str:
     return (_h2(b) + "".join(out)) if out else ""
 
 
+def _ячейка(запись: dict, поле: str, число: bool) -> str:
+    """Значение графы реестра. Ссылка на документ — компактной ссылкой, а не полным URL.
+
+    Полный адрес в графе печатался целиком и, не разрываясь по словам, уносил таблицу за край
+    листа. В документе важна не строка адреса, а возможность открыть первоисточник, поэтому
+    подписью служит имя документа из той же записи (или слово «открыть»), а адрес остаётся в
+    атрибуте — ссылка в PDF работает.
+    """
+    v = _flat(field(запись, поле))
+    текст = str(v or "").strip()
+    if текст.startswith(("http://", "https://")):
+        подпись = str(field(запись, "документ") or field(запись, "id") or "открыть").strip()
+        return f"<a href='{esc(текст)}'>{esc(подпись or 'открыть')}</a>"
+    return esc(_деньги(v) if число else v)
+
+
 def _b_register(b: dict, result: dict, ctx: dict) -> str:
     """Реестр: строки с заданными колонками в заданном порядке. Колонки объявлены бланком, а не
     угаданы по данным — в служебном документе состав графы и её название часть формы."""
@@ -358,15 +379,30 @@ def _b_register(b: dict, result: dict, ctx: dict) -> str:
         vals = [field(it, fld) for it in items if str(field(it, fld) or "").strip() != ""]
         if vals and all(report_store.is_number(x) for x in vals):
             num.add(fld)
-    head = "".join(f"<th{' class=n' if f in num else ''}>{esc(lbl)}</th>" for lbl, f in cols)
+    # Графа, у которой ВСЕ значения короткие (код строки, счёт, дата), прижимается по содержимому
+    # и не переносится. Раньше это делалось по позиции — «первая графа» — и ломало реестры, где
+    # первой идёт норма или причина: запрет переноса раздвигал таблицу за край листа.
+    def _короткая(f: str) -> bool:
+        vals = [str(_flat(field(it, f)) or "") for it in items]
+        vals = [v for v in vals if v.strip()]
+        return bool(vals) and max(len(v) for v in vals) <= 12 and len(str(dict(cols).get(f, ""))) <= 16
+    узкие = {f for _l, f in cols if _короткая(f)}
+
+    def _cls(f: str) -> str:
+        кл = [c for c in (("n" if f in num else ""), ("k" if f in узкие else "")) if c]
+        return (" class='" + " ".join(кл) + "'") if кл else ""
+
+    head = "".join(f"<th{_cls(f)}>{esc(lbl)}</th>" for lbl, f in cols)
     body = []
     for it in items[:_MAX_ROWS]:
-        tds = "".join(f"<td{' class=n' if f in num else ''}>"
-                      f"{esc(_деньги(_flat(field(it, f))) if f in num else _flat(field(it, f)))}</td>"
-                      for _l, f in cols)
+        tds = "".join(f"<td{_cls(f)}>{_ячейка(it, f, f in num)}</td>" for _l, f in cols)
         body.append(f"<tr>{tds}</tr>")
     more = f" · показаны первые {_MAX_ROWS} из {len(items)}" if len(items) > _MAX_ROWS else ""
-    return (_h2(b) + f"<table class='tbl'><tr>{head}</tr>{''.join(body)}</table>"
+    # `wide` объявляет бланк; с шести граф форма становится широкой сама — иначе мелкий кегль и
+    # фиксированная раскладка объявлены в CSS, но до разметки не доезжают.
+    широкая = bool(b.get("wide")) or len(cols) >= 6
+    кл_таблицы = "tbl wide" if широкая else "tbl"
+    return (_h2(b) + f"<table class='{кл_таблицы}'><tr>{head}</tr>{''.join(body)}</table>"
             + f"<div class='cnt'>строк: {len(items)}{more}"
             + (f" · {esc(b['note'])}" if b.get("note") else "") + "</div>")
 

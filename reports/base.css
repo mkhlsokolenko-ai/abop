@@ -121,9 +121,15 @@ table,.kpi .v,.num,.n,.vb-v{font-variant-numeric:tabular-nums}
 .ahd .meth{border-top:0;padding-top:0;margin-top:var(--s-2)}
 
 /* Служебная отметка внизу бланка: по ней документ подшивают и к ней возвращаются со спором. */
-.svc{width:100%;border-collapse:collapse;margin:var(--s-5) 0 0;font-size:var(--t-sm)}
-.svc th,.svc td{border:1px solid var(--line-2);padding:var(--s-1) var(--s-2);text-align:left;vertical-align:top}
-.svc th{background:var(--fill);color:var(--ink-3);width:1%;white-space:nowrap}
+/* Служебная строка — пять пар «подпись → значение». Как ОДНА строка таблицы её минимальная ширина
+   равна сумме ячеек, и на лист она не умещалась (855 px при печатном поле 673). Сетка переносит
+   пары на следующую строку вместо того, чтобы раздвигать документ. */
+.svc{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));width:100%;
+  margin:var(--s-5) 0 0;font-size:var(--t-sm);border:1px solid var(--line-2)}
+.svc div{display:flex;gap:var(--s-2);padding:var(--s-1) var(--s-2);border-right:1px solid var(--line-2);
+  border-bottom:1px solid var(--line-2);min-width:0}
+.svc b{font-weight:600;overflow-wrap:anywhere;min-width:0}
+.svc span{color:var(--ink-3);white-space:nowrap;flex:none}
 
 .foot,.ft{margin-top:var(--s-5);border-top:1px solid var(--line);padding-top:var(--s-2);
   font-size:var(--t-cap);color:var(--ink-3);letter-spacing:.01em}
@@ -194,11 +200,18 @@ table,.kpi .v,.num,.n,.vb-v{font-variant-numeric:tabular-nums}
 /* Реестр формы: код и суммы — колонки по содержимому, наименование забирает остаток. Без этого
    браузер делит ширину поровну, и «Наименование показателя» ломается на три строки рядом с пустым
    столбцом «За предыдущий период». Таблицы с table-layout:fixed (.wide) не трогаем. */
-.tbl:not(.wide) th:first-child,.tbl:not(.wide) td:first-child{width:1%;white-space:nowrap}
-.tbl:not(.wide) th.n,.tbl:not(.wide) td.n{width:1%}
-.tbl.wide{font-size:var(--t-cap);table-layout:fixed}
-.tbl.wide th,.tbl.wide td{padding:3px 5px;overflow-wrap:anywhere}
+/* Прижимаем по содержимому ГРАФУ, которую рендерер признал короткой (класс k: код строки, счёт,
+   дата), а не «первую по счёту». Позиционное правило запрещало перенос в графе с нормой на
+   полторы строки, и реестр уезжал за край листа. */
+.tbl th.k,.tbl td.k,.tbl th.n,.tbl td.n{white-space:nowrap;overflow-wrap:normal}
+.tbl:not(.wide) th.k,.tbl:not(.wide) td.k,.tbl:not(.wide) th.n,.tbl:not(.wide) td.n{width:1%}
+.tbl.wide{font-size:var(--t-cap)}
+/* Заголовок графы в широкой таблице ПЕРЕНОСИТСЯ: при `nowrap` таблица на девять граф раздвигает
+   лист даже при fixed-раскладке, и правый край уходит за границу печати. */
+.tbl.wide th,.tbl.wide td{padding:3px 5px;overflow-wrap:break-word;white-space:normal}
 .tbl.wide .n{white-space:normal}
+/* Ссылка на документ в учётной системе: URL не разрывается по словам и уносит таблицу за край. */
+.tbl td a{overflow-wrap:anywhere;word-break:break-word}
 
 /* cards — пункты карточками с подписанными графами. Главный блок отчёта аудита: по одной карточке
    на находку, с существенностью, кодом проверки и четырьмя подписанными графами. */
@@ -319,6 +332,14 @@ figure svg{display:block;max-width:100%}
 /* ─────────────────────────────── печать ─────────────────────────────── */
 @media print{
   body{max-width:none;padding:0;font-size:var(--t-sm)}
+  /* На бумаге ограничение строки в 66 знаков оставляет треть листа пустой, и служебный документ
+     читается как недовёрстанный. Комфорт чтения с экрана тут обслуживает сама ширина страницы. */
+  .prose{max-width:none}
+  /* Ни одна таблица не имеет права вылезти за лист. Переносим ТЕКСТ, а не раздвигаем страницу;
+     раскладку граф оставляем автоматической — при fixed «Код» получил бы столько же места, сколько
+     «Наименование показателя», и форма перестала бы читаться. */
+  .tbl{width:100%;max-width:100%}
+  .tbl th,.tbl td{white-space:normal;overflow-wrap:break-word}
   /* Шапка таблицы повторяется на каждой странице — иначе вторая половина реестра превращается в
      колонки без названий. */
   thead{display:table-header-group}

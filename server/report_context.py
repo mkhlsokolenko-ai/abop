@@ -177,8 +177,10 @@ def _service_html(agent: dict, result: dict, esc) -> str:
     rid = str(result.get("run_id") or result.get("id") or "")
     if rid:
         cells.append(("прогон", rid))
-    row = "".join(f"<th>{esc(k)}</th><td>{esc(v)}</td>" for k, v in cells)
-    return f"<table class='svc'><tr>{row}</tr></table>"
+    # Пары «подпись → значение» отдельными блоками: одна строка таблицы из десяти ячеек имеет
+    # минимальную ширину в сумму ячеек и на лист не помещается (855 px при печатном поле 673).
+    row = "".join(f"<div><span>{esc(k)}</span><b>{esc(v)}</b></div>" for k, v in cells)
+    return f"<div class='svc'>{row}</div>"
 
 
 def _report_footer_html(result: dict, esc) -> str:
