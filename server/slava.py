@@ -51,14 +51,20 @@ async def ensure_collection(collection: str, *, tenant: str = "abop") -> bool:
 
 
 async def ingest(collection: str, filename: str, content, *, tenant: str = "abop",
-                 replace: bool = False, doc_id: str | None = None) -> dict:
-    """Загрузить документ в коллекцию sLAVA (чанкинг+эмбеддинг+upsert). content — str/bytes."""
+                 replace: bool = False, doc_id: str | None = None,
+                 timeout: float = 180) -> dict:
+    """Загрузить документ в коллекцию sLAVA (чанкинг+эмбеддинг+upsert). content — str/bytes.
+
+    `timeout` вынесен в параметр: свод знаний на несколько сотен страниц индексируется минутами, и
+    трёхминутный предел обрывал загрузку на середине — а на стороне sLAVA она продолжалась, и
+    понять, что произошло, было нельзя.
+    """
     body = content.encode("utf-8") if isinstance(content, str) else content
     files = {"file": (filename, body, "text/plain")}
     data = {"collection": collection, "replace": "true" if replace else "false"}
     if doc_id:
         data["doc_id"] = doc_id
-    async with httpx.AsyncClient(timeout=180) as cli:
+    async with httpx.AsyncClient(timeout=timeout) as cli:
         r = await cli.post(f"{_base()}/api/v1/ingest", files=files, data=data,
                            headers={"x-tenant-id": tenant})
         r.raise_for_status()
