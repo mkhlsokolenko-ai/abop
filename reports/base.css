@@ -2,8 +2,12 @@
    ОФОРМЛЕНИЕ ОТЧЁТОВ ABOP — один визуальный язык для всех форм.
 
    Это служебный документ, а не карточка приложения: получатель его читает, подшивает, оспаривает и
-   подписывает. Отсюда все решения ниже — прямые углы, одна гарнитура, узкая палитра, цвет только
-   там, где он несёт смысл (существенность находки, вид решения), и выверенная печать.
+   подписывает. Отсюда решения ниже — спокойный деловой стиль, узкая палитра, цвет только там, где
+   он несёт смысл (существенность находки, вид решения), и выверенная печать.
+
+   Визуальная система принята владельцем 16.10.2026 («тёплый деловой»): тёплый светлый фон,
+   тёмно-синий текст, бежевые подложки, тонкие рамки, умеренные скругления. Эталон —
+   `docs/STYLE_REPORTS.md`.
 
    Правила, которые нельзя нарушать при правке:
    1. Цвет, кегль, отступ, линия — ТОЛЬКО через токены из :root. Литерал в правиле означает, что
@@ -12,223 +16,254 @@
       бейдже — это один и тот же --bad, а не три разных красных.
    3. Селектор объявляется один раз. До 06.10 здесь лежали три исторических слоя подряд: body и
       .tbl были объявлены дважды, и результат зависел от порядка строк, а не от замысла.
-   4. Гарнитуру выбираем из того, что есть в рендерере PDF (Gotenberg/Chromium): Noto Sans,
-      Liberation Sans/Serif, DejaVu Sans/Mono. Segoe UI в PDF НЕ существует — он подменялся
-      Liberation Sans, из-за чего веб-превью и PDF на руках выглядели по-разному.
+   4. Гарнитуру выбираем из того, что есть в рендерере PDF (Gotenberg/Chromium): Liberation Sans
+      метрически совпадает с Arial, поэтому стоит первой — Arial в контейнере не установлен, и
+      подстановка меняла вид PDF относительно экрана.
    ═══════════════════════════════════════════════════════════════════════════════════════════════ */
 
 :root{
   /* ── гарнитуры: первым идёт то, что реально есть в рендерере PDF ── */
-  --font: 'Noto Sans','Segoe UI','Liberation Sans',Arial,sans-serif;
+  --font: 'Liberation Sans',Arial,Helvetica,'Noto Sans',sans-serif;
   --mono: 'DejaVu Sans Mono',Consolas,'Liberation Mono',monospace;
 
-  /* ── поверхности и текст: нейтраль с лёгким холодным уклоном в сторону акцента ── */
-  --paper:#fff;            /* лист */
-  --fill:#f6f7fa;          /* шапки таблиц, подложка графы */
-  --fill-2:#fafbfc;        /* чётные строки реестра */
-  --ink:#16191f;           /* основной текст и цифры */
-  --ink-2:#454b58;         /* пояснения, значения второго плана */
-  --ink-3:#737a89;         /* подписи граф, служебное */
-  --line:#d7dbe3;          /* рамка таблицы, разделитель */
-  --line-2:#eceef3;        /* внутренняя линия, тонкий разделитель */
-  --rule:var(--ink);      /* правило под заголовком документа — тот же тон, что текст */
+  /* ── поверхности и текст: тёплая деловая палитра ── */
+  --desk:#eae6dc;          /* стол, на котором лежит лист (только экран) */
+  --paper:#fcfaf4;         /* лист */
+  --fill:#eee8da;          /* бежевая подложка: шапки таблиц, плашки, выноски */
+  --fill-2:#f5f1e7;        /* светлая подложка карточек и чётных строк */
+  --ink:#233746;           /* основной текст и цифры */
+  --ink-2:#3d566b;         /* пояснения, значения второго плана */
+  --ink-3:#526b7c;         /* подписи граф, служебное */
+  --line:#d5cdbc;          /* рамка таблицы, разделитель */
+  --line-2:#e4ded1;        /* внутренняя линия таблицы */
+  --rule:var(--line);      /* правило под заголовком документа */
+  --dark:#334855;          /* тёмный итоговый блок */
+  --shadow:#293b4618;      /* мягкая тень листа — только на экране */
 
-  /* ── акцент: тёмно-синий «документный», один на весь отчёт ── */
-  --accent:#2f4b7c;
+  /* ── акцент: сине-серый, один на весь отчёт ── */
+  --accent:#506573;
   --accent-soft:#eef1f7;
 
   /* ── смысл состояния: четыре значения, больше не нужно ── */
-  --bad:#b3261e;           /* критично · класс A · отказ */
-  --warn:#a2590b;          /* существенно · класс B · с условиями */
-  --mid:#8a6d1f;           /* умеренно · класс C */
-  --info:#1f5f8b;          /* формально · класс D · справочно */
-  --ok:#1a7f4b;            /* пройдено · согласовано */
+  --bad:#9d2f28;           /* критично · класс A · отказ */
+  --warn:#8a5a16;          /* существенно · класс B · с условиями */
+  --mid:#7a6224;           /* умеренно · класс C */
+  --info:#3b5e74;          /* формально · класс D · справочно */
+  --ok:#2a6b4a;            /* пройдено · согласовано */
 
-  /* ── типографическая шкала: шесть ступеней, каждая отличима от соседней ── */
-  --t-cap:10.5px;          /* подпись графы, служебная отметка */
-  --t-sm:12px;             /* таблицы, реквизиты */
-  --t-base:13.5px;         /* основной текст документа */
-  --t-lg:16px;             /* заголовок раздела */
-  --t-xl:19px;             /* заголовок части сшитого документа */
-  --t-2xl:23px;            /* название документа */
+  /* ── типографическая шкала: деловая, шесть ступеней ── */
+  --t-cap:11px;            /* подпись графы, служебная отметка */
+  --t-sm:14px;             /* таблицы, реквизиты */
+  --t-base:16px;           /* основной текст документа */
+  --t-lg:20px;             /* заголовок подраздела */
+  --t-xl:28px;             /* заголовок раздела */
+  --t-2xl:40px;            /* название документа */
+  --t-val:28px;            /* значение показателя, крупный счёт */
 
   /* ── отступы: один ряд значений на весь документ ── */
   --s-1:4px; --s-2:8px; --s-3:12px; --s-4:16px; --s-5:24px; --s-6:32px;
 
   --lh:1.55;               /* интерлиньяж основного текста */
-  --lh-tight:1.3;          /* заголовки */
-  --tracking:.055em;       /* разрядка прописных подписей */
+  --lh-tight:1.2;          /* заголовки */
+  --tracking:.06em;        /* разрядка прописных подписей */
+  --radius:12px;           /* скругление карточек и контейнеров */
 }
 
 /* ─────────────────────────────── основа страницы ─────────────────────────────── */
-@page{size:A4;margin:18mm 16mm}
+@page{size:A4;margin:13mm}
 
+/* Лист лежит на тёплом фоне: так документ читается как документ, а не как кусок интерфейса.
+   На печати фон уходит — там лист и есть страница. */
 body{
-  margin:0 auto;padding:var(--s-5) var(--s-4);max-width:860px;
+  margin:28px auto;padding:48px 54px;max-width:1080px;
   background:var(--paper);color:var(--ink);
   font:var(--t-base)/var(--lh) var(--font);
+  box-shadow:0 10px 40px var(--shadow);
   -webkit-font-smoothing:antialiased;
 }
+html{background:var(--desk)}
 
 h1,h2,h3{line-height:var(--lh-tight);margin:0}
-h1{font-size:var(--t-2xl);font-weight:700;letter-spacing:-.01em}
-h2{font-size:var(--t-lg);font-weight:700;margin:var(--s-5) 0 var(--s-2);color:var(--ink)}
-h3{font-size:var(--t-base);font-weight:700;margin:var(--s-4) 0 var(--s-1)}
+h1{font-size:var(--t-2xl);font-weight:700;letter-spacing:-.03em;max-width:820px}
+h2{font-size:var(--t-xl);font-weight:700;letter-spacing:-.02em;margin:var(--s-6) 0 var(--s-3);color:var(--ink)}
+h3{font-size:var(--t-lg);font-weight:700;margin:var(--s-4) 0 var(--s-2)}
 p{margin:0 0 var(--s-2)}
-b,strong{font-weight:600}
+b,strong{font-weight:700}
 a{color:var(--accent);text-decoration:none;border-bottom:1px solid var(--line)}
 
-/* Цифры в документе всегда моноширинные: иначе колонки сумм «пляшут», и таблица выглядит
-   неаккуратной даже при идеальной вёрстке. */
+/* Цифры в документе всегда табличные: иначе колонки сумм «пляшут», и таблица выглядит неаккуратной
+   даже при идеальной вёрстке. */
 table,.kpi .v,.num,.n,.vb-v{font-variant-numeric:tabular-nums}
 
 /* Подпись графы — один приём на весь документ: прописные, разрядка, третий тон. */
-.req th,.stamp th,.at th,.svc th,.kpi .k,.vb-b,.vb-m i,.card h3,.part span,.ac-h .sev{
-  text-transform:uppercase;letter-spacing:var(--tracking);font-size:var(--t-cap);font-weight:600;
+.req th,.stamp th,.at th,.svc span,.kpi .k,.vb-b,.vb-m i,.card h3,.part span,.ac-h .sev,.top{
+  text-transform:uppercase;letter-spacing:var(--tracking);font-size:var(--t-cap);font-weight:700;
 }
 
+/* ── верхняя строка листа: тема документа слева, вид документа справа ─────────────
+   Строка отвечает на вопрос «что это и откуда» раньше, чем читатель дойдёт до заголовка. */
+.top{display:flex;align-items:center;justify-content:space-between;gap:var(--s-5);
+  color:var(--ink-3);margin-bottom:var(--s-5)}
+.brand{border-left:5px solid var(--accent);padding-left:14px;min-width:0;overflow-wrap:anywhere}
+.pill{background:var(--fill);border-radius:30px;padding:8px 17px;white-space:nowrap;color:var(--ink-2)}
+
 /* ─────────────────────────────── рамка документа ─────────────────────────────── */
-/* Шапка-реквизиты: название документа и строка «кто/когда/чем». Двойное правило снизу — единственное
-   место, где документ позволяет себе украшение, и оно же отделяет шапку от тела. */
-.req{border-bottom:2px solid var(--rule);margin:0 0 var(--s-5)}
+/* Шапка-реквизиты: название документа и строка «кто/когда/чем». */
+.req{border-bottom:1px solid var(--rule);margin:0 0 var(--s-5);padding-bottom:var(--s-3)}
 .req h1{margin:0 0 var(--s-3);padding:0}
 .req table{width:100%;border-collapse:collapse;margin:0 0 var(--s-2);font-size:var(--t-sm)}
-.req th,.req td{border:0;padding:3px var(--s-4) 3px 0;text-align:left;vertical-align:top;white-space:nowrap}
-.req th{color:var(--ink-3);width:1%;padding-right:var(--s-2)}
-.req td{color:var(--ink-2);padding-right:var(--s-5)}
+.req th,.req td{border:0;padding:3px var(--s-4) 3px 0;text-align:left;vertical-align:top}
+.req th{color:var(--ink-3);width:1%;padding-right:var(--s-2);white-space:nowrap}
+.req td{color:var(--ink-2);padding-right:var(--s-5);overflow-wrap:anywhere}
 
 /* Шапка бланка вертикали: вид документа, происхождение, объём работы, метод. */
-.ahd{border-bottom:2px solid var(--rule);padding-bottom:var(--s-3);margin-bottom:var(--s-4)}
-.ahd h1{margin:0 0 var(--s-2)}
-.line{font-size:var(--t-sm);color:var(--ink-2);margin:2px 0}
-.line b{color:var(--ink);font-weight:600}
-/* Реквизиты шапки: подпись над значением, колонки выравниваются сами. */
-.hmeta{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:var(--s-2) var(--s-4);
-  margin:var(--s-3) 0 var(--s-2)}
-.hmeta span{font-size:var(--t-sm);color:var(--ink);min-width:0;overflow-wrap:anywhere}
+.ahd{border-bottom:1px solid var(--rule);padding-bottom:var(--s-4);margin-bottom:var(--s-5)}
+.ahd h1{margin:0 0 var(--s-3)}
+.line{font-size:var(--t-sm);color:var(--ink-3);margin:2px 0;overflow-wrap:anywhere}
+.line b{color:var(--ink-2);font-weight:700}
+/* Реквизиты шапки: светлые карточки в две-три колонки, подпись мелкая, значение крупнее. */
+.hmeta{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:var(--s-2);
+  margin:var(--s-4) 0 var(--s-2)}
+.hmeta span{font-size:var(--t-sm);color:var(--ink);min-width:0;overflow-wrap:anywhere;
+  background:var(--fill-2);border:1px solid var(--line);border-radius:var(--radius);
+  padding:var(--s-3) var(--s-4)}
 .hmeta i{display:block;font-style:normal;text-transform:uppercase;letter-spacing:var(--tracking);
-  font-size:var(--t-cap);font-weight:600;color:var(--ink-3);margin-bottom:1px}
+  font-size:var(--t-cap);font-weight:700;color:var(--ink-3);margin-bottom:3px}
 
 /* Разделитель части сшитого документа: когда в прогоне навыки разных вертикалей, каждая получает
    свой раздел — и читатель должен видеть шов, а не думать, что документ противоречит себе. */
-.part{margin:var(--s-6) 0 var(--s-3);border-top:2px solid var(--rule);padding-top:var(--s-2)}
+.part{margin:var(--s-6) 0 var(--s-3);border-top:1px solid var(--rule);padding-top:var(--s-3)}
 .part h2{margin:0;font-size:var(--t-xl);border:0;padding:0}
-.part span{display:block;color:var(--ink-3);margin-top:2px}
+.part span{display:block;color:var(--ink-3);margin-top:3px}
 
 /* Оговорка о границах документа и метод работы — мелким, но не прячась. */
-.meth{font-size:var(--t-sm);color:var(--ink-2);line-height:1.45;margin:var(--s-4) 0 0;
-  border-top:1px solid var(--line-2);padding-top:var(--s-2)}
-.ahd .meth{border-top:0;padding-top:0;margin-top:var(--s-2)}
+.meth{font-size:var(--t-sm);color:var(--ink-3);line-height:1.5;margin:var(--s-4) 0 0;
+  border-top:1px solid var(--line-2);padding-top:var(--s-3)}
+.ahd .meth{border-top:0;padding-top:0;margin-top:var(--s-3)}
 
-/* Служебная отметка внизу бланка: по ней документ подшивают и к ней возвращаются со спором. */
-/* Служебная строка — пять пар «подпись → значение». Как ОДНА строка таблицы её минимальная ширина
-   равна сумме ячеек, и на лист она не умещалась (855 px при печатном поле 673). Сетка переносит
-   пары на следующую строку вместо того, чтобы раздвигать документ. */
-.svc{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));width:100%;
-  margin:var(--s-5) 0 0;font-size:var(--t-sm);border:1px solid var(--line-2)}
-.svc div{display:flex;gap:var(--s-2);padding:var(--s-1) var(--s-2);border-right:1px solid var(--line-2);
-  border-bottom:1px solid var(--line-2);min-width:0}
-.svc b{font-weight:600;overflow-wrap:anywhere;min-width:0}
+/* Выноска: важное пояснение или ограничение. Бежевая подложка и линия слева — без тревожных
+   цветов: это не ошибка, а условие, которое нельзя пропустить. */
+.callout{background:var(--fill);border-radius:var(--radius);border-left:4px solid var(--accent);
+  padding:var(--s-4) var(--s-5);margin:var(--s-4) 0;font-size:var(--t-sm);color:var(--ink-2)}
+.callout b{color:var(--ink)}
+
+/* Служебная отметка внизу бланка: по ней документ подшивают и к ней возвращаются со спором.
+   Пять пар «подпись → значение» одной строкой таблицы не помещались на лист — здесь сетка. */
+.svc{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));width:100%;
+  margin:var(--s-5) 0 0;font-size:var(--t-sm);border:1px solid var(--line);
+  border-radius:var(--radius);overflow:hidden}
+.svc div{display:flex;gap:var(--s-2);padding:var(--s-2) var(--s-3);
+  border-right:1px solid var(--line-2);border-bottom:1px solid var(--line-2);min-width:0}
+.svc b{font-weight:700;overflow-wrap:anywhere;min-width:0}
 .svc span{color:var(--ink-3);white-space:nowrap;flex:none}
 
-.foot,.ft{margin-top:var(--s-5);border-top:1px solid var(--line);padding-top:var(--s-2);
+.foot,.ft{margin-top:var(--s-5);border-top:1px solid var(--line);padding-top:var(--s-3);
   font-size:var(--t-cap);color:var(--ink-3);letter-spacing:.01em}
 .foot span,.ft span{margin-right:var(--s-4)}
 
 /* Счётчик под обрезанным реестром: честно сказать «показано 60 из 216» важнее, чем выглядеть
    полным. */
-.cnt{font-size:var(--t-cap);color:var(--ink-3);margin:0 0 var(--s-3)}
+.cnt{font-size:var(--t-cap);color:var(--ink-3);margin:0 0 var(--s-4)}
 
 /* ─────────────────────────────── блоки раскладки ─────────────────────────────── */
 /* stamp — угловой штамп письма: кому, тема, цель. Прижат вправо, как на бумаге. */
 .stamp{border-collapse:collapse;margin:0 0 var(--s-4) auto;width:58%;font-size:var(--t-sm)}
-.stamp th,.stamp td{border:0;border-bottom:1px solid var(--line-2);padding:var(--s-1) var(--s-2);
+.stamp th,.stamp td{border:0;border-bottom:1px solid var(--line-2);padding:var(--s-2);
   text-align:left;vertical-align:top}
 .stamp th{color:var(--ink-3);white-space:nowrap;width:34%;vertical-align:top}
 .stamp td{color:var(--ink)}
 
 /* attrs — таблица реквизитов. Пустая графа остаётся со словом «не указано»: пропуск графы читается
    как «не требуется», а это разные вещи. */
-.at{border-collapse:collapse;width:100%;margin:var(--s-2) 0 var(--s-4);font-size:var(--t-sm)}
-.at th,.at td{border:1px solid var(--line);padding:var(--s-2) var(--s-3);text-align:left;vertical-align:top}
+.at{border-collapse:collapse;width:100%;margin:0;font-size:var(--t-sm)}
+.at th,.at td{border:0;border-bottom:1px solid var(--line-2);padding:11px 13px;
+  text-align:left;vertical-align:top}
 .at th{background:var(--fill);color:var(--ink-3);width:30%;white-space:normal}
-.at td{color:var(--ink)}
+.at td{color:var(--ink);overflow-wrap:anywhere}
+.at tr:last-child th,.at tr:last-child td{border-bottom:0}
 
 /* verdict — решение документа. Самый заметный блок страницы: именно его ищут глазами. */
-.vb{border:1px solid var(--line);border-left:3px solid var(--ink-2);background:var(--fill-2);
-  padding:var(--s-3) var(--s-4);margin:var(--s-2) 0 var(--s-4)}
+.vb{border:1px solid var(--line);border-left:4px solid var(--ink-3);background:var(--fill-2);
+  border-radius:var(--radius);padding:var(--s-4) var(--s-5);margin:var(--s-3) 0 var(--s-5)}
 .vb.ok{border-left-color:var(--ok)}
 .vb.warn{border-left-color:var(--warn)}
 .vb.no{border-left-color:var(--bad)}
-.vb-b{display:inline-block;color:var(--paper);background:var(--ink-2);padding:2px var(--s-2);
-  margin-bottom:var(--s-2)}
+.vb-b{display:inline-block;color:var(--paper);background:var(--ink-3);padding:3px var(--s-3);
+  border-radius:30px;margin-bottom:var(--s-2)}
 .vb.ok .vb-b{background:var(--ok)}
 .vb.warn .vb-b{background:var(--warn)}
 .vb.no .vb-b{background:var(--bad)}
 .vb-b i{font-style:normal;opacity:.75;margin-right:var(--s-1)}
-.vb-v{font-size:var(--t-xl);font-weight:700;line-height:var(--lh-tight);color:var(--ink)}
+.vb-v{font-size:var(--t-lg);font-weight:700;line-height:var(--lh-tight);color:var(--ink)}
 .vb-w{font-size:var(--t-sm);color:var(--ink-2);margin-top:var(--s-2)}
-.vb-m{display:flex;flex-wrap:wrap;gap:1px;background:var(--line);border:1px solid var(--line);
+.vb-m{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:var(--s-2);
   margin-top:var(--s-3)}
-.vb-m span{flex:1 1 132px;background:var(--paper);padding:var(--s-2) var(--s-3);font-size:var(--t-sm);color:var(--ink)}
-.vb-m i{display:block;font-style:normal;color:var(--ink-3);margin-bottom:1px}
+.vb-m span{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);
+  padding:var(--s-3);font-size:var(--t-sm);color:var(--ink)}
+.vb-m i{display:block;font-style:normal;color:var(--ink-3);margin-bottom:2px}
 
-/* kpi — показатели плашками. Сетка на 1px-зазорах: линии рисует фон, а не рамки каждой плашки. */
-.kpis{display:flex;flex-wrap:wrap;gap:1px;background:var(--line);border:1px solid var(--line);
-  margin:var(--s-2) 0 var(--s-4)}
-.kpi{flex:1 1 118px;background:var(--paper);padding:var(--s-2) var(--s-3)}
+/* kpi — показатели карточками: подпись мелкая, значение крупное. */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:var(--s-2);
+  margin:var(--s-3) 0 var(--s-5)}
+.kpi{background:var(--fill-2);border:1px solid var(--line);border-radius:14px;
+  padding:var(--s-4) var(--s-4)}
 .kpi .k{display:block;color:var(--ink-3)}
-.kpi .v{display:block;font-size:var(--t-lg);font-weight:700;margin-top:2px;color:var(--ink)}
+.kpi .v{display:block;font-size:var(--t-val);font-weight:700;margin-top:var(--s-1);color:var(--ink);
+  line-height:1.1;overflow-wrap:anywhere}
 
-/* prose — связный текст раздела. Ширина строки держится читаемой даже на широком экране. */
-.prose{margin:0 0 var(--s-3);max-width:66ch}
-.prose p{margin:0 0 var(--s-2);font-size:var(--t-base)}
+/* prose — связный текст раздела. */
+.prose{margin:0 0 var(--s-4)}
+.prose p{margin:0 0 var(--s-3);font-size:var(--t-base)}
 .prose p:last-child{margin-bottom:0}
 
 /* list — перечень. */
-.lst{margin:var(--s-1) 0 var(--s-4) var(--s-5);padding:0;font-size:var(--t-base)}
-.lst li{margin:3px 0}
+.lst{margin:var(--s-2) 0 var(--s-5) var(--s-5);padding:0;font-size:var(--t-base)}
+.lst li{margin:var(--s-1) 0}
 
-/* table/register — реестр с объявленными колонками. */
-.tbl{width:100%;border-collapse:collapse;margin:var(--s-2) 0 var(--s-1);font-size:var(--t-sm)}
-.tbl th,.tbl td{border:1px solid var(--line);padding:4px var(--s-2);text-align:left;vertical-align:top}
-.tbl th{background:var(--fill);color:var(--ink-2);font-weight:600;white-space:nowrap}
-.tbl tr:nth-child(even) td{background:var(--fill-2)}
+/* ── таблицы ──────────────────────────────────────────────────────────────────────
+   Контейнер с рамкой и скруглением; у самой таблицы — только горизонтальные линии. Широкая
+   таблица прокручивается ВНУТРИ контейнера и не раздвигает лист (на печати прокрутки нет). */
+.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:var(--radius);
+  margin:var(--s-3) 0 var(--s-2)}
+.tbl{width:100%;border-collapse:collapse;margin:0;font-size:var(--t-sm)}
+.tbl th,.tbl td{border:0;border-bottom:1px solid var(--line-2);padding:11px 13px;
+  text-align:left;vertical-align:top}
+.tbl th{background:var(--fill);color:var(--ink-3);font-weight:700;font-size:var(--t-cap);
+  line-height:1.4;text-transform:uppercase;letter-spacing:.04em}
+.tbl tbody tr:last-child td{border-bottom:0}
 .n{text-align:right;white-space:nowrap}
-/* Широкий реестр (семь граф и больше) на полосу 178 мм обычным кеглем не влезает — последняя
-   колонка уезжала за край листа в PDF. Уменьшаем кегль и отступы, остальное делает перенос. */
-/* Реестр формы: код и суммы — колонки по содержимому, наименование забирает остаток. Без этого
-   браузер делит ширину поровну, и «Наименование показателя» ломается на три строки рядом с пустым
-   столбцом «За предыдущий период». Таблицы с table-layout:fixed (.wide) не трогаем. */
 /* Прижимаем по содержимому ГРАФУ, которую рендерер признал короткой (класс k: код строки, счёт,
    дата), а не «первую по счёту». Позиционное правило запрещало перенос в графе с нормой на
    полторы строки, и реестр уезжал за край листа. */
 .tbl th.k,.tbl td.k,.tbl th.n,.tbl td.n{white-space:nowrap;overflow-wrap:normal}
 .tbl:not(.wide) th.k,.tbl:not(.wide) td.k,.tbl:not(.wide) th.n,.tbl:not(.wide) td.n{width:1%}
+/* Широкий реестр: мельче кегль и плотнее отступы, перенос внутри ячейки — но не внутри слова,
+   пока слово помещается целиком. */
 .tbl.wide{font-size:var(--t-cap)}
-/* Заголовок графы в широкой таблице ПЕРЕНОСИТСЯ: при `nowrap` таблица на девять граф раздвигает
-   лист даже при fixed-раскладке, и правый край уходит за границу печати. */
-.tbl.wide th,.tbl.wide td{padding:3px 5px;overflow-wrap:break-word;white-space:normal}
+.tbl.wide th,.tbl.wide td{padding:6px 8px;overflow-wrap:break-word;white-space:normal}
 .tbl.wide .n{white-space:normal}
+/* Итоговая и сальдовая строки формы: бежевая заливка и полужирное — их ищут глазами первыми. */
+.tbl tr.subtotal td{background:var(--fill-2);font-weight:700}
+.tbl tr.balance td{background:var(--fill);font-weight:700}
 /* Ссылка на документ в учётной системе: URL не разрывается по словам и уносит таблицу за край. */
 .tbl td a{overflow-wrap:anywhere;word-break:break-word}
 
 /* cards — пункты карточками с подписанными графами. Главный блок отчёта аудита: по одной карточке
    на находку, с существенностью, кодом проверки и четырьмя подписанными графами. */
-.ac{border:1px solid var(--line);border-left:3px solid var(--ink-3);padding:var(--s-3) var(--s-4);
-  margin:var(--s-2) 0}
-.ac-h{display:flex;align-items:center;gap:var(--s-2);flex-wrap:wrap;margin-bottom:var(--s-1)}
-.ac-h .sev{color:var(--paper);background:var(--ink-3);padding:2px var(--s-2)}
-.ac-h .sev i{font-style:normal;font-weight:600;opacity:.75;margin-right:var(--s-1);letter-spacing:.02em}
+.ac{border:1px solid var(--line);border-left:4px solid var(--ink-3);border-radius:var(--radius);
+  padding:var(--s-4) var(--s-5);margin:var(--s-3) 0;background:var(--fill-2)}
+.ac-h{display:flex;align-items:center;gap:var(--s-2);flex-wrap:wrap;margin-bottom:var(--s-2)}
+.ac-h .sev{color:var(--paper);background:var(--ink-3);padding:3px var(--s-3);border-radius:30px}
+.ac-h .sev i{font-style:normal;font-weight:700;opacity:.75;margin-right:var(--s-1);letter-spacing:.02em}
 .ac-h .sev.hi{background:var(--bad)}
 .ac-h .sev.mid{background:var(--warn)}
 .ac-h .sev.low{background:var(--info)}
-.ac-h .code{font-family:var(--mono);font-size:var(--t-sm);color:var(--ink-2);font-weight:600}
+.ac-h .code{font-family:var(--mono);font-size:var(--t-sm);color:var(--ink-2);font-weight:700}
 .ac-h .grp{font-size:var(--t-cap);color:var(--ink-3)}
-.ac-t{font-size:var(--t-base);font-weight:700;color:var(--ink);margin:2px 0 var(--s-2);line-height:1.35}
+.ac-t{font-size:var(--t-lg);font-weight:700;color:var(--ink);margin:2px 0 var(--s-2);line-height:1.3}
 .ac-f{width:100%;border-collapse:collapse;font-size:var(--t-sm)}
-.ac-f td{padding:3px 0;vertical-align:top;color:var(--ink-2)}
-.ac-f td.k{width:148px;color:var(--ink-3);font-weight:600;padding-right:var(--s-3)}
+.ac-f td{padding:4px 0;vertical-align:top;color:var(--ink-2)}
+.ac-f td.k{width:160px;color:var(--ink-3);font-weight:700;padding-right:var(--s-3)}
 .ac-f .pf{font-family:var(--mono);font-size:var(--t-cap);color:var(--ink-3);margin-top:2px;word-break:break-all}
 /* Карточка с высокой существенностью подкрашивает и свою левую кромку: читатель находит критичное,
    не вчитываясь в бейджи. */
@@ -237,50 +272,53 @@ table,.kpi .v,.num,.n,.vb-v{font-variant-numeric:tabular-nums}
 .ac:has(.sev.low){border-left-color:var(--info)}
 
 /* pre — исходник как есть: схема, фрагмент OpenAPI, диаграмма как код. */
-pre.code,.sk pre{white-space:pre-wrap;word-break:break-word;background:var(--fill);
-  border:1px solid var(--line);padding:var(--s-3);margin:var(--s-2) 0 var(--s-4);
-  font:var(--t-sm)/1.45 var(--mono);color:var(--ink)}
+pre.code,.sk pre{white-space:pre-wrap;word-break:break-word;background:var(--fill-2);
+  border:1px solid var(--line);border-radius:var(--radius);padding:var(--s-4);
+  margin:var(--s-3) 0 var(--s-4);font:var(--t-sm)/1.45 var(--mono);color:var(--ink)}
 
 /* sign — подписи. Разрыв страницы внутри блока подписей недопустим: подпись без фамилии под ней
    недействительна. */
-.sign{display:flex;gap:var(--s-6);margin:var(--s-5) 0 var(--s-2)}
-.sign .sg{flex:1}
-.sign .ln{border-bottom:1px solid var(--ink);height:26px}
+.sign{display:flex;gap:var(--s-6);margin:var(--s-6) 0 var(--s-3);flex-wrap:wrap}
+.sign .sg{flex:1 1 200px}
+.sign .ln{border-bottom:1px solid var(--ink-3);height:30px}
 .sign span{display:block;font-size:var(--t-cap);color:var(--ink-3);margin-top:var(--s-1)}
 
 /* kv — пара «подпись: значение» внутри разделов навыков. */
-.kv{font-size:var(--t-sm);margin:2px 0;color:var(--ink-2)}
-.kv b{color:var(--ink);font-weight:600}
-.kv ul{margin:2px 0 var(--s-1) var(--s-5);padding:0}
+.kv{font-size:var(--t-sm);margin:3px 0;color:var(--ink-2)}
+.kv b{color:var(--ink);font-weight:700}
+.kv ul{margin:3px 0 var(--s-1) var(--s-5);padding:0}
 
 /* ───────────────────── общий отчёт: сводка, находки, навыки ───────────────────── */
 /* Шапка общего отчёта (формы без раскладки). */
-.hd{border-bottom:2px solid var(--rule);padding-bottom:var(--s-3);margin-bottom:var(--s-4)}
+.hd{border-bottom:1px solid var(--rule);padding-bottom:var(--s-4);margin-bottom:var(--s-5)}
 .sub{color:var(--ink-3);font-size:var(--t-sm)}
-.verdict{display:inline-block;margin-top:var(--s-2);font-size:var(--t-sm);color:var(--ink-2);
-  background:var(--accent-soft);border:1px solid var(--line);padding:3px var(--s-3)}
+.verdict{display:inline-block;margin-top:var(--s-3);font-size:var(--t-sm);color:var(--ink-2);
+  background:var(--fill);border:1px solid var(--line);border-radius:30px;padding:5px var(--s-4)}
 
 /* Плашки «сколько чего»: ставятся только там, где счёт — это и есть содержание страницы. */
-.sum{display:flex;gap:1px;background:var(--line);border:1px solid var(--line);margin:var(--s-4) 0}
-.card{flex:1;background:var(--paper);padding:var(--s-3);text-align:left}
-.card h3{margin:0 0 var(--s-1);color:var(--ink-3);font-weight:600}
-.num{font-size:var(--t-2xl);font-weight:700;color:var(--ink);line-height:1.1}
+.sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:var(--s-2);
+  margin:var(--s-4) 0}
+.card{background:var(--fill-2);border:1px solid var(--line);border-radius:14px;
+  padding:var(--s-4);text-align:left}
+.card h3{margin:0 0 var(--s-1);color:var(--ink-3);font-weight:700}
+.num{font-size:var(--t-val);font-weight:700;color:var(--ink);line-height:1.1}
 
 /* Классы находок A/B/C/D — та же лестница существенности, что у карточек. */
-.badges{margin:var(--s-2) 0 var(--s-3)}
+.badges{margin:var(--s-3) 0 var(--s-4)}
 .b{display:inline-block;font-size:var(--t-cap);font-weight:700;letter-spacing:.03em;
-  padding:2px var(--s-2);margin-right:var(--s-1);color:var(--paper);background:var(--ink-3)}
+  padding:3px var(--s-3);border-radius:30px;margin-right:var(--s-1);color:var(--paper);
+  background:var(--ink-3)}
 .b.A{background:var(--bad)}
 .b.B{background:var(--warn)}
 .b.C{background:var(--mid)}
 .b.D{background:var(--info)}
 
 /* Находка строкой — компактный вид для реестров. */
-.fnd{border-left:3px solid var(--line);padding:var(--s-2) var(--s-3);margin:var(--s-1) 0;
-  background:var(--fill-2);font-size:var(--t-sm)}
+.fnd{border-left:4px solid var(--line);border-radius:var(--radius);padding:var(--s-3) var(--s-4);
+  margin:var(--s-2) 0;background:var(--fill-2);font-size:var(--t-sm)}
 .fnd .cls{display:inline-block;font-weight:700;font-size:var(--t-cap);letter-spacing:.03em;
-  color:var(--paper);background:var(--ink-3);padding:1px 6px;margin-right:var(--s-1)}
-.fnd .norm{display:block;color:var(--accent);font-size:var(--t-cap);margin-top:3px}
+  color:var(--paper);background:var(--ink-3);padding:2px 8px;border-radius:30px;margin-right:var(--s-1)}
+.fnd .norm{display:block;color:var(--accent);font-size:var(--t-cap);margin-top:4px}
 /* Бейдж класса в строке находки — та же лестница, что у .b и у столбцов графика. */
 .fnd .cls.A{background:var(--bad)}
 .fnd .cls.B{background:var(--warn)}
@@ -293,60 +331,87 @@ pre.code,.sk pre{white-space:pre-wrap;word-break:break-word;background:var(--fil
 .fnd:has(.cls.D){border-left-color:var(--info)}
 
 /* Находка карточкой — подробный вид с подписанными графами. */
-.fcard{border:1px solid var(--line);border-left:3px solid var(--ink-3);padding:var(--s-3) var(--s-4);
-  margin:var(--s-2) 0;background:var(--paper)}
-.fcard .ch{font-size:var(--t-base);font-weight:700;color:var(--ink);margin-bottom:var(--s-1);line-height:1.35}
+.fcard{border:1px solid var(--line);border-left:4px solid var(--ink-3);border-radius:var(--radius);
+  padding:var(--s-4) var(--s-5);margin:var(--s-3) 0;background:var(--paper)}
+.fcard .ch{font-size:var(--t-lg);font-weight:700;color:var(--ink);margin-bottom:var(--s-2);line-height:1.3}
 .fcard .cbs{margin:0 0 var(--s-2)}
-.fcard .cb{display:inline-block;font-size:var(--t-cap);font-weight:600;color:var(--ink-2);
-  background:var(--fill);border:1px solid var(--line-2);padding:1px var(--s-2);margin:0 var(--s-1) 3px 0}
+.fcard .cb{display:inline-block;font-size:var(--t-cap);font-weight:700;color:var(--ink-2);
+  background:var(--fill);border:1px solid var(--line);border-radius:30px;
+  padding:2px var(--s-3);margin:0 var(--s-1) var(--s-1) 0}
 .fcard .cnorm{color:var(--accent);font-size:var(--t-cap);margin:0 0 var(--s-2)}
 .fcard .cf{font-size:var(--t-sm);margin:var(--s-1) 0;color:var(--ink-2)}
-.fcard .cf b{color:var(--ink-3);font-weight:600}
-.fcard .kv{margin:2px 0 2px var(--s-2)}
+.fcard .cf b{color:var(--ink-3);font-weight:700}
+.fcard .kv{margin:3px 0 3px var(--s-2)}
 
 /* Расследование от симптома: симптом, цепочка, расхождение. */
-.inv{border:1px solid var(--line);padding:var(--s-3) var(--s-4);margin:var(--s-3) 0;background:var(--paper)}
+.inv{border:1px solid var(--line);border-radius:var(--radius);padding:var(--s-4) var(--s-5);
+  margin:var(--s-4) 0;background:var(--paper)}
 .inv .sym{font-weight:700;font-size:var(--t-base);color:var(--ink)}
 .inv .sev{font-size:var(--t-cap);font-weight:700;text-transform:uppercase;letter-spacing:var(--tracking);
   color:var(--bad);margin-right:var(--s-1)}
 .inv .chain{font-family:var(--mono);font-size:var(--t-sm);color:var(--ink-2);margin:var(--s-2) 0}
 .inv .delta{display:inline-block;font-size:var(--t-sm);color:var(--ink);background:var(--fill);
-  border:1px solid var(--line-2);padding:2px var(--s-2)}
+  border:1px solid var(--line);border-radius:30px;padding:3px var(--s-3)}
 
 /* Поручение: единственное место, где уместен зелёный — это «к исполнению», а не «всё хорошо». */
-.task{border-left:3px solid var(--ok);padding:var(--s-2) var(--s-3);margin:var(--s-1) 0;
-  background:var(--fill-2);font-size:var(--t-sm)}
+.task{border-left:4px solid var(--ok);border-radius:var(--radius);padding:var(--s-3) var(--s-4);
+  margin:var(--s-2) 0;background:var(--fill-2);font-size:var(--t-sm)}
 
 /* Раздел навыка в общем отчёте. */
-.sk{margin:var(--s-2) 0 var(--s-4)}
-.sk h3{font-size:var(--t-base);color:var(--ink);margin:0 0 var(--s-1)}
-.sk .lead{font-size:var(--t-base);color:var(--ink);background:var(--fill-2);
-  border-left:3px solid var(--accent);padding:var(--s-2) var(--s-3);margin:var(--s-2) 0 var(--s-3)}
+.sk{margin:var(--s-3) 0 var(--s-5)}
+.sk h3{font-size:var(--t-lg);color:var(--ink);margin:0 0 var(--s-2)}
+.sk .lead{font-size:var(--t-base);color:var(--ink-2);background:var(--fill-2);
+  border-left:4px solid var(--accent);border-radius:var(--radius);
+  padding:var(--s-3) var(--s-4);margin:var(--s-2) 0 var(--s-4)}
 
-.dl{font-size:var(--t-sm);color:var(--ink-2);margin:var(--s-1) 0}
+.dl{font-size:var(--t-sm);color:var(--ink-3);margin:var(--s-1) 0}
+
+/* Тёмный итоговый блок: один вывод или границы ответственности. Не обязателен каждой форме. */
+.footer{padding:var(--s-5);margin-top:var(--s-5);background:var(--dark);color:var(--paper);
+  border-radius:14px;font-size:var(--t-base)}
+.footer p{margin:0}
 
 /* Графики: рамка и подпись — из тех же токенов, что документ (сам SVG рисует charts.py). */
-figure{margin:var(--s-3) 0;padding:0}
+figure{margin:var(--s-4) 0;padding:0}
 figure svg{display:block;max-width:100%}
+
+/* ─────────────────────────────── узкий экран ─────────────────────────────── */
+@media screen and (max-width:700px){
+  body{margin:0;padding:26px 20px;box-shadow:none;max-width:none}
+  h1{font-size:var(--t-xl)}
+  h2{font-size:var(--t-lg)}
+  h3{font-size:var(--t-base)}
+  .top{font-size:var(--t-cap)}
+  .hmeta,.kpis,.sum,.vb-m{grid-template-columns:1fr}
+}
 
 /* ─────────────────────────────── печать ─────────────────────────────── */
 @media print{
-  body{max-width:none;padding:0;font-size:var(--t-sm)}
-  /* На бумаге ограничение строки в 66 знаков оставляет треть листа пустой, и служебный документ
-     читается как недовёрстанный. Комфорт чтения с экрана тут обслуживает сама ширина страницы. */
+  html{background:var(--paper)}
+  body{max-width:none;margin:0;padding:0;box-shadow:none;font-size:10pt;background:var(--paper)}
+  h1{font-size:24pt}
+  h2{font-size:15pt}
+  h3{font-size:12pt}
+  .tbl,.at{font-size:9pt}
+  .tbl th,.tbl td,.at th,.at td{padding:6px 8px}
+  .kpi .v{font-size:16pt}
+  .num{font-size:18pt}
+  /* На бумаге ограничение строки оставляет треть листа пустой, и служебный документ читается как
+     недовёрстанный. Комфорт чтения с экрана тут обслуживает сама ширина страницы. */
   .prose{max-width:none}
-  /* Ни одна таблица не имеет права вылезти за лист. Переносим ТЕКСТ, а не раздвигаем страницу;
-     раскладку граф оставляем автоматической — при fixed «Код» получил бы столько же места, сколько
-     «Наименование показателя», и форма перестала бы читаться. */
+  /* Ни одна таблица не имеет права вылезти за лист: на бумаге прокрутки нет, переносим текст. */
+  .table-wrap{overflow:visible}
   .tbl{width:100%;max-width:100%}
   .tbl th,.tbl td{white-space:normal;overflow-wrap:break-word}
   /* Шапка таблицы повторяется на каждой странице — иначе вторая половина реестра превращается в
      колонки без названий. */
   thead{display:table-header-group}
-  tr,.ac,.fcard,.inv,.vb,.sign,.kpi,figure{break-inside:avoid;page-break-inside:avoid}
+  tr,.ac,.fcard,.inv,.vb,.sign,.kpi,.callout,.footer,figure{break-inside:avoid;page-break-inside:avoid}
   h1,h2,h3,.part,.ahd{break-after:avoid;page-break-after:avoid}
   p,.prose,.lst li{orphans:3;widows:3}
   a{color:var(--ink);border-bottom:0}
+  /* Бежевые подложки несут смысл (шапка таблицы, итоговая строка) — они обязаны печататься. */
+  body *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   /* Сшитый документ: каждая часть начинается со своей страницы, кроме первой. */
   .part{break-before:page;page-break-before:always}
   .part:first-of-type{break-before:auto;page-break-before:auto}

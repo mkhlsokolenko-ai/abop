@@ -189,7 +189,15 @@ def _b_head(b: dict, result: dict, ctx: dict) -> str:
         lines.append("<div class='hmeta'>" + "".join(meta) + "</div>")
     if b.get("note"):
         lines.append(f"<div class='meth'>{esc(b['note'])}</div>")
-    return (f"<div class='ahd'><h1>{esc(b.get('title') or '')}</h1>" + "".join(lines) + "</div>")
+    # Верхняя строка листа: слева тема (откуда документ), справа его вид. Читатель понимает, что у
+    # него в руках, до того как дойдёт до заголовка; в бумажной форме ту же роль играет угловой
+    # штамп. Тема объявляется бланком (`brand`), вид — его коротким именем (`kind`) или заголовком.
+    тема = esc(str(b.get("brand") or (ctx or {}).get("brand") or "Агентный процесс ABOP"))
+    вид = esc(str(b.get("kind") or b.get("title") or ""))
+    верх = (f"<div class='top'><div class='brand'>{тема}</div>"
+            + (f"<div class='pill'>{вид}</div>" if вид else "") + "</div>")
+    return (верх + f"<div class='ahd'><h1>{esc(b.get('title') or '')}</h1>"
+            + "".join(lines) + "</div>")
 
 
 def _b_stamp(b: dict, result: dict, ctx: dict) -> str:
@@ -225,7 +233,7 @@ def _b_attrs(b: dict, result: dict, ctx: dict) -> str:
         rows.append(f"<tr><th>{esc(lbl)}</th><td>{esc(текст) or 'не указано'}</td></tr>")
     if not filled:
         return ""
-    return (_h2(b) + f"<table class='at'>{''.join(rows)}</table>")
+    return (_h2(b) + f"<div class='table-wrap'><table class='at'>{''.join(rows)}</table></div>")
 
 
 def _b_verdict(b: dict, result: dict, ctx: dict) -> str:
@@ -393,16 +401,26 @@ def _b_register(b: dict, result: dict, ctx: dict) -> str:
         return (" class='" + " ".join(кл) + "'") if кл else ""
 
     head = "".join(f"<th{_cls(f)}>{esc(lbl)}</th>" for lbl, f in cols)
+    # Бланк может сказать, в каком поле лежит ВИД строки: итоговые и сальдовые строки формы
+    # выделяются заливкой — их ищут глазами первыми, и в бумажной форме так же.
+    поле_вида = str(b.get("rowclass") or "")
     body = []
     for it in items[:_MAX_ROWS]:
         tds = "".join(f"<td{_cls(f)}>{_ячейка(it, f, f in num)}</td>" for _l, f in cols)
-        body.append(f"<tr>{tds}</tr>")
+        вид = str(field(it, поле_вида) or "").strip().lower() if поле_вида else ""
+        кл = {"подытог": " class='subtotal'", "итог": " class='subtotal'",
+              "сальдо": " class='balance'"}.get(вид, "")
+        body.append(f"<tr{кл}>{tds}</tr>")
     more = f" · показаны первые {_MAX_ROWS} из {len(items)}" if len(items) > _MAX_ROWS else ""
     # `wide` объявляет бланк; с шести граф форма становится широкой сама — иначе мелкий кегль и
     # фиксированная раскладка объявлены в CSS, но до разметки не доезжают.
     широкая = bool(b.get("wide")) or len(cols) >= 6
     кл_таблицы = "tbl wide" if широкая else "tbl"
-    return (_h2(b) + f"<table class='{кл_таблицы}'><tr>{head}</tr>{''.join(body)}</table>"
+    # `thead` повторяет шапку на каждой странице печати; контейнер даёт рамку со скруглением и
+    # прокрутку широкой таблицы на экране, не раздвигая лист.
+    таблица = (f"<table class='{кл_таблицы}'><thead><tr>{head}</tr></thead>"
+               f"<tbody>{''.join(body)}</tbody></table>")
+    return (_h2(b) + f"<div class='table-wrap'>{таблица}</div>"
             + f"<div class='cnt'>строк: {len(items)}{more}"
             + (f" · {esc(b['note'])}" if b.get("note") else "") + "</div>")
 
@@ -437,8 +455,12 @@ def _b_part(b: dict, result: dict, ctx: dict) -> str:
 
 
 def _b_note(b: dict, result: dict, ctx: dict) -> str:
-    """Оговорка вида документа: чего он НЕ заменяет. Так же сделано в форме аудита."""
-    return f"<div class='meth'>{esc(b.get('text') or '')}</div>" if b.get("text") else ""
+    """Оговорка вида документа: чего он НЕ заменяет.
+
+    Оформляется выноской — бежевая подложка и линия слева, без тревожных цветов: это не ошибка, а
+    условие, которое нельзя пропустить. Мелкий серый текст внизу листа читатель пропускал.
+    """
+    return f"<div class='callout'>{esc(b.get('text') or '')}</div>" if b.get("text") else ""
 
 
 def _b_raw(b: dict, result: dict, ctx: dict) -> str:
