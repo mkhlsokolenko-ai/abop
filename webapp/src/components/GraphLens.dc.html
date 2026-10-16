@@ -108,6 +108,15 @@
                     <sc-for list="{{ gl.scenarioTabs }}" as="t" hint-placeholder-count="2">
                       <button onClick="{{ t.pick }}" style="padding: 7px 10px; border: 1px solid {{ t.border }}; border-radius: 8px; background: {{ t.outlineBg }}; color: {{ t.fg }}; font-size: 12px; font-weight: 600; text-align: left;" style-hover="border-color: #818cf8;">{{ t.label }}</button>
                     </sc-for>
+                    <sc-if value="{{ gl.hasServerAgents }}" hint-placeholder-val="{{ true }}">
+                      <span style="margin-top: 6px; font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 1px; color: var(--w45);">АГЕНТЫ ПЛАТФОРМЫ</span>
+                      <sc-for list="{{ gl.serverAgents }}" as="a" hint-placeholder-count="2">
+                        <button onClick="{{ a.pick }}" title="Открыть сохранённый граф агента" style="display: flex; flex-direction: column; gap: 2px; padding: 7px 10px; border: 1px solid {{ a.border }}; border-radius: 8px; background: {{ a.outlineBg }}; color: {{ a.fg }}; font-size: 12px; font-weight: 600; text-align: left;" style-hover="border-color: #34d399;">
+                          <span>{{ a.label }}</span>
+                          <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 500; color: var(--w42);">{{ a.hint }}</span>
+                        </button>
+                      </sc-for>
+                    </sc-if>
                     <button onClick="{{ gl.newScenario }}" title="Добавить нового агента" style="padding: 7px 10px; border: 1px dashed rgba(129,140,248,.5); border-radius: 8px; background: rgba(99,102,241,.1); color: var(--acc-ink); font-size: 12px; font-weight: 600; text-align: left;" style-hover="background: rgba(99,102,241,.2);">＋ новый агент</button>
                     <sc-if value="{{ gl.ownScenario }}" hint-placeholder-val="{{ false }}">
                       <input value="{{ gl.scenarioName }}" onChange="{{ gl.setScenarioName }}" title="Имя агента" style="width: 100%; padding: 7px 9px; border-radius: 8px; border: 1px solid var(--w14); background: var(--s60); color: var(--ink); font-size: 12px;" style-focus="border-color: #6366f1;">
