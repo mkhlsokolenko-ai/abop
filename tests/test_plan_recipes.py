@@ -1,0 +1,68 @@
+# -*- coding: utf-8 -*-
+"""Рецепты демо-графика лежат в репозитории как данные, и их карта не теряет полей.
+
+Грабля повторилась дважды: карта рецепта ОДДС однажды отбросила контрагента и статью ДДС, а карта
+`plan_rules` — календарь и статусы ожидания. Поле есть в данных, в карте его нет — и до движка оно
+не доезжает. Ошибки при этом нет: правило просто не срабатывает, и отчёт выглядит «чистым».
+
+Тест сверяет три стороны: что лежит в демо-данных, что переносит рецепт и что ждёт движок.
+"""
+from __future__ import annotations
+
+import io
+import json
+import sys
+from pathlib import Path
+
+КОРЕНЬ = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(КОРЕНЬ))
+sys.path.insert(0, str(КОРЕНЬ / "cli"))
+
+РЕЦЕПТЫ = {r["recipe"]: r for r in
+           json.load(io.open(КОРЕНЬ / "demo" / "plan" / "recipes.json", encoding="utf-8"))}
+
+
+def _данные(имя):
+    return json.load(io.open(КОРЕНЬ / "demo" / "plan" / имя, encoding="utf-8"))
+
+
+def _карта(рецепт):
+    return {str(m["field"]) for m in РЕЦЕПТЫ[рецепт]["map_rows"]}
+
+
+def test_рецепты_демо_на_месте():
+    assert set(РЕЦЕПТЫ) == {"plan_stages", "plan_rules", "plan_roadmap", "plan_transcript",
+                            "plan_shift"}, sorted(РЕЦЕПТЫ)
+    for имя, r in РЕЦЕПТЫ.items():
+        assert r["status"] == "опубликован", имя
+        assert (r.get("emit") or {}).get("schema") == r["entity"], имя
+        assert r["map"] and len(r["map"]) == len(r["map_rows"]), (имя, "карта и форма разошлись")
+    assert РЕЦЕПТЫ["plan_shift"]["source"]["kind"] == "plan", "расчёт приходит вычисляемым адаптером"
+    assert РЕЦЕПТЫ["plan_transcript"]["source"]["kind"] == "transcript"
+
+
+def test_карта_переносит_все_поля_данных():
+    """Новое поле правила без поля в карте — молчаливая потеря: правило не сработает."""
+    для = {"plan_rules": "rules.json", "plan_stages": "stages.json", "plan_roadmap": "roadmap.json"}
+    for рецепт, файл in для.items():
+        поля = {k for запись in _данные(файл) for k in запись}
+        потеряно = поля - _карта(рецепт)
+        assert not потеряно, f"{рецепт} не переносит: {', '.join(sorted(потеряно))}"
+
+
+def test_параметры_правил_доезжают_до_движка():
+    """Календарь, статусы ожидания и пороги — те самые поля, без которых проверки молчат."""
+    карта = _карта("plan_rules")
+    for поле in ("вид", "выходные", "праздники", "статусы_ожидания", "порог_дней",
+                 "порог_возвратов", "значения_критичности", "буфер_дней", "основание"):
+        assert поле in карта, f"параметр правила «{поле}» не переносится рецептом"
+
+
+def test_карта_расчёта_переносит_то_что_отдаёт_движок():
+    import ape
+    from tests.test_plan_shift import _расчёт
+
+    строки = ape._план_строки(_расчёт())
+    поля = {k for с in строки for k in с}
+    потеряно = поля - _карта("plan_shift")
+    assert not потеряно, f"рецепт расчёта не переносит: {', '.join(sorted(потеряно))}"
