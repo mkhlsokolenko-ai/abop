@@ -106,41 +106,65 @@ def _personal_fn(actor_sub: str, skill_schemas: dict):
 
 
 def _agent_knowledge_fn(agent: dict, actor: str):
-    """Собрать knowledge_fn для прогона: RAG-запрос к корпусу семьи (sLAVA) с ABAC-гейтом. Корпус —
-    из knowledge-source узла графа (node.corpus{collection|family,top_k}); нет узла ⇒ None (без RAG)."""
-    corpus_col = corpus_fam = None
-    top_k = 4
+    """Собрать knowledge_fn для прогона: RAG-запрос к корпусам знаний (sLAVA) с ABAC-гейтом.
+
+    Корпусов может быть НЕСКОЛЬКО: агент «Управляющий графиком» цитирует и внутренний регламент
+    («сколько рабочих дней у стадии»), и свод знаний PMBOK («почему резерв важнее срока»). Раньше
+    брался первый узел с `corpus`, и второй свод молча терялся — половина обоснований исчезала из
+    отчёта без всякой ошибки. Корпуса объявляются узлами графа (`node.corpus{collection|family,
+    top_k}`); нет ни одного ⇒ корпус СЕМЬИ агента, нет и его ⇒ None (без RAG).
+    """
     fam = agent.get("family")
+    корпуса = []            # [(коллекция, семья-владелец, top_k, подпись)]
     for n in (agent.get("graph") or {}).get("nodes") or []:
-        if n.get("kind") in ("source", "doc"):
-            c = n.get("corpus") or {}
-            if c.get("collection") or c.get("family"):
-                corpus_fam = c.get("family")
-                corpus_col = c.get("collection") or slava.fam_collection(c.get("family"))
-                top_k = int(c.get("top_k") or 4)
-                break
-    # фолбэк: если source-узла с corpus нет в сохранённом графе — берём корпус СЕМЬИ агента (slava_fam_<family>)
-    if not corpus_col and fam and fam != "*":
-        corpus_col = slava.fam_collection(fam)
-        corpus_fam = fam
-    if not corpus_col:
+        if n.get("kind") not in ("source", "doc"):
+            continue
+        c = n.get("corpus") or {}
+        if not (c.get("collection") or c.get("family")):
+            continue
+        корпуса.append((c.get("collection") or slava.fam_collection(c.get("family")),
+                        c.get("family"), int(c.get("top_k") or 4),
+                        str(n.get("title") or c.get("label") or "")))
+    if not корпуса and fam and fam != "*":
+        корпуса.append((slava.fam_collection(fam), fam, 4, ""))
+    if not корпуса:
         return None
     fam_key = access.scope_key(family=fam)
-    # ABAC: корпус привязан к СЕМЬЕ и семья агента её не достигает → знание закрыто (аналитик ≠ архитектура)
-    if corpus_fam and fam != "*" and not access.can_reach_family(fam, corpus_fam):
-        async def _denied(sid, entities):
-            await access.audit_denial(actor, fam_key, corpus_col, "knowledge", "семья без доступа к корпусу")
+    # ABAC: корпус привязан к СЕМЬЕ и семья агента её не достигает → знание закрыто
+    # (аналитик ≠ архитектура). Закрытый корпус выбрасываем, остальные остаются.
+    разрешённые = [(кол, сем, k, подпись) for кол, сем, k, подпись in корпуса
+                   if not (сем and fam != "*" and not access.can_reach_family(fam, сем))]
+    отказано = [кол for кол, сем, _k, _п in корпуса
+                if сем and fam != "*" and not access.can_reach_family(fam, сем)]
+    if not разрешённые:
+        async def _denied(sid, entities, hint: str = ""):
+            await access.audit_denial(actor, fam_key, отказано[0], "knowledge",
+                                      "семья без доступа к корпусу")
             return []
         return _denied
 
     async def _kfn(sid, entities, hint: str = ""):
         # запрос из методики навыка (домен-релевантный) + сущности — иначе sLAVA отсекает по релевантности
         q = ((hint or "")[:400] + " " + " ".join(entities)).strip() or f"нормы для {sid}"
-        try:
-            res = await slava.query(corpus_col, q, top_k=top_k, tenant="abop")
-            return [s.get("text", "") for s in (res.get("sources") or []) if s.get("text")]
-        except Exception:  # noqa: BLE001 — корпус недоступен → без RAG, прогон не падает
-            return []
+        куски = []
+        for кол, _сем, k, подпись in разрешённые:
+            if отказано:
+                await access.audit_denial(actor, fam_key, отказано[0], "knowledge",
+                                          "семья без доступа к корпусу")
+                отказано.clear()
+            try:
+                res = await slava.query(кол, q, top_k=k, tenant="abop")
+            except Exception:  # noqa: BLE001 — корпус недоступен → без него, прогон не падает
+                continue
+            for s in (res.get("sources") or []):
+                текст = str(s.get("text") or "")
+                if not текст:
+                    continue
+                # Подпись корпуса едет с куском: регламент и отраслевой свод — разные по силе
+                # основания, и читатель отчёта должен видеть, откуда взята норма.
+                метка = подпись or кол
+                куски.append("[%s] %s" % (метка, текст))
+        return куски
     return _kfn
 
 

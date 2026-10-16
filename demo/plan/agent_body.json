@@ -41,6 +41,26 @@
     "entity": "plan_line"
    },
    {
+    "id": "kn_reglament",
+    "kind": "doc",
+    "title": "Регламент: производственный процесс",
+    "corpus": {
+     "collection": "slava_fam_management",
+     "top_k": 4,
+     "label": "Производственный процесс"
+    }
+   },
+   {
+    "id": "kn_pmbok",
+    "kind": "doc",
+    "title": "Свод знаний PMBOK 6",
+    "corpus": {
+     "collection": "slava_pm_body",
+     "top_k": 4,
+     "label": "PMBOK 6"
+    }
+   },
+   {
     "id": "plan-shift",
     "kind": "skill",
     "skill": "plan-shift",
@@ -89,6 +109,14 @@
    {
     "from": "plan-shift",
     "to": "out_mail"
+   },
+   {
+    "from": "kn_reglament",
+    "to": "plan-shift"
+   },
+   {
+    "from": "kn_pmbok",
+    "to": "plan-shift"
    }
   ]
  }
