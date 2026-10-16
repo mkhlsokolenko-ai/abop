@@ -121,6 +121,17 @@ def test_без_токена_и_адреса_отказ_объясняет_се�
     assert "ключ" in str(e2.value), "молчаливый отказ без объяснения недопустим"
 
 
+def test_ключ_можно_держать_файлом(сервер, tmp_path, monkeypatch):
+    """Файл надёжнее переменной среды и рецепта: его нет ни в данных, ни в логах."""
+    monkeypatch.delenv("OPENPROJECT_TOKEN", raising=False)
+    ф = tmp_path / "op_token"
+    ф.write_text("ключ-из-файла" + chr(10), encoding="utf-8")
+    источник = {k: v for k, v in ИСТОЧНИК.items() if k != "токен"}
+    источник["токен_файл"] = str(ф)
+    строки = ape._adapter_openproject(источник)
+    assert len(строки) == 2, "ключ из файла не подхвачен"
+
+
 def test_токен_можно_держать_в_среде(сервер, monkeypatch):
     monkeypatch.setenv("OPENPROJECT_TOKEN", "из-среды")
     источник = {k: v for k, v in ИСТОЧНИК.items() if k != "токен"}

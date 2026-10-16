@@ -5790,9 +5790,17 @@ def _adapter_openproject(src: dict) -> list:
     проект = str(src.get("проект") or src.get("project") or "").strip()
     if not (база and проект):
         raise ValueError("нужен адрес проектного сервера (base) и идентификатор проекта (проект)")
-    токен = str(src.get("токен") or os.environ.get(str(src.get("токен_env") or ""), "")).strip()
+    # Ключ ищем в трёх местах по убыванию безопасности: файл (его нет ни в рецепте, ни в логах),
+    # переменная среды, и только потом сам рецепт — последнее годится для стенда, а не для прода.
+    токен = ""
+    путь_ключа = str(src.get("токен_файл") or "").strip()
+    if путь_ключа and os.path.isfile(путь_ключа):
+        with open(путь_ключа, encoding="utf-8") as ф:
+            токен = ф.read().strip()
+    токен = токен or str(os.environ.get(str(src.get("токен_env") or ""), "")).strip()         or str(src.get("токен") or "").strip()
     if not токен:
-        raise ValueError("нет ключа API проектного сервера: укажите «токен» или «токен_env»")
+        raise ValueError("нет ключа API проектного сервера: укажите «токен_файл», «токен_env» "
+                         "или «токен»")
     поля = {k: str(v) for k, v in (src.get("поля") or {}).items() if v}
 
     авторизация = "Basic " + base64.b64encode(("apikey:" + токен).encode()).decode()

@@ -648,6 +648,7 @@
    "kind": "openproject",
    "base": "http://5.129.192.63:8096",
    "проект": "prj-2451",
+   "токен_файл": "/app/secrets/openproject_token",
    "токен_env": "OPENPROJECT_TOKEN",
    "поля": {
     "стадия": "customField1.value",
