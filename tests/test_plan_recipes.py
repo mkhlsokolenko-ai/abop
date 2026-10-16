@@ -31,8 +31,18 @@ def _карта(рецепт):
 
 
 def test_рецепты_демо_на_месте():
-    assert set(РЕЦЕПТЫ) == {"plan_stages", "plan_rules", "plan_roadmap", "plan_transcript",
-                            "plan_shift"}, sorted(РЕЦЕПТЫ)
+    assert set(РЕЦЕПТЫ) == {"plan_stages", "plan_rules", "plan_roadmap", "plan_roadmap_live",
+                            "plan_transcript", "plan_shift"}, sorted(РЕЦЕПТЫ)
+    # Живой рецепт и файловый наполняют ОДНУ сущность: это осознанно и объяснено в самом рецепте.
+    живой = РЕЦЕПТЫ["plan_roadmap_live"]
+    assert живой["entity"] == РЕЦЕПТЫ["plan_roadmap"]["entity"] == "roadmap_item"
+    assert "заметка" in живой and "без проектного сервера" in живой["заметка"]
+    assert живой["source"]["kind"] == "openproject"
+    # Соответствие полей заказчика — в рецепте, а не в коде адаптера.
+    assert set(живой["source"]["поля"]) == {"стадия", "критично_для_ввода", "дата_входа",
+                                            "возвратов"}
+    assert живой["source"].get("токен_env") and "токен" not in живой["source"], (
+        "ключ API не должен лежать в рецепте открытым текстом")
     for имя, r in РЕЦЕПТЫ.items():
         assert r["status"] == "опубликован", имя
         assert (r.get("emit") or {}).get("schema") == r["entity"], имя
