@@ -138,3 +138,24 @@ def test_токен_можно_держать_в_среде(сервер, monkey
     источник["токен_env"] = "OPENPROJECT_TOKEN"
     строки = ape._adapter_openproject(источник)
     assert len(строки) == 2, "ключ из переменной среды не подхвачен"
+
+
+def test_отказ_проектного_сервера_называет_причину(monkeypatch):
+    """403 и 401 — разные беды: «ключ не тот» и «ключ не от того человека»."""
+    def отказ(код):
+        def _открыть(запрос, timeout=0):
+            raise ape.urllib.error.HTTPError(
+                "http://проектный:8096", код, "Forbidden", {}, None)
+        return _открыть
+
+    monkeypatch.setattr(ape, "_guard_url", lambda u: u)
+    monkeypatch.setattr(ape.urllib.request, "urlopen", отказ(403))
+    with pytest.raises(ValueError) as e403:
+        ape._adapter_openproject(dict(ИСТОЧНИК))
+    assert "прав" in str(e403.value) and "prj-2451" in str(e403.value), (
+        "по тексту ошибки должно быть видно, что ключ рабочий, а прав на проект нет")
+
+    monkeypatch.setattr(ape.urllib.request, "urlopen", отказ(401))
+    with pytest.raises(ValueError) as e401:
+        ape._adapter_openproject(dict(ИСТОЧНИК))
+    assert "не принял ключ" in str(e401.value)

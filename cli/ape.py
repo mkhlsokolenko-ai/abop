@@ -5808,8 +5808,21 @@ def _adapter_openproject(src: dict) -> list:
         база, urllib.parse.quote(проект), int(src.get("лимит") or 200))
     запрос = urllib.request.Request(_guard_url(адрес), headers={"Authorization": авторизация,
                                                                 "Accept": "application/json"})
-    with urllib.request.urlopen(запрос, timeout=60) as ответ:
-        данные = json.loads(ответ.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(запрос, timeout=60) as ответ:
+            данные = json.loads(ответ.read().decode("utf-8"))
+    except urllib.error.HTTPError as ex:
+        # 401 и 403 от проектного сервера значат разное, и путаница стоит часа разбирательств:
+        # 401 — ключ не принят, 403 — ключ принят, но у его владельца нет прав на этот проект
+        # (так бывает, когда ключ выписан встроенному системному пользователю, а не человеку).
+        if ex.code == 401:
+            raise ValueError("проектный сервер не принял ключ API (401): ключ недействителен или "
+                             "отозван — выпишите новый в профиле пользователя")
+        if ex.code == 403:
+            raise ValueError("ключ принят, но у его владельца нет прав на проект «%s» (403): "
+                             "выпишите ключ от имени человека, который видит проект, либо дайте "
+                             "этому пользователю роль с правом просмотра задач" % проект)
+        raise
     элементы = ((данные.get("_embedded") or {}).get("elements")) or []
     if not элементы:
         raise ValueError("проект «%s» на %s не содержит задач — проверьте идентификатор и права"
