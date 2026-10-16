@@ -46,19 +46,37 @@
 
 ## 4. Как перевести стенд на живой источник
 
+Структура демо-проекта и ключ API заводятся двумя скриптами из репозитория — стенд
+воспроизводится с нуля, а не «как-то руками»:
+
+| Скрипт | Что делает |
+|---|---|
+| `demo/plan/openproject/seed.rb` | проект `prj-2451`, четыре пользовательских поля процесса, семь задач, связи `follows` |
+| `demo/plan/openproject/issue_token.rb` | выписывает ключ API живому администратору и кладёт его в файл, не печатая значение |
+
 ```bash
-# 1. ключ от имени человека, который видит проект → в файл с правами 600
-docker exec abop-webapi sh -c 'install -m 600 /dev/null /app/secrets/openproject_token'
-# (значение записать, не выводя в лог)
-# 2. рецепты и ядро в контейнер
+# 1. структура проекта
+docker cp demo/plan/openproject/seed.rb openproject:/tmp/seed.rb
+docker exec openproject bash -lc 'cd /app && RAILS_ENV=production bundle exec rails runner /tmp/seed.rb'
+# номера customField из вывода — в source.поля рецепта plan_roadmap_live
+
+# 2. ключ: значение не выводится в терминал и не остаётся в /tmp
+docker cp demo/plan/openproject/issue_token.rb openproject:/tmp/issue_token.rb
+docker exec openproject bash -lc 'cd /app && RAILS_ENV=production bundle exec rails runner /tmp/issue_token.rb'
+docker cp openproject:/tmp/op_token.txt /opt/abop/secrets/openproject_token
+chmod 600 /opt/abop/secrets/openproject_token
+docker exec openproject rm -f /tmp/op_token.txt /tmp/issue_token.rb
+docker exec abop-webapi mkdir -p /app/secrets
+docker cp /opt/abop/secrets/openproject_token abop-webapi:/app/secrets/openproject_token
+
+# 3. ядро и рецепты в контейнер
 docker cp cli/ape.py abop-webapi:/app/cli/ape.py
 docker cp demo/plan/recipes.json abop-webapi:/app/demo/plan/recipes.json
-# 3. живая карта вместо файловой и пересчёт смещения
-docker exec abop-webapi python - <<'PY'
-# plan_roadmap_live (reset) → roadmap_item, затем plan_shift (reset) → plan_line
-PY
+
+# 4. живая карта вместо файловой и пересчёт смещения:
+#    plan_roadmap_live (reset) → roadmap_item, затем plan_shift (reset) → plan_line
 ```
 
 Проверка, что источник действительно живой: в `roadmap_item` поле `задача` ведёт на
 `…/work_packages/<id>` проектного сервера, а `зависит_от` заполнено из связей `follows`, а не из
-файла демо.
+файла демо (у файлового источника `задача` выглядит как `PLAN-1`).
