@@ -5760,6 +5760,96 @@ def _разобрать_транскрипт(текст: str, источник: 
     return реплики
 
 
+# ───────────────────── дорожная карта из проектного сервера (OpenProject) ─────────────────────
+# Интеграция, а не правило: адаптер знает ФОРМАТ ответа OpenProject (HAL+JSON) и больше ничего.
+# Какие поля заказчика соответствуют стадии, критичности, дате входа и числу возвратов —
+# объявляется в рецепте (`поля`), потому что у каждого заказчика свои пользовательские поля и
+# называются они по-своему. Зависимости берутся из связей `follows` — это и есть «ждёт».
+
+
+def _оп_значение(узел, путь: str):
+    """Значение по пути вида «startDate» или «_links.status.title» из ответа OpenProject."""
+    т = узел
+    for кусок in str(путь or "").split("."):
+        if isinstance(т, dict):
+            т = т.get(кусок)
+        else:
+            return None
+    if isinstance(т, dict):                 # значение списка приходит как {«value»: …} или ссылкой
+        return т.get("value") or т.get("title") or т.get("name")
+    return т
+
+
+def _adapter_openproject(src: dict) -> list:
+    """pull-адаптер «дорожная карта»: задачи проекта из OpenProject → записи roadmap_item.
+
+    src: {"base": "http://host:8096", "проект": "prj-2451", "токен": "...", "поля": {...}}.
+    Токен можно не писать в рецепт: `токен_env` назовёт переменную среды, где он лежит.
+    """
+    база = str(src.get("base") or src.get("target") or "").rstrip("/")
+    проект = str(src.get("проект") or src.get("project") or "").strip()
+    if not (база and проект):
+        raise ValueError("нужен адрес проектного сервера (base) и идентификатор проекта (проект)")
+    токен = str(src.get("токен") or os.environ.get(str(src.get("токен_env") or ""), "")).strip()
+    if not токен:
+        raise ValueError("нет ключа API проектного сервера: укажите «токен» или «токен_env»")
+    поля = {k: str(v) for k, v in (src.get("поля") or {}).items() if v}
+
+    авторизация = "Basic " + base64.b64encode(("apikey:" + токен).encode()).decode()
+    адрес = "%s/api/v3/projects/%s/work_packages?pageSize=%d" % (
+        база, urllib.parse.quote(проект), int(src.get("лимит") or 200))
+    запрос = urllib.request.Request(_guard_url(адрес), headers={"Authorization": авторизация,
+                                                                "Accept": "application/json"})
+    with urllib.request.urlopen(запрос, timeout=60) as ответ:
+        данные = json.loads(ответ.read().decode("utf-8"))
+    элементы = ((данные.get("_embedded") or {}).get("elements")) or []
+    if not элементы:
+        raise ValueError("проект «%s» на %s не содержит задач — проверьте идентификатор и права"
+                         % (проект, база))
+
+    # Связи follows: «кто кого ждёт». Запрашиваем разом по проекту, чтобы не ходить по задаче.
+    ждёт = {}
+    адрес_связей = "%s/api/v3/relations?pageSize=500&filters=%s" % (
+        база, urllib.parse.quote(json.dumps([{"type": {"operator": "=", "values": ["follows"]}}])))
+    try:
+        req2 = urllib.request.Request(_guard_url(адрес_связей),
+                                      headers={"Authorization": авторизация,
+                                               "Accept": "application/json"})
+        with urllib.request.urlopen(req2, timeout=60) as ответ2:
+            связи = json.loads(ответ2.read().decode("utf-8"))
+        for с in ((связи.get("_embedded") or {}).get("elements")) or []:
+            откуда = str(((с.get("_links") or {}).get("from") or {}).get("href") or "").rsplit("/", 1)[-1]
+            куда = str(((с.get("_links") or {}).get("to") or {}).get("href") or "").rsplit("/", 1)[-1]
+            if откуда and куда:
+                ждёт.setdefault(откуда, []).append(куда)
+    except Exception as ex:  # noqa: BLE001 — без связей карта неполна, но не пуста
+        print("[openproject] связи не получены: %s: %s" % (type(ex).__name__, ex))
+
+    out = []
+    for э in элементы:
+        ид = str(э.get("id") or "")
+        запись = {
+            "id": "%s/%s" % (проект, ид),
+            "проект": проект,
+            "пункт": ид,
+            "название": э.get("subject") or "",
+            "план_старт": str(э.get("startDate") or "")[:10],
+            "план_финиш": str(э.get("dueDate") or "")[:10],
+            "статус_задачи": _оп_значение(э, "_links.status.title") or "",
+            "ответственный": _оп_значение(э, "_links.assignee.title")
+                             or _оп_значение(э, "_links.responsible.title") or "",
+            "задача": "%s/work_packages/%s" % (база, ид),
+            "зависит_от": ", ".join(ждёт.get(ид, [])),
+            "процент": str(э.get("percentageDone") if э.get("percentageDone") is not None else ""),
+        }
+        for наше, их in поля.items():
+            значение = _оп_значение(э, их)
+            if isinstance(значение, bool):
+                значение = "да" if значение else "нет"
+            запись[наше] = "" if значение is None else str(значение)[:200]
+        out.append(запись)
+    return out
+
 def _adapter_transcript(src: dict) -> list:
     """pull-адаптер «транскрипт»: читает txt-файл (или каталог) и отдаёт реплики с ролями."""
     цель = str(src.get("target") or src.get("путь") or "").strip()
@@ -5786,6 +5876,14 @@ register_adapter("plan", _adapter_plan, {
     "egress": "internal", "read_only": True, "badge": "считает код", "requires": [],
     "src_fields": [{"key": "проект", "label": "проект", "placeholder": "PRJ-2451"},
                    {"key": "на_дату", "label": "на дату", "placeholder": "2026-10-16"}]})
+
+register_adapter("openproject", _adapter_openproject, {
+    "label": "Дорожная карта из OpenProject (проектный сервер)", "category": "rest",
+    "egress": "internal", "read_only": True, "badge": "реальные данные", "requires": [],
+    "src_fields": [{"key": "base", "label": "адрес сервера", "placeholder": "http://5.129.192.63:8096"},
+                   {"key": "проект", "label": "идентификатор проекта", "placeholder": "prj-2451"},
+                   {"key": "токен_env", "label": "переменная среды с ключом API",
+                    "placeholder": "OPENPROJECT_TOKEN"}]})
 
 register_adapter("transcript", _adapter_transcript, {
     "label": "Транскрипт встречи (txt с ролями говорящих)", "category": "file",
