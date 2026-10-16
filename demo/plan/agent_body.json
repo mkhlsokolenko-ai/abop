@@ -1,0 +1,95 @@
+{
+ "name": "Управляющий графиком",
+ "contract_audit_id": "plan-prj2451",
+ "family": "management",
+ "graph": {
+  "nodes": [
+   {
+    "id": "src_roadmap",
+    "kind": "source",
+    "title": "Дорожная карта проекта · roadmap_item",
+    "entity": "roadmap_item"
+   },
+   {
+    "id": "src_stages",
+    "kind": "source",
+    "title": "Стадии и сроки перехода · регламент",
+    "entity": "stage_rule"
+   },
+   {
+    "id": "src_rules",
+    "kind": "source",
+    "title": "Правила контроля · регламент и PMBOK",
+    "entity": "plan_rule"
+   },
+   {
+    "id": "src_issues",
+    "kind": "source",
+    "title": "Задачи проекта · Redmine",
+    "entity": "issue"
+   },
+   {
+    "id": "src_transcript",
+    "kind": "source",
+    "title": "Транскрипт дейли · роли говорящих",
+    "entity": "transcript"
+   },
+   {
+    "id": "src_shift",
+    "kind": "source",
+    "title": "Смещение, критический путь и резервы · считает код",
+    "entity": "plan_line"
+   },
+   {
+    "id": "plan-shift",
+    "kind": "skill",
+    "skill": "plan-shift",
+    "autonomy": "A1",
+    "hitl": true
+   },
+   {
+    "id": "out_mail",
+    "kind": "out",
+    "title": "Справка о смещении → руководителю проекта",
+    "out": {
+     "channel": "yandex",
+     "to": "mkhlsokolenko@gmail.com",
+     "subject": "PRJ-2451: справка о смещении сроков на 16.10.2026",
+     "format": "pdf",
+     "run": false,
+     "hitl": true
+    }
+   }
+  ],
+  "edges": [
+   {
+    "from": "src_roadmap",
+    "to": "plan-shift"
+   },
+   {
+    "from": "src_stages",
+    "to": "plan-shift"
+   },
+   {
+    "from": "src_rules",
+    "to": "plan-shift"
+   },
+   {
+    "from": "src_issues",
+    "to": "plan-shift"
+   },
+   {
+    "from": "src_transcript",
+    "to": "plan-shift"
+   },
+   {
+    "from": "src_shift",
+    "to": "plan-shift"
+   },
+   {
+    "from": "plan-shift",
+    "to": "out_mail"
+   }
+  ]
+ }
+}
