@@ -32,7 +32,13 @@ def _карта(рецепт):
 
 def test_рецепты_демо_на_месте():
     assert set(РЕЦЕПТЫ) == {"plan_stages", "plan_rules", "plan_roadmap", "plan_roadmap_live",
-                            "plan_transcript", "plan_shift"}, sorted(РЕЦЕПТЫ)
+                            "plan_roadmap_mpp", "plan_transcript", "plan_shift"}, sorted(РЕЦЕПТЫ)
+    # Три рецепта наполняют одну сущность: файл демо, живой проектный сервер и план MS Project.
+    # Это осознанно (гоняем тот, у которого есть источник), и каждый объясняет себя заметкой.
+    план = РЕЦЕПТЫ["plan_roadmap_mpp"]
+    assert план["entity"] == "roadmap_item" and план["source"]["kind"] == "msproject"
+    assert "заметка" in план and план["source"]["target"].endswith(".xml")
+    assert set(план["source"]["связи"]) <= {"FS", "FF", "SF", "SS"}
     # Живой рецепт и файловый наполняют ОДНУ сущность: это осознанно и объяснено в самом рецепте.
     живой = РЕЦЕПТЫ["plan_roadmap_live"]
     assert живой["entity"] == РЕЦЕПТЫ["plan_roadmap"]["entity"] == "roadmap_item"
