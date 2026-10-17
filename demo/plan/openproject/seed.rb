@@ -32,11 +32,20 @@ end
 [cf_stage, cf_crit, cf_entry, cf_back].each do |cf|
   project.work_package_custom_fields << cf unless project.work_package_custom_fields.include?(cf)
 end
+# Без модуля задач права view_work_packages нет даже у администратора: в OpenProject права
+# считаются от включённых модулей, а Project.create! не включает ни одного. API отвечал 403.
+project.enabled_module_names = (project.enabled_module_names | %w[work_package_tracking]).uniq
 # Тип задачи берём из того, что есть в установке: при русской локали он называется иначе,
 # и поиск по английскому имени возвращал nil.
 default_type = Type.where(is_default: true).first || Type.where(is_milestone: false).first || Type.first
 project.types << default_type if default_type && !project.types.include?(default_type)
 project.save!
+# Поле приезжает в API только если включено И в проекте, И в форме типа задачи. Иначе ответ
+# приходит без customFieldN, и адаптер получает пустую стадию — молча, без ошибки.
+project.types.each do |t|
+  t.custom_field_ids = (t.custom_field_ids | [cf_stage.id, cf_crit.id, cf_entry.id, cf_back.id]).uniq
+  t.save!
+end
 
 # Автор — ЖИВОЙ администратор: у встроенного системного пользователя тоже admin = true,
 # но членства в проектах у него нет, и API потом отвечает 403 MissingPermission.
@@ -76,8 +85,12 @@ ITEMS.each do |it|
   wp.start_date = Date.parse(it[:start])
   wp.due_date = Date.parse(it[:due])
   wp.done_ratio = it[:done]
+  # Поле-список хранит ИДЕНТИФИКАТОР варианта, а не его текст: от текста в API приезжает
+  # «<значение> не найдено», и стадия до движка не доходит.
+  вариант = cf_stage.custom_options.find { |o| o.value == it[:stage] }
+  raise "нет варианта стадии «#{it[:stage]}»" unless вариант
   wp.custom_field_values = {
-    cf_stage.id => it[:stage],
+    cf_stage.id => вариант.id.to_s,
     cf_crit.id => (it[:crit] ? "t" : "f"),
     cf_entry.id => it[:entry],
     cf_back.id => it[:back].to_s,
