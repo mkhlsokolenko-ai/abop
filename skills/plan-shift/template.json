@@ -363,14 +363,14 @@
      "additionalProperties": false,
      "required": [
       "стадия",
-      "следствие",
+      "пункты",
       "что_делать"
      ],
      "properties": {
       "стадия": {
        "type": "string"
       },
-      "следствие": {
+      "пункты": {
        "type": "string"
       },
       "что_делать": {
