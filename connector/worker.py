@@ -29,6 +29,8 @@ import uuid
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
+from urllib.parse import urlsplit
+
 import httpx
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 
@@ -59,6 +61,16 @@ BOOKSTACK_TOKEN = os.getenv("BOOKSTACK_TOKEN", "")          # "id:secret"
 MAILPIT_HOST = os.getenv("MAILPIT_HOST", "5.129.192.63")
 MAILPIT_PORT = int(os.getenv("MAILPIT_PORT", "1025"))
 MAIL_FROM = os.getenv("MAIL_FROM", "abop@demo.local")
+MINIO_URL = os.getenv("MINIO_URL", "http://5.129.192.63:9000").rstrip("/")
+MINIO_KEY = os.getenv("MINIO_KEY", "")
+MINIO_SECRET = os.getenv("MINIO_SECRET", "")
+MINIO_BUCKET = os.getenv("MINIO_BUCKET", "")
+NOCODB_URL = os.getenv("NOCODB_URL", "http://5.129.192.63:8090").rstrip("/")
+NOCODB_TOKEN = os.getenv("NOCODB_TOKEN", "")
+NOCODB_TABLE = os.getenv("NOCODB_TABLE", "")
+GITEA_URL = os.getenv("GITEA_URL", "http://5.129.192.63:3001").rstrip("/")
+GITEA_TOKEN = os.getenv("GITEA_TOKEN", "")
+GITEA_REPO = os.getenv("GITEA_REPO", "")
 ONE_C_DIR = os.getenv("ONE_C_REQUEST_DIR", "/data/1c-requests")
 
 METRICS = {"consumed": 0, "done": 0, "failed": 0, "dlq": 0, "duplicate": 0, "by_type": {}}
@@ -257,6 +269,99 @@ async def dolibarr_create_invoice(p: dict) -> dict:
             "url": f"{DOLIBARR_URL}/compta/facture/card.php?id={инвойс}"}
 
 
+# ── хранилище S3 (MinIO): подпись AWS SigV4 ──────────────────────────────────────────────────────
+def _s3_подпись(метод: str, хост: str, путь: str, тело: bytes, ключ: str, секрет: str,
+                регион: str = "us-east-1") -> dict:
+    """Заголовки SigV4 для одиночного запроса к S3-совместимому хранилищу.
+
+    Своя реализация вместо boto3: в образе коннектора нужен один запрос PUT, а не SDK на 50 МБ.
+    """
+    import hashlib
+    import hmac as _hmac
+
+    теперь = dt.datetime.now(dt.timezone.utc)
+    штамп, день = теперь.strftime("%Y%m%dT%H%M%SZ"), теперь.strftime("%Y%m%d")
+    хеш = hashlib.sha256(тело).hexdigest()
+    заголовки = {"host": хост, "x-amz-content-sha256": хеш, "x-amz-date": штамп}
+    подписываемые = ";".join(sorted(заголовки))
+    канон = "\n".join([
+        метод, путь, "",
+        "".join("%s:%s\n" % (к, заголовки[к]) for к in sorted(заголовки)),
+        подписываемые, хеш])
+    область = "%s/%s/s3/aws4_request" % (день, регион)
+    к_подписи = "\n".join(["AWS4-HMAC-SHA256", штамп, область,
+                           hashlib.sha256(канон.encode()).hexdigest()])
+    к = ("AWS4" + секрет).encode()
+    for часть in (день, регион, "s3", "aws4_request"):
+        к = _hmac.new(к, часть.encode(), hashlib.sha256).digest()
+    подпись = _hmac.new(к, к_подписи.encode(), hashlib.sha256).hexdigest()
+    заголовки["Authorization"] = (
+        "AWS4-HMAC-SHA256 Credential=%s/%s, SignedHeaders=%s, Signature=%s"
+        % (ключ, область, подписываемые, подпись))
+    return заголовки
+
+
+async def minio_put_object(p: dict) -> dict:
+    """Положить файл в объектное хранилище (отчёт, выгрузка, вложение)."""
+    if not (MINIO_KEY and MINIO_SECRET):
+        raise RuntimeError("нет ключей хранилища (MINIO_KEY/MINIO_SECRET) у коннектора")
+    бакет = str(p.get("bucket") or MINIO_BUCKET or "")
+    ключ = str(p.get("key") or p.get("name") or "").lstrip("/")
+    if not (бакет and ключ):
+        raise RuntimeError("нужны bucket и key (имя объекта)")
+    содержимое = p.get("content")
+    тело = (base64.b64decode(p["base64"]) if p.get("base64")
+            else str(содержимое or "").encode("utf-8"))
+    из_url = urlsplit(MINIO_URL)
+    путь = "/%s/%s" % (бакет, ключ)
+    заголовки = _s3_подпись("PUT", из_url.netloc, путь, тело, MINIO_KEY, MINIO_SECRET)
+    заголовки["Content-Type"] = str(p.get("content_type") or "application/octet-stream")
+    r = await _http("PUT", MINIO_URL + путь, content=тело, headers=заголовки)
+    if r.status_code not in (200, 201):
+        raise RuntimeError(f"MinIO HTTP {r.status_code}: {r.text[:300]}")
+    return {"bucket": бакет, "key": ключ, "size": len(тело),
+            "url": "%s/%s/%s" % (MINIO_URL, бакет, ключ)}
+
+
+async def nocodb_create_row(p: dict) -> dict:
+    """Строка в таблицу NocoDB: универсальный приёмник реестров и журналов."""
+    if not NOCODB_TOKEN:
+        raise RuntimeError("нет NOCODB_TOKEN у коннектора")
+    таблица = str(p.get("table_id") or NOCODB_TABLE or "")
+    if not таблица:
+        raise RuntimeError("не задана таблица (payload.table_id или NOCODB_TABLE)")
+    поля = p.get("fields") if isinstance(p.get("fields"), dict) else {
+        к: v for к, v in p.items() if к not in ("table_id", "fields")}
+    r = await _http("POST", f"{NOCODB_URL}/api/v2/tables/{таблица}/records", json=поля,
+                    headers={"xc-token": NOCODB_TOKEN, "Content-Type": "application/json"})
+    if r.status_code not in (200, 201):
+        raise RuntimeError(f"NocoDB HTTP {r.status_code}: {r.text[:300]}")
+    о = r.json() or {}
+    строка = (о[0] if isinstance(о, list) and о else о)
+    return {"table": таблица, "row_id": строка.get("Id") or строка.get("id"), "fields": len(поля)}
+
+
+async def gitea_create_issue(p: dict) -> dict:
+    """Задача в репозитории (инженерный контур): замечание, долг, запрос на изменение."""
+    if not GITEA_TOKEN:
+        raise RuntimeError("нет GITEA_TOKEN у коннектора")
+    репо = str(p.get("repo") or GITEA_REPO or "")
+    if "/" not in репо:
+        raise RuntimeError("нужен репозиторий вида «владелец/репозиторий» (payload.repo)")
+    владелец, имя = репо.split("/", 1)
+    тело = {"title": str(p.get("title") or "Задача от ABOP")[:250],
+            "body": str(p.get("body") or p.get("description") or "")[:60000]}
+    if p.get("labels"):
+        тело["labels"] = p["labels"]
+    r = await _http("POST", f"{GITEA_URL}/api/v1/repos/{владелец}/{имя}/issues", json=тело,
+                    headers={"Authorization": "token " + GITEA_TOKEN,
+                             "Content-Type": "application/json"})
+    if r.status_code not in (200, 201):
+        raise RuntimeError(f"Gitea HTTP {r.status_code}: {r.text[:300]}")
+    и = r.json() or {}
+    return {"issue_id": и.get("number"), "repo": репо, "url": и.get("html_url")}
+
+
 async def echo(p: dict) -> dict:
     return {"echo": p}
 
@@ -266,6 +371,9 @@ ADAPTERS = {
     ("bookstack", "page.publish"): bookstack_publish_page,
     ("mailpit", "email.send"): mailpit_send_email,
     ("openproject", "task.create"): openproject_create_task,
+    ("minio", "object.put"): minio_put_object,
+    ("nocodb", "row.create"): nocodb_create_row,
+    ("gitea", "issue.create"): gitea_create_issue,
     ("1c", "export.request"): one_c_request_export,
     ("dolibarr", "invoice.create"): dolibarr_create_invoice,
 }

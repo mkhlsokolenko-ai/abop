@@ -95,7 +95,13 @@ def normalize(sid: str, spec: dict) -> dict:
     return {"id": sid, "kind": spec.get("kind") or "rest", "base_url": spec.get("base_url") or "",
             "brokers": spec.get("brokers") or [], "topics": spec.get("topics") or [],
             "auth_ref": spec.get("auth_ref") or "", "tenant": spec.get("tenant") or "",
-            "egress": spec.get("egress") or "external", "note": spec.get("note") or "", "scope": scope}
+            "egress": spec.get("egress") or "external", "note": spec.get("note") or "",
+            "scope": scope,
+            # Роль системы: «источник» (её читают рецепты), «приёмник» (в неё пишет коннектор),
+            # «оба» или «инфраструктура» (шина, БД, auth, LLM — туда агенты не ходят). Без роли
+            # нельзя отличить настоящую дыру (нет ни входа, ни выхода) от системы, которой выход
+            # и не нужен; сторожит tests/test_systems_wiring.py.
+            "role": spec.get("role") or ""}
 
 
 async def save(sid: str, spec: dict, editor: str = "dev") -> dict:
@@ -130,39 +136,51 @@ async def delete(sid: str) -> None:
 # ── Сид демо-стенда (server-inventory 5.129.192.63) — одноразовый, если реестр пуст ──
 _SEED = [
     ("redmine",  {"kind": "rest", "base_url": "http://5.129.192.63:3000", "auth_ref": "REDMINE_API_KEY",
-                  "egress": "external", "note": "Трекер задач (аналог Jira) → issue. Хедер X-Redmine-API-Key. /issues.json"}),
+                  "egress": "external", "note": "Трекер задач (аналог Jira) → issue. Хедер X-Redmine-API-Key. /issues.json", "role": "оба"}),
+    # 1С и ERP были заведены руками прямо на стенде: адаптеры команд для них есть, а в
+    # поставляемом реестре записи не было — на чистой установке команда упёрлась бы в ABAC
+    # («системы нет в реестре»). Нашёл tests/test_systems_wiring.py.
+    ("1c", {"kind": "rest", "base_url": "http://201.51.5.24:8092", "auth_ref": "",
+            "egress": "external", "scope": ["audit", "finance"], "role": "оба",
+            "note": "Выгрузка 1С (документы и справочники) → doc1c/ref1c; приём заявок на "
+                    "выгрузку командой export.request"}),
+    ("dolibarr", {"kind": "rest", "base_url": "http://5.129.192.63:8095",
+                  "auth_ref": "DOLIBARR_API_KEY", "egress": "external",
+                  "scope": ["finance", "analytics", "credit", "management"], "role": "оба",
+                  "note": "ERP (аналог 1С:УНФ) → transaction. Хедер DOLAPIKEY. "
+                          "/api/index.php/invoices; команда invoice.create"}),
     ("openproject", {"kind": "rest", "base_url": "http://5.129.192.63:8096",
                      "auth_ref": "OPENPROJECT_TOKEN", "egress": "external",
                      "note": "Проектный сервер (аналог MS Project/Jira) → work_package. Basic "
                              "apikey:<ключ>. /api/v3/projects/<проект>/work_packages. Источник "
-                             "дорожной карты и приёмник задач по итогам смещения сроков"}),
+                             "дорожной карты и приёмник задач по итогам смещения сроков", "role": "оба"}),
     ("bookstack", {"kind": "rest", "base_url": "http://5.129.192.63:6875", "auth_ref": "BOOKSTACK_TOKEN",
-                   "egress": "external", "note": "Вики (аналог Confluence) → document. Authorization: Token. /api/pages"}),
+                   "egress": "external", "note": "Вики (аналог Confluence) → document. Authorization: Token. /api/pages", "role": "оба"}),
     ("twenty",   {"kind": "rest", "base_url": "http://5.129.192.63:3002", "auth_ref": "TWENTY_API_KEY",
                   "egress": "external", "scope": ["management", "analytics"],
-                  "note": "CRM → customer. Bearer JWT. /rest/opportunities (root data.opportunities). Доступ: продажи/аналитика"}),
+                  "note": "CRM → customer. Bearer JWT. /rest/opportunities (root data.opportunities). Доступ: продажи/аналитика", "role": "источник"}),
     ("mailpit",  {"kind": "rest", "base_url": "http://5.129.192.63:8025", "auth_ref": "",
-                  "egress": "external", "note": "Почта → email. /api/v1/messages (без auth). SMTP :1025"}),
+                  "egress": "external", "note": "Почта → email. /api/v1/messages (без auth). SMTP :1025", "role": "оба"}),
     ("minio",    {"kind": "s3", "base_url": "http://5.129.192.63:9000", "auth_ref": "MINIO_CREDS",
-                  "egress": "external", "note": "S3-хранилище (мок 1С/документы). Бакет abop-demo public-read"}),
+                  "egress": "external", "note": "S3-хранилище (мок 1С/документы). Бакет abop-demo public-read", "role": "оба"}),
     ("nocodb",   {"kind": "rest", "base_url": "http://5.129.192.63:8090", "auth_ref": "NOCODB_TOKEN",
-                  "egress": "external", "note": "No-code БД/таблицы (как база 1С: invoices/payments/vendors)"}),
+                  "egress": "external", "note": "No-code БД/таблицы (как база 1С: invoices/payments/vendors)", "role": "приёмник"}),
     ("gitea",    {"kind": "rest", "base_url": "http://5.129.192.63:3001", "auth_ref": "GITEA_TOKEN",
                   "egress": "external", "scope": ["architecture", "engineering"],
-                  "note": "Git-хостинг. Доступ: архитектура/инженерия (аналитик/финансы не видят)"}),
+                  "note": "Git-хостинг. Доступ: архитектура/инженерия (аналитик/финансы не видят)", "role": "приёмник"}),
     ("kroki",    {"kind": "rest", "base_url": "http://5.129.192.63:8000", "auth_ref": "",
                   "egress": "external", "scope": ["architecture", "engineering"],
-                  "note": "Рендер диаграмм. Доступ: архитектура/инженерия"}),
+                  "note": "Рендер диаграмм. Доступ: архитектура/инженерия", "role": "сервис"}),
     ("postgres", {"kind": "db", "base_url": "postgresql://127.0.0.1:5433/abop", "auth_ref": "POSTGRES_DSN",
-                  "egress": "internal", "note": "Canonical store / агенты / контракты / прогоны (persist)"}),
+                  "egress": "internal", "note": "Canonical store / агенты / контракты / прогоны (persist)", "role": "инфраструктура"}),
     ("qdrant",   {"kind": "vector", "base_url": "http://127.0.0.1:6333", "auth_ref": "QDRANT_API_KEY",
-                  "egress": "internal", "note": "Векторный store (RAG, sLAVA-нормы)"}),
+                  "egress": "internal", "note": "Векторный store (RAG, sLAVA-нормы)", "role": "инфраструктура"}),
     ("keycloak", {"kind": "auth", "base_url": "http://127.0.0.1:8811/realms/abop", "auth_ref": "KEYCLOAK_JWKS_URI",
-                  "egress": "internal", "note": "SSO/RBAC (realm abop). JWKS /protocol/openid-connect/certs"}),
+                  "egress": "internal", "note": "SSO/RBAC (realm abop). JWKS /protocol/openid-connect/certs", "role": "инфраструктура"}),
     ("routeai",  {"kind": "llm", "base_url": "https://routerai.ru/api/v1", "auth_ref": "ROUTEAI_API_KEY",
-                  "egress": "external", "note": "LLM-шлюз (каскады моделей). /chat/completions"}),
+                  "egress": "external", "note": "LLM-шлюз (каскады моделей). /chat/completions", "role": "инфраструктура"}),
     ("kafka",    {"kind": "kafka", "base_url": "", "brokers": [], "topics": [],
-                  "egress": "internal", "note": "Событийная шина (Хартия v3.5) — ещё не развёрнута; каталог топиков для триггеров"}),
+                  "egress": "internal", "note": "Событийная шина (Хартия v3.5) — ещё не развёрнута; каталог топиков для триггеров", "role": "инфраструктура"}),
 ]
 
 
