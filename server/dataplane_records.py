@@ -99,17 +99,29 @@ def _последние(recs: list[dict]) -> list[dict]:
 
 # ── запись ───────────────────────────────────────────────────────────────────────────────────────
 
-def append(entity: str, records: list[dict], *, reset: bool = False) -> int:
-    """Дописать пачку записей. `reset=True` — перечитать сущность начисто (как `w` у файла)."""
+def append(entity: str, records: list[dict], *, reset: bool = False, recipe: str = "") -> int:
+    """Дописать пачку записей. `reset=True` — перечитать начисто то, что даёт ЭТОТ рецепт.
+
+    Одну сущность питают несколько рецептов: дорожную карту — файл демо, живой трекер и план
+    MS Project; расчёт смещения — по рецепту на проект. Пока reset чистил сущность целиком, прогон
+    одного проекта стирал данные соседнего, и пропажа выглядела как «источник ничего не отдал».
+    Поэтому чистим по происхождению записи; без имени рецепта поведение прежнее — сущность целиком.
+    """
     ключ, арендатор = tenancy.ключ_памяти(entity), tenancy.текущий()
     if not _has_pg():
         if reset:
-            _MEM[ключ] = []
+            остальные = [r for r in _MEM.get(ключ, [])
+                         if recipe and str(((r.get("provenance") or {}).get("recipe") or "")) != recipe]
+            _MEM[ключ] = остальные
         _MEM.setdefault(ключ, []).extend(records)
         return len(records)
     with _pool.connection() as conn:
         with conn.transaction():
-            if reset:        # «перечитать начисто» — только СВОЮ сущность, не соседа
+            if reset and recipe:     # начисто — только записи этого рецепта
+                conn.execute("DELETE FROM dp_records WHERE entity=%s AND tenant=%s "
+                             "AND payload->'provenance'->>'recipe' = %s",
+                             (entity, арендатор, recipe))
+            elif reset:              # имени рецепта нет — старое поведение: сущность целиком
                 conn.execute("DELETE FROM dp_records WHERE entity=%s AND tenant=%s",
                              (entity, арендатор))
             for r in records:

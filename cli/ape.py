@@ -3521,7 +3521,11 @@ def data_run(name: str, reset: bool = False) -> tuple:
     r = data_load_recipe(name)
     entity, out, dropped, invalid = _apply_recipe(r, name=name)
     if _RECORD_STORE is not None:
-        _RECORD_STORE.append(entity, out, reset=reset)
+        # Имя рецепта нужно, чтобы «начисто» убрало ЕГО записи, а не данные соседнего проекта.
+        try:
+            _RECORD_STORE.append(entity, out, reset=reset, recipe=name)
+        except TypeError:          # сторонний стор без поддержки — прежнее поведение
+            _RECORD_STORE.append(entity, out, reset=reset)
         if not reset:
             _RECORD_STORE.compact(entity)
         return entity, len(out), dropped, invalid
