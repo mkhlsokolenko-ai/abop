@@ -6,7 +6,32 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
+# Тревоги: см. alerts.yml. Появились после инцидента 19.10.2026 (майнер в контейнере жил трое
+# суток незамеченным). Доставка уведомлений подключается отдельно — Alertmanager или контактная
+# точка Grafana; пока канала нет, тревоги видны в Prometheus (/alerts) и в Grafana.
+rule_files:
+  - /etc/prometheus/alerts.yml
+
 scrape_configs:
+  # Метрики контейнеров: процессор и память по каждому. Без них нельзя ни увидеть майнера,
+  # ни отличить «стенд тормозит» от «один контейнер съел три ядра».
+  - job_name: container-metrics
+    static_configs:
+      - targets: ['container-metrics:9102']
+        labels:
+          service: container-metrics
+          env: prod
+          node: server-1
+
+  # Метрики хоста: загрузка, память, диск — чтобы отличать нагрузку контейнера от общей.
+  - job_name: node
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          service: node-exporter
+          env: prod
+          node: server-1
+
   - job_name: abop-webapi
     metrics_path: /metrics
     static_configs:

@@ -17,9 +17,39 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./alerts.yml:/etc/prometheus/alerts.yml:ro
       - abop_prom_data:/prometheus
     ports:
       - "9091:9090"
+
+  # Метрики по каждому контейнеру. Штатный cAdvisor на этом хосте отдаёт только systemd-юниты:
+  # cgroup-и контейнеров он видит, но в метрики не кладёт (проверено на v0.49 и v0.52, с docker_only
+  # и без). Разбираться в его внутренностях дороже, чем прочитать те же файлы cgroup v2 самим —
+  # что и делает ops/container_metrics_exporter.py: стандартная библиотека, шестьдесят строк.
+  container-metrics:
+    image: python:3.12-slim
+    container_name: abop-container-metrics
+    restart: unless-stopped
+    command: ["python", "-u", "/app/container_metrics_exporter.py"]
+    volumes:
+      - ./container_metrics_exporter.py:/app/container_metrics_exporter.py:ro
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    mem_limit: 96m
+
+  # node-exporter — метрики самого хоста: загрузка, память, диск. Нужен, чтобы отличить
+  # «один контейнер сошёл с ума» от «на машине кончились ресурсы».
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: abop-node-exporter
+    restart: unless-stopped
+    command: ["--path.rootfs=/host", "--collector.disable-defaults",
+              "--collector.cpu", "--collector.loadavg", "--collector.meminfo",
+              "--collector.filesystem", "--collector.netdev"]
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    mem_limit: 128m
 
   grafana:
     image: grafana/grafana:latest
