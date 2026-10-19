@@ -16,6 +16,29 @@
 2. **Исполнение** (`connector/worker.py`): consumer-group `abop-connectors` на `^abop\..+\.commands$`, at-least-once + дедуп по `id` команды (SQLite в `/data`), ретраи на сеть/5xx (`ABOP_CONNECTOR_RETRIES`, по умолчанию 3), commit после батча.
 3. **Ответ**: событие `command.done` (payload `{command_id, command_type, result, actor, ms}`) или `command.failed` (`error`) в `abop.<система>.events`; сбой дополнительно в `abop.dlq` с заголовками `source-topic`, `error`, `x-trace-id`, `command-id`. Служебные `command.*` не будят event-триггеры агентов, если триггер не подписан на этот тип явно (`event_type`).
 
+## Что коннектор умеет писать (19.10.2026)
+
+| Система | Команда | Ключ | Состояние |
+|---|---|---|---|
+| redmine | `issue.create` | `REDMINE_API_KEY` | работает |
+| openproject | `task.create` | файл или `OPENPROJECT_TOKEN` | работает |
+| bookstack | `page.publish` | `BOOKSTACK_TOKEN` | работает |
+| mailpit | `email.send` | — (SMTP) | работает |
+| 1c | `export.request` | — (файл заявки) | работает |
+| dolibarr | `invoice.create` | `DOLIBARR_API_KEY` | работает |
+| minio | `object.put` | `MINIO_KEY`/`MINIO_SECRET` | работает (проверено по шине) |
+| nocodb | `row.create` | `NOCODB_TOKEN` | адаптер есть, ключ не заведён |
+| gitea | `issue.create` | `GITEA_TOKEN` | адаптер есть, ключ не заведён |
+
+Правило, которое сторожит `tests/test_systems_wiring.py`: каждая система реестра объявляет роль
+(источник / приёмник / оба / сервис / инфраструктура), у приёмника обязан быть адаптер, а у
+адаптера — система в реестре. Иначе команда уходит в шину и умирает в DLQ, а снаружи это выглядит
+как молчание платформы.
+
+`minio/object.put` подписывает запрос SigV4 своими силами — в образе нужен один PUT, а не SDK.
+Грабля: подписывать нужно УЖЕ закодированный путь, иначе имя объекта с кириллицей или пробелом даёт
+`SignatureDoesNotMatch` (http-клиент кодирует путь сам, и подпись по сырому не сходится).
+
 ## Адаптер проектного сервера (`openproject/task.create`)
 
 Добавлен 19.10.2026 вместе с доставкой поручений из справки о смещении сроков. Создаёт задачу в

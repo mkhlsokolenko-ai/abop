@@ -33,11 +33,15 @@ CREATE TABLE IF NOT EXISTS systems (
 -- scope: разрешённые отделы/семьи (ABAC-изоляция доступа агента); пусто ⇒ доступно всем. Добавляем
 -- идемпотентно (таблица могла быть создана раньше без колонки). См. agent-rbac-mcp-gateway.
 ALTER TABLE systems ADD COLUMN IF NOT EXISTS scope JSONB NOT NULL DEFAULT '[]'::jsonb;
+-- role: источник / приёмник / оба / сервис / инфраструктура. Нужна, чтобы отличить настоящую дыру
+-- (в систему некому или нечем писать) от системы, которой выход не нужен. Добавляем идемпотентно.
+ALTER TABLE systems ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT '';
 """
 
 _MEM: dict[str, dict] = {}
 
-_COLS = "id,kind,base_url,brokers,topics,auth_ref,tenant,egress,note,editor,updated_at,scope"
+_COLS = ("id,kind,base_url,brokers,topics,auth_ref,tenant,egress,note,editor,"
+         "updated_at,scope,role")
 
 
 def _has_pg() -> bool:
@@ -47,7 +51,8 @@ def _has_pg() -> bool:
 def _row(r) -> dict:
     return {"id": r[0], "kind": r[1], "base_url": r[2], "brokers": r[3] or [], "topics": r[4] or [],
             "auth_ref": r[5], "tenant": r[6], "egress": r[7], "note": r[8], "editor": r[9],
-            "updated_at": r[10].isoformat() if r[10] else None, "scope": r[11] or []}
+            "updated_at": r[10].isoformat() if r[10] else None, "scope": r[11] or [],
+            "role": (r[12] if len(r) > 12 else "") or ""}
 
 
 def allowed_for(system: dict, department: str | None) -> bool:
@@ -113,14 +118,15 @@ async def save(sid: str, spec: dict, editor: str = "dev") -> dict:
     from .db import _conn
     async with _conn() as conn:
         await conn.execute(
-            "INSERT INTO systems (id,kind,base_url,brokers,topics,auth_ref,tenant,egress,note,scope,editor,updated_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now()) "
+            "INSERT INTO systems (id,kind,base_url,brokers,topics,auth_ref,tenant,egress,note,scope,role,editor,updated_at) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now()) "
             "ON CONFLICT (id) DO UPDATE SET kind=EXCLUDED.kind, base_url=EXCLUDED.base_url, "
             "brokers=EXCLUDED.brokers, topics=EXCLUDED.topics, auth_ref=EXCLUDED.auth_ref, "
             "tenant=EXCLUDED.tenant, egress=EXCLUDED.egress, note=EXCLUDED.note, scope=EXCLUDED.scope, "
-            "editor=EXCLUDED.editor, updated_at=now()",
+            "role=EXCLUDED.role, editor=EXCLUDED.editor, updated_at=now()",
             (sid, card["kind"], card["base_url"], json.dumps(card["brokers"]), json.dumps(card["topics"]),
-             card["auth_ref"], card["tenant"], card["egress"], card["note"], json.dumps(card["scope"]), editor))
+             card["auth_ref"], card["tenant"], card["egress"], card["note"], json.dumps(card["scope"]),
+             card["role"], editor))
     return await get(sid)
 
 

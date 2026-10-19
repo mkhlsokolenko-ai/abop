@@ -29,7 +29,7 @@ import uuid
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 import httpx
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
@@ -313,7 +313,9 @@ async def minio_put_object(p: dict) -> dict:
     тело = (base64.b64decode(p["base64"]) if p.get("base64")
             else str(содержимое or "").encode("utf-8"))
     из_url = urlsplit(MINIO_URL)
-    путь = "/%s/%s" % (бакет, ключ)
+    # Подписывается ТОТ ЖЕ путь, который уйдёт в запрос: имя объекта с кириллицей или пробелом
+    # http-клиент закодирует сам, и подпись по сырому пути не сойдётся («SignatureDoesNotMatch»).
+    путь = "/%s/%s" % (бакет, quote(ключ, safe="/~"))
     заголовки = _s3_подпись("PUT", из_url.netloc, путь, тело, MINIO_KEY, MINIO_SECRET)
     заголовки["Content-Type"] = str(p.get("content_type") or "application/octet-stream")
     r = await _http("PUT", MINIO_URL + путь, content=тело, headers=заголовки)
