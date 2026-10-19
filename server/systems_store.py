@@ -131,6 +131,11 @@ async def delete(sid: str) -> None:
 _SEED = [
     ("redmine",  {"kind": "rest", "base_url": "http://5.129.192.63:3000", "auth_ref": "REDMINE_API_KEY",
                   "egress": "external", "note": "Трекер задач (аналог Jira) → issue. Хедер X-Redmine-API-Key. /issues.json"}),
+    ("openproject", {"kind": "rest", "base_url": "http://5.129.192.63:8096",
+                     "auth_ref": "OPENPROJECT_TOKEN", "egress": "external",
+                     "note": "Проектный сервер (аналог MS Project/Jira) → work_package. Basic "
+                             "apikey:<ключ>. /api/v3/projects/<проект>/work_packages. Источник "
+                             "дорожной карты и приёмник задач по итогам смещения сроков"}),
     ("bookstack", {"kind": "rest", "base_url": "http://5.129.192.63:6875", "auth_ref": "BOOKSTACK_TOKEN",
                    "egress": "external", "note": "Вики (аналог Confluence) → document. Authorization: Token. /api/pages"}),
     ("twenty",   {"kind": "rest", "base_url": "http://5.129.192.63:3002", "auth_ref": "TWENTY_API_KEY",

@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import datetime as dt
 import json
 import logging
@@ -47,6 +48,10 @@ DRY_RUN = os.getenv("ABOP_CONNECTOR_DRY_RUN", "0") == "1"   # ничего на�
 REDMINE_BASE = os.getenv("REDMINE_BASE", "http://5.129.192.63:3000").rstrip("/")
 REDMINE_API_KEY = os.getenv("REDMINE_API_KEY", "")
 REDMINE_PROJECT = os.getenv("REDMINE_PROJECT", "")
+OPENPROJECT_BASE = os.getenv("OPENPROJECT_BASE", "http://5.129.192.63:8096").rstrip("/")
+OPENPROJECT_TOKEN_FILE = os.getenv("OPENPROJECT_TOKEN_FILE", "/app/secrets/openproject_token")
+OPENPROJECT_TOKEN = os.getenv("OPENPROJECT_TOKEN", "")
+OPENPROJECT_PROJECT = os.getenv("OPENPROJECT_PROJECT", "")
 BOOKSTACK_URL = os.getenv("BOOKSTACK_URL", "http://5.129.192.63:6875").rstrip("/")
 DOLIBARR_URL = os.getenv("DOLIBARR_URL", "http://5.129.192.63:8095").rstrip("/")
 DOLIBARR_API_KEY = os.getenv("DOLIBARR_API_KEY", "")
@@ -125,6 +130,49 @@ async def redmine_create_issue(p: dict) -> dict:
         raise RuntimeError(f"Redmine HTTP {r.status_code}: {r.text[:300]}")
     iss = (r.json() or {}).get("issue") or {}
     return {"issue_id": iss.get("id"), "url": f"{REDMINE_BASE}/issues/{iss.get('id')}", "project": project}
+
+
+def _openproject_key() -> str:
+    """Ключ проектного сервера: файл надёжнее переменной среды — его нет ни в логах, ни в inspect."""
+    if OPENPROJECT_TOKEN_FILE and os.path.isfile(OPENPROJECT_TOKEN_FILE):
+        with open(OPENPROJECT_TOKEN_FILE, encoding="utf-8") as f:
+            ключ = f.read().strip()
+            if ключ:
+                return ключ
+    return OPENPROJECT_TOKEN
+
+
+async def openproject_create_task(p: dict) -> dict:
+    """Задача в бэклоге проектного сервера по итогам разбора смещения сроков.
+
+    Пишется ТОЛЬКО задача: даты плана агент не трогает. Перенос срока — изменение базового
+    расписания, его утверждает приёмочная комиссия (PMBOK 4.3/4.6), а задача фиксирует работу,
+    которую для этого нужно сделать.
+    """
+    ключ = _openproject_key()
+    if not ключ:
+        raise RuntimeError("нет ключа проектного сервера (OPENPROJECT_TOKEN_FILE/OPENPROJECT_TOKEN)")
+    проект = str(p.get("project") or OPENPROJECT_PROJECT or "")
+    if not проект:
+        raise RuntimeError("не задан проект (payload.project или OPENPROJECT_PROJECT)")
+    тело = {"subject": str(p.get("subject") or "Задача от ABOP")[:250],
+            "description": {"format": "markdown", "raw": str(p.get("description") or "")[:20000]}}
+    if p.get("start_date"):
+        тело["startDate"] = str(p["start_date"])[:10]
+    if p.get("due_date"):
+        тело["dueDate"] = str(p["due_date"])[:10]
+    авторизация = base64.b64encode(("apikey:" + ключ).encode()).decode()
+    r = await _http("POST", f"{OPENPROJECT_BASE}/api/v3/projects/{проект}/work_packages",
+                    json=тело, headers={"Authorization": "Basic " + авторизация,
+                                        "Content-Type": "application/json"})
+    if r.status_code not in (200, 201):
+        # 403 здесь значит «ключ принят, прав нет»: в проекте выключен модуль задач или ключ
+        # выписан пользователю без членства. Это стоило часа разбирательств — пусть будет в тексте.
+        подсказка = " (ключ принят, но прав на проект нет: проверьте модуль задач и владельца ключа)"             if r.status_code == 403 else ""
+        raise RuntimeError(f"OpenProject HTTP {r.status_code}{подсказка}: {r.text[:300]}")
+    з = r.json() or {}
+    return {"work_package_id": з.get("id"), "project": проект,
+            "url": f"{OPENPROJECT_BASE}/work_packages/{з.get('id')}"}
 
 
 async def bookstack_publish_page(p: dict) -> dict:
@@ -217,10 +265,11 @@ ADAPTERS = {
     ("redmine", "issue.create"): redmine_create_issue,
     ("bookstack", "page.publish"): bookstack_publish_page,
     ("mailpit", "email.send"): mailpit_send_email,
+    ("openproject", "task.create"): openproject_create_task,
     ("1c", "export.request"): one_c_request_export,
     ("dolibarr", "invoice.create"): dolibarr_create_invoice,
 }
-for _sys in ("redmine", "bookstack", "mailpit", "1c", "dolibarr", "gitea", "nocodb", "twenty", "minio", "kroki", "qdrant", "postgres", "keycloak", "routeai", "kafka"):
+for _sys in ("redmine", "bookstack", "mailpit", "1c", "dolibarr", "openproject", "gitea", "nocodb", "twenty", "minio", "kroki", "qdrant", "postgres", "keycloak", "routeai", "kafka"):
     ADAPTERS[(_sys, "echo")] = echo   # диагностика: любая система отвечает эхом
 
 
