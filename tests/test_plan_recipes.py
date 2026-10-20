@@ -32,7 +32,11 @@ def _карта(рецепт):
 
 def test_рецепты_демо_на_месте():
     assert set(РЕЦЕПТЫ) == {"plan_stages", "plan_rules", "plan_roadmap", "plan_roadmap_live",
-                            "plan_roadmap_mpp", "plan_transcript", "plan_shift"}, sorted(РЕЦЕПТЫ)
+                            "plan_roadmap_mpp", "plan_transcript", "plan_shift",
+                            "plan_portfolio"}, sorted(РЕЦЕПТЫ)
+    # Свод портфеля считается по готовым расчётам, а не лезет в источники заново.
+    портфель = РЕЦЕПТЫ["plan_portfolio"]
+    assert портфель["entity"] == "portfolio_line" and портфель["source"]["kind"] == "portfolio"
     # Три рецепта наполняют одну сущность: файл демо, живой проектный сервер и план MS Project.
     # Это осознанно (гоняем тот, у которого есть источник), и каждый объясняет себя заметкой.
     план = РЕЦЕПТЫ["plan_roadmap_mpp"]
