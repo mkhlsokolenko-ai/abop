@@ -1387,7 +1387,7 @@ def _портфель_подменить(result: dict) -> None:
                                                     if str(с.get("проект")) == п["проект"]), ""))}
                                          for п in свод]}, ensure_ascii=False)
         было["снимки"] = [{"ключ": "portfolio/%s.json" % дата, "содержимое": снимок},
-                          {"ключ": "portfolio/_последний.json", "содержимое": снимок}]
+                          {"ключ": "portfolio/_last.json", "содержимое": снимок}]
         _сверить_прозу(было, ("итог",), {"проект": len(свод)}, расхождения)
     obs.log_event("info", "portfolio.substituted", projects=len(свод), mismatches=расхождения[:3])
     if расхождения:

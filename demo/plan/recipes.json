@@ -1184,7 +1184,7 @@
   "version": 1,
   "source": {
    "kind": "http",
-   "target": "http://5.129.192.63:9000/abop-demo/portfolio/_последний.json",
+   "url": "http://5.129.192.63:9000/abop-demo/portfolio/_last.json",
    "root": "проекты"
   },
   "system_id": "minio",

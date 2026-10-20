@@ -421,7 +421,7 @@ def test_версии_свода_уходят_в_хранилище_двумя_�
     run_exec._портфель_подменить(р)
     снимки = р["findings"][0]["structured"]["снимки"]
     ключи = [с["ключ"] for с in снимки]
-    assert len(ключи) == 2 and ключи[1] == "portfolio/_последний.json"
+    assert len(ключи) == 2 and ключи[1] == "portfolio/_last.json"
     assert ключи[0].startswith("portfolio/") and ключи[0].endswith(".json")
     import json as _json
 

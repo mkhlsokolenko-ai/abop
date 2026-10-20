@@ -39,6 +39,8 @@ def test_рецепты_демо_на_месте():
     история = РЕЦЕПТЫ["plan_history"]
     assert история["entity"] == "portfolio_snapshot" and история["system_id"] == "minio"
     assert история["source"]["root"] == "проекты", "в файле архива проекты лежат под ключом"
+    assert история["source"]["url"].endswith("/portfolio/_last.json"), (
+        "http-адаптер читает url, и указатель на последнюю версию — латиницей")
     # Свод портфеля считается по готовым расчётам, а не лезет в источники заново.
     портфель = РЕЦЕПТЫ["plan_portfolio"]
     assert портфель["entity"] == "portfolio_line" and портфель["source"]["kind"] == "portfolio"
