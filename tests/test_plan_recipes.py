@@ -33,7 +33,12 @@ def _карта(рецепт):
 def test_рецепты_демо_на_месте():
     assert set(РЕЦЕПТЫ) == {"plan_stages", "plan_rules", "plan_roadmap", "plan_roadmap_live",
                             "plan_roadmap_mpp", "plan_transcript", "plan_shift",
-                            "plan_portfolio"}, sorted(РЕЦЕПТЫ)
+                            "plan_portfolio", "plan_history"}, sorted(РЕЦЕПТЫ)
+    # Архив версий свода лежит в объектном хранилище, и рецепт привязан к системе реестра:
+    # иначе чтение не пройдёт ABAC и не будет видно в происхождении.
+    история = РЕЦЕПТЫ["plan_history"]
+    assert история["entity"] == "portfolio_snapshot" and история["system_id"] == "minio"
+    assert история["source"]["root"] == "проекты", "в файле архива проекты лежат под ключом"
     # Свод портфеля считается по готовым расчётам, а не лезет в источники заново.
     портфель = РЕЦЕПТЫ["plan_portfolio"]
     assert портфель["entity"] == "portfolio_line" and портфель["source"]["kind"] == "portfolio"
