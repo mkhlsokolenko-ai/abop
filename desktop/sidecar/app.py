@@ -140,7 +140,8 @@ def health() -> dict:
     return {"ok": True, "app": config.APP_NAME, "version": config.APP_VERSION,
             "authed": bool(auth.token()), "abop": st["ok"], "abop_error": st["error"],
             "abop_url": config.ABOP,
-            "нужен_вход": сессия["нужен_вход"], "почему": сессия["почему"]}
+            "нужен_вход": сессия["нужен_вход"], "почему": сессия["почему"],
+            "запомнили": сессия["запомнили"]}
 
 
 @app.get("/api/modules")
@@ -156,7 +157,8 @@ def me() -> dict:
         # 401 от сервера: со стороны это выглядело как «токен не приходит».
         сессия = auth.состояние()
         return {"authed": False, "roles": [],
-                "нужен_вход": сессия["нужен_вход"], "почему": сессия["почему"]}
+                "нужен_вход": сессия["нужен_вход"], "почему": сессия["почему"],
+                "запомнили": False}
     cl = auth.claims()
     roles = (cl.get("realm_access") or {}).get("roles") or []
     # оставляем только осмысленные для RBAC (без служебных keycloak-ролей)
@@ -212,8 +214,13 @@ def set_tenant(body: dict | None = None) -> dict:
 
 
 @app.post("/api/auth/login")
-def do_login() -> dict:
-    """Блокирующий loopback-PKCE вход; браузер открываем на стороне сайдкара."""
+def do_login(body: dict | None = None) -> dict:
+    """Блокирующий loopback-PKCE вход; браузер открываем на стороне сайдкара.
+
+    `запомнить` (по умолчанию да) просит offline-сессию: без неё вход живёт сутки, и утром
+    приложение встречает человека просьбой войти заново.
+    """
+    запомнить = bool((body or {}).get("запомнить", True))
     holder: dict = {}
 
     def _открыть(url: str) -> None:
@@ -227,7 +234,7 @@ def do_login() -> dict:
             pass
 
     def _run():
-        holder["res"] = auth.login(on_url=_открыть)
+        holder["res"] = auth.login(on_url=_открыть, запомнить=запомнить)
 
     t = threading.Thread(target=_run, daemon=True)
     t.start()
@@ -249,8 +256,10 @@ def do_login() -> dict:
 
 @app.post("/api/auth/logout")
 def do_logout() -> dict:
-    auth.logout()
-    return {"ok": True}
+    """Выход. Отвечает, удалось ли закрыть сессию НА СЕРВЕРЕ: с долгоживущей сессией это не
+    формальность — не отозванный токен остаётся действующим ключом к рабочим системам."""
+    итог = auth.logout() or {}
+    return {"ok": True, "отозван": bool(итог.get("отозван")), "почему": итог.get("почему", "")}
 
 
 # UI десктопа с 127.0.0.1/ui (один origin с /api/* → без PNA). Каталог наполняется в startup (_sync_ui).

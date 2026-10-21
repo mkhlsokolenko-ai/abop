@@ -92,7 +92,8 @@ def состояние() -> dict:
     cfg = load_cfg()
     return {"нужен_вход": bool(cfg.get("нужен_вход")),
             "почему": str(cfg.get("почему") or ""),
-            "ждём_до": float(cfg.get("пауза_до") or 0)}
+            "ждём_до": float(cfg.get("пауза_до") or 0),
+            "запомнили": bool(cfg.get("запомнили"))}
 
 
 def _почему_отказ(ex: urllib.error.HTTPError) -> tuple:
@@ -183,7 +184,8 @@ def _страница_отказа(почему: str) -> bytes:
             "<p>Вернитесь в приложение и попробуйте снова.</p></body></html>").encode()
 
 
-def login(idp: str = "github", timeout_s: int = 300, on_url=None) -> dict:
+def login(idp: str = "github", timeout_s: int = 300, on_url=None,
+          запомнить: bool = True) -> dict:
     """Запускает loopback-PKCE вход; блокирует до редиректа или таймаута.
 
     `on_url(url)` вызывается СРАЗУ, как адрес готов, — так вызывающий открывает браузер именно на
@@ -224,7 +226,15 @@ def login(idp: str = "github", timeout_s: int = 300, on_url=None) -> dict:
     srv.timeout = 1
     port = srv.server_address[1]
     redirect = f"http://127.0.0.1:{port}/callback"
-    params = {"client_id": config.CLIENT, "response_type": "code", "scope": "openid",
+    # «Запомнить меня» — это offline-сессия Keycloak. Обычная живёт 8 часов простоя и 24 часа
+    # максимум: приложение, закрытое на ночь, утром встречает человека просьбой войти заново, и
+    # именно это выглядело как «токен не приходит». Offline-токен это переживает.
+    #
+    # Цена честная: на диске остаётся долгоживущий ключ к рабочим системам. Поэтому файл настроек
+    # с правами 600, а выход ОТЗЫВАЕТ токен на сервере — иначе «вышел» означало бы только
+    # «забыл локально», а ключ продолжал бы действовать.
+    область = "openid offline_access" if запомнить else "openid"
+    params = {"client_id": config.CLIENT, "response_type": "code", "scope": область,
               "redirect_uri": redirect, "state": state,
               "code_challenge": challenge, "code_challenge_method": "S256", "kc_idp_hint": idp}
     url = config.KC + "/auth?" + urllib.parse.urlencode(params)
@@ -268,14 +278,40 @@ def login(idp: str = "github", timeout_s: int = 300, on_url=None) -> dict:
             "grant_type": "authorization_code", "client_id": config.CLIENT,
             "code": holder["code"], "redirect_uri": redirect, "code_verifier": verifier}).encode())
         _store_tokens(tok)
+        cfg = load_cfg()
+        # Что Keycloak ВЫДАЛ, а не что мы просили: offline-область могла быть не разрешена
+        # клиенту, и обещать «запомнили» в этом случае — ложь, которая вскроется через сутки.
+        cfg["запомнили"] = "offline" in str(tok.get("scope") or область)
+        save_cfg(cfg)
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "error": f"Обмен кода на токен не удался: {e}"}
-    return {"ok": True, "user": claims().get("preferred_username") or "студент"}
+    return {"ok": True, "user": claims().get("preferred_username") or "студент",
+            "запомнили": bool(load_cfg().get("запомнили"))}
 
 
-def logout() -> None:
+def logout() -> dict:
+    """Выход: сначала отозвать сессию на сервере, потом забыть локально.
+
+    С долгоживущей offline-сессией «забыл локально» — это не выход: ключ остаётся действующим на
+    сервере, и украденный файл настроек продолжает работать. Поэтому сначала выход в Keycloak, и
+    человеку честно говорится, удалось ли это: если нет (офлайн), сессию надо закрыть в браузере.
+    """
     cfg = load_cfg()
+    rt = cfg.get("refresh_token")
+    отозван, почему = False, ""
+    if rt:
+        try:
+            _post_form(config.KC + "/logout", urllib.parse.urlencode({
+                "client_id": config.CLIENT, "refresh_token": rt}).encode())
+            отозван = True
+        except urllib.error.HTTPError as ex:
+            # 400 на отзыв значит, что сессии уже нет — для выхода это успех, а не сбой.
+            отозван = ex.code in (400, 404)
+            почему = "" if отозван else "сервер ответил HTTP %s" % ex.code
+        except Exception as ex:  # noqa: BLE001 — офлайн: локально выйдем, на сервере нет
+            почему = "нет связи с сервером входа (%s)" % type(ex).__name__
     for k in ("access_token", "refresh_token", "expires_at", "нужен_вход", "почему", "когда",
-              "пауза_до"):
+              "пауза_до", "запомнили"):
         cfg.pop(k, None)
     save_cfg(cfg)
+    return {"отозван": отозван, "почему": почему}

@@ -290,11 +290,14 @@ function icon(name) {
 let _authTimer = null;
 function queueAuthRefresh() { clearTimeout(_authTimer); _authTimer = setTimeout(() => renderAuth(), 150); }
 let _loginBusy = false;
-async function startLogin() {
+async function startLogin(запомнить) {
   if (_loginBusy) return;
+  // По умолчанию запоминаем: обычная сессия живёт сутки, и утром приложение встречало человека
+  // просьбой войти заново — ровно то, что выглядело как «токен не приходит».
+  const помнить = запомнить === undefined ? true : !!запомнить;
   _loginBusy = true; renderAuthBox({ authed: false, busy: true });
   try {
-    const res = await api("/api/auth/login", { method: "POST" });
+    const res = await api("/api/auth/login", { method: "POST", body: JSON.stringify({ "запомнить": помнить }) });
     if (!res || !res.ok) toast("Вход не удался: " + ((res && res.error) || "попробуйте ещё раз"), "danger");
     else toast("Вы вошли в ABOP", "ok");
   } catch (e) { toast("Вход не удался: " + humanError(e), "danger"); }
@@ -316,6 +319,7 @@ function renderAuthBox(me) {
         <span style="font-size:12.5px;font-weight:600;color:var(--ink);max-width:132px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(nm)}</span></button>`;
     $("meBtn").onclick = () => {
       const rows = [["имя", nm], ["почта", me.email || "—"], ["отдел", me.department || "—"],
+                    ["сессия", me["запомнили"] ? "запомнена (действует до выхода)" : "до суток"],
                     ["роль", (ctx.roles || []).join(", ") || ctx.level || "—"],
                     ["арендатор", ctx.tenantKnown
                       ? (ctx.tenant + (ctx.tenant !== ctx.tenantOwn ? " (данные клиента)" : ""))
@@ -323,7 +327,8 @@ function renderAuthBox(me) {
       const ov = modal("Учётная запись",
         `<div style="display:flex;flex-direction:column;gap:8px">${rows.map(([k, v]) => `<div style="display:flex;gap:10px;align-items:baseline">
           <span class="ape-label" style="min-width:52px">${k}</span><span style="font-size:13px;color:var(--ink);word-break:break-all">${esc(String(v))}</span></div>`).join("")}
-          <div class="dcard-note">Под этой почтой агенты отправляют письма и заводят задачи — проверяйте её перед внешними действиями.</div>
+          <div class="dcard-note">Под этой почтой агенты отправляют письма и заводят задачи — проверяйте её перед внешними действиями.${
+            me["запомнили"] ? " Сессия запомнена: на этом компьютере лежит действующий ключ доступа — выходите, если оставляете его другим." : ""}</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
             <button class="btn danger" id="logoutBtn">Выйти из ABOP</button>
             <button class="btn sm" id="tenantBtn">Чьи данные на экране</button>
@@ -331,7 +336,14 @@ function renderAuthBox(me) {
         null, "Закрыть", { width: "420px" });
       ov.querySelector("#tenantBtn").onclick = () => { ov.close(true); tenantDetails(); };
       ov.querySelector("#logoutBtn").onclick = async () => {
-        try { await api("/api/auth/logout", { method: "POST" }); } catch { /* noop */ }
+        // «Вышел» не должно означать «забыл локально»: с запомненной сессией не отозванный токен
+        // остаётся действующим ключом, и об этом человеку надо сказать, а не промолчать.
+        let итог = null;
+        try { итог = await api("/api/auth/logout", { method: "POST" }); } catch { /* noop */ }
+        if (итог && итог["отозван"] === false) {
+          toast("Вы вышли на этом компьютере, но сессию на сервере закрыть не удалось"
+            + (итог["почему"] ? " (" + итог["почему"] + ")" : "") + " — закройте её в браузере", "warn");
+        }
         ov.close(true); await renderAuth(); reloadAll();
       };
     };
@@ -349,8 +361,10 @@ function renderAuthBox(me) {
     const цвет = me["нужен_вход"] && почему ? "var(--warn, #fbbf24)" : "var(--ink-3)";
     box.innerHTML = `<span style="display:flex;flex-direction:column;align-items:flex-end;gap:3px">
         <button class="btn primary sm" id="loginBtn">🔑 Войти в ABOP</button>
+        <label for="rememberMe" style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--ink-3);cursor:pointer">
+          <input type="checkbox" id="rememberMe" checked style="margin:0">Запомнить меня</label>
         <span style="font-size:11px;color:${цвет};max-width:260px;text-align:right">${esc(подпись)}</span></span>`;
-    $("loginBtn").onclick = startLogin;
+    $("loginBtn").onclick = () => startLogin($("rememberMe") ? $("rememberMe").checked : true);
   }
 }
 async function renderAuth() {
