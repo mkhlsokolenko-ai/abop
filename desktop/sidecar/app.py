@@ -136,9 +136,11 @@ def _abop_state() -> dict:
 @app.get("/api/health")
 def health() -> dict:
     st = _abop_state()
+    сессия = auth.состояние()
     return {"ok": True, "app": config.APP_NAME, "version": config.APP_VERSION,
             "authed": bool(auth.token()), "abop": st["ok"], "abop_error": st["error"],
-            "abop_url": config.ABOP}
+            "abop_url": config.ABOP,
+            "нужен_вход": сессия["нужен_вход"], "почему": сессия["почему"]}
 
 
 @app.get("/api/modules")
@@ -149,7 +151,12 @@ def modules() -> list[dict]:
 @app.get("/api/auth/me")
 def me() -> dict:
     if not auth.token():
-        return {"authed": False, "roles": []}
+        # Почему не вошли — такой же ответ, как «не вошли». Прежде интерфейс показывал одну и ту
+        # же кнопку входа и при офлайне, и при кончившейся сессии, а панели в это время получали
+        # 401 от сервера: со стороны это выглядело как «токен не приходит».
+        сессия = auth.состояние()
+        return {"authed": False, "roles": [],
+                "нужен_вход": сессия["нужен_вход"], "почему": сессия["почему"]}
     cl = auth.claims()
     roles = (cl.get("realm_access") or {}).get("roles") or []
     # оставляем только осмысленные для RBAC (без служебных keycloak-ролей)

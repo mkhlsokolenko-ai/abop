@@ -342,9 +342,14 @@ function renderAuthBox(me) {
         <button class="btn sm" id="loginCancel" title="Убрать ожидание (окно браузера можно закрыть)">Отмена</button></span>`;
     $("loginCancel").onclick = () => { _loginBusy = false; renderAuthBox({ authed: false }); };
   } else {
+    // Причина, по которой вход нужен снова, важнее общей подписи: «сессия истекла» и «нет связи
+    // с сервером входа» требуют разных действий, а выглядели одинаково — пустым окном с кнопкой.
+    const почему = String(me["почему"] || "");
+    const подпись = me["нужен_вход"] && почему ? почему : "одна учётная запись: почта и доступы";
+    const цвет = me["нужен_вход"] && почему ? "var(--warn, #fbbf24)" : "var(--ink-3)";
     box.innerHTML = `<span style="display:flex;flex-direction:column;align-items:flex-end;gap:3px">
         <button class="btn primary sm" id="loginBtn">🔑 Войти в ABOP</button>
-        <span style="font-size:11px;color:var(--ink-3)">одна учётная запись: почта и доступы</span></span>`;
+        <span style="font-size:11px;color:${цвет};max-width:260px;text-align:right">${esc(подпись)}</span></span>`;
     $("loginBtn").onclick = startLogin;
   }
 }

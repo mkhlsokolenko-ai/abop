@@ -50,21 +50,102 @@ def _store_tokens(tok: dict) -> None:
     if tok.get("refresh_token"):
         cfg["refresh_token"] = tok["refresh_token"]
     cfg["expires_at"] = time.time() + int(tok.get("expires_in", 300)) - 30
+    # Удача снимает пометки о сбое: иначе интерфейс продолжал бы просить вход у вошедшего.
+    for k in ("нужен_вход", "почему", "когда", "пауза_до"):
+        cfg.pop(k, None)
     save_cfg(cfg)
 
 
-def refresh() -> bool:
+# Обновление токена — одно в полёте. Прежде каждый вызывающий звал Keycloak сам: в логе стенда
+# стоят пары запросов на обновление в 1–9 мс друг от друга, а при включённой ротации refresh-токена
+# второй предъявляет уже погашенный — «Token is not active». На медленной связи (VPN) окно гонки
+# шире, и промах становится правилом.
+_ЗАМОК_ОБНОВЛЕНИЯ = threading.Lock()
+
+# Пауза после сетевого сбоя: не превращать офлайн в долбёжку. За шесть часов стенд принял 2524
+# неудачных обновления и ни одного удачного — это не диагностика, это шум, в котором тонет причина.
+ПАУЗА_ПОСЛЕ_СБОЯ_С = 15
+
+
+def _сессия_жива(cfg: dict) -> bool:
+    return bool(cfg.get("access_token")) and time.time() < cfg.get("expires_at", 0)
+
+
+def _сессия_мертва(почему: str) -> None:
+    """Keycloak отказал окончательно: токены стираем, причину храним — её покажет интерфейс.
+
+    Разница между «нет сети» и «сессия кончилась» для человека принципиальна: первое пройдёт само,
+    второе требует войти заново. Молча отдавать None в обоих случаях значит показывать одно и то же
+    пустое окно и ждать, что пользователь догадается.
+    """
     cfg = load_cfg()
-    rt = cfg.get("refresh_token")
-    if not rt:
-        return False
+    for k in ("access_token", "refresh_token", "expires_at", "пауза_до"):
+        cfg.pop(k, None)
+    cfg["нужен_вход"] = True
+    cfg["почему"] = почему
+    cfg["когда"] = time.time()
+    save_cfg(cfg)
+
+
+def состояние() -> dict:
+    """Что показать человеку: вошёл ли, нужно ли входить заново и почему."""
+    cfg = load_cfg()
+    return {"нужен_вход": bool(cfg.get("нужен_вход")),
+            "почему": str(cfg.get("почему") or ""),
+            "ждём_до": float(cfg.get("пауза_до") or 0)}
+
+
+def _почему_отказ(ex: urllib.error.HTTPError) -> tuple:
+    """Разбирает отказ Keycloak: (окончательный ли, текст для человека)."""
+    код, текст = "", ""
     try:
-        tok = _post_form(config.KC + "/token", urllib.parse.urlencode({
-            "grant_type": "refresh_token", "client_id": config.CLIENT, "refresh_token": rt}).encode())
+        тело = json.loads(ex.read().decode("utf-8", "replace"))
+        код = str(тело.get("error") or "")
+        текст = str(тело.get("error_description") or "")
+    except Exception:  # noqa: BLE001 — тело может быть пустым или не JSON
+        pass
+    окончательный = ex.code in (400, 401) or код in (
+        "invalid_grant", "invalid_token", "unauthorized_client", "invalid_client")
+    понятно = {"invalid_grant": "срок сессии истёк или вход был выполнен в другом месте",
+               "invalid_token": "сервер больше не признаёт сохранённый токен",
+               "unauthorized_client": "клиенту «%s» запрещено обновлять токен" % config.CLIENT,
+               "invalid_client": "клиент «%s» не настроен в Keycloak" % config.CLIENT}
+    причина = понятно.get(код) or текст or ("Keycloak ответил HTTP %s" % ex.code)
+    return окончательный, причина
+
+
+def refresh() -> bool:
+    with _ЗАМОК_ОБНОВЛЕНИЯ:
+        cfg = load_cfg()
+        # Пока ждали замок, сосед мог уже обновить — тогда идти в Keycloak незачем и вредно.
+        if _сессия_жива(cfg):
+            return True
+        rt = cfg.get("refresh_token")
+        if not rt:
+            return False
+        if time.time() < cfg.get("пауза_до", 0):
+            return False
+        try:
+            tok = _post_form(config.KC + "/token", urllib.parse.urlencode({
+                "grant_type": "refresh_token", "client_id": config.CLIENT,
+                "refresh_token": rt}).encode())
+        except urllib.error.HTTPError as ex:
+            окончательный, причина = _почему_отказ(ex)
+            if окончательный:
+                _сессия_мертва("Войдите заново: " + причина)
+            else:
+                cfg["пауза_до"] = time.time() + ПАУЗА_ПОСЛЕ_СБОЯ_С
+                cfg["почему"] = "Сервер входа отвечает ошибкой: " + причина
+                save_cfg(cfg)
+            return False
+        except Exception as ex:  # noqa: BLE001 — сеть, прокси, VPN: состояние, а не поломка
+            # Токен НЕ стираем: офлайн кончится, и сессия должна пережить его.
+            cfg["пауза_до"] = time.time() + ПАУЗА_ПОСЛЕ_СБОЯ_С
+            cfg["почему"] = "Нет связи с сервером входа (%s)" % type(ex).__name__
+            save_cfg(cfg)
+            return False
         _store_tokens(tok)
         return True
-    except Exception:
-        return False
 
 
 def token() -> str | None:
@@ -194,6 +275,7 @@ def login(idp: str = "github", timeout_s: int = 300, on_url=None) -> dict:
 
 def logout() -> None:
     cfg = load_cfg()
-    for k in ("access_token", "refresh_token", "expires_at"):
+    for k in ("access_token", "refresh_token", "expires_at", "нужен_вход", "почему", "когда",
+              "пауза_до"):
         cfg.pop(k, None)
     save_cfg(cfg)
