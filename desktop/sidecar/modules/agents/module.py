@@ -89,6 +89,20 @@ def detail(agent_id: str):
         return _err(e)
 
 
+@router.get("/passport/{agent_id:path}")
+def passport(agent_id: str):
+    """Паспорт агента: навыки из графа, зависимости по данным, привязки и оценка.
+
+    Карточка в каталоге показывает три строки — семью, автономию и версию. Чем агент питается,
+    к чему привязан и во что обходится прогон, из неё узнать было нельзя: приходилось открывать
+    веб. `:path` — у собранных из чата в идентификаторе есть точка версии и кириллица.
+    """
+    try:
+        return abop.agent_passport(agent_id)
+    except abop.AbopError as e:
+        return _err(e)
+
+
 @router.get("/skills")
 def skills():
     """Каталог навыков ABOP (mode/egress/cite/output и т.д.)."""

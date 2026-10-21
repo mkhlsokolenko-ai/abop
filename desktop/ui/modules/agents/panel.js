@@ -27,6 +27,90 @@ export async function mount(root, ctx) {
     bOutput = ((g.nodes || []).find((n) => n.kind === "skill" && n.output) || {}).output || "";
     editingId = id; mode = "builder"; render();
   }
+  // ── ПАСПОРТ: что агент знает, к чему привязан и во что обходится прогон ──
+  // Карточка в каталоге говорит три вещи: семья, автономия, версия. Чем агент питается, сработает
+  // ли он вообще (сущность может быть пустой) и во сколько обходится прогон — из неё узнать было
+  // нельзя, и за этим шли в веб. Считает всё сервер: второй расчёт на клиенте разошёлся бы с
+  // первым, и человек не знал бы, какому верить.
+  const блок = (title, inner) => inner
+    ? `<div style="display:flex;flex-direction:column;gap:7px;margin-top:14px">
+         <span class="ape-label">${esc(title)}</span>${inner}</div>`
+    : "";
+  const строка = (left, right, fg) =>
+    `<div style="display:flex;align-items:center;gap:9px;padding:8px 11px;border-radius:9px;background:var(--field);border:1px solid var(--line)">
+       <span style="flex:1;min-width:0;font-size:12.5px;color:var(--ink-2)">${left}</span>
+       ${right ? `<span style="font-family:var(--mono);font-size:11px;color:${fg || "var(--ink-3)"}">${right}</span>` : ""}
+     </div>`;
+
+  function passportHTML(p) {
+    const мета = ["v" + esc(String(p.version || 1)), esc(p.status_ru || ""), p.owner ? "мой" : "общий",
+                  p.edit_scope === "methodologist" ? "правит методолог" : "правлю сам",
+                  "автор " + esc(p.created_by || "—")].filter(Boolean).join(" · ");
+    const env = p.envelope || {};
+    const нав = (p.skills || []).map((s) => строка(
+      `<b style="color:var(--ink)">${esc(s.title || s.id)}</b>${s.short ? " — " + esc(s.short) : ""}`,
+      [esc(s.mode || "read"), s.egress === "external" ? "наружу" : "", s.hitl ? "HITL" : "",
+       s.autonomy && s.autonomy !== "A0" ? esc(s.autonomy) : ""].filter(Boolean).join(" · "))).join("");
+    const данные = ((p.depends || {}).data || []).map((d) => строка(
+      `${esc(d.entity)} · ${esc((d.fields || []).join(", ") || "поля по схеме")}`,
+      d.recipe ? esc(d.recipe) + " · " + (d.records == null ? "наполнение неизвестно" : d.records + " зап.")
+               : "нет рецепта — создать",
+      d.ready ? "var(--ok-ink)" : "var(--warn-ink)")).join("");
+    const дыры = ((p.depends || {}).gaps || []).map((g) =>
+      `<div style="font-size:12px;color:var(--warn-ink);padding:7px 10px;border-radius:9px;background:var(--warn-bg);border:1px solid var(--warn-line)">• ${esc(g.text || "")}</div>`).join("");
+    const b = p.bindings || {};
+    const привязки = [
+      ...(b.triggers || []).map((t) => строка(
+        "⏱ " + (t.type === "schedule" ? "расписание " + esc(t.cron || "") : t.type === "event" ? "событие " + esc(t.source || "") : esc(t.type || "триггер"))
+        + " → " + (t.deliver === "system" ? "в систему" : "в чат")
+        + `<br><span style="font-size:11px;color:var(--ink-3)">${t.last_fire ? "последний запуск " + esc(String(t.last_fire).slice(0, 16).replace("T", " ")) : "ещё не срабатывал"}</span>`,
+        t.enabled ? "включено" : "выключено", t.enabled ? "var(--ok-ink)" : "var(--ink-3)")),
+      ...(b.seats || []).map((s) => строка("🗺 посадка: " + esc(s.title || s.op_id) + " · область " + esc(s.area || "—"),
+                                           s.since ? "с " + esc(String(s.since).slice(0, 10)) : "")),
+      ...(b.chains || []).map((c) => строка("⛓ цепочка: " + esc(c.name || c.id),
+                                            "шаг " + esc((c.at || []).join(", ")) + " из " + esc(String(c.steps || "?")))),
+    ].join("") || `<div class="faint" style="font-size:12px">Ни расписаний, ни посадок на карте, ни цепочек — агент запускается только вручную.</div>`;
+    const a = p.assessment || {}, r = a.runs || {}, e = a.estimate;
+    const вердикт = { ok: ["конверт проверен авто-верификацией", "var(--ok-ink)"],
+                      fail: ["авто-верификация нашла нарушение конверта", "var(--danger-ink)"],
+                      draft: ["авто-верификации не было — конверт не проверен", "var(--ink-2)"],
+                      contract: ["конверт по контракту LUDA", "var(--ink-2)"],
+                      external: ["чужой рантайм: графа нет, осматривать нечем", "var(--ink-2)"] }[a.verify]
+                    || ["", "var(--ink-2)"];
+    const прогоны = !r.total ? "ещё не запускался — оценивать нечем"
+      : `прогонов ${r.total} · вердикт закрыт у ${r.ok} · подтверждений HITL ${r.hitl}`
+        + (r.last_at ? ` · последний ${esc(String(r.last_at).slice(0, 16).replace("T", " "))}` + (r.last_ok ? " (пройден)" : " (с замечаниями)") : "");
+    const деньги = !r.total ? "" : [r.avg_rub != null ? "в среднем " + r.avg_rub + " ₽ за прогон" : "",
+                                    r.cost_rub ? "всего " + r.cost_rub + " ₽" : "",
+                                    r.avg_seconds != null ? "около " + r.avg_seconds + " с" : ""].filter(Boolean).join(" · ");
+    const прогноз = !e ? "" : (((e.unknown || []).length >= (e.steps || 0))
+      ? esc(e.note || "оценить нечем")
+      : `прогноз прогона ≈ ${e.rub} ₽ · ${e.input_tokens || 0}→${e.output_tokens || 0} токенов · модель ${esc(e.model || "—")} · ${esc(e.note || "")}`);
+    return `<div style="font-size:12.5px;line-height:1.55;color:var(--ink-2)">
+      <div style="font-family:var(--mono);font-size:11.5px;color:var(--ink-3)">${esc(p.role_title || p.role || "собран из чата")} · семья ${esc(p.family_title || "—")} · автономия ${esc(p.autonomy_max || "—")}</div>
+      <div style="font-family:var(--mono);font-size:11.5px;color:var(--ink-3)">${мета}</div>
+      ${p.mission ? `<p style="margin:10px 0 0">${esc(p.mission)}</p>` : ""}
+      ${env["почему"] ? `<div style="margin-top:10px;color:var(--accent-ink)">${esc(env["почему"])}</div>` : ""}
+      ${блок("навыки агента (из его графа)", нав || `<div class="faint" style="font-size:12px">В графе этой версии нет узлов-навыков — агент ничего не сделает.</div>`)}
+      ${блок("зависимости по данным", данные || `<div class="faint" style="font-size:12px">Навыки не объявляют источников — агент работает с тем, что дадите в запросе.</div>`)}
+      ${дыры ? блок("чего не хватает для работы", дыры + `<div style="font-size:11.5px;color:var(--ink-3)">Пока это не закрыть, прогон отработает вхолостую.</div>`) : ""}
+      ${блок("привязки", привязки)}
+      ${блок("оценка", `<div style="display:flex;flex-direction:column;gap:5px;padding:10px 11px;border-radius:9px;background:var(--field);border:1px solid var(--line)">
+        ${вердикт[0] ? `<span style="color:${вердикт[1]}">${esc(вердикт[0])}</span>` : ""}
+        <span>${прогоны}</span>
+        ${деньги ? `<span style="font-family:var(--mono);font-size:11.5px;color:var(--ink-3)">${esc(деньги)}</span>` : ""}
+        ${прогноз ? `<span style="font-size:12px;color:var(--ink-3)">${прогноз}</span>` : ""}</div>`)}
+    </div>`;
+  }
+
+  async function showPassport(id, name) {
+    let p;
+    try { p = await api(A + "/passport/" + encodeURIComponent(id)); }
+    catch (e) { toast("Паспорт не загрузился: " + humanError(e), "danger"); return; }
+    ctx.modal(name || p.name || "Агент", passportHTML(p), null, "Закрыть",
+              { kicker: "паспорт агента", width: "620px" });
+  }
+
   async function loadAgents() {
     loadErr = null;
     try { agents = await api(A + "/catalog"); if (!Array.isArray(agents)) agents = []; } catch (e) { agents = []; loadErr = e; }
@@ -85,7 +169,10 @@ export async function mount(root, ctx) {
           ${shown.length ? shown.map((a) => `<div class="lift" style="${CARD}">
             <div style="min-width:0">
               <div style="min-width:0"><div class="ape-label">${esc(a.family || "—")}${a.role ? " · " + esc(a.role) : ""}</div>
-                <div style="font-size:15px;font-weight:700;color:var(--ink)">${esc(a.name)}</div></div>
+                <button type="button" class="pass" data-id="${esc(a.id)}" data-name="${esc(a.name)}"
+                        title="Паспорт агента: навыки, зависимости, привязки, оценка"
+                        aria-label="Паспорт агента «${esc(a.name)}»"
+                        style="padding:0;border:none;background:transparent;text-align:left;font-size:15px;font-weight:700;color:var(--ink);cursor:pointer">${esc(a.name)}</button></div>
             </div>
             ${a.description ? `<div style="font-size:12px;line-height:1.45;color:var(--ink-2)">${esc(a.description)}</div>` : ""}
             <div style="font-size:11.5px;color:var(--ink-3)">автономия ${esc(a.autonomy_max || "?")} · v${esc(String(a.version || 1))}${a.owner ? " · мой" : " · общий"}${a.outward ? " · действует наружу 🛡" : ""}</div>
@@ -96,6 +183,7 @@ export async function mount(root, ctx) {
     root.querySelectorAll(".tabBtn").forEach((b) => (b.onclick = () => { tab = b.dataset.tab; render(); }));
     root.querySelector("#refresh").onclick = async () => { await loadAgents(); render(); };
     const bb = root.querySelector("#build"); if (bb) bb.onclick = async () => { if (!families.length) await loadFamilies(); bFamily = ""; bSkills = new Set(); bName = ""; editingId = null; bOutput = ""; mode = "builder"; render(); };
+    root.querySelectorAll(".pass").forEach((b) => (b.onclick = () => showPassport(b.dataset.id, b.dataset.name)));
     root.querySelectorAll(".run").forEach((b) => (b.onclick = () => ctx.open("chat", { runAgent: { id: b.dataset.id, name: b.dataset.name } })));
     root.querySelectorAll(".cfg").forEach((b) => (b.onclick = () => reconfig(b.dataset.id)));
     root.querySelectorAll(".arch").forEach((b) => (b.onclick = () => archiveAgent(b.dataset.id, b.dataset.name)));

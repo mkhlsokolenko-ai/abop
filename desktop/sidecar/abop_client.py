@@ -157,6 +157,15 @@ def agent(agent_id: str) -> dict:
     return _req("GET", "/api/agents/" + urllib.request.quote(agent_id), timeout=30)
 
 
+def agent_passport(agent_id: str) -> dict:
+    """Паспорт агента: навыки из его графа, зависимости по данным, привязки и оценка.
+
+    Считает сервер — десктоп только показывает. Второй расчёт на клиенте разошёлся бы с первым,
+    и человек не знал бы, какому верить (ADR_DESKTOP_ABOP_SMYCHKA, Фаза 1).
+    """
+    return _req("GET", "/api/agents/" + urllib.request.quote(agent_id) + "/passport", timeout=30)
+
+
 def skills() -> list:
     r = _req("GET", "/api/skills", timeout=30)
     return (r or {}).get("skills", []) if isinstance(r, dict) else (r or [])
