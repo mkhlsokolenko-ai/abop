@@ -1200,6 +1200,19 @@ def desktop_ui_bundle() -> dict:
                 binary[rel] = _b64.b64encode(p.read_bytes()).decode("ascii")
         except Exception:  # noqa: BLE001 — нечитаемое пропускаем
             continue
+    # Панели вертикалей приезжают тем же бандлом под именем обычного модуля
+    # (`modules/<id>/panel.js`): оболочка не должна знать, лежит экран в ядре или в пакете.
+    # Отдаём панели ВСЕХ пакетов каталога — показывает их только активная вертикаль (рейл берёт
+    # список из профиля), а разбирать установленность в синхронной ручке значило бы тащить сюда
+    # контракты и рецепты.
+    _ВЕРТИКАЛИ = _DESKTOP_UI.parents[1] / "verticals"
+    if _ВЕРТИКАЛИ.is_dir():
+        for панель in sorted(_ВЕРТИКАЛИ.glob("*/panels/*/panel.js")):
+            try:
+                files["modules/%s/panel.js" % панель.parent.name] = панель.read_text(
+                    encoding="utf-8")
+            except Exception:  # noqa: BLE001 — битую панель пропускаем, бандл не роняем
+                continue
     ver = _hl.md5("".join(f"{k}:{len(v)}" for k, v in sorted({**files, **binary}.items())).encode()).hexdigest()[:12]
     return {"version": ver, "files": files, "binary": binary}
 

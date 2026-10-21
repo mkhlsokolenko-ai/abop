@@ -146,7 +146,37 @@ def health() -> dict:
 
 @app.get("/api/modules")
 def modules() -> list[dict]:
-    return [m.MANIFEST for m in _MODULES]
+    """Разделы приложения: модули сборки плюс панели АКТИВНОЙ вертикали.
+
+    Панель вертикали приезжает бандлом как обычный модуль (`modules/<id>/panel.js`), но в списке
+    разделов появляется только пока её вертикаль активна: иначе чужой экран висел бы в рейле у
+    всех. Сбой запроса профиля не ломает список — приложение остаётся таким, какое есть.
+    """
+    свои = [m.MANIFEST for m in _MODULES]
+    try:
+        from . import abop_client as abop
+        профиль = (abop.vertical_active() or {}).get("активная") or {}
+    except Exception:  # noqa: BLE001 — офлайн: без панелей вертикали, но со всеми своими
+        return свои
+    известные = {m["id"] for m in свои}
+    for п in (профиль.get("панели") or []):
+        ид = str(п.get("id") or "")
+        if not ид or ид in известные:
+            continue
+        свои.append({"id": ид, "title": п.get("title") or ид, "icon": п.get("icon") or "vertical",
+                     "ui": ид, "order": int(п.get("order") or 50), "вертикаль": профиль.get("id")})
+    return свои
+
+
+@app.get("/api/panel-data/{path:path}")
+def panel_data(path: str) -> dict:
+    """Чтение данных платформы для панели вертикали (только GET, только белый список путей)."""
+    from . import abop_client as abop
+    try:
+        return {"ok": True, "data": abop.panel_read(path)}
+    except Exception as ex:  # noqa: BLE001
+        код = int(getattr(ex, "code", 0) or 0)
+        raise HTTPException(код if 400 <= код < 600 else 502, str(ex)[:400]) from ex
 
 
 @app.get("/api/auth/me")

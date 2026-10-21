@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import asyncio as _asyncio
+import re as _re
 import time as _time
 import json
 import pathlib
@@ -37,6 +38,7 @@ from ..deps import can_see_family, require_level, user
 router = APIRouter()
 
 КАТАЛОГ = pathlib.Path(__file__).resolve().parents[2] / "verticals"
+_re_ид = _re.compile(r"[a-z][a-z0-9-]{1,30}")
 
 
 def _каталог(vid: str) -> pathlib.Path:
@@ -156,6 +158,24 @@ def _сверить(путь: pathlib.Path, манифест: dict) -> list[str]
     if начальный and разделы and начальный not in разделы:
         ошибки.append(f"начальный экран «{начальный}» не входит в разделы оболочки")
 
+    # Панель, которой нет файлом, — обещание пустого экрана. Панель, которой нет в разделах,
+    # приедет и никогда не покажется: и то и другое молча, если не проверить здесь.
+    for п in (оболочка.get("панели") or []):
+        ид = str((п or {}).get("id") or "")
+        if not ид:
+            ошибки.append("в оболочке объявлена панель без идентификатора")
+            continue
+        if not _re_ид.fullmatch(ид):
+            ошибки.append(f"идентификатор панели «{ид}» не похож на имя раздела "
+                          "(ожидается латиница в нижнем регистре)")
+        if not (путь / "panels" / ид / "panel.js").is_file():
+            ошибки.append(f"манифест обещает панель «{ид}», файла panels/{ид}/panel.js нет")
+        if разделы and ид not in разделы:
+            ошибки.append(f"панель «{ид}» не входит в разделы оболочки — она приедет и "
+                          "никогда не покажется")
+        if not str((п or {}).get("title") or "").strip():
+            ошибки.append(f"у панели «{ид}» нет названия — в рейле её нечем подписать")
+
     for поле in ("id", "название", "версия"):
         if not манифест.get(поле):
             ошибки.append(f"в манифесте не заполнено «{поле}»")
@@ -266,6 +286,12 @@ def _профиль(манифест: dict, путь) -> dict:
         "начальный_экран": str(об.get("начальный_экран") or ""),
         "термины": {str(k): str(v) for k, v in (об.get("термины") or {}).items()},
         "роль_семьи": str(об.get("роль_семьи") or ""),
+        # Панели вертикали: свой экран приезжает С ПАКЕТОМ, а не поселяется в ядре навсегда.
+        # Иначе оболочка собирает нужды всех вертикалей, и широкий продукт раздувается чужим.
+        "панели": [{"id": str(п.get("id") or ""), "title": str(п.get("title") or ""),
+                    "icon": str(п.get("icon") or "vertical"),
+                    "order": int(п.get("order") or 50)}
+                   for п in (об.get("панели") or []) if str(п.get("id") or "")],
         "бланк": str((манифест.get("содержит") or {}).get("бланк") or ""),
         "процессы": [str(п) for п in (манифест.get("процессы") or [])],
         "зачем": str(об.get("зачем") or ""),
