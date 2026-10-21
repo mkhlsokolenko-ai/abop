@@ -171,9 +171,17 @@ _SEED = [
                   "egress": "external", "note": "S3-хранилище (мок 1С/документы). Бакет abop-demo public-read", "role": "оба"}),
     ("nocodb",   {"kind": "rest", "base_url": "http://5.129.192.63:8090", "auth_ref": "NOCODB_TOKEN",
                   "egress": "external", "note": "No-code БД/таблицы (как база 1С: invoices/payments/vendors)", "role": "приёмник"}),
-    ("gitea",    {"kind": "rest", "base_url": "http://5.129.192.63:3001", "auth_ref": "GITEA_TOKEN",
+    ("gitea",    {"kind": "rest", "base_url": "http://127.0.0.1:3001", "auth_ref": "GITEA_TOKEN",
                   "egress": "external", "scope": ["architecture", "engineering"],
-                  "note": "Git-хостинг. Доступ: архитектура/инженерия (аналитик/финансы не видят)", "role": "приёмник"}),
+                  "note": "Git-хостинг: коммиты главной ветки — факт реализации задачи. Слушает "
+                          "только 127.0.0.1 (закрыт наружу после инцидента 19.10). Доступ: "
+                          "архитектура/инженерия (аналитик/финансы не видят)", "role": "оба"}),
+    ("sonar-stub", {"kind": "file", "base_url": "file:///app/demo/flow/quality_stub.json",
+                  "auth_ref": "", "egress": "internal", "scope": ["architecture", "engineering"],
+                  "note": "ЗАГЛУШКА анализатора кода: SonarQube и аналогов на стенде нет, "
+                          "показатели лежат файлом и помечены источником «заглушка». Нужна, "
+                          "чтобы отчёт не выдавал их за измеренные, а связь была видна в "
+                          "происхождении", "role": "источник"}),
     ("kroki",    {"kind": "rest", "base_url": "http://5.129.192.63:8000", "auth_ref": "",
                   "egress": "external", "scope": ["architecture", "engineering"],
                   "note": "Рендер диаграмм. Доступ: архитектура/инженерия", "role": "сервис"}),
