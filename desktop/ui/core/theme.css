@@ -33,10 +33,15 @@
   --panel-2: rgba(255, 255, 255, 0.08);
   --line: rgba(255, 255, 255, 0.1);
   --line-2: rgba(255, 255, 255, 0.16);
+  --line-field: rgba(255, 255, 255, 0.44);   /* 3.34:1 к худшей подложке — граница поля ввода */
   --hover: rgba(255, 255, 255, 0.09);
   --ink: #ffffff;
   --ink-2: rgba(255, 255, 255, 0.62);
-  --ink-3: rgba(255, 255, 255, 0.42);
+  /* .42 давал 3.19:1 на --panel-2 с мешем и 3.93:1 на самой тёмной подложке — ниже AA (4.5:1)
+     ВЕЗДЕ, а не только в худшем случае: дело было в самом значении, а не в меше. .60 даёт
+     4.81:1 в худшем случае и 6.51:1 в лучшем; .62 сравнялось бы с --ink-2 и схлопнуло бы
+     трёхуровневую шкалу текста в двухуровневую. Светлая тема отревизована раньше (#6b7280). */
+  --ink-3: rgba(255, 255, 255, 0.60);
   --field: rgba(15, 23, 42, 0.55);
   --code: #0b1020;
   --rail: rgba(15, 23, 42, 0.6);
@@ -124,10 +129,13 @@
   --panel-2: #ffffff;
   --line: #e5e7eb;
   --line-2: #d1d5db;
+  --line-field: #767f8c;   /* 3.87:1 на белом поле — граница поля ввода (#d1d5db давал 1.41:1) */
   --hover: rgba(15, 23, 42, 0.05);
   --ink: #111827;
-  --ink-2: #4b5563;   /* 7.6:1 на #f8fafc (было #6b7280) */
-  --ink-3: #6b7280;   /* 4.6:1 (было #9ca3af ≈ 2.4:1 — ниже AA) */
+  --ink-2: #4b5563;   /* 6.92:1 на худшей подложке (рейл с мешем); 7.22:1 на фоне #f8fafc */
+  /* #6b7280 мерили на чистом фоне (4.62:1) — но на рейле поверх меша выходило 4.43:1, то есть
+     чуть ниже AA. #656c74 даёт 4.87:1 в худшем случае и остаётся заметно легче --ink-2 (6.92:1). */
+  --ink-3: #656c74;
   --field: #ffffff;
   --code: #0f172a;
   --rail: rgba(255, 255, 255, 0.7);
@@ -205,7 +213,11 @@ body { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; 
 h1, h2, h3, .ape-h1, .dcard-title { text-wrap: balance; }
 ::selection { background: var(--sel); color: var(--ink); }
 textarea { resize: none; }
-a { color: var(--accent-2); } a:hover { color: var(--accent); }
+/* Ссылка — текст, ей нужны 4.5:1. --accent-2 (#818cf8) даёт 3.39:1 в тёмной и 2.85:1 в светлой,
+   а --accent (#6366f1) на наведении — 2.26:1, то есть наведение УХУДШАЛО читаемость. Берём
+   чернильные ступени: они переопределены в обеих темах (5.07 и 7.55 у --accent-ink-2, 6.77 и
+   9.49 у --accent-ink), и наведение усиливает цвет, а не гасит. */
+a { color: var(--accent-ink-2); } a:hover { color: var(--accent-ink); }
 .mono { font-family: var(--mono); }
 .faint { color: var(--ink-3); }
 .sub { color: var(--ink-2); }
@@ -296,14 +308,19 @@ a { color: var(--accent-2); } a:hover { color: var(--accent); }
   border: 1px solid var(--line); color: var(--ink-2); box-shadow: var(--edge);
 }
 .chip.on { background: var(--accent-bg); color: var(--accent-ink); border-color: var(--accent); }
+/* Граница поля ввода — не декор, а единственный признак того, что сюда можно писать: заливка
+   поля от подложки почти не отличается (1.34:1 в тёмной, 1.01:1 в светлой). На --line
+   (rgba(255,255,255,.10) → 1.34:1 и #e5e7eb → 1.18:1) граница ниже 3:1 по WCAG 1.4.11, то есть
+   человек со слабым зрением рамки поля не видит вовсе. Отдельный токен — чтобы усилить именно
+   поля, а не разделители панелей, которым от требований положено послабление. */
 input, textarea, select {
-  background: var(--field); color: var(--ink); border: 1px solid var(--line);
+  background: var(--field); color: var(--ink); border: 1px solid var(--line-field);
   border-radius: var(--r-md); padding: 11px 13px; font-size: 12.5px; line-height: 1.55; outline: none;
   transition: border-color .15s, box-shadow .2s, background .15s;
 }
 input::placeholder, textarea::placeholder { color: var(--ink-3); }
-input:hover, textarea:hover, select:hover { border-color: var(--line-2); }
-input:focus, textarea:focus, select:focus { border-color: var(--accent-2); box-shadow: var(--ring); }
+input:hover, textarea:hover, select:hover { border-color: var(--ink-3); }
+input:focus, textarea:focus, select:focus { border-color: var(--accent-ink-2); box-shadow: var(--ring); }
 
 /* стекло на инлайновых поверхностях модулей */
 .bcontent, #drawer, #composer, #files, #updateBar { backdrop-filter: var(--blur); }
@@ -350,7 +367,10 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent-2); box-s
 
 
 /* ── UX-аудит 25.09: доступность и общие рецепты оверлеев/уведомлений ── */
-:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; border-radius: 8px; }
+/* Кольцо фокуса обязано давать 3:1 к фону (WCAG 1.4.11). --accent-2 проходил только в тёмной
+   (3.39:1), в светлой давал 2.85:1 — на белом кольцо фокуса было почти не видно. --accent-ink-2
+   переопределён в обеих темах: 5.07:1 и 7.55:1. */
+:focus-visible { outline: 2px solid var(--accent-ink-2); outline-offset: 2px; border-radius: 8px; }
 
 /* Текст только для экранного диктора: объявления о том, что произошло по клавише (узел сдвинут,
    связь создана), — их незачем показывать глазами, но нельзя не сказать вслух. */

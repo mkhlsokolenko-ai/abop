@@ -24,12 +24,12 @@ export async function mount(root, ctx) {
     <div style="display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap">
       <div style="display:flex;flex-direction:column;gap:4px">
         <span style="${LBL}">граф агента</span>
-        <input id="gName" style="width:220px;padding:6px 10px;border-radius:9px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-size:14px;font-weight:700"/>
+        <input id="gName" style="width:220px;padding:6px 10px;border-radius:9px;border:1px solid var(--line-field);background:var(--field);color:var(--ink);font-size:14px;font-weight:700"/>
       </div>
-      <select id="gPick" title="Сохранённые графы" style="padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:var(--field);color:var(--ink-2);font-size:12px"></select>
+      <select id="gPick" title="Сохранённые графы" style="padding:8px 10px;border-radius:9px;border:1px solid var(--line-field);background:var(--field);color:var(--ink-2);font-size:12px"></select>
       <span id="gDirty" class="chip"></span>
       <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <input id="gTask" placeholder="Задача для графа…" style="width:210px;padding:9px 12px;border-radius:10px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-size:12.5px"/>
+        <input id="gTask" placeholder="Задача для графа…" style="width:210px;padding:9px 12px;border-radius:10px;border:1px solid var(--line-field);background:var(--field);color:var(--ink);font-size:12.5px"/>
         <button id="gNew" class="ico" title="Новый граф" aria-label="Новый граф">＋</button>
         <button id="gCheck" class="ico" title="Проверить граф: связи, права, автономия" aria-label="Проверить граф">✓</button>
         <button id="gSave" class="ico" title="Сохранить граф" aria-label="Сохранить граф">💾</button>
@@ -187,9 +187,9 @@ export async function mount(root, ctx) {
     if (!sel) { $("gInsp").innerHTML = `<div style="padding:20px 4px;text-align:center;font-size:12.5px;color:var(--ink-3)">Выберите узел на холсте.</div>`; return; }
     const n = nodes.find((x) => x.id === sel); if (!n) { sel = null; return paintInsp(); }
     const agOpts = n.kind === "agent" ? `<label style="display:flex;flex-direction:column;gap:6px;margin-top:10px"><span style="${LBL}">агент из каталога</span>
-      <select id="iAgent" style="padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-size:12px"><option value="">— выбрать —</option>${agentsCat.map((a) => `<option value="${esc(a.id)}" ${String(n.agent_id) === String(a.id) ? "selected" : ""}>${esc(a.name)}</option>`).join("")}</select></label>` : "";
+      <select id="iAgent" style="padding:8px 10px;border-radius:9px;border:1px solid var(--line-field);background:var(--field);color:var(--ink);font-size:12px"><option value="">— выбрать —</option>${agentsCat.map((a) => `<option value="${esc(a.id)}" ${String(n.agent_id) === String(a.id) ? "selected" : ""}>${esc(a.name)}</option>`).join("")}</select></label>` : "";
     $("gInsp").innerHTML = `<label style="display:flex;flex-direction:column;gap:6px"><span style="${LBL}">название</span>
-      <input id="iLabel" value="${esc(n.label)}" style="padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-size:12.5px"/></label>
+      <input id="iLabel" value="${esc(n.label)}" style="padding:8px 10px;border-radius:9px;border:1px solid var(--line-field);background:var(--field);color:var(--ink);font-size:12.5px"/></label>
       <div style="font-size:11.5px;color:var(--ink-3);margin-top:8px">тип: ${esc(n.kind)}</div>${agOpts}
       <button id="iDel" style="margin-top:14px;width:100%;padding:9px;border:1px solid rgba(239,68,68,.3);border-radius:9px;background:rgba(239,68,68,.1);color:var(--danger-ink);font-size:12px;font-weight:600;cursor:pointer">Удалить узел</button>`;
     $("iLabel").oninput = (e) => { n.label = e.target.value; setDirty(true); const el = $("gCanvas").querySelector(`.gn[data-id="${n.id}"] span:nth-child(3)`); if (el) el.textContent = n.label; };

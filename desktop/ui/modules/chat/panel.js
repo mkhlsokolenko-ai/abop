@@ -956,7 +956,7 @@ export async function mount(root, ctx) {
     const opts = (id) => abopAgents.map((a) => `<option value="${esc(a.id)}"${String(a.id) === String(id) ? " selected" : ""}>${esc(a.name)}</option>`).join("");
     const rows = cs.steps.map((st, n) => `<div style="display:flex;gap:7px;align-items:center">
         <span style="font-family:var(--mono);font-size:11px;color:var(--ink-3);min-width:14px">${n + 1}.</span>
-        <select class="chStep" data-i="${i}" data-n="${n}" style="flex:1;min-width:0;padding:5px 8px;border-radius:8px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-size:12px">${opts(st.agent_id)}</select>
+        <select class="chStep" data-i="${i}" data-n="${n}" style="flex:1;min-width:0;padding:5px 8px;border-radius:8px;border:1px solid var(--line-field);background:var(--field);color:var(--ink);font-size:12px">${opts(st.agent_id)}</select>
         <button type="button" class="ico ghost chDel" data-i="${i}" data-n="${n}" title="Убрать шаг" aria-label="Убрать шаг ${n + 1}" style="width:24px;height:24px;font-size:11px"${cs.steps.length < 2 ? " disabled" : ""}>✕</button>
       </div>`).join("");
     return `<details style="border:1px solid var(--line);border-radius:10px;padding:8px 10px">
@@ -1083,7 +1083,7 @@ export async function mount(root, ctx) {
     return new Promise((resolve) => {
       let done = false;
       const ov = modal("Почему отклоняете?", `<div style="font-size:12.5px;color:var(--ink-2);line-height:1.55;margin-bottom:10px">«${esc(title)}» не уйдёт. Причина попадёт в журнал и поможет автору агента.</div>
-        <input id="hrReason" placeholder="Например: неверный адресат" style="width:100%;padding:9px 11px;border-radius:10px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-size:13px"/>`,
+        <input id="hrReason" placeholder="Например: неверный адресат" style="width:100%;padding:9px 11px;border-radius:10px;border:1px solid var(--line-field);background:var(--field);color:var(--ink);font-size:13px"/>`,
         () => { done = true; resolve(String((document.getElementById("hrReason") || {}).value || "").trim()); },
         "Отклонить", { danger: true, kicker: "решение", onClose: (v) => { if (v !== true && !done) resolve(null); } });
       setTimeout(() => { const i = document.getElementById("hrReason"); if (i) { i.focus(); i.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); const b = ov.querySelector("#mOk"); if (b) b.click(); } }; } }, 30);
