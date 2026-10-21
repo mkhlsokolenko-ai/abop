@@ -1,0 +1,15 @@
+{
+  "name": "Управляющий потоком разработки",
+  "contract_audit_id": "flow-dev-2026",
+  "graph": {
+    "nodes": [
+      { "id": "flow-metrics", "kind": "skill", "skill": "flow-metrics", "autonomy": "A1", "hitl": false },
+      { "id": "out", "kind": "out", "title": "Справка о потоке → файл",
+        "out": { "channel": "pdf", "to": "potok", "format": "pdf", "run": false, "hitl": true } }
+    ],
+    "edges": [
+      { "from": "flow-metrics", "to": "out" }
+    ]
+  },
+  "зачем": "Один навык и один выход: вся арифметика потока уже посчитана кодом в сущности flow_line, и лишние шаги только добавили бы пересказ. Выход под подтверждением человека: справка уходит руководителю разработки, а не в системы."
+}

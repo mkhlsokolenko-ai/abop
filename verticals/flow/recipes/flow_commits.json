@@ -1,0 +1,78 @@
+{
+ "recipe": "flow_commits",
+ "entity": "commit",
+ "status": "опубликован",
+ "version": 1,
+ "system_id": "gitea",
+ "source": {
+  "kind": "http",
+  "url": "http://127.0.0.1:3001/api/v1/repos/abop/flow-demo/commits?sha=main&limit=100",
+  "root": "",
+  "токен_файл": "/app/secrets/gitea_token",
+  "токен_env": "GITEA_TOKEN",
+  "заголовок": "Authorization",
+  "префикс": "token "
+ },
+ "map_rows": [
+  {
+   "field": "id",
+   "spec": "col:sha"
+  },
+  {
+   "field": "дата",
+   "spec": "col:commit.author.date"
+  },
+  {
+   "field": "автор",
+   "spec": "col:commit.author.name"
+  },
+  {
+   "field": "сообщение",
+   "spec": "col:commit.message"
+  },
+  {
+   "field": "задача",
+   "spec": "regex:#(\\d+)"
+  },
+  {
+   "field": "ветка",
+   "spec": "const:main"
+  },
+  {
+   "field": "репозиторий",
+   "spec": "const:abop/flow-demo"
+  }
+ ],
+ "map": {
+  "id": {
+   "col": "sha"
+  },
+  "дата": {
+   "col": "commit.author.date"
+  },
+  "автор": {
+   "col": "commit.author.name"
+  },
+  "сообщение": {
+   "col": "commit.message"
+  },
+  "задача": {
+   "col": "commit.message",
+   "regex": "#(\\d+)",
+   "иначе": ""
+  },
+  "ветка": {
+   "const": "main"
+  },
+  "репозиторий": {
+   "const": "abop/flow-demo"
+  }
+ },
+ "rules": [],
+ "emit": {
+  "schema": "commit",
+  "ttl_sec": 0,
+  "schema_version": "1.0"
+ },
+ "заметка": "Коммиты главной ветки. Номер задачи вынимается из сообщения коммита шаблоном рецепта: у заказчика это «#123», «PRJ-123» или «task/123» — шаблону не место в коде. Токен лежит файлом, поэтому его нет ни в определении рецепта, ни в выгрузке. Пакет вертикали: адреса источников и путь к файлу токена заказчик меняет на свои при установке — поля карты остаются теми же."
+}

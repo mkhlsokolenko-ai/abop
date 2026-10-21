@@ -1,0 +1,146 @@
+{
+ "recipe": "flow_issues",
+ "entity": "issue",
+ "status": "опубликован",
+ "version": 1,
+ "system_id": "redmine",
+ "source": {
+  "kind": "http",
+  "url": "http://127.0.0.1:3000/issues.json?project_id=flow-demo&status_id=*&limit=100",
+  "root": "issues",
+  "detail_url": "http://127.0.0.1:3000/issues/{id}.json?include=journals",
+  "detail_fields": "issue.journals"
+ },
+ "map_rows": [
+  {
+   "field": "title",
+   "spec": "col:subject"
+  },
+  {
+   "field": "status",
+   "spec": "col:status.name"
+  },
+  {
+   "field": "assignee",
+   "spec": "col:assigned_to.name"
+  },
+  {
+   "field": "id",
+   "spec": "col:id"
+  },
+  {
+   "field": "проект",
+   "spec": "col:project.name"
+  },
+  {
+   "field": "тема",
+   "spec": "col:subject"
+  },
+  {
+   "field": "описание",
+   "spec": "col:description"
+  },
+  {
+   "field": "трекер",
+   "spec": "col:tracker.name"
+  },
+  {
+   "field": "статус",
+   "spec": "col:status.name"
+  },
+  {
+   "field": "закрыт",
+   "spec": "col:status.is_closed"
+  },
+  {
+   "field": "приоритет",
+   "spec": "col:priority.name"
+  },
+  {
+   "field": "ответственный",
+   "spec": "col:assigned_to.name"
+  },
+  {
+   "field": "создана",
+   "spec": "col:created_on"
+  },
+  {
+   "field": "обновлена",
+   "spec": "col:updated_on"
+  },
+  {
+   "field": "закрыта_дата",
+   "spec": "col:closed_on"
+  },
+  {
+   "field": "готовность",
+   "spec": "col:done_ratio"
+  },
+  {
+   "field": "комментарии",
+   "spec": "collect:journals.notes"
+  }
+ ],
+ "map": {
+  "id": {
+   "col": "id"
+  },
+  "проект": {
+   "col": "project.name"
+  },
+  "тема": {
+   "col": "subject"
+  },
+  "описание": {
+   "col": "description"
+  },
+  "трекер": {
+   "col": "tracker.name"
+  },
+  "статус": {
+   "col": "status.name"
+  },
+  "закрыт": {
+   "col": "status.is_closed"
+  },
+  "приоритет": {
+   "col": "priority.name"
+  },
+  "ответственный": {
+   "col": "assigned_to.name"
+  },
+  "создана": {
+   "col": "created_on"
+  },
+  "обновлена": {
+   "col": "updated_on"
+  },
+  "закрыта_дата": {
+   "col": "closed_on"
+  },
+  "готовность": {
+   "col": "done_ratio"
+  },
+  "комментарии": {
+   "col": "journals",
+   "collect": "notes",
+   "sep": " | "
+  },
+  "title": {
+   "col": "subject"
+  },
+  "status": {
+   "col": "status.name"
+  },
+  "assignee": {
+   "col": "assigned_to.name"
+  }
+ },
+ "rules": [],
+ "emit": {
+  "schema": "issue",
+  "ttl_sec": 0,
+  "schema_version": "1.0"
+ },
+ "заметка": "Задачи трекера из Redmine. Комментарии собираются в одну строку (collect) — именно в них живут фразы ожидания, по которым движок находит блокировки. Проект задаётся в адресе: у заказчика это будет его трекер и его проект, карта полей остаётся той же. Поля title/status/assignee — контракт канонической сущности `issue`, которую наполняют и другие кейсы; русские поля лежат рядом и несут то, что нужно проверкам регламента. Пакет вертикали: адреса источников и путь к файлу токена заказчик меняет на свои при установке — поля карты остаются теми же."
+}

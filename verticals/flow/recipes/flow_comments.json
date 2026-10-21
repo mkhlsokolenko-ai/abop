@@ -1,0 +1,72 @@
+{
+ "recipe": "flow_comments",
+ "entity": "comment",
+ "status": "опубликован",
+ "version": 1,
+ "system_id": "redmine",
+ "source": {
+  "kind": "http",
+  "url": "http://127.0.0.1:3000/issues.json?project_id=flow-demo&status_id=*&limit=100",
+  "root": "issues",
+  "detail_url": "http://127.0.0.1:3000/issues/{id}.json?include=journals",
+  "detail_fields": "issue.journals"
+ },
+ "map_rows": [
+  {
+   "field": "id",
+   "spec": "col:элемент.id"
+  },
+  {
+   "field": "задача",
+   "spec": "col:id"
+  },
+  {
+   "field": "дата",
+   "spec": "col:элемент.created_on"
+  },
+  {
+   "field": "автор",
+   "spec": "col:элемент.user.name"
+  },
+  {
+   "field": "текст",
+   "spec": "col:элемент.notes"
+  },
+  {
+   "field": "тема",
+   "spec": "col:subject"
+  }
+ ],
+ "map": {
+  "id": {
+   "col": "элемент.id"
+  },
+  "задача": {
+   "col": "id"
+  },
+  "дата": {
+   "col": "элемент.created_on"
+  },
+  "автор": {
+   "col": "элемент.user.name"
+  },
+  "текст": {
+   "col": "элемент.notes"
+  },
+  "тема": {
+   "col": "subject"
+  }
+ },
+ "rules": [
+  {
+   "assert": "текст != \"\""
+  }
+ ],
+ "emit": {
+  "schema": "comment",
+  "ttl_sec": 0,
+  "schema_version": "1.0",
+  "explode": "journals"
+ },
+ "заметка": "Комментарии задач — отдельными записями (emit.explode раскладывает список журналов задачи). Так у каждого комментария остаётся своя дата, и движок считает «сколько работа ждёт» от неё, а не от последнего обновления задачи. Пустые записи журнала (только смена статуса) отбрасываются правилом. Пакет вертикали: адреса источников и путь к файлу токена заказчик меняет на свои при установке — поля карты остаются теми же."
+}
