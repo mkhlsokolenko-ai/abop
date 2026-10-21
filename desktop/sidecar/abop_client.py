@@ -414,6 +414,22 @@ def control_revoke(binding: str) -> dict:
                 timeout=30) or {}
 
 
+def vertical_active() -> dict:
+    """Профиль активной вертикали: что показывать человеку и какими словами.
+
+    Одно ядро — много представлений. Выбор представления живёт в настройках установки на сервере,
+    а не в сборке приложения: переключение не должно требовать новой версии.
+    """
+    r = _req("GET", "/api/verticals/active", timeout=20)
+    return r if isinstance(r, dict) else {}
+
+
+def vertical_activate(vid: str) -> dict:
+    """Переключить представление. Пустой идентификатор снимает выбор — оболочка снова полная."""
+    имя = urllib.parse.quote(str(vid or "-"))
+    return _req("POST", "/api/verticals/" + имя + "/activate", {}, timeout=30) or {}
+
+
 def findings_open(project: str = "", process: str = "") -> dict:
     """Находки реестра без решения: что нашёл расчёт и ждёт слова человека.
 

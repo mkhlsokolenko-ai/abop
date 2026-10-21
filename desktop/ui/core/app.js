@@ -274,7 +274,24 @@ export const ctx = {
   notify: извещение,
   reload: (id) => reloadModule(id),
   login: () => startLogin(),
+  // Слова вертикали: в графике предмет — «пункт», в потоке разработки — «задача». Панель,
+  // которая говорит своими словами, в чужой вертикали читается как чужая.
+  термин,
+  вертикаль: () => вертикаль(),
 };
+
+// Профиль активной вертикали: ядро одно, представлений много. Разделы, термины и начальный
+// экран объявлены в пакете вертикали (`оболочка` в манифесте), а не в сборке приложения —
+// поэтому переключение представления не требует новой версии .exe.
+//
+// Пустой профиль — не ошибка, а честное «всё»: прятать разделы из-за того, что вертикаль не
+// выбрана или сервер недоступен, значит врать о возможностях приложения.
+let ПРОФИЛЬ = { активная: null, доступные: [], почему: "" };
+function вертикаль() { return ПРОФИЛЬ.активная || null; }
+export function термин(ключ, если_нет) {
+  const т = (вертикаль() || {}).термины || {};
+  return т[ключ] || если_нет || ключ;
+}
 
 const $ = (id) => document.getElementById(id);
 let MODULES = [];
@@ -305,6 +322,46 @@ async function startLogin(запомнить) {
   await renderAuth();
   reloadAll();
 }
+// Переключатель представления: у консультанта вертикалей несколько, и выбор — его, а не сборки.
+// Кнопка показывается ТОЛЬКО когда есть из чего выбирать: единственная установленная вертикаль
+// (обычный случай у заказчика) не нуждается в переключателе и не должна его показывать.
+function renderVertical() {
+  const box = $("verticalBox");
+  if (!box) return;
+  const поставленные = (ПРОФИЛЬ.доступные || []).filter((в) => в["установлена"]);
+  const текущая = вертикаль();
+  if (поставленные.length < 2 && !ПРОФИЛЬ["почему"]) {
+    box.innerHTML = текущая
+      ? `<span style="font-size:11px;color:var(--ink-3)" title="${esc(текущая["зачем"] || "")}">${esc(текущая["название"] || текущая.id)}</span>`
+      : "";
+    return;
+  }
+  const подпись = текущая ? (текущая["название"] || текущая.id) : "Все разделы";
+  box.innerHTML = `<button id="vertBtn" class="btn sm" title="Представление: какие разделы и какими словами">
+      🧩 ${esc(подпись)}</button>`;
+  $("vertBtn").onclick = () => {
+    const строки = [["", "Все разделы (без вертикали)"]].concat(
+      поставленные.map((в) => [в.id, в["название"] || в.id]));
+    const ov = modal("Представление",
+      `<div style="display:flex;flex-direction:column;gap:8px">
+        ${ПРОФИЛЬ["почему"] ? `<div style="font-size:12px;color:var(--warn-ink,#92400e)">${esc(ПРОФИЛЬ["почему"])}</div>` : ""}
+        ${строки.map(([id, имя]) => `<button data-v="${esc(id)}" class="btn${(текущая ? текущая.id : "") === id ? " primary" : ""}" style="justify-content:flex-start">${esc(имя)}</button>`).join("")}
+        <div class="dcard-note">Представление меняет только то, что видно: разделы, слова и начальный экран. Данные, агенты и права остаются те же.</div>
+      </div>`, null, "Закрыть", { width: "420px" });
+    ov.querySelectorAll("[data-v]").forEach((b) => b.onclick = async () => {
+      try {
+        ПРОФИЛЬ = await api("/api/vertical/activate",
+                            { method: "POST", body: JSON.stringify({ id: b.dataset.v }) }) || ПРОФИЛЬ;
+        ov.close(true);
+        renderNav(); renderQuick(); renderVertical();
+        const старт = (вертикаль() || {})["начальный_экран"] || "";
+        if (старт && railModules().some((m) => m.id === старт)) loadModule(старт);
+        toast("Представление: " + ((вертикаль() || {})["название"] || "все разделы"), "ok");
+      } catch (e) { toast(humanError(e), "danger"); }
+    });
+  };
+}
+
 function renderAuthBox(me) {
   const box = $("authBox"); if (!box) return;
   if (me.authed) {
@@ -410,7 +467,18 @@ const RAIL_ORDER = ["chat", "decisions", "control", "runs", "agents", "watch", "
 const RAIL_TITLE = { agents: "Мои агенты" };
 function railModules() {
   const rank = (id) => { const i = RAIL_ORDER.indexOf(id); return i < 0 ? RAIL_ORDER.length : i; };
-  return visibleModules().slice().sort((a, b) => rank(a.id) - rank(b.id));
+  return разделыПрофиля(visibleModules()).slice().sort((a, b) => rank(a.id) - rank(b.id));
+}
+// Разделы вертикали: лишний раздел не ломает работу, но мешает — руководителю разработки не
+// нужны портфель и график. Кабинет и чат остаются всегда: без первого человек не выйдет и не
+// увидит, чьи данные на экране, без второго не сможет ничего попросить.
+const РАЗДЕЛЫ_ВСЕГДА = new Set(["chat", "cabinet"]);
+export function разделыПрофиля(модули, профиль) {
+  const в = профиль === undefined ? вертикаль() : профиль;
+  const нужные = (в && в.разделы) || [];
+  if (!нужные.length) return модули;
+  const набор = new Set(нужные.concat([...РАЗДЕЛЫ_ВСЕГДА]));
+  return модули.filter((m) => набор.has(m.id));
 }
 // Сколько действий ждёт решения — показываем на кнопке чата в боковом меню: очередь жила только
 // внутри чата, и из «Прогонов» или «Кабинета» о висящих письмах и задачах было не узнать.
@@ -877,9 +945,15 @@ async function boot() {
   if (window.ape && window.ape.onAnalyze) window.ape.onAnalyze((text) => loadModule("chat", { analyze: text || "" }));
   await renderAuth();
   try { MODULES = await api("/api/modules"); } catch { MODULES = []; }
-  renderNav(); renderQuick();
+  // Профиль читаем ДО первой отрисовки рейла: иначе человек видит полный список разделов, и он
+  // схлопывается у него на глазах — хуже, чем если бы профиля не было вовсе.
+  try { ПРОФИЛЬ = await api("/api/vertical") || ПРОФИЛЬ; } catch { /* офлайн: оболочка полная */ }
+  renderNav(); renderQuick(); renderVertical();
   $("panel").innerHTML = "";
-  if (MODULES.length) loadModule(MODULES.find((m) => m.id === "chat") ? "chat" : MODULES[0].id);
+  const старт = (вертикаль() || {})["начальный_экран"] || "";
+  const доступен = (id) => railModules().some((m) => m.id === id);
+  if (MODULES.length && старт && доступен(старт)) loadModule(старт);
+  else if (MODULES.length) loadModule(MODULES.find((m) => m.id === "chat") ? "chat" : MODULES[0].id);
   else $("panel").innerHTML = `<div style="padding:24px;display:flex;flex-direction:column;gap:10px"><div style="font-weight:700">Модули не найдены</div><div class="faint" style="font-size:12.5px">Движок запущен, но не отдал список разделов. Перезапустите приложение.</div></div>`;
   // Строка живой работы: видна из любого раздела, опрашивается с растущей паузой. Ставим ПОСЛЕ
   // ветки if/else — первая попытка воткнула вызов между `if` и `else`, и модуль перестал

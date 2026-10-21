@@ -505,6 +505,10 @@
  ],
  [
   "GET",
+  "/api/verticals/active"
+ ],
+ [
+  "GET",
   "/api/verticals/{vid}"
  ],
  [
@@ -930,6 +934,10 @@
  [
   "POST",
   "/api/triggers/{agent_id}/{trigger_id}/fire"
+ ],
+ [
+  "POST",
+  "/api/verticals/{vid}/activate"
  ],
  [
   "POST",

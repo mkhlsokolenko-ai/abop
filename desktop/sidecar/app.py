@@ -17,7 +17,7 @@ import urllib.request
 import webbrowser
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -260,6 +260,32 @@ def do_logout() -> dict:
     формальность — не отозванный токен остаётся действующим ключом к рабочим системам."""
     итог = auth.logout() or {}
     return {"ok": True, "отозван": bool(итог.get("отозван")), "почему": итог.get("почему", "")}
+
+
+@app.get("/api/vertical")
+def vertical() -> dict:
+    """Профиль активной вертикали для оболочки.
+
+    Офлайн — не ошибка приложения, а состояние: отдаём пустой профиль, и оболочка остаётся
+    полной. Прятать разделы из-за того, что сервер недоступен, значит врать о возможностях.
+    """
+    from . import abop_client as abop
+    try:
+        return abop.vertical_active()
+    except Exception as ex:  # noqa: BLE001
+        return {"активная": None, "доступные": [], "почему": "нет связи с ABOP (%s)"
+                % type(ex).__name__}
+
+
+@app.post("/api/vertical/activate")
+def vertical_switch(body: dict | None = None) -> dict:
+    """Сменить представление. Право решает сервер: десктоп только передаёт выбор."""
+    from . import abop_client as abop
+    try:
+        return abop.vertical_activate(str((body or {}).get("id") or ""))
+    except Exception as ex:  # noqa: BLE001
+        код = int(getattr(ex, "code", 0) or 0)
+        raise HTTPException(код if 400 <= код < 600 else 502, str(ex)[:400]) from ex
 
 
 # UI десктопа с 127.0.0.1/ui (один origin с /api/* → без PNA). Каталог наполняется в startup (_sync_ui).
