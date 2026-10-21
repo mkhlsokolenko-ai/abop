@@ -468,6 +468,60 @@ def _b_raw(b: dict, result: dict, ctx: dict) -> str:
     return ""      # подставляется в render() из ctx: сюда попадать не должен
 
 
+# Цвета зон — по подписи из данных. Код не решает, какая зона страшнее: он только раскрашивает
+# то, что назвала организация. Незнакомая подпись останется нейтральной, а не исчезнет.
+_ЗОНЫ_ЦВЕТ = {"красная": ("#fee2e2", "#991b1b"), "жёлтая": ("#fef3c7", "#92400e"),
+               "желтая": ("#fef3c7", "#92400e"), "зелёная": ("#dcfce7", "#166534"),
+               "зеленая": ("#dcfce7", "#166534")}
+
+
+def _b_heatmap(b: dict, result: dict, ctx: dict) -> str:
+    """Тепловая карта рисков: строки — влияние, столбцы — вероятность, в клетке — сколько и что.
+
+    Решётку рисует код, но ни одной подписи не придумывает: полосы и зоны приходят в данных
+    (`вероятность`, `влияние`, `ячейки` с полем `зона`). У другой организации полос может быть
+    четыре или шесть — карта соберётся так же.
+    """
+    карта = value(result, b.get("src") or "")
+    if not isinstance(карта, dict):
+        return ""
+    столбцы = [str(с) for с in (карта.get("вероятность") or []) if str(с).strip()]
+    строки = [str(с) for с in (карта.get("влияние") or []) if str(с).strip()]
+    ячейки = карта.get("ячейки") or []
+    если_пусто = str(карта.get("почему_пусто") or "")
+    if not (столбцы and строки):
+        # Пустая карта — не повод промолчать: сказать, почему её нет, важнее, чем не показать.
+        return (_h2(b) + f"<div class='dcard-note'>{esc(если_пусто)}</div>") if если_пусто else ""
+    по_клетке = {}
+    for я in ячейки:
+        if isinstance(я, dict):
+            по_клетке[(str(я.get("строка") or ""), str(я.get("столбец") or ""))] = я
+    head = "".join(f"<th>{esc(с)}</th>" for с in столбцы)
+    тело = []
+    # Влияние сверху вниз от тяжёлого к легкому: красный угол читается первым, как у всех матриц.
+    for стр in reversed(строки):
+        клетки = []
+        for стб in столбцы:
+            я = по_клетке.get((стр, стб)) or {}
+            сколько = я.get("сколько") or 0
+            фон, цвет = _ЗОНЫ_ЦВЕТ.get(str(я.get("зона") or "").strip().lower(),
+                                        ("transparent", "var(--ink-2)"))
+            коды = esc(str(я.get("коды") or ""))
+            внутри = (f"<b style='font-size:15px'>{сколько}</b>"
+                      f"<div style='font-size:9.5px;line-height:1.25;margin-top:2px'>{коды}</div>"
+                      if сколько else "<span style='color:var(--ink-3)'>—</span>")
+            клетки.append(f"<td style='background:{фон};color:{цвет};vertical-align:top;"
+                          f"padding:6px 7px'>{внутри}</td>")
+        тело.append(f"<tr><th style='text-align:left;white-space:nowrap'>{esc(стр)}</th>"
+                    + "".join(клетки) + "</tr>")
+    не_оценено = карта.get("не_оценено") or 0
+    подпись = (f"<div class='dcard-note'>Не оценено правилами: {не_оценено} — у этих рисков нет "
+               "вероятности и влияния в данных, и в карту они не попали.</div>"
+               if не_оценено else "")
+    return (_h2(b) + "<table class='reg'><thead><tr><th>влияние ↓ / вероятность →</th>"
+            + head + "</tr></thead><tbody>" + "".join(тело) + "</tbody></table>" + подпись)
+
+
 def _h2(b: dict) -> str:
     t = b.get("title")
     return f"<h2>{esc(t)}</h2>" if t else ""
@@ -478,7 +532,8 @@ _FRAME = ("head", "note", "sign", "part")
 
 _BLOCKS = {"part": _b_part, "head": _b_head, "stamp": _b_stamp, "attrs": _b_attrs, "verdict": _b_verdict,
            "kpi": _b_kpi, "prose": _b_prose, "list": _b_list, "cards": _b_cards,
-           "register": _b_register, "pre": _b_pre, "sign": _b_sign, "note": _b_note}
+           "register": _b_register, "pre": _b_pre, "sign": _b_sign, "note": _b_note,
+           "heatmap": _b_heatmap}
 
 
 # Имена блоков для проверки раскладки, пришедшей из редактора: что не в списке — опечатка, и
