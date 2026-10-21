@@ -67,3 +67,29 @@ def decide(item_id: str, body: РешениеIn) -> dict:
         return {"ok": True, "result": abop.hitl_approve(item_id, body.decision, body.reason)}
     except Exception as ex:  # noqa: BLE001
         raise _ошибка(ex) from ex
+
+
+@router.get("/findings")
+def findings(project: str = "", process: str = "") -> dict:
+    """Находки реестра, ждущие решения: «это проблема» или «так и должно быть».
+
+    Раньше находка жила внутри прогона: чтобы её найти, надо было помнить, какой прогон её родил.
+    Здесь она лежит рядом с доказательством, и решение по ней — одно движение.
+    """
+    try:
+        return abop.findings_open(project, process)
+    except Exception as ex:  # noqa: BLE001
+        raise _ошибка(ex) from ex
+
+
+class НаходкаIn(BaseModel):
+    состояние: str = "подтверждено"
+    почему: str = ""
+
+
+@router.post("/findings/{finding_id}/decide")
+def finding_decide(finding_id: str, body: НаходкаIn) -> dict:
+    try:
+        return {"ok": True, "result": abop.finding_decide(finding_id, body.состояние, body.почему)}
+    except Exception as ex:  # noqa: BLE001
+        raise _ошибка(ex) from ex

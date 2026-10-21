@@ -414,6 +414,35 @@ def control_revoke(binding: str) -> dict:
                 timeout=30) or {}
 
 
+def findings_open(project: str = "", process: str = "") -> dict:
+    """Находки реестра без решения: что нашёл расчёт и ждёт слова человека.
+
+    Отдельно от очереди подтверждений: заявка требует «отправить или нет», находка — «это
+    проблема или норма». Сводка пользы (найдено → подтверждено → исправлено) приходит тем же
+    ответом, чтобы раздел не считал её сам.
+    """
+    запрос = []
+    if str(project or "").strip():
+        запрос.append("project=" + urllib.parse.quote(str(project)))
+    if str(process or "").strip():
+        запрос.append("process=" + urllib.parse.quote(str(process)))
+    запрос.append("state=найдено")
+    r = _req("GET", "/api/registry/findings?" + "&".join(запрос), timeout=25)
+    return r if isinstance(r, dict) else {"findings": r or [], "сводка": {}}
+
+
+def finding_decide(finding_id: str, состояние: str, почему: str = "") -> dict:
+    """Решение человека по находке. Отказ — такой же законный исход, как согласие."""
+    return _req("POST", "/api/registry/findings/" + urllib.parse.quote(str(finding_id)) + "/decide",
+                {"состояние": состояние, "почему": почему}, timeout=30) or {}
+
+
+def health_links() -> dict:
+    """Здоровье связей: системы, свежесть данных по происхождению записей и где заглушка."""
+    r = _req("GET", "/api/health/links", timeout=30)
+    return r if isinstance(r, dict) else {}
+
+
 def hitl_queue_mine(mine: str = "1") -> dict:
     """Очередь решений с ответом целиком: разделу «Решения» нужно и `всего`, и порядок.
 

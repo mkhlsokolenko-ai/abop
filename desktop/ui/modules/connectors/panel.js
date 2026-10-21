@@ -16,6 +16,32 @@ function row(icon, title, note, right) {
 export async function mount(root, ctx) {
   const { api, toast, humanError } = ctx;
   let cat = {}; try { cat = await api(K + "/list"); } catch (e) { cat = { abop_error: humanError(e) }; }
+  // Здоровье связей: вопрос «откуда это число» имеет право на короткий ответ. Свежесть берётся
+  // из происхождения записей, а не из журнала прогонов: журнал говорит, что рецепт запускали, а
+  // происхождение — что данные доехали.
+  let здоровье = null, ошибкаЗдоровья = "";
+  try { здоровье = await api(K + "/health"); } catch (e) { ошибкаЗдоровья = humanError(e); }
+
+  const свежесть = Object.entries((здоровье || {})["данные"] || {}).map(([сущность, д]) => {
+    const часов = Number(д["часов_назад"]);
+    const давно = isFinite(часов) && часов > 24;
+    const правый = `<span class="chip${давно ? "" : " on"}" title="${esc(д["рецепты"] || "")}">${
+      д["последняя_загрузка"] ? esc(д["последняя_загрузка"]) : "без метки"}</span>`;
+    return row(давно ? "🕰" : "🟢", сущность,
+      `${д["записей"]} записей${isFinite(часов) ? ` · ${часов} ч назад` : ""}${
+        д["рецепты"] ? " · " + д["рецепты"] : ""}`, правый);
+  }).join("");
+
+  const заглушки = Object.entries((здоровье || {})["заглушки"] || {}).map(([сущность, сколько]) =>
+    row("🧪", сущность, `${сколько} записей помечены источником «заглушка» — решение по ним принимать нельзя`,
+      `<span class="chip">заглушка</span>`)).join("");
+
+  const системы = ((здоровье || {})["системы"] || []).map((c) =>
+    row(c["заглушка"] === "да" ? "🧪" : "🔌", c["система"],
+      [c["вид"], c["роль"], c["адрес"], "ключ: " + c["ключ"],
+       "отделы: " + c["доступна_отделам"]].filter(Boolean).join(" · "),
+      `<span class="chip${c["заглушка"] === "да" ? "" : " on"}">${
+        c["заглушка"] === "да" ? "заглушка" : c["egress"] || "—"}</span>`)).join("");
 
   const abopConns = (cat.connectors || []).map((c) => {
     const ok = c.status !== "blocked";
@@ -43,6 +69,12 @@ export async function mount(root, ctx) {
       </div>
 
       ${abopBlock || `<div style="${CARD}"><span style="${LBL}">коннекторы</span><span style="font-size:12.5px;color:var(--ink-3)">В ABOP пока нет подключённых коннекторов.</span></div>`}
+
+      ${ошибкаЗдоровья
+        ? `<div style="${CARD};gap:8px"><span style="${LBL}">здоровье связей</span><span style="font-size:12.5px;color:var(--ink-3)">Не удалось получить: ${esc(ошибкаЗдоровья)}</span></div>`
+        : `${системы ? `<div style="${CARD};gap:12px"><span style="${LBL}">системы установки · роль и доступ</span>${системы}</div>` : ""}
+           ${свежесть ? `<div style="${CARD};gap:12px"><span style="${LBL}">когда данные доехали · по происхождению записей, а не по журналу прогонов</span>${свежесть}</div>` : ""}
+           ${заглушки ? `<div style="${CARD};gap:12px;border-color:var(--warn-line,rgba(251,191,36,.4))"><span style="${LBL}">вместо источника — заглушка</span>${заглушки}</div>` : ""}`}
 
       <div style="${CARD};gap:12px"><span style="${LBL}">локальные источники (права ОС)</span>${localConns}</div>
 

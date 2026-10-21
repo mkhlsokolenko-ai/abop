@@ -20,6 +20,11 @@ export async function mount(root, ctx) {
   const { api, esc, toast, humanError, card, origin, sanitizeHtml, setHitlCount } = ctx;
   let данные = null, err = "", loading = true, busy = "";
   let открыт = "", предмет = null;
+  // Второй поток раздела: находки расчёта, ждущие слова человека. Это не то же самое, что заявка
+  // на внешнее действие: там вопрос «отправить или нет», здесь — «это проблема или норма».
+  // Поэтому два списка, а не один: смешать их значит заставить человека каждый раз угадывать,
+  // чего от него хотят.
+  let находки = [], сводка = {}, ошибкаНаходок = "";
 
   async function load() {
     loading = true; render();
@@ -30,7 +35,64 @@ export async function mount(root, ctx) {
       // экране: фильтр и прокрутка не должны менять число ждущих решений.
       if (typeof setHitlCount === "function") setHitlCount((данные["queue"] || []).length);
     } catch (e) { err = humanError(e); данные = null; }
+    try {
+      const р = await api(M + "/findings");
+      находки = р.findings || []; сводка = р["сводка"] || {}; ошибкаНаходок = "";
+    } catch (e) { находки = []; ошибкаНаходок = humanError(e); }
     loading = false; render();
+  }
+
+  async function решитьНаходку(id, состояние) {
+    busy = id; render();
+    try {
+      await api(M + "/findings/" + encodeURIComponent(id) + "/decide",
+                { method: "POST", body: JSON.stringify({ состояние, почему: "" }) });
+      toast(состояние === "подтверждено" ? "Отмечено как проблема" : "Отмечено как норма");
+      await load();
+    } catch (e) { toast(humanError(e), "err"); }
+    finally { busy = ""; render(); }
+  }
+
+  function находкаКарточка(н) {
+    const ждёт = busy === н.id;
+    // Доказательство — главное на карточке: «работа заблокирована» без цитаты это мнение, а
+    // решать человек должен по факту, а не по нашему слову.
+    const доказательство = String(н["доказательство"] || "");
+    return card({
+      "что": н["код"] || "находка",
+      "класс": н["серьёзность"] || "",
+      "состояние": н["величина"] || "",
+      "справа": [н["проект"], н["процесс"]].filter(Boolean).join(" · "),
+      "суть": [н["предмет"] ? "предмет: " + н["предмет"] : "", н["название"] || ""]
+        .filter(Boolean).join(" — "),
+      "происхождение": [доказательство, н["основание"] ? "основание: " + н["основание"] : ""]
+        .filter(Boolean).join(" · "),
+      "действия": [
+        `<button data-fy="${esc(н.id)}" style="${BTN_OK}" ${ждёт ? "disabled" : ""}>Это проблема</button>`,
+        `<button data-fn="${esc(н.id)}" style="${BTN}" ${ждёт ? "disabled" : ""}>Так и должно быть</button>`,
+      ],
+    });
+  }
+
+  function польза() {
+    const в = сводка || {};
+    if (!в["всего"]) return "";
+    // Две доли и обе честные: первая говорит, попадаем ли мы в настоящие проблемы, вторая —
+    // доходит ли дело до изменения в системах. Второе число больше говорит о заказчике, чем о
+    // нас, и прятать его незачем.
+    const части = [
+      `найдено ${в["всего"]}`,
+      в["подтверждено"] ? `признано ${в["подтверждено"]}` : "",
+      в["отклонено"] ? `норма ${в["отклонено"]}` : "",
+      в["исправлено"] ? `исправлено ${в["исправлено"]}` : "",
+      в["не_воспроизводится"] ? `перестало воспроизводиться ${в["не_воспроизводится"]}` : "",
+      в["доля_подтверждения"] !== "" && в["доля_подтверждения"] != null
+        ? `доля признания ${в["доля_подтверждения"]} %` : "",
+      в["возвращались"] ? `возвращались ${в["возвращались"]}` : "",
+    ].filter(Boolean);
+    return origin("За всё время: " + части.join(" · ") +
+      ". Исчезнувшая находка без признания — «перестало воспроизводиться», а не «исправлено»: " +
+      "данные могли перестать приходить.");
   }
 
   async function раскрыть(id) {
@@ -115,14 +177,25 @@ export async function mount(root, ctx) {
       ${err ? `<div style="font-size:12.5px;color:var(--danger-ink)">${esc(err)}</div>` : ""}
       ${loading && !данные ? `<div style="${LBL}">читаю очередь…</div>` : ""}
       ${!loading && !err && !q.length ? `<div style="display:flex;flex-direction:column;gap:6px">
-        <div style="font-size:13px">Решений нет — ничего не ждёт вас.</div>
+        <div style="font-size:13px">${находки.length
+          ? "Внешних действий на подтверждение нет — но ниже есть находки расчёта."
+          : "Решений нет — ничего не ждёт вас."}</div>
         ${origin("Письмо наружу и необратимое действие попадут сюда сами: цепочка при этом дойдёт до конца, а наружу ничего не уйдёт без вашего слова.")}
       </div>` : ""}
       ${q.map(карточка).join("")}
+      ${находки.length || ошибкаНаходок ? `<div style="display:flex;flex-direction:column;gap:4px;margin-top:6px">
+        <h2 style="margin:0;font-size:17px;font-weight:700">Что нашёл расчёт</h2>
+        ${origin("Это не отправка наружу, а признание: «да, это проблема» или «так и должно быть». Отказ записывается так же, как согласие — по отклонённым находкам правят правила.")}
+      </div>` : ""}
+      ${ошибкаНаходок ? `<div style="font-size:12.5px;color:var(--danger-ink)">${esc(ошибкаНаходок)}</div>` : ""}
+      ${находки.map(находкаКарточка).join("")}
+      ${польза()}
     </div>`;
     root.querySelectorAll("[data-open]").forEach((b) => b.onclick = () => раскрыть(b.dataset.open));
     root.querySelectorAll("[data-go]").forEach((b) => b.onclick = () => решить(b.dataset.go, "approve"));
     root.querySelectorAll("[data-no]").forEach((b) => b.onclick = () => решить(b.dataset.no, "reject"));
+    root.querySelectorAll("[data-fy]").forEach((b) => b.onclick = () => решитьНаходку(b.dataset.fy, "подтверждено"));
+    root.querySelectorAll("[data-fn]").forEach((b) => b.onclick = () => решитьНаходку(b.dataset.fn, "отклонено"));
   }
 
   render();

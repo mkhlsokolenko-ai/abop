@@ -12,7 +12,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from ... import abop_client as abop
@@ -133,3 +133,17 @@ def ingest(body: IngestIn) -> dict:
     if not text.strip():
         return {"ok": False, "error": "empty"}
     return {"ok": True, "name": os.path.basename(body.path), "chars": len(text), "text": text}
+
+
+@router.get("/health")
+def health() -> dict:
+    """Здоровье связей: откуда данные, когда доехали и где вместо источника заглушка.
+
+    Вопрос «откуда это число» имеет право на короткий ответ. Свежесть берётся из происхождения
+    записей Data Plane, а не из журнала прогонов: журнал говорит, что рецепт запускали, а
+    происхождение — что данные доехали. В пилоте путаница между этим стоит доверия.
+    """
+    try:
+        return abop.health_links()
+    except Exception as ex:  # noqa: BLE001
+        raise HTTPException(502, str(ex)[:400]) from ex
