@@ -403,6 +403,12 @@ app.include_router(_routes_channels.router)
 app.include_router(_routes_control.router)
 app.include_router(_routes_backlog.router)
 
+# Входящие и здоровье связей: решения человека и происхождение данных — на отдельных ручках,
+# потому что это рабочие места, а не врезки в журнал прогонов.
+from .routes import inbox as _routes_inbox  # noqa: E402
+
+app.include_router(_routes_inbox.router)
+
 # Инъекция рецептов и коннекторов в ядро `ape` — забота СТАРТА, а не маршрута, но живёт она
 # рядом с доменом данных. Берём оттуда по имени: дублировать функцию ради чистоты импорта значило
 # бы завести второй путь инициализации Data Plane.
