@@ -571,6 +571,28 @@ _CHANNEL_SYSTEM = {"redmine": "redmine", "bookstack": "bookstack", "email": "mai
                    "yandex": "mailpit", "yougile": "yougile", "twenty": "twenty", "nocodb": "nocodb"}
 
 
+КЛЮЧ_РЕЖИМА = "режим_записи"
+РЕЖИМ_ТОЛЬКО_ЧТЕНИЕ = "только_чтение"
+
+
+async def _режим_записи() -> str:
+    """Как установка относится к записи в чужие системы.
+
+    Два режима, и оба честные. «через_подтверждение» (по умолчанию) — ничего не уходит без слова
+    человека, но уходит. «только_чтение» — не уходит вовсе: команда собирается, показывается и
+    отдаётся файлом, чтобы человек загрузил её сам.
+
+    Второй режим нужен не нам, а заказчику: у консервативной службы безопасности «агент пишет в
+    учётную систему» не проходит ни в каком виде, и отказываться от такого пилота глупо — тем
+    более что ценность у нас в расчёте, а не в кнопке «отправить».
+    """
+    try:
+        конфиг = await admin_store.all() or {}
+    except Exception:  # noqa: BLE001 — настройка недоступна: безопаснее считать режим обычным
+        return ""
+    return str(конфиг.get(КЛЮЧ_РЕЖИМА) or "").strip()
+
+
 async def _send_channel(cfg: dict, agent_name: str, html_report: str, real: bool) -> str:
     """Отправка отчёта в канал OUT-узла (почта/BookStack/YouGile/Яндекс/PDF). real=False → dry_run
     (превью). Переиспользуется прогоном и подтверждением HITL (approve → real=True)."""
@@ -774,6 +796,7 @@ async def _deliver_templates(agent: dict, result: dict, actor: str, skill_schema
     run_id = result.get("run_id") or (result.get("verdict") or {}).get("run_id") or ""
     deliveries = list(result.get("delivery") or [])
     made = 0
+    режим = await _режим_записи()
     for so in result.get("skill_outputs") or []:
         sid = so.get("skill") or ""
         spec = (skill_schemas.get(sid) or {}).get("delivery")
@@ -794,6 +817,23 @@ async def _deliver_templates(agent: dict, result: dict, actor: str, skill_schema
             await access.audit_denial(actor, fam_key, spec["system"], "deliver:" + str(spec.get("type")), reason)
             deliveries.append({"node": "tpl:" + sid, "title": f"{spec['system']}/{spec['type']} × {len(cmds)}", "channel": spec["system"],
                                "to": spec["system"], "mode": "denied", "result": f"⛔ доступ к «{spec['system']}» закрыт (ABAC): {reason}"})
+            continue
+        if режим == РЕЖИМ_ТОЛЬКО_ЧТЕНИЕ:
+            # Заявку не создаём: кнопка «отправить» в режиме только чтения — обещание, которого
+            # установка не выполнит. Команда остаётся видимой и выгружается файлом.
+            for cmd in cmds[:20]:
+                deliveries.append({
+                    "node": "tpl:" + sid, "title": cmd["title"], "channel": cmd["system"],
+                    "to": cmd["system"] + "/" + cmd["type"], "format": "command",
+                    "mode": "только_чтение", "выгрузка": delivery_mod.preview_html(cmd),
+                    "payload": cmd["payload"],
+                    "result": ("установка работает в режиме «только чтение»: команда собрана и "
+                               "показана, но наружу не уходит — загрузите её сами")})
+                made += 1
+            await audit_store.record(actor, "agent.deliver", agent.get("id"),
+                                     {"channel": spec["system"], "type": spec["type"],
+                                      "mode": РЕЖИМ_ТОЛЬКО_ЧТЕНИЕ, "skill": sid,
+                                      "count": len(cmds)}, severity="info")
             continue
         for cmd in cmds[:20]:
             item = await hitl_store.create(

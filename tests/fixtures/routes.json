@@ -513,6 +513,10 @@
  ],
  [
   "GET",
+  "/api/verticals/{vid}/baseline"
+ ],
+ [
+  "GET",
   "/desktop-ui-bundle"
  ],
  [
@@ -942,6 +946,10 @@
  [
   "POST",
   "/api/verticals/{vid}/install"
+ ],
+ [
+  "POST",
+  "/api/verticals/{vid}/zero-scan"
  ],
  [
   "PUT",
