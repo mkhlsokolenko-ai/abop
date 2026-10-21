@@ -355,7 +355,7 @@
       <div onClick="{{ ov.closeSkillDrawer }}" style="position: absolute; inset: 0; background: var(--scrim); backdrop-filter: blur(5px);"></div>
       <div style="position: relative; display: flex; width: 1080px; max-width: 96vw; height: 100%;">
 
-        <div style="flex: 1 1 520px; min-width: 320px; height: 100%; overflow-y: auto; padding: 26px; background: #101830; border-left: 1px solid var(--w10); display: flex; flex-direction: column; gap: 18px; animation: ab-slide-in .28s cubic-bezier(.4,0,.2,1);">
+        <div style="flex: 1 1 520px; min-width: 320px; height: 100%; overflow-y: auto; padding: 26px; background: var(--bg2); border-left: 1px solid var(--w10); display: flex; flex-direction: column; gap: 18px; animation: ab-slide-in .28s cubic-bezier(.4,0,.2,1);">
           <div style="display: flex; align-items: flex-start; gap: 12px;">
             <div style="flex: 1; display: flex; flex-direction: column; gap: 6px;">
               <input value="{{ ov.editTitle }}" onChange="{{ ov.setSkillTitle }}" style="padding: 10px 12px; border-radius: 10px; border: 2px solid var(--w12); background: var(--s60); color: var(--ink); font-size: 17px; font-weight: 700;" style-focus="border-color: #6366f1;">
@@ -579,14 +579,17 @@
   <sc-if value="{{ ov.agentDrawerOpen }}" hint-placeholder-val="{{ false }}">
     <div style="position: fixed; inset: 0; z-index: 72; display: flex; justify-content: flex-end;">
       <div onClick="{{ ov.closeAgent }}" style="position: absolute; inset: 0; background: var(--scrim); backdrop-filter: blur(5px);"></div>
-      <div style="position: relative; width: 640px; max-width: 95vw; height: 100%; overflow-y: auto; padding: 26px; background: #101830; border-left: 1px solid var(--w10); display: flex; flex-direction: column; gap: 18px; animation: ab-slide-in .28s cubic-bezier(.4,0,.2,1);">
+      <div style="position: relative; width: 640px; max-width: 95vw; height: 100%; overflow-y: auto; padding: 26px; background: var(--bg2); border-left: 1px solid var(--w10); display: flex; flex-direction: column; gap: 18px; animation: ab-slide-in .28s cubic-bezier(.4,0,.2,1);">
         <div style="display: flex; align-items: flex-start; gap: 12px;">
           <div style="flex: 1; display: flex; flex-direction: column; gap: 6px;">
             <span style="font-size: 20px; font-weight: 800; letter-spacing: -.4px; color: var(--ink);">{{ ov.agentDrawerTitle }}</span>
             <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--w50);">{{ ov.agentDrawerRole }} · семья {{ ov.agentDrawerFamily }} · автономия {{ ov.agentDrawerAutonomy }}</span>
+            <sc-if value="{{ ov.apHas }}" hint-placeholder-val="{{ false }}"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--w45);">{{ ov.apMeta }}</span></sc-if>
           </div>
           <button onClick="{{ ov.closeAgent }}" style="width: 30px; height: 30px; border: 1px solid var(--w12); border-radius: 9px; background: var(--w5); color: var(--ink);">✕</button>
         </div>
+        <sc-if value="{{ ov.apBusy }}" hint-placeholder-val="{{ false }}"><div role="status" aria-live="polite" style="padding: 14px; border-radius: 12px; background: var(--w4); border: 1px solid var(--w8); font-size: 13px; color: var(--w60);">Загружаю паспорт агента…</div></sc-if>
+        <sc-if value="{{ ov.apErrHas }}" hint-placeholder-val="{{ false }}"><div style="padding: 14px; border-radius: 12px; background: rgba(245,158,11,.1); border: 1px solid rgba(245,158,11,.35); font-size: 13px; color: var(--warn-ink);">{{ ov.apErr }}</div></sc-if>
         <p style="margin: 0; font-size: 13.5px; line-height: 1.55; color: var(--w70);">{{ ov.agentDrawerMission }}</p>
 
         <div style="display: flex; flex-direction: column; gap: 8px;">
@@ -596,10 +599,12 @@
               <span style="padding: 5px 11px; border-radius: 9999px; background: rgba(99,102,241,.16); border: 1px solid rgba(129,140,248,.4); color: var(--acc-ink2); font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600;">{{ e.label }}</span>
             </sc-for>
           </div>
+          <sc-if value="{{ ov.apHas }}" hint-placeholder-val="{{ false }}"><span style="font-size: 12.5px; line-height: 1.5; color: var(--w60);">{{ ov.apWhy }}</span></sc-if>
         </div>
 
         <div style="display: flex; flex-direction: column; gap: 8px;">
-          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w38);">навыки роли</span>
+          <sc-if value="{{ ov.apHas }}" hint-placeholder-val="{{ true }}"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w38);">навыки агента (из его графа)</span></sc-if>
+          <sc-if value="{{ ov.apNo }}" hint-placeholder-val="{{ false }}"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w38);">навыки роли</span></sc-if>
           <sc-for list="{{ ov.agentDrawerSkills }}" as="sk" hint-placeholder-count="3">
             <div style="display: flex; align-items: flex-start; gap: 10px; padding: 11px 13px; border-radius: 11px; background: var(--w4); border: 1px solid var(--w8);">
               <span style="flex: 1; display: flex; flex-direction: column; gap: 3px;">
@@ -609,18 +614,72 @@
               <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w62);">{{ sk.mode }}</span>
             </div>
           </sc-for>
+          <sc-if value="{{ ov.agentDrawerSkillsEmpty }}" hint-placeholder-val="{{ false }}"><span style="font-size: 12.5px; color: var(--w55);">В графе этой версии нет узлов-навыков — агент ничего не сделает. Откройте его в канве и добавьте навык.</span></sc-if>
         </div>
 
         <div style="display: flex; flex-direction: column; gap: 8px;">
-          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w38);">источники данных (data-scope)</span>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w38);">зависимости по данным</span>
           <sc-for list="{{ ov.agentDrawerScope }}" as="d" hint-placeholder-count="2">
             <div style="display: flex; align-items: center; gap: 9px; padding: 10px 13px; border-radius: 11px; background: var(--s50); border: 1px solid var(--w10);">
               <span style="flex: 1; font-size: 12.5px; color: var(--w80);">{{ d.entity }} · {{ d.fields }}</span>
-              <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--ok-ink);">{{ d.recipe }}</span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: {{ d.fg }};">{{ d.recipe }}</span>
             </div>
           </sc-for>
+          <sc-if value="{{ ov.agentDrawerScopeEmpty }}" hint-placeholder-val="{{ false }}"><span style="font-size: 12.5px; color: var(--w55);">Навыки этого агента не объявляют источников данных — он работает с тем, что дадите в запросе.</span></sc-if>
         </div>
 
+        <sc-if value="{{ ov.apGapsHas }}" hint-placeholder-val="{{ false }}">
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--warn-ink);">чего не хватает для работы</span>
+          <sc-for list="{{ ov.apGaps }}" as="g" hint-placeholder-count="2">
+            <div style="padding: 10px 13px; border-radius: 11px; background: rgba(245,158,11,.1); border: 1px solid rgba(245,158,11,.3); font-size: 12.5px; color: var(--warn-ink);">{{ g.text }}</div>
+          </sc-for>
+          <span style="font-size: 11.5px; color: var(--w50); line-height: 1.45;">Пока это не закрыть, прогон отработает вхолостую: наполните сущность данными или добавьте навык, который даёт недостающий вход.</span>
+        </div>
+        </sc-if>
+
+        <sc-if value="{{ ov.apHas }}" hint-placeholder-val="{{ true }}">
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w38);">привязки</span>
+          <sc-for list="{{ ov.apTriggers }}" as="t" hint-placeholder-count="1">
+            <div style="display: flex; align-items: center; gap: 9px; padding: 10px 13px; border-radius: 11px; background: var(--w4); border: 1px solid var(--w8);">
+              <span style="flex: 1; display: flex; flex-direction: column; gap: 3px;">
+                <span style="font-size: 12.5px; color: var(--w80);">⏱ {{ t.text }}</span>
+                <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w45);">{{ t.last }}</span>
+              </span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: {{ t.fg }};">{{ t.state }}</span>
+            </div>
+          </sc-for>
+          <sc-for list="{{ ov.apSeats }}" as="p" hint-placeholder-count="1">
+            <div style="display: flex; align-items: center; gap: 9px; padding: 10px 13px; border-radius: 11px; background: var(--w4); border: 1px solid var(--w8);">
+              <span style="flex: 1; font-size: 12.5px; color: var(--w80);">🗺 посадка: {{ p.text }}</span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w45);">{{ p.note }}</span>
+            </div>
+          </sc-for>
+          <sc-for list="{{ ov.apChains }}" as="c" hint-placeholder-count="1">
+            <div style="display: flex; align-items: center; gap: 9px; padding: 10px 13px; border-radius: 11px; background: var(--w4); border: 1px solid var(--w8);">
+              <span style="flex: 1; font-size: 12.5px; color: var(--w80);">⛓ цепочка: {{ c.text }}</span>
+              <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--w45);">{{ c.note }}</span>
+            </div>
+          </sc-for>
+          <sc-if value="{{ ov.apBindEmpty }}" hint-placeholder-val="{{ false }}"><span style="font-size: 12.5px; color: var(--w55);">Ни расписаний, ни посадок на карте, ни цепочек — агент запускается только вручную.</span></sc-if>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w38);">оценка</span>
+          <div style="display: flex; flex-direction: column; gap: 6px; padding: 12px 13px; border-radius: 11px; background: var(--w4); border: 1px solid var(--w8);">
+            <span style="font-size: 12.5px; color: {{ ov.apVerifyFg }};">{{ ov.apVerifyText }}</span>
+            <sc-for list="{{ ov.apVerifyErrors }}" as="e" hint-placeholder-count="0">
+              <span style="font-size: 12px; color: var(--err-ink);">• {{ e.text }}</span>
+            </sc-for>
+            <span style="font-size: 12.5px; color: var(--w70);">{{ ov.apRunsText }}</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--w55);">{{ ov.apRunsCost }}</span>
+            <span style="font-size: 12px; color: var(--w60); line-height: 1.45;">{{ ov.apEstText }}</span>
+          </div>
+        </div>
+        </sc-if>
+
+        <sc-if value="{{ ov.agentDrawerBecomeHas }}" hint-placeholder-val="{{ false }}">
         <div style="display: flex; flex-direction: column; gap: 8px;">
           <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--w38);">переходы become (роли той же семьи)</span>
           <div style="display: flex; gap: 6px; flex-wrap: wrap;">
@@ -629,6 +688,7 @@
             </sc-for>
           </div>
         </div>
+        </sc-if>
       </div>
     </div>
   </sc-if>

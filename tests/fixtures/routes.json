@@ -108,6 +108,10 @@
   "/api/agents/{agent_id}/lexicon/refresh"
  ],
  [
+  "GET",
+  "/api/agents/{agent_id}/passport"
+ ],
+ [
   "POST",
   "/api/agents/{agent_id}/restore"
  ],

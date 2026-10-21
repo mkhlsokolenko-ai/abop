@@ -24,11 +24,13 @@ from fastapi.responses import JSONResponse
 from cli import ape
 
 from .. import assembly, audit_store, clients, contract_store, families_store, hitl_store
+from .. import cost_estimate, dataplane_records, pipeline_store, process_store, trigger_store
 from .. import ingress, lexicon, nlu
 from .. import observability as obs
 from .. import planner, run_queue, run_store, runner, schema_store, skill_contract
 from .. import skill_store, skill_templates, triggers
 from .. import agent_store
+from ..config import settings
 from ..deps import _sub, can_see_family, require_level, user
 from ..run_exec import execute_agent_run
 from ..vectors import cosine as _cosine
@@ -820,6 +822,9 @@ def _envelope_reason(env: dict) -> str:
         return "A1: среди навыков есть действие наружу — каждое уйдёт только после вашего подтверждения"
     if env.get("egress") == "external":
         return "A1: навык ходит во внешнюю сеть — запросы наружу под подтверждением"
+    if env.get("mode") == "write":
+        return ("A2: навыки читают данные и создают документы внутри среды — агент работает сам, "
+                "наружу ничего не отправляет")
     return "A2: все навыки только читают — агент работает сам, наружу ничего не отправляет"
 
 
@@ -960,6 +965,206 @@ async def agent_get(agent_id: str, u: dict = Depends(user)) -> dict:
     lvl = (u or {}).get("level")
     a["can_edit"] = True if a["edit_scope"] == "user" else (u.get("department") in ("*", None) or lvl == "admin")
     return a
+
+
+async def _passport_deps(sids: list[str]) -> list[dict]:
+    """Зависимости агента по данным: сущности его навыков — поля, рецепт, наполненность Data Plane.
+
+    Сущность без рецепта и рецепт без записей — две разные беды, и обе кончаются пустым прогоном.
+    Поэтому в карточке стоит не «источник объявлен», а сколько строк реально лежит в сущности.
+    """
+    scope: dict = {}
+    for s in sids:
+        try:
+            dss = ape.skill_datasources_resolved(s) or []
+        except Exception:  # noqa: BLE001 — область данных у навыка опциональна
+            dss = []
+        for ds in dss:
+            e = ds.get("entity")
+            if not e:
+                continue
+            cell = scope.setdefault(e, {"fields": set(), "recipe": ds.get("recipe"),
+                                        "recipe_status": ds.get("recipe_status"), "by_skills": []})
+            cell["fields"].update(ds.get("fields") or [])
+            if s not in cell["by_skills"]:
+                cell["by_skills"].append(s)
+    cards: dict = {}
+    try:
+        for c in ape.data_recipes_cards():
+            cards.setdefault(c.get("entity"), c)
+    except Exception:  # noqa: BLE001
+        cards = {}
+    out = []
+    for e, v in scope.items():
+        try:
+            n = dataplane_records.count(e)
+        except Exception:  # noqa: BLE001 — без canonical store считать нечего
+            n = None
+        card = cards.get(e) or {}
+        out.append({"entity": e, "fields": sorted(v["fields"]), "recipe": v["recipe"],
+                    "recipe_status": v["recipe_status"], "by_skills": v["by_skills"],
+                    "adapter": card.get("adapter") or "", "system_id": card.get("system_id") or "",
+                    "records": n, "ready": bool(v["recipe"]) and bool(n)})
+    out.sort(key=lambda x: (x["ready"], x["entity"]))
+    return out
+
+
+async def _passport_bindings(a: dict) -> dict:
+    """Привязки агента: расписания, посадки на карте процессов, цепочки, где он шаг."""
+    aid = str(a.get("contract_audit_id") or a.get("id"))
+    trig = []
+    for tn in triggers.triggers_of(a):
+        t = tn.get("trig") or {}
+        try:
+            last = await trigger_store.last_fire_at(a["id"], tn.get("id"))
+        except Exception:  # noqa: BLE001
+            last = None
+        trig.append({"id": tn.get("id"), "title": tn.get("title") or "", "type": t.get("type") or "",
+                     "cron": t.get("cron") or "", "enabled": bool(t.get("enabled")),
+                     "deliver": (t.get("deliver") or "chat"), "source": t.get("source") or "",
+                     "last_fire": (last.isoformat() if hasattr(last, "isoformat") else last) if last else None})
+    seats = []
+    try:
+        for s in await process_store.seats_by_agent(aid):
+            title = ""
+            try:
+                узел = await process_store.операция(s.get("area") or "", s.get("op_id") or "")
+                title = str((узел or {}).get("title") or "")
+            except Exception:  # noqa: BLE001 — посадка важнее подписи операции
+                title = ""
+            seats.append({"op_id": s.get("op_id"), "area": s.get("area"), "title": title,
+                          "pin_version": s.get("pin_version"), "since": s.get("since")})
+    except Exception:  # noqa: BLE001
+        seats = []
+    chains = []
+    try:
+        for p in await pipeline_store.all():
+            шаги = p.get("steps") or []
+            места = [i + 1 for i, st in enumerate(шаги)
+                     if str((st or {}).get("agent_id") or "").split(".v")[0] == aid.split(".v")[0]]
+            if места:
+                chains.append({"id": p.get("id"), "name": p.get("name") or p.get("id"),
+                               "steps": len(шаги), "at": места})
+    except Exception:  # noqa: BLE001
+        chains = []
+    return {"triggers": trig, "seats": seats, "chains": chains}
+
+
+async def _passport_assessment(a: dict, sids: list[str]) -> dict:
+    """Оценка агента: вердикт верификации, журнал его прогонов и прогноз стоимости прогона.
+
+    Прогноз — из СВОИХ прогонов (медиана токенов по навыку), а не из коэффициентов: навык без
+    истории помечается отдельно, а если истории нет вовсе — честное «оценить нечем» вместо
+    правдоподобной выдумки (server/cost_estimate.py).
+    """
+    aid = str(a.get("contract_audit_id") or a.get("id"))
+    сводки = [r for r in await run_store.list_runs(limit=300)
+              if str(r.get("contract_audit_id") or "") == aid
+              or str(r.get("agent_id") or "").split(".v")[0] == aid.split(".v")[0]]
+    цены = [float((r.get("cost") or {}).get("rub") or 0) for r in сводки]
+    сек = [float(r.get("seconds") or 0) for r in сводки if r.get("seconds")]
+    журнал = {"total": len(сводки),
+              "ok": sum(1 for r in сводки if r.get("verdict_ok")),
+              "hitl": sum(int(r.get("hitl_count") or 0) for r in сводки),
+              "last_at": (сводки[0].get("created_at") if сводки else None),
+              "last_ok": (bool(сводки[0].get("verdict_ok")) if сводки else None),
+              "last_run_id": (сводки[0].get("id") if сводки else None),
+              "cost_rub": round(sum(цены), 4),
+              "avg_rub": (round(sum(цены) / len(цены), 4) if цены else None),
+              "avg_seconds": (round(sum(сек) / len(сек), 1) if сек else None)}
+    прогноз = None
+    try:
+        полные = []
+        for с in сводки[:25]:
+            п = await run_store.get(с["id"])
+            if п:
+                полные.append(п)
+        каскад = settings.cascade_for("standard")
+        from ..pricing import cost_rub
+        прогноз = cost_estimate.оценить(steps=sids, history=cost_estimate.наблюдения(полные),
+                                        model=(каскад[0] if каскад else ""), цена=cost_rub)
+        прогноз["runs_seen"] = len(полные)
+    except Exception as _ex:  # noqa: BLE001 — оценка не обязана ломать паспорт
+        obs.log_event("warning", "passport.estimate_failed", agent=a.get("id"), error=str(_ex)[:160])
+    ver = a.get("verification") if isinstance(a.get("verification"), dict) else None
+    verify = ("external" if a.get("source") == "external"
+              else "contract" if a.get("source") != "authored"
+              else ("ok" if (ver or {}).get("verified") or (ver or {}).get("ok")
+                    else ("fail" if ver else "draft")))
+    return {"verify": verify, "verification": ver, "runs": журнал, "estimate": прогноз}
+
+
+@router.get("/api/agents/{agent_id}/passport")
+async def agent_passport(agent_id: str, u: dict = Depends(user)) -> dict:
+    """Паспорт ДЕЙСТВУЮЩЕГО агента: его собственный граф, зависимости, привязки и оценка.
+
+    Карточку агента на экране «Агенты» открывала спека семьи (`/api/agents/spec`). Спека строится из
+    code-ростера `AGENT_FAMILIES` по паре семья+роль и о самом агенте не знает ничего. Отсюда два
+    дефекта: у агента кастомной семьи ростера нет — ValueError, 404, и модалка открывалась пустой;
+    а у собранного из чата роль в ростере не совпадает, и спека молча подставляла навыки ПЕРВОЙ
+    роли семьи — модалка показывала чужой набор как его.
+
+    Паспорт читает сохранённую версию: навыки из графа агента, зависимости — сущности его навыков с
+    наполненностью Data Plane, привязки — расписания, посадки на карте и цепочки, оценка — вердикт
+    верификации, журнал его прогонов и прогноз стоимости по своим же прогонам.
+    """
+    a = await agent_store.get(agent_id)
+    if not a:
+        raise HTTPException(404, "нет такого AgentVersion")
+    if not can_see_family(u, a.get("family")):
+        raise HTTPException(403, "агент чужого отдела")
+    graph = a.get("graph") or {}
+    узлы = [n for n in (graph.get("nodes") or []) if isinstance(n, dict)]
+    навыки_узлы = [n for n in узлы if n.get("skill")]
+    sids: list[str] = []
+    for n in навыки_узлы:
+        if str(n["skill"]) not in sids:
+            sids.append(str(n["skill"]))
+
+    fam = next((f for f in await families_store.all() if f.get("id") == (a.get("family") or "")), None)
+    роли = (fam or {}).get("members") or {}
+    роль = a.get("role") or ""
+    запись = роли.get(роль)
+    role_title = ""
+    if isinstance(запись, (list, tuple)) and запись:
+        role_title = str(запись[0])
+    elif isinstance(запись, dict):
+        role_title = str(запись.get("title") or "")
+
+    ov = await skill_store.all()
+    env = ape._envelope_of(sids)
+    skills = []
+    for n in навыки_узлы:
+        sid = str(n["skill"])
+        карточка = ape.SKILLS.get(sid)
+        патч = (ov.get(sid) or {}).get("patch") or {}
+        sf = ape.skill_safety(sid)
+        skills.append({"id": sid, "node": n.get("id"),
+                       "title": патч.get("title") or (карточка[0] if карточка else sid),
+                       "short": патч.get("short") or (карточка[1] if карточка else ""),
+                       "mode": патч.get("mode") or sf.get("mode"),
+                       "egress": патч.get("egress") or sf.get("egress"),
+                       "cite": bool(патч.get("cite", sf.get("cite"))),
+                       "autonomy": n.get("autonomy") or "A0", "hitl": bool(n.get("hitl")),
+                       "output": n.get("output") or ""})
+    trig_rows = [{"enabled": bool((t.get("trig") or {}).get("enabled"))} for t in triggers.triggers_of(a)]
+    return {"id": a["id"], "name": a.get("name") or a["id"],
+            "family": a.get("family") or "",
+            "family_title": (fam or {}).get("title") or a.get("family") or "—",
+            "mission": (fam or {}).get("mission") or "",
+            "role": роль, "role_title": role_title,
+            "version": a.get("version") or 1, "status": a.get("status") or "draft",
+            "status_ru": _dep_status_ru(a, trig_rows),
+            "autonomy_max": a.get("autonomy_max") or "A1",
+            "source": a.get("source") or "contract", "owner": a.get("source") == "authored",
+            "edit_scope": _edit_scope(a), "created_by": a.get("created_by") or "—",
+            "created_at": a.get("created_at"), "contract_audit_id": a.get("contract_audit_id"),
+            "envelope": {**env, "autonomy_max": a.get("autonomy_max") or ape._autonomy_for(env),
+                         "почему": _envelope_reason(env)},
+            "skills": skills, "nodes": len(узлы), "edges": len(graph.get("edges") or []),
+            "depends": {"data": await _passport_deps(sids), "gaps": await _input_gaps(graph)},
+            "bindings": await _passport_bindings(a),
+            "assessment": await _passport_assessment(a, sids)}
 
 
 @router.post("/api/agents/{agent_id}/triggers")

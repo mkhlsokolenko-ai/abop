@@ -597,6 +597,13 @@ async def map_of(area: str) -> dict:
             "applied_at": r[5].isoformat() if r[5] else None}
 
 
+async def операция(area: str, op_id: str) -> dict | None:
+    """Узел операции применённой карты по области и коду — чтобы подпись посадки брали не разбором
+    дерева на стороне вызывающего. Форму карты знает стор; у вызывающего есть op_id, и этого хватит."""
+    карта = await map_of(area)
+    return найти(карта.get("tree") or {}, op_id)
+
+
 async def history(area: str, *, limit: int = 50) -> list[dict]:
     """Как менялся процесс: применённые редакции сверху вниз.
 
