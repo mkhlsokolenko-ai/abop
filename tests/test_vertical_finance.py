@@ -210,3 +210,37 @@ def test_аудиторская_форма_не_получает_чужого_р
     стр = result["findings"][0]["structured"]
     assert "способы_устранения" in стр, "этот раздел аудиторская форма объявила"
     assert "проверить_нечем" not in стр, "а этот — нет: у неё своё поле пробелов"
+
+# ── установка: основание должно СТОЯТЬ, а не просто лежать в каталоге ────────────────────────
+
+def test_установка_требует_установленного_основания(monkeypatch):
+    """Пакет без основания поставился бы и ничего не посчитал — узнал бы заказчик на прогоне."""
+    import asyncio
+
+    from fastapi import HTTPException
+
+    # Система, в которой audit1c ещё не ставили: контрактов нет, рецептов нет.
+    monkeypatch.setattr(v, "_состояние_системы",
+                        lambda: _готово((set(), set(), set())))
+    with pytest.raises(HTTPException) as отказ:
+        asyncio.run(v.vertical_install("finance", None, {"level": "admin", "name": "тест"}))
+    assert отказ.value.status_code == 422
+    assert "основание" in отказ.value.detail and "audit1c" in отказ.value.detail
+
+    # Та же установка в системе, где основание стоит: до основания претензий нет (дальше ручка
+    # пойдёт писать в сторы, и это уже не предмет этого теста).
+    основа = json.loads((КОРЕНЬ / "verticals" / "audit1c" / "contract.json").read_text("utf-8"))
+    aid = основа["capability_request"]["audit_id"]
+    рецепты = {"audit1c_docs", "audit1c_refs"}
+    monkeypatch.setattr(v, "_состояние_системы",
+                        lambda: _готово((set(), рецепты, {aid})))
+    monkeypatch.setattr(v.contract_store, "get", lambda *a, **k: _готово(None))
+    with pytest.raises(Exception) as дальше:
+        asyncio.run(v.vertical_install("finance", None, {"level": "admin", "name": "тест"}))
+    текст = str(getattr(дальше.value, "detail", дальше.value))
+    assert "основание" not in текст, f"основание признано установленным, а отказ другой: {текст}"
+
+
+async def _готово(значение):
+    """Готовое значение вместо корутины стора: ручка асинхронная, подмена должна быть такой же."""
+    return значение
