@@ -185,7 +185,7 @@ def test_находка_получает_способ_основание_и_ве
 
 def test_демо_способы_покрывают_все_исходы():
     """Демо обязано показывать и неудобные исходы: иначе их никто не проверит на живых данных."""
-    способы = json.loads((КОРЕНЬ / "demo" / "finance" / "fix_rules.json").read_text("utf-8"))
+    способы = json.loads((КОРЕНЬ / "verticals" / "finance" / "data" / "fix_rules.json").read_text("utf-8"))
     исходы = {ape._способы_устранения(код, способы, "", НА_ДАТУ)["исход"]
               for код in {str(с.get("код")) for с in способы}}
     assert {"выбран", "несколько вариантов", "версия не действует", "без основания"} <= исходы
@@ -198,12 +198,12 @@ def test_рецепты_демо_переносят_все_поля_правил
     Эту грабли мы собрали уже трижды (фразы блокировок, поля свода, цели метрик), поэтому
     сторож общий: каждое поле демо-файла обязано быть в карте своего рецепта.
     """
-    рецепты = {р["recipe"]: р for р in json.loads(
-        (КОРЕНЬ / "demo" / "finance" / "recipes.json").read_text("utf-8"))}
-    пары = (("finance_fix_rules", "fix_rules.json"), ("finance_binding", "binding.json"))
-    for имя, файл in пары:
-        карта = set((рецепты[имя].get("map") or {}).keys())
-        строки = json.loads((КОРЕНЬ / "demo" / "finance" / файл).read_text("utf-8"))
+    ПАКЕТ = КОРЕНЬ / "verticals" / "finance"
+    for имя, файл in (("finance_fix_rules", "fix_rules.json"),
+                      ("finance_binding", "binding.json")):
+        рецепт = json.loads((ПАКЕТ / "recipes" / f"{имя}.json").read_text("utf-8"))
+        карта = set((рецепт.get("map") or {}).keys())
+        строки = json.loads((ПАКЕТ / "data" / файл).read_text("utf-8"))
         поля = {к for с in строки for к in с}
         assert поля <= карта, f"{имя}: в карте нет полей {sorted(поля - карта)}"
 
@@ -211,7 +211,7 @@ def test_рецепты_демо_переносят_все_поля_правил
 def test_схема_правила_устранения_объявлена():
     схема = ape.CANONICAL_SCHEMAS["fix_rule"]
     assert схема["required"] == ["id", "код", "способ"]
-    способы = json.loads((КОРЕНЬ / "demo" / "finance" / "fix_rules.json").read_text("utf-8"))
+    способы = json.loads((КОРЕНЬ / "verticals" / "finance" / "data" / "fix_rules.json").read_text("utf-8"))
     for с in способы:
         нет = [п for п in схема["required"] if not str(с.get(п) or "").strip()]
         assert not нет, f"{с.get('id')}: нет обязательных полей {нет}"
@@ -320,7 +320,7 @@ def test_ручка_способов_отдаёт_разбор_и_весь_на�
     зелёно проверял бы не то, что отвечает платформа.
     """
     from server.routes import inbox as маршруты
-    способы = json.loads((КОРЕНЬ / "demo" / "finance" / "fix_rules.json").read_text("utf-8"))
+    способы = json.loads((КОРЕНЬ / "verticals" / "finance" / "data" / "fix_rules.json").read_text("utf-8"))
     monkeypatch.setattr(маршруты.ape, "data_query", lambda *a, **k: способы)
 
     r = клиент.get("/api/registry/fix-methods",
@@ -354,8 +354,9 @@ def test_рецепт_доносит_способы_до_расчёта():
     сущности. Поэтому здесь работает настоящая машинка рецептов — с подменой только пути к
     файлу, потому что в рецепте он контейнерный (`/app/...`).
     """
-    рецепты = json.loads((КОРЕНЬ / "demo" / "finance" / "recipes.json").read_text("utf-8"))
-    способы = next(р for р in рецепты if р["entity"] == "fix_rule")
+    способы = json.loads((КОРЕНЬ / "verticals" / "finance" / "recipes"
+                          / "finance_fix_rules.json").read_text("utf-8"))
+    assert способы["entity"] == "fix_rule"
     способы = json.loads(json.dumps(способы).replace(
         "/app/", str(КОРЕНЬ).replace("\\", "/") + "/"))
     сущность, записи, отброшено, невалидно = ape._apply_recipe(способы, name="finance_fix_rules")

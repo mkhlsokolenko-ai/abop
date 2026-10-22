@@ -1,0 +1,45 @@
+{
+  "recipe": "finance_binding",
+  "entity": "plan_rule",
+  "status": "опубликован",
+  "version": 1,
+  "source": {
+    "kind": "json",
+    "path": "/app/verticals/finance/data/binding.json"
+  },
+  "map": {
+    "id": {
+      "col": "id"
+    },
+    "вид": {
+      "col": "вид"
+    },
+    "код": {
+      "col": "код"
+    },
+    "предмет": {
+      "col": "предмет"
+    },
+    "значение": {
+      "col": "значение"
+    },
+    "причина": {
+      "col": "причина"
+    },
+    "основание": {
+      "col": "основание"
+    },
+    "комментарий": {
+      "col": "комментарий"
+    },
+    "процесс": {
+      "col": "процесс"
+    }
+  },
+  "rules": [],
+  "emit": {
+    "schema": "plan_rule",
+    "ttl_sec": 0,
+    "schema_version": "1.0"
+  }
+}

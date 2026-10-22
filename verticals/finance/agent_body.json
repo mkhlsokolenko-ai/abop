@@ -1,0 +1,67 @@
+{
+  "name": "Сверщик расхождений (бухгалтерский аутсорсинг)",
+  "contract_audit_id": "finance-sverka-2026",
+  "graph": {
+    "nodes": [
+      {
+        "id": "audit1c-checks",
+        "kind": "skill",
+        "skill": "audit1c-checks",
+        "autonomy": "A1",
+        "hitl": false
+      },
+      {
+        "id": "audit1c-root-cause",
+        "kind": "skill",
+        "skill": "audit1c-root-cause",
+        "autonomy": "A1",
+        "hitl": false
+      },
+      {
+        "id": "audit1c-rank",
+        "kind": "skill",
+        "skill": "audit1c-rank",
+        "autonomy": "A1",
+        "hitl": false
+      },
+      {
+        "id": "sverka-report",
+        "kind": "skill",
+        "skill": "sverka-report",
+        "autonomy": "A1",
+        "hitl": true
+      },
+      {
+        "id": "out",
+        "kind": "out",
+        "title": "Отчёт о диагностике учёта → файл",
+        "out": {
+          "channel": "pdf",
+          "to": "sverka",
+          "format": "pdf",
+          "run": false,
+          "hitl": true
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from": "audit1c-checks",
+        "to": "audit1c-root-cause"
+      },
+      {
+        "from": "audit1c-root-cause",
+        "to": "audit1c-rank"
+      },
+      {
+        "from": "audit1c-rank",
+        "to": "sverka-report"
+      },
+      {
+        "from": "sverka-report",
+        "to": "out"
+      }
+    ]
+  },
+  "зачем": "Цепочка короче аудиторской: извлечение и сборку графа делает сам прогон сверки, а слабые соответствия контрагентов здесь не нужны — аутсорсер работает по одной организации за раз и знает своих клиентов. Документ собирает СВОЙ навык «Диагностика учёта», а не аудиторский `audit1c-explain`: у клиента обслуживающей организации другой читатель и другая форма — без «недостатков внутреннего контроля» и ссылок на МСА 265. Расхождения, способы устранения с основанием и версией политики и раздел «проверить нечем» посчитаны кодом; навык объясняет последствия и порядок действий. Выход — файл под подтверждением человека."
+}
