@@ -6,7 +6,7 @@
   "source": {
     "kind": "inbox",
     "path": "/app/inbox",
-    "маска": "*.pdf;*.xml;*.jpg;*.jpeg;*.png;*.tif;*.tiff;*.xlsx;*.csv",
+    "маска": "*.pdf;*.xml;*.txt;*.csv;*.xlsx;*.jpg;*.jpeg;*.png;*.tif;*.tiff",
     "рекурсивно": "да",
     "предел": "500",
     "источник": "папка",
