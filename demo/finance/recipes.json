@@ -1,0 +1,50 @@
+[
+  {
+    "recipe": "finance_fix_rules",
+    "entity": "fix_rule",
+    "status": "опубликован",
+    "version": 1,
+    "source": {
+      "kind": "json",
+      "path": "/app/demo/finance/fix_rules.json"
+    },
+    "map": {
+      "id": {"col": "id"},
+      "вид": {"col": "вид"},
+      "код": {"col": "код"},
+      "способ": {"col": "способ"},
+      "как": {"col": "как"},
+      "основание": {"col": "основание"},
+      "версия": {"col": "версия"},
+      "организация": {"col": "организация"},
+      "приоритет": {"col": "приоритет"},
+      "действует_с": {"col": "действует_с"},
+      "действует_по": {"col": "действует_по"},
+      "комментарий": {"col": "комментарий"}
+    },
+    "rules": [],
+    "emit": {"schema": "fix_rule", "ttl_sec": 0, "schema_version": "1.0"}
+  },
+  {
+    "recipe": "finance_binding",
+    "entity": "plan_rule",
+    "status": "опубликован",
+    "version": 1,
+    "source": {
+      "kind": "json",
+      "path": "/app/demo/finance/binding.json"
+    },
+    "map": {
+      "id": {"col": "id"},
+      "вид": {"col": "вид"},
+      "код": {"col": "код"},
+      "предмет": {"col": "предмет"},
+      "значение": {"col": "значение"},
+      "причина": {"col": "причина"},
+      "основание": {"col": "основание"},
+      "комментарий": {"col": "комментарий"}
+    },
+    "rules": [],
+    "emit": {"schema": "plan_rule", "ttl_sec": 0, "schema_version": "1.0"}
+  }
+]

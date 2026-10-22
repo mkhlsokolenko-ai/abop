@@ -18,6 +18,8 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from cli import ape
+
 from .. import dataplane_records as dr
 from .. import findings_registry as реестр
 from .. import hitl_store, systems_store
@@ -27,7 +29,8 @@ router = APIRouter()
 
 
 @router.get("/api/inbox")
-async def inbox(project: str = "", process: str = "", u: dict = Depends(user)) -> dict:
+async def inbox(project: str = "", process: str = "", organisation: str = "",
+                u: dict = Depends(user)) -> dict:
     """Что ждёт человека: подтверждения внешних действий и находки без решения.
 
     Два потока в одном месте, но не в одной куче: заявка на внешнее действие требует «отправить
@@ -66,24 +69,34 @@ async def inbox(project: str = "", process: str = "", u: dict = Depends(user)) -
         "доказательство": н.get("доказательство"),
         "проект": н.get("проект"),
         "процесс": н.get("процесс"),
+        # Чья это организация, какой способ устранения объявлен и по какой версии политики
+        # судили: без этих трёх полей находка аутсорсера непригодна к работе — у него в одной
+        # установке сотни компаний и у каждой своя учётная политика.
+        "организация": н.get("организация") or "",
+        "способ": н.get("способ") or "",
+        "исход_способа": н.get("исход_способа") or "",
+        "версия_политики": н.get("версия_политики") or "",
+        "к_пересмотру": н.get("к_пересмотру") or "нет",
+        "почему_пересмотра": н.get("почему_пересмотра") or "",
         "когда": н.get("впервые"),
         "прогон": н.get("прогон"),
-    } for н in реестр.список(project, process, состояние="найдено")]
+    } for н in реестр.список(project, process, состояние="найдено", организация=organisation)]
     return {"заявки": заявки, "находки": находки,
             "всего": len(заявки) + len(находки),
-            "сводка": реестр.сводка(project, process)}
+            "сводка": реестр.сводка(project, process, organisation)}
 
 
 @router.get("/api/registry/findings")
 async def findings_list(project: str = "", process: str = "", state: str = "",
-                        open_only: int = 0, u: dict = Depends(user)) -> dict:
+                        open_only: int = 0, organisation: str = "",
+                        u: dict = Depends(user)) -> dict:
     """Реестр находок между прогонами: что нашли, что признали, что перестало воспроизводиться.
 
     Путь свой, а не `/api/findings`: тот занят журналом находок пилота 1С, и две ручки на одном пути означали бы, что одна из них мёртвая — молча.
     """
-    строки = реестр.список(project, process, state, bool(open_only))
+    строки = реестр.список(project, process, state, bool(open_only), organisation)
     return {"findings": строки, "всего": len(строки),
-            "сводка": реестр.сводка(project, process)}
+            "сводка": реестр.сводка(project, process, organisation)}
 
 
 @router.post("/api/registry/findings/{finding_id}/decide")
@@ -108,6 +121,38 @@ async def findings_decide(finding_id: str, body: dict | None = None,
         raise HTTPException(404, "находки с таким id в реестре нет")
     return {"ok": True, "finding": итог, "сводка": реестр.сводка(
         str(итог.get("проект") or ""), str(итог.get("процесс") or ""))}
+
+
+@router.get("/api/registry/fix-methods")
+async def fix_methods(code: str = "", organisation: str = "", on_date: str = "",
+                      u: dict = Depends(user)) -> dict:
+    """Какой способ устранения объявлен для расхождения — и чем он обоснован (ADR-070).
+
+    Ручка отвечает на вопрос заказчика дословно: «расхождение можно устранить двумя законными
+    способами, как вы выбираете?» Выбирает правило методолога с основанием и версией учётной
+    политики; если правил нет или они равноприоритетны — так и написано, и выбирает человек.
+    Модель здесь не участвует: ручка читает данные и считает, а не рассуждает.
+
+    Без `code` отдаётся весь объявленный набор — методологу нужно видеть свои правила целиком,
+    в том числе чтобы заметить дыры: расхождения, для которых способ так и не объявлен.
+    """
+    правила = ape.data_query("fix_rule", None, None, 500)
+    применимые = [п for п in правила
+                  if not organisation or not str(п.get("организация") or "").strip()
+                  or str(п.get("организация") or "").strip() == organisation]
+    если_нет = ("правил устранения в данных нет: их объявляет методолог заказчика (сущность "
+                "`fix_rule`, вид «способ_устранения»). Без них платформа показывает расхождения, "
+                "но способ их устранения назвать нечем")
+    итог = {"правил": len(применимые),
+            "организация": organisation,
+            "организации_в_правилах": ape._организации_в(правила),
+            "коды": sorted({str(п.get("код") or "") for п in применимые} - {""}),
+            "почему_пусто": "" if применимые else если_нет}
+    if code:
+        итог["разбор"] = ape._способы_устранения(code, правила, organisation, on_date)
+    else:
+        итог["способы"] = [ape._способ_кратко(п) for п in применимые]
+    return итог
 
 
 @router.get("/api/health/links")

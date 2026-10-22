@@ -385,6 +385,10 @@
  ],
  [
   "GET",
+  "/api/registry/fix-methods"
+ ],
+ [
+  "GET",
   "/api/reglament"
  ],
  [
