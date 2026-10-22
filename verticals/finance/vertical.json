@@ -25,7 +25,8 @@
     "адаптеры": [
       "json",
       "audit1c",
-      "inbox"
+      "inbox",
+      "pervichka"
     ],
     "навыки": [
       "audit1c-checks",
@@ -37,12 +38,15 @@
   "содержит": {
     "контракт": "contract.json",
     "агент": "agent_body.json",
-    "правила": [],
+    "правила": [
+      "pervichka-base"
+    ],
     "рецепты": [
       "finance_fix_rules",
       "finance_binding",
       "finance_doc_types",
-      "finance_inbox"
+      "finance_inbox",
+      "finance_parse"
     ],
     "данные": [
       "data/fix_rules.json",
