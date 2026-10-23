@@ -439,6 +439,30 @@ def panel_read(path: str) -> dict:
     return r if isinstance(r, (dict, list)) else {}
 
 
+def vertical_list() -> dict:
+    """Каталог поставки и состояние системы: годен ли пакет, чего не хватает, установлен ли."""
+    r = _req("GET", "/api/verticals", timeout=30)
+    return r if isinstance(r, dict) else {"вертикали": []}
+
+
+def vertical_install(vid: str) -> dict:
+    """Поставить вертикаль: контракт, агент, рецепты, наборы правил. Идемпотентно."""
+    return _req("POST", "/api/verticals/" + urllib.parse.quote(str(vid)) + "/install",
+                {}, timeout=120) or {}
+
+
+def vertical_zero_scan(vid: str) -> dict:
+    """Нулевой прогон: прочитать источники вертикали и зафиксировать точку отсчёта."""
+    return _req("POST", "/api/verticals/" + urllib.parse.quote(str(vid)) + "/zero-scan",
+                {}, timeout=300) or {}
+
+
+def vertical_baseline(vid: str) -> dict:
+    """Базовая линия вертикали: с ней сравнивают через месяц."""
+    r = _req("GET", "/api/verticals/" + urllib.parse.quote(str(vid)) + "/baseline", timeout=30)
+    return r if isinstance(r, dict) else {}
+
+
 def vertical_active() -> dict:
     """Профиль активной вертикали: что показывать человеку и какими словами.
 

@@ -447,7 +447,11 @@ async function renderAuth() {
 const LEVELS = ["analyst", "manager", "support", "admin"];
 // Лента контроля — сводка по ЛЮДЯМ отдела: аналитику её показывать незачем, у него и своих решений
 // хватает. Это не «режим руководителя»: раздел просто не виден тем, кому он не адресован.
-const MODULE_MIN_LEVEL = { graphlens: "manager", control: "manager", security: "support", opslens: "support" };
+// «Вертикали» — поставка представления: кто ставит вертикаль, тот меняет установку целиком.
+// Бухгалтеру этот раздел не адресован, и дело не в секретности: лишняя кнопка в рабочем месте
+// дороже отсутствующей.
+const MODULE_MIN_LEVEL = { graphlens: "manager", control: "manager", security: "support",
+                           opslens: "support", verticals: "manager" };
 function levelAtLeast(min) {
   const have = LEVELS.indexOf(ctx.level || "analyst");
   const need = LEVELS.indexOf(min);
@@ -464,7 +468,8 @@ function visibleModules() { return MODULES.filter((m) => !HIDDEN_MODULES.has(m.i
 // «Решения» стоят вторыми: там ждут человека, и это важнее журнала прогонов. Переключателя
 // режимов нет (DIZAJN, 5.1) — руководитель тоже ставит задачи, и прыгать между двумя
 // приложениями ради одного подтверждения он не должен.
-const RAIL_ORDER = ["chat", "decisions", "control", "runs", "agents", "watch", "graphlens", "cabinet"];
+const RAIL_ORDER = ["chat", "decisions", "control", "runs", "agents", "watch", "graphlens",
+                    "verticals", "cabinet"];
 const RAIL_TITLE = { agents: "Мои агенты" };
 function railModules() {
   const rank = (id) => { const i = RAIL_ORDER.indexOf(id); return i < 0 ? RAIL_ORDER.length : i; };
@@ -473,7 +478,7 @@ function railModules() {
 // Разделы вертикали: лишний раздел не ломает работу, но мешает — руководителю разработки не
 // нужны портфель и график. Кабинет и чат остаются всегда: без первого человек не выйдет и не
 // увидит, чьи данные на экране, без второго не сможет ничего попросить.
-const РАЗДЕЛЫ_ВСЕГДА = new Set(["chat", "cabinet"]);
+const РАЗДЕЛЫ_ВСЕГДА = new Set(["chat", "cabinet", "verticals"]);
 export function разделыПрофиля(модули, профиль) {
   const в = профиль === undefined ? вертикаль() : профиль;
   const нужные = (в && в.разделы) || [];
@@ -484,6 +489,9 @@ export function разделыПрофиля(модули, профиль) {
 // Сколько действий ждёт решения — показываем на кнопке чата в боковом меню: очередь жила только
 // внутри чата, и из «Прогонов» или «Кабинета» о висящих письмах и задачах было не узнать.
 let hitlCount = 0;
+// Работа в «Решениях»: находки расчёта и поля первички. Два числа, а не одно: «это проблема или
+// норма» и «что в документе на самом деле» — разные вопросы к человеку.
+let работаCount = { находки: 0, поля: 0 };
 // ── строка живой работы ─────────────────────────────────────────────────────────────────────
 // «что идёт, где оно и сколько уже стоило» — одной строкой и из любого раздела. Опрос идёт, только
 // пока что-то действительно идёт: пустой опрос раз в пять секунд — это батарея ноутбука за то, что
@@ -548,6 +556,24 @@ export function setHitlCount(n) {
   }
 }
 
+export function setРаботаCount(находки, поля) {
+  const н = Math.max(0, Number(находки) || 0);
+  const п = Math.max(0, Number(поля) || 0);
+  if (н === работаCount.находки && п === работаCount.поля) return;
+  const было = работаCount.находки + работаCount.поля;
+  работаCount = { находки: н, поля: п };
+  renderNav();
+  if (н + п > было) {
+    извещение({
+      title: н + п === 1 ? "Расчёт ждёт вашего слова" : `Ждут вашего слова: ${н + п}`,
+      body: [н ? `находок: ${н}` : "", п ? `полей первички: ${п}` : ""].filter(Boolean).join(", ")
+        + ". Это не отправка наружу — признание и проверка значений.",
+      куда: "decisions",
+      ключ: "работа",
+    });
+  }
+}
+
 // Уведомление ОС. Работает только в приложении (в браузере моста нет) и не повторяет одно и то
 // же чаще, чем раз в минуту: прогон может доложиться дважды, человек не должен получать дубль.
 const _извещено = new Map();
@@ -566,9 +592,20 @@ export function извещение({ title, body, куда, ключ }) {
 // десктопа и навигацией веба при каждой правке.
 function railBtn(m, on) {
   const label = RAIL_TITLE[m.id] || m.title;
-  const badge = (m.id === "chat" && hitlCount)
-    ? `<span class="bdg" title="Ждут вашего решения">${hitlCount > 99 ? "99+" : hitlCount}</span>` : "";
-  const aria = (m.id === "chat" && hitlCount) ? `${label}, ждут решения: ${hitlCount}` : label;
+  const работа = работаCount.находки + работаCount.поля;
+  // Подсказка расшифровывает число: одно «7» на кнопке не говорит, что именно ждёт человека, а
+  // вопросы разные — признать находку или проверить значение в документе.
+  const изЧего = [работаCount.находки ? `находок: ${работаCount.находки}` : "",
+                  работаCount.поля ? `полей первички: ${работаCount.поля}` : ""]
+    .filter(Boolean).join(" · ");
+  let badge = "", aria = label;
+  if (m.id === "chat" && hitlCount) {
+    badge = `<span class="bdg" title="Ждут вашего решения">${hitlCount > 99 ? "99+" : hitlCount}</span>`;
+    aria = `${label}, ждут решения: ${hitlCount}`;
+  } else if (m.id === "decisions" && работа) {
+    badge = `<span class="bdg" title="${esc(изЧего)}">${работа > 99 ? "99+" : работа}</span>`;
+    aria = `${label}, ${изЧего}`;
+  }
   return `<button class="navitem${on ? " on" : ""}" data-id="${esc(m.id)}" title="${esc(label)}" aria-label="${esc(aria)}" aria-current="${on ? "page" : "false"}">
     <span class="glyph" aria-hidden="true">${icon(m.icon)}</span><span class="lbl">${esc(label)}</span>${badge}</button>`;
 }
@@ -976,8 +1013,25 @@ async function boot() {
     try { const q = await api("/api/modules/agents/hitl"); setHitlCount(Array.isArray(q) ? q.length : 0); }
     catch { /* офлайн покажет светофор, счётчик оставляем прежним */ }
   };
+  // Находки и поля опрашиваются ядром по той же причине, что подтверждения: счётчик не должен
+  // замирать, стоило уйти в другой раздел. Старый сайдкар ручки полей не знает — тогда остаётся
+  // число находок, а не ошибка на весь рейл.
+  const pollРабота = async () => {
+    let находки = работаCount.находки, поля = работаCount.поля;
+    try {
+      const р = await api("/api/modules/decisions/findings");
+      находки = Number((р["сводка"] || {})["найдено"] || (р.findings || []).length || 0);
+    } catch { /* нет реестра — счётчик остаётся прежним */ }
+    try {
+      const р = await api("/api/modules/decisions/fields");
+      поля = Number((р["контроль"] || {})["полей"] || 0);
+    } catch { /* сайдкар старее конвейера первички */ }
+    setРаботаCount(находки, поля);
+  };
   pollHitl();
+  pollРабота();
   setInterval(pollHitl, 45000);
+  setInterval(pollРабота, 60000);
   // Клик по уведомлению обязан приводить ТУДА, о чём известили, иначе человек ищет сам.
   try { window.ape?.os?.onOpen?.((куда) => { if (куда) loadModule(String(куда)); }); } catch (e) { /* не electron */ }
   window.addEventListener("online", () => pingLink());
