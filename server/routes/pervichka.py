@@ -17,6 +17,8 @@
 """
 from __future__ import annotations
 
+import time
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from cli import ape
@@ -66,9 +68,28 @@ async def confirm_fields(doc_id: str, body: dict | None = None,
     if итог.get("ошибка"):
         raise HTTPException(422, итог["ошибка"])
     # Пишем здесь, а не в движке: движок считает, хранение — дело платформы.
-    dr.append("primary_doc", [итог["документ"]], recipe=РЕЦЕПТ_ПРАВОК)
+    #
+    # Происхождение с ВРЕМЕНЕМ обязательно: версии записи различаются по `fetched_at`, и строка
+    # без него получает ноль — то есть проигрывает прежней версии при чтении. Поймано на стенде:
+    # правка возвращала 200, документ в ответе был обновлён, а очередь полей не менялась, потому
+    # что читалась прежняя версия.
+    def _с_происхождением(строки: list, сущность: str) -> list:
+        сейчас = time.time()
+        готовые = []
+        for с in строки:
+            готовая = dict(с)
+            готовая.setdefault("schema", сущность)
+            готовая.setdefault("ttl_sec", 0)
+            готовая["provenance"] = {"recipe": РЕЦЕПТ_ПРАВОК, "source": "человек:" + кем,
+                                     "fetched_at": сейчас}
+            готовые.append(готовая)
+        return готовые
+
+    dr.append("primary_doc", _с_происхождением([итог["документ"]], "primary_doc"),
+              recipe=РЕЦЕПТ_ПРАВОК)
     dr.compact("primary_doc")
-    dr.append("field_truth", итог["эталоны"], recipe=РЕЦЕПТ_ПРАВОК)
+    dr.append("field_truth", _с_происхождением(итог["эталоны"], "field_truth"),
+              recipe=РЕЦЕПТ_ПРАВОК)
     dr.compact("field_truth")
     obs.log_event("info", "pervichka.fields_confirmed", document=str(doc_id), by=кем,
                   fields=итог["подтверждено"], state=итог["состояние"])
