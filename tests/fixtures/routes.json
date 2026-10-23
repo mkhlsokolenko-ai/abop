@@ -337,6 +337,14 @@
  ],
  [
   "GET",
+  "/api/pervichka/fields"
+ ],
+ [
+  "GET",
+  "/api/pervichka/quality"
+ ],
+ [
+  "GET",
   "/api/pipelines"
  ],
  [
@@ -802,6 +810,10 @@
  [
   "POST",
   "/api/orchestrate"
+ ],
+ [
+  "POST",
+  "/api/pervichka/documents/{doc_id}/confirm"
  ],
  [
   "POST",

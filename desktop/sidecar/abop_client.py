@@ -422,6 +422,7 @@ def control_revoke(binding: str) -> dict:
     "/api/data/query/", "/api/data/entities", "/api/data/schema/",
     "/api/registry/findings", "/api/inbox", "/api/health/links",
     "/api/verticals/active", "/api/runs", "/api/agents",
+    "/api/pervichka/fields", "/api/pervichka/quality",
 )
 
 
@@ -475,6 +476,31 @@ def finding_decide(finding_id: str, состояние: str, почему: str =
     """Решение человека по находке. Отказ — такой же законный исход, как согласие."""
     return _req("POST", "/api/registry/findings/" + urllib.parse.quote(str(finding_id)) + "/decide",
                 {"состояние": состояние, "почему": почему}, timeout=30) or {}
+
+
+def pervichka_fields(organisation: str = "", limit: int = 200) -> dict:
+    """Очередь человека в первичке: поля ниже порога и документы, которые без него не поедут."""
+    запрос = ["limit=" + str(int(limit or 200))]
+    if str(organisation or "").strip():
+        запрос.append("organisation=" + urllib.parse.quote(str(organisation)))
+    r = _req("GET", "/api/pervichka/fields?" + "&".join(запрос), timeout=30)
+    return r if isinstance(r, dict) else {"документы": [], "контроль": {}}
+
+
+def pervichka_confirm(document: str, поля: dict, почему: str = "") -> dict:
+    """Правка человека по полям документа: значения, эталон и пересчёт состояния."""
+    return _req("POST", "/api/pervichka/documents/%s/confirm"
+                % urllib.parse.quote(str(document)),
+                {"поля": поля or {}, "почему": почему}, timeout=30) or {}
+
+
+def pervichka_quality(organisation: str = "") -> dict:
+    """Качество на корпусе заказчика: по его же правкам, а не из брошюры поставщика."""
+    путь = "/api/pervichka/quality"
+    if str(organisation or "").strip():
+        путь += "?organisation=" + urllib.parse.quote(str(organisation))
+    r = _req("GET", путь, timeout=30)
+    return r if isinstance(r, dict) else {}
 
 
 def health_links() -> dict:

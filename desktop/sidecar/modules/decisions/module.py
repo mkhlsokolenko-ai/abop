@@ -39,6 +39,13 @@ def _ошибка(ex: Exception) -> HTTPException:
     return HTTPException(код if 400 <= код < 600 else 502, str(ex)[:400])
 
 
+class ПоляIn(BaseModel):
+    """Правка человека: только значения полей и, если он захотел, причина."""
+
+    поля: dict = {}
+    почему: str = ""
+
+
 @router.get("/queue")
 def queue(mine: str = "1") -> dict:
     """Решения, ждущие человека. По умолчанию — только мои: адресованные мне идут первыми."""
@@ -67,6 +74,38 @@ def decide(item_id: str, body: РешениеIn) -> dict:
         return {"ok": True, "result": abop.hitl_approve(item_id, body.decision, body.reason)}
     except Exception as ex:  # noqa: BLE001
         raise _ошибка(ex) from ex
+
+
+@router.get("/fields")
+def fields(organisation: str = "") -> dict:
+    """Поля первички, которые ждут человека. Третий поток раздела, не смешанный с остальными.
+
+    Заявка требует «отправить или нет», находка — «это проблема или норма», поле — «что в
+    документе на самом деле». Три разных вопроса: сложить их в один список значило бы заставить
+    человека каждый раз угадывать, чего от него хотят.
+    """
+    try:
+        return abop.pervichka_fields(organisation)
+    except Exception as ex:  # noqa: BLE001
+        raise _ошибка(ex)
+
+
+@router.post("/fields/{document}/confirm")
+def fields_confirm(document: str, body: ПоляIn) -> dict:
+    """Подтвердить значения полей документа: правка человека и эталон рядом с ней."""
+    try:
+        return abop.pervichka_confirm(document, body.поля or {}, body.почему or "")
+    except Exception as ex:  # noqa: BLE001
+        raise _ошибка(ex)
+
+
+@router.get("/quality")
+def quality(organisation: str = "") -> dict:
+    """Качество разбора на корпусе заказчика — по его же правкам."""
+    try:
+        return abop.pervichka_quality(organisation)
+    except Exception as ex:  # noqa: BLE001
+        raise _ошибка(ex)
 
 
 @router.get("/findings")

@@ -25,6 +25,9 @@ export async function mount(root, ctx) {
   // Поэтому два списка, а не один: смешать их значит заставить человека каждый раз угадывать,
   // чего от него хотят.
   let находки = [], сводка = {}, ошибкаНаходок = "";
+  // Третий поток раздела: поля первички ниже порога. Вопрос человеку здесь третий и по смыслу:
+  // не «отправить ли» и не «проблема ли это», а «что в документе на самом деле».
+  let поля = [], первичка = {}, ошибкаПолей = "", правки = {};
 
   async function load() {
     loading = true; render();
@@ -39,6 +42,13 @@ export async function mount(root, ctx) {
       const р = await api(M + "/findings");
       находки = р.findings || []; сводка = р["сводка"] || {}; ошибкаНаходок = "";
     } catch (e) { находки = []; ошибкаНаходок = humanError(e); }
+    try {
+      const р = await api(M + "/fields");
+      поля = р["документы"] || []; первичка = р["контроль"] || {}; ошибкаПолей = "";
+    } catch (e) {
+      // Старый сайдкар этой ручки не знает — раздел просто не показываем, а не пугаем ошибкой.
+      поля = []; ошибкаПолей = humanError(e);
+    }
     loading = false; render();
   }
 
@@ -87,6 +97,58 @@ export async function mount(root, ctx) {
         `<button data-fn="${esc(н.id)}" style="${BTN}" ${ждёт ? "disabled" : ""}>Так и должно быть</button>`,
       ],
     });
+  }
+
+  async function подтвердитьПоля(документ) {
+    const свои = правки[документ] || {};
+    if (!Object.keys(свои).length) { toast("Нечего подтверждать: значения не менялись", "err"); return; }
+    busy = документ; render();
+    try {
+      const р = await api(M + "/fields/" + encodeURIComponent(документ) + "/confirm",
+                          { method: "POST", body: JSON.stringify({ поля: свои, почему: "" }) });
+      delete правки[документ];
+      toast(`Подтверждено полей: ${р["подтверждено"] || Object.keys(свои).length}. Состояние: ${
+        р["состояние"] || "—"}`);
+      await load();
+    } catch (e) { toast(humanError(e), "err"); }
+    finally { busy = ""; render(); }
+  }
+
+  function полеВвод(документ, п) {
+    const ид = `${документ}::${п["поле"]}`;
+    const значение = (правки[документ] || {})[п["поле"]];
+    const текущее = значение === undefined ? String(п["значение"] || "") : String(значение);
+    const подпись = `${п["поле"]}${String(п["обязательное"]) === "да" ? " ·  обязательное" : ""}`;
+    return `<label style="display:flex;flex-direction:column;gap:3px;min-width:220px;flex:1">
+      <span style="${LBL}">${esc(подпись)}</span>
+      <input data-field="${esc(ид)}" value="${esc(текущее)}"
+             style="padding:7px 9px;border-radius:9px;border:1px solid var(--line);
+                    background:var(--field, var(--panel));color:var(--ink);font-size:12.5px" />
+      <span style="font-size:11px;color:var(--ink-3)">${
+        String(п["прочитано"]) === "да"
+          ? `уверенность ${esc(String(п["уверенность"] ?? "—"))} при пороге ${
+              esc(String(п["порог"] ?? "—"))} · ${esc(String(п["откуда"] || ""))}`
+          : `не прочитано: ${esc(String(п["откуда"] || "якоря нет"))}`}</span>
+    </label>`;
+  }
+
+  function документКарточка(д) {
+    const ждёт = busy === д["документ"];
+    const есть = (д["поля"] || []).length;
+    return card({
+      "что": д["файл"] || "документ",
+      "класс": д["тип"] || "тип не определён",
+      "состояние": есть ? `${есть} из ${д["полей_всего"]} полей` : д["состояние"],
+      "справа": д["организация"] || "",
+      "суть": есть
+        ? "Проверьте значения: расчёт прочитал их ниже порога, объявленного правилом типа."
+        : String(д["почему"] || "документ ждёт человека"),
+      "происхождение": есть ? String(д["почему"] || "") : "",
+      "действия": есть ? [
+        `<button data-fc="${esc(д["документ"])}" style="${BTN_OK}" ${ждёт ? "disabled" : ""}>Подтвердить</button>`,
+      ] : [],
+    }) + (есть ? `<div style="display:flex;gap:10px;flex-wrap:wrap;padding:0 2px 10px">${
+      (д["поля"] || []).map((п) => полеВвод(д["документ"], п)).join("")}</div>` : "");
   }
 
   function польза() {
@@ -187,6 +249,20 @@ export async function mount(root, ctx) {
     }) + предметHTML(з);
   }
 
+  function разделПолей() {
+    if (!поля.length) return "";
+    const всего = поля.reduce((н, д) => н + ((д["поля"] || []).length), 0);
+    return `<div style="display:flex;flex-direction:column;gap:var(--gap-item)">
+      <h2 style="margin:0;font-size:17px;font-weight:700">Поля первички на проверку</h2>
+      ${origin(`Ждут человека: ${поля.length} ${поля.length === 1 ? "документ" : "документов"}, ` +
+        `${всего} ${всего === 1 ? "поле" : "полей"}. Подтверждаются ПОЛЯ, а не документы: ` +
+        "расчёт прочитал значение ниже порога, объявленного правилом типа, и показывает, чем он " +
+        "его получил. Ваша правка сохраняется эталоном — из него считается качество на ваших же " +
+        "документах.")}
+      ${поля.map(документКарточка).join("")}
+    </div>`;
+  }
+
   function render() {
     const q = (данные || {})["queue"] || [];
     root.innerHTML = `<div style="display:flex;flex-direction:column;gap:var(--gap-group);max-width:860px">
@@ -209,8 +285,20 @@ export async function mount(root, ctx) {
       </div>` : ""}
       ${ошибкаНаходок ? `<div style="font-size:12.5px;color:var(--danger-ink)">${esc(ошибкаНаходок)}</div>` : ""}
       ${находки.map(находкаКарточка).join("")}
+      ${разделПолей()}
       ${польза()}
     </div>`;
+    // Правка живёт в памяти раздела, а не в DOM: перерисовка карточек не должна терять то, что
+    // человек уже набрал в соседнем поле.
+    root.querySelectorAll("[data-field]").forEach((вход) => {
+      вход.oninput = () => {
+        const [документ, поле] = String(вход.dataset.field || "").split("::");
+        if (!документ || !поле) return;
+        правки[документ] = правки[документ] || {};
+        правки[документ][поле] = вход.value;
+      };
+    });
+    root.querySelectorAll("[data-fc]").forEach((b) => b.onclick = () => подтвердитьПоля(b.dataset.fc));
     root.querySelectorAll("[data-open]").forEach((b) => b.onclick = () => раскрыть(b.dataset.open));
     root.querySelectorAll("[data-go]").forEach((b) => b.onclick = () => решить(b.dataset.go, "approve"));
     root.querySelectorAll("[data-no]").forEach((b) => b.onclick = () => решить(b.dataset.no, "reject"));
