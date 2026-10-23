@@ -149,7 +149,7 @@ td code { font-size:.85em; }
 
   <div class="cover-meta">
     <span class="chip">версия платформы <b>1.1</b></span>
-    <span class="chip">предикатов <b>12</b></span>
+    <span class="chip">предикатов <b>13</b></span>
     <span class="chip">навыков <b>63</b></span>
     <span class="chip">дата <b>10.10.2026</b></span>
   </div>
@@ -885,6 +885,7 @@ python webapp/build.py lint              <span class="c"># синтаксис JS
     <tr><td><code>период_совпадает</code></td><td>две даты в одном периоде; переходящая операция — когда в разных</td><td><code>поле</code> · <code>с</code> · <code>точность</code></td></tr>
     <tr><td><code>есть_строка_со_значением</code></td><td>во вложенном списке есть строка с нужным значением</td><td><code>в</code> · <code>поле</code> · <code>равно</code> · <code>через_справочник</code></td></tr>
     <tr><td><code>дубль_по_ключу</code> <b>(агрегатный)</b></td><td>один ключ у нескольких записей — дубль справочника</td><td><code>ключ</code> · <code>где</code> · <code>подпись</code> · <code>звено</code></td></tr>
+<tr><td><code>разные_значения_по_ключу</code></td><td>по одному ключу встречаются разные значения поля (один номер — два ИНН)</td><td><code>ключ</code>, <code>поле</code>, <code>подпись</code></td><td>агрегатный; дубль сливают, а эти две записи слить нельзя</td></tr>
     <tr><td><code>старше_дней</code></td><td>значение даты старше порога относительно отчётной даты</td><td><code>поле</code> · <code>дней</code> · <code>на_дату</code> · <code>если_остаток</code></td></tr>
     <tr><td><code>парные_значения</code> <b>(агрегатный)</b></td><td>две взаимоисключающие строки по одному ключу (долг и аванс по контрагенту)</td><td><code>ключ</code> · <code>поле</code> · <code>пары</code> · <code>суммы</code></td></tr>
   </tbody>
