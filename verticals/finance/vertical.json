@@ -20,13 +20,15 @@
       "plan_rule",
       "finding",
       "primary_doc",
-      "doc_type_rule"
+      "doc_type_rule",
+      "recon_line"
     ],
     "адаптеры": [
       "json",
       "audit1c",
       "inbox",
-      "pervichka"
+      "pervichka",
+      "recon"
     ],
     "навыки": [
       "audit1c-checks",
@@ -46,7 +48,8 @@
       "finance_binding",
       "finance_doc_types",
       "finance_inbox",
-      "finance_parse"
+      "finance_parse",
+      "finance_recon"
     ],
     "данные": [
       "data/fix_rules.json",
