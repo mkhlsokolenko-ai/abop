@@ -298,6 +298,14 @@ async def hitl_approve(item_id: str, body: dict = None, u: dict = Depends(user))
         await audit_store.record(actor, "hitl.approve", item_id, {"agent_id": item.get("agent_id"), "channel": "command",
                                                                   "topic": res.get("topic"), "command_id": (res.get("command") or {}).get("id")})
         obs.inc("abop_hitl_total", decision="approve")
+        # Исход — в прогон, ровно как у канала ниже. Без этой строки подтверждённая команда
+        # навсегда оставалась в карточке прогона «ожидает подтверждения оператора»: заявка уже
+        # решена, очередь пуста, кнопки нет — человек видит тупик и не может понять, ушло или нет.
+        # Поймано на прогоне run-plan-pr2930.v1-d4bf39: четыре задачи в OpenProject подтверждены,
+        # а карточка показывала ожидание.
+        await _записать_исход(item, item_id, "real",
+                              "команда отправлена в " + str(res.get("topic") or "шину")
+                              + " — исполняет коннектор")
         resumed = await _resume_job_after_hitl(item_id, payload, "approve")
         return JSONResponse({"id": item_id, "state": "approved", "delivery": "команда опубликована в " + str(res.get("topic")),
                              "command_id": (res.get("command") or {}).get("id"), "resumed_job": resumed})

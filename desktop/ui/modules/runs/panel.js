@@ -4,7 +4,7 @@
 // сравнение прогонов и выбор шаблона отчёта были доступны только в вебе.
 //
 // Выборка и фильтры считаются на сервере (Postgres — источник истины), панель ничего не хранит.
-import { CARD, LBL, INP } from "../../core/cards.js";
+import { CARD, LBL, INP, BTN, BTN_OK } from "../../core/cards.js";
 // Стили — из ядра: шесть разных карточек и пять разных подписей в панелях были
 // расхождением, а не выбором (DIZAJN, раздел 2).
 const R = "/api/modules/runs";
@@ -21,7 +21,7 @@ const fmtCost = (c) => { const v = Number(rub(c)); return (rub(c) == null || !is
   : (v === 0 ? "0 ₽" : v.toFixed(2) + " ₽"); };
 
 export async function mount(root, ctx) {
-  const { api, toast, humanError } = ctx;
+  const { api, toast, humanError, gate, sanitizeHtml } = ctx;
   let runs = [], agentsList = [], total = 0, loadErr = null, busy = false;
   let q = "", agentId = "", verdict = "", days = 0, deep = false, hits = {};
   let open = null, openData = null, openTab = "findings", openErr = "", templates = [];
@@ -225,6 +225,92 @@ export async function mount(root, ctx) {
       <div style="${LBL};margin:12px 0 4px">что выложено на доску</div>${rows}`;
   }
 
+  // ── Доставка: что ушло наружу, что ещё ждёт человека ──────────────────────────────────────────
+  //
+  // Было: строка серым текстом, в которой состояние печаталось машинным словом (`awaiting_hitl`),
+  // и ни одной кнопки. На прогоне run-plan-pr2930.v1-d4bf39 это дало тупик: четыре задачи в
+  // OpenProject ждали подтверждения, человек видел бледную строку «awaiting_hitl» и не мог ни
+  // понять, ушло ли, ни подтвердить — очередь живёт в другом разделе, а решённая заявка исчезает
+  // и оттуда. Теперь состояние названо словами, ожидание выделено подложкой, а подтверждение
+  // стоит рядом с тем, что подтверждают.
+  const РЕЖИМ = {
+    "real": ["отправлено", "var(--ok-ink)"],
+    "sent": ["отправлено", "var(--ok-ink)"],
+    "awaiting_hitl": ["ждёт вашего подтверждения", "var(--warn-ink)"],
+    "dry_run": ["черновик — наружу не уходило", "var(--ink-2)"],
+    "rejected": ["оставлено черновиком", "var(--ink-2)"],
+    "denied": ["доступ закрыт", "var(--danger-ink)"],
+    "skipped": ["пропущено", "var(--ink-2)"],
+    "только_чтение": ["режим только чтения — наружу ничего не уходит", "var(--ink-2)"],
+  };
+
+  function deliveryHTML(dl) {
+    if (!dl.length) return `<div style="font-size:12.5px;color:var(--ink-3)">Ничего наружу не уходило.</div>`;
+    const ждут = dl.filter((x) => String(x.mode || "") === "awaiting_hitl" && x.hitl_id).length;
+    const строки = dl.map((x) => {
+      const режим = String(x.mode || "");
+      const [слово, цвет] = РЕЖИМ[режим] || [режим || "состояние не объявлено", "var(--ink-2)"];
+      const ждёт = режим === "awaiting_hitl";
+      const кнопки = ждёт && x.hitl_id
+        ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+            <button type="button" class="dGo" data-id="${esc(x.hitl_id)}" style="${BTN_OK}">Показать и подтвердить</button>
+            <button type="button" class="dNo" data-id="${esc(x.hitl_id)}" style="${BTN}">Оставить черновиком</button></div>`
+        : ждёт
+          ? `<div style="font-size:11.5px;color:var(--ink-3);margin-top:6px">Заявка на подтверждение к этой записи не привязана — подтвердить отсюда нечем, откройте раздел «Решения».</div>`
+          : "";
+      return `<div class="${ждёт ? "wait-row" : ""}" style="${ждёт ? "" : "border:1px solid var(--line);border-radius:var(--r-md);padding:10px 12px;background:var(--field);"}margin:6px 0">
+        <div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
+          <span style="font-size:12.5px;font-weight:650">${esc(x.title || x.channel || "доставка")}</span>
+          <span style="font-size:11.5px;font-weight:700;color:${цвет}">${esc(слово)}</span>
+        </div>
+        <div style="font-size:12px;color:var(--ink-2);margin-top:3px">${esc(x.channel || "")}${x.to ? " → " + esc(x.to) : " · адресат не указан"}${x.subject ? " · «" + esc(String(x.subject).slice(0, 120)) + "»" : ""}</div>
+        ${x.result ? `<div style="font-size:11.5px;color:var(--ink-3);margin-top:3px">${esc(String(x.result).slice(0, 200))}</div>` : ""}
+        ${кнопки}</div>`;
+    }).join("");
+    const шапка = ждут
+      ? `<div class="wait-row" style="margin:0 0 8px"><span class="wait-head" style="font-size:12.5px">🛡 Ждёт вашего решения: ${ждут}</span>
+          <div style="font-size:12px;color:var(--ink-2);margin-top:4px">Наружу ничего не ушло. Прогон дошёл до конца, действие собрано и ждёт — подтвердите или оставьте черновиком.</div></div>`
+      : "";
+    return шапка + строки;
+  }
+
+  async function решитьДоставку(id, decision) {
+    // Решение идёт тем же путём, что в «Решениях»: одна ручка — один смысл. Перед «да» человек
+    // обязан увидеть предмет целиком (UX-аудит 25.09, D-C3): подтверждать невидимое нельзя.
+    const D = "/api/modules/decisions/item/" + encodeURIComponent(id);
+    if (decision === "approve") {
+      let предмет = null;
+      try { предмет = await api(D); }
+      catch (e) { toast(humanError(e), "danger"); return; }
+      const поля = (предмет.command_fields || []).map(([k, v]) => [String(k), String(v)]);
+      const ок = await gate({
+        title: предмет.title || "Внешнее действие",
+        kicker: "требуется ваше решение",
+        fields: [["кому", предмет.to || "—"], ["канал", предмет.channel || "—"]].concat(поля),
+        html: предмет.html ? sanitizeHtml(предмет.html) : "",
+        body: предмет.html ? "" : (предмет.body || "Содержимое не приложено."),
+        allowLabel: "Подтвердить", denyLabel: "Отмена",
+        note: predmetНота(предмет),
+      });
+      if (!ок) return;
+    }
+    try {
+      await api(D + "/decide", { method: "POST", body: JSON.stringify({ decision, reason: "" }) });
+      toast(decision === "approve" ? "Подтверждено — ушло" : "Осталось черновиком", "ok");
+    } catch (e) {
+      // «Заявка уже обработана» — не ошибка интерфейса, а устаревшая карточка: перечитываем.
+      toast(humanError(e), "danger");
+    }
+    // Перечитываем карточку — и остаёмся на той же вкладке: человек решал доставку, а не уходил
+    // смотреть находки.
+    await openRun(open);
+    openTab = "delivery"; render();
+  }
+
+  const predmetНота = (предмет) => (предмет.kind === "command"
+    ? "Действие выполнится в вашей системе. Ссылка на созданный объект вернётся в карточку прогона."
+    : "Отправится только после вашего подтверждения.");
+
   function openHTML() {
     if (openErr) return `<div style="${CARD};border-color:var(--danger-line)"><div style="font-weight:700">Прогон не открылся</div><div style="font-size:12.5px;color:var(--ink-2)">${esc(openErr)}</div><button class="btn sm" id="oRetry" style="align-self:flex-start">Повторить</button></div>`;
     if (!openData) return `<div style="${CARD}"><div class="skeleton" style="height:18px;width:50%"></div><div class="skeleton" style="height:120px"></div></div>`;
@@ -252,9 +338,7 @@ export async function mount(root, ctx) {
     } else if (openTab === "board") {
       body = boardHTML();
     } else if (openTab === "delivery") {
-      const dl = d.delivery || [];
-      body = dl.length ? dl.map((x) => `<div style="font-size:12.5px;color:var(--ink-2);margin:5px 0">${esc(x.channel || "")}${x.to ? " → " + esc(x.to) : ""} · ${esc(x.mode || "")}${x.subject ? " · «" + esc(x.subject) + "»" : ""}</div>`).join("")
-        : `<div style="font-size:12.5px;color:var(--ink-3)">Ничего наружу не уходило.</div>`;
+      body = deliveryHTML(d.delivery || []);
     } else {
       // Время и токены лежат в run_metrics.timings и run_metrics.cost, а не в корне: раньше вкладка
       // показывала «—» и «0 → 0» ровно там, где человек спрашивает «сколько это стоило».
@@ -333,6 +417,8 @@ export async function mount(root, ctx) {
     };
     if ($("oRetry")) $("oRetry").onclick = () => openRun(open);
     root.querySelectorAll(".rtab").forEach((b) => { b.onclick = async () => { openTab = b.dataset.tab; render(); if (openTab === "board" && !boardData && !boardErr) await loadBoard(); }; });
+    root.querySelectorAll(".dGo").forEach((b) => { b.onclick = () => решитьДоставку(b.dataset.id, "approve"); });
+    root.querySelectorAll(".dNo").forEach((b) => { b.onclick = () => решитьДоставку(b.dataset.id, "reject"); });
     if ($("oPdf")) $("oPdf").onclick = async (e) => {
       const tpl = $("oTpl") ? $("oTpl").value : "";
       e.target.disabled = true; e.target.textContent = "…";

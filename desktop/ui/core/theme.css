@@ -57,6 +57,11 @@
   --danger-ink: #fca5a5;
   /* статусные поверхности (UX-аудит 25.09 D-H14: никаких хардкодов #fbbf24/#6ee7b7/#fca5a5 в модулях) */
   --ok-bg: rgba(16, 185, 129, 0.16);   --ok-line: rgba(52, 211, 153, 0.42);
+  /* Утвердительное действие — ЗАЛИВКА, а не подкрашенная рамка. Повод: «Отправить» в решениях и
+     «Посмотреть и подтвердить» в чате рисовались тем же стеклом, что и «Оставить черновиком», и
+     на тёмном фоне кнопка подтверждения читалась как серый текст — владелец так её и не нашёл.
+     Заливка отделяет «я беру на себя отправку наружу» от всего остального на экране. */
+  --ok-solid: #10b981; --ok-solid-ink: #052e24;
   --warn-bg: rgba(245, 158, 11, 0.12); --warn-line: rgba(245, 158, 11, 0.45);
   --danger-bg: rgba(239, 68, 68, 0.12); --danger-line: rgba(239, 68, 68, 0.38);
   --info-bg: rgba(139, 92, 246, 0.14); --info-line: rgba(139, 92, 246, 0.5); --info-ink: #c4b5fd;
@@ -148,6 +153,7 @@
   --ok-ink: #065f46;
   --danger-ink: #991b1b;
   --ok-bg: rgba(16, 185, 129, 0.12);   --ok-line: rgba(5, 150, 105, 0.35);
+  --ok-solid: #047857; --ok-solid-ink: #ffffff;
   --warn-bg: rgba(245, 158, 11, 0.14); --warn-line: rgba(180, 83, 9, 0.35);
   --danger-bg: rgba(239, 68, 68, 0.10); --danger-line: rgba(185, 28, 28, 0.35);
   --info-bg: rgba(124, 58, 237, 0.10); --info-line: rgba(109, 40, 217, 0.35); --info-ink: #5b21b6;
@@ -388,7 +394,15 @@ button:disabled { cursor: default; }
 .ape-modal .ape-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px; }
 .btn.danger { background: var(--danger-bg); border-color: var(--danger-line); color: var(--danger-ink); }
 .btn.danger:hover { filter: brightness(1.08); }
-.btn.ok { background: var(--ok-bg); border-color: var(--ok-line); color: var(--ok-ink); }
+.btn.ok {
+  background-color: var(--ok-solid); background-image: none; border-color: transparent;
+  color: var(--ok-solid-ink); font-weight: 700;
+  box-shadow: 0 10px 26px var(--ok-glow), var(--edge-strong);
+}
+.btn.ok:hover { filter: brightness(1.06); box-shadow: 0 14px 34px var(--ok-glow), var(--edge-strong); }
+/* Ожидание решения — состояние, а не ошибка: тёплая подложка и рамка, но не красная. */
+.wait-row { border: 1px solid var(--warn-line); background: var(--warn-bg); border-radius: var(--r-md); padding: 10px 12px; }
+.wait-head { color: var(--warn-ink); font-weight: 700; }
 @keyframes ape-fade { from { opacity: 0; } to { opacity: 1; } }
 /* стек тостов (вместо одного слота) */
 #apeToasts { position: fixed; left: 50%; top: 66px; transform: translateX(-50%); z-index: 400; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; max-width: 80vw; }   /* сверху — не перекрывает композер */
