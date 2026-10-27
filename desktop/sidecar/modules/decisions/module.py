@@ -109,14 +109,14 @@ def quality(organisation: str = "") -> dict:
 
 
 @router.get("/findings")
-def findings(project: str = "", process: str = "") -> dict:
+def findings(project: str = "", process: str = "", organisation: str = "") -> dict:
     """Находки реестра, ждущие решения: «это проблема» или «так и должно быть».
 
     Раньше находка жила внутри прогона: чтобы её найти, надо было помнить, какой прогон её родил.
     Здесь она лежит рядом с доказательством, и решение по ней — одно движение.
     """
     try:
-        return abop.findings_open(project, process)
+        return abop.findings_open(project, process, organisation)
     except Exception as ex:  # noqa: BLE001
         raise _ошибка(ex) from ex
 
@@ -124,11 +124,36 @@ def findings(project: str = "", process: str = "") -> dict:
 class НаходкаIn(BaseModel):
     состояние: str = "подтверждено"
     почему: str = ""
+    # Дата возврата для состояния «отложено». Пусто у остальных исходов — и это не ошибка.
+    до: str = ""
+
+
+class ПакетIn(BaseModel):
+    ids: list = []
+    состояние: str = "подтверждено"
+    почему: str = ""
+    до: str = ""
 
 
 @router.post("/findings/{finding_id}/decide")
 def finding_decide(finding_id: str, body: НаходкаIn) -> dict:
     try:
-        return {"ok": True, "result": abop.finding_decide(finding_id, body.состояние, body.почему)}
+        return {"ok": True, "result": abop.finding_decide(finding_id, body.состояние,
+                                                          body.почему, body.до)}
+    except Exception as ex:  # noqa: BLE001
+        raise _ошибка(ex) from ex
+
+
+@router.post("/findings/decide-batch")
+def findings_decide_batch(body: ПакетIn) -> dict:
+    """Решение по группе находок сразу — то же решение, только не по одной.
+
+    Руководитель смотрит на причину («14 поступлений без счёта-фактуры»), а не на четырнадцать
+    её следов. Запись в журнале при этом остаётся по каждой находке: пакет ускоряет нажатие, а
+    не упрощает отчётность.
+    """
+    try:
+        return {"ok": True, "result": abop.findings_decide_batch(body.ids, body.состояние,
+                                                                 body.почему, body.до)}
     except Exception as ex:  # noqa: BLE001
         raise _ошибка(ex) from ex

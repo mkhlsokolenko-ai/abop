@@ -11,14 +11,14 @@
 //    внешняя коммуникация, в рамках ваших должностных обязанностей».
 // 4. **Срок виден, и истёкший срок — не ошибка.** «Решение не принято за N ч» означает, что
 //    доставка не состоялась, а черновик лежит. Красным это рисовать нельзя: ничего не сломалось.
-import { LBL, BTN, BTN_GHOST, BTN_OK } from "../../core/cards.js";
+import { CARD, INP, LBL, BTN, BTN_GHOST, BTN_OK } from "../../core/cards.js";
 import { icon } from "../../core/icons.js";
 // Стили — из ядра: шесть разных карточек и пять разных подписей в панелях были
 // расхождением, а не выбором (DIZAJN, раздел 2).
 const M = "/api/modules/decisions";
 
 export async function mount(root, ctx) {
-  const { api, esc, toast, humanError, card, origin, sanitizeHtml, setHitlCount } = ctx;
+  const { api, esc, toast, humanError, card, origin, sanitizeHtml, setHitlCount, modal } = ctx;
   let данные = null, err = "", loading = true, busy = "";
   let открыт = "", предмет = null;
   // Второй поток раздела: находки расчёта, ждущие слова человека. Это не то же самое, что заявка
@@ -26,6 +26,10 @@ export async function mount(root, ctx) {
   // Поэтому два списка, а не один: смешать их значит заставить человека каждый раз угадывать,
   // чего от него хотят.
   let находки = [], сводка = {}, ошибкаНаходок = "";
+  // Группы по причине и объяснение порядка приходят тем же ответом, что находки: считает их
+  // сервер по объявленным весам, а не панель — иначе два экрана считали бы «важное» по-разному.
+  let группы = [], порядок = "", почемуБезПорядка = "", незнакомыеФакторы = [];
+  let раскрытаГруппа = "", всеНаходки = false;
   // Третий поток раздела: поля первички ниже порога. Вопрос человеку здесь третий и по смыслу:
   // не «отправить ли» и не «проблема ли это», а «что в документе на самом деле».
   let поля = [], первичка = {}, ошибкаПолей = "", правки = {};
@@ -42,6 +46,10 @@ export async function mount(root, ctx) {
     try {
       const р = await api(M + "/findings");
       находки = р.findings || []; сводка = р["сводка"] || {}; ошибкаНаходок = "";
+      группы = р["группы"] || [];
+      порядок = String(р["порядок"] || "");
+      почемуБезПорядка = String(р["почему_без_порядка"] || "");
+      незнакомыеФакторы = р["незнакомые_факторы"] || [];
     } catch (e) { находки = []; ошибкаНаходок = humanError(e); }
     try {
       const р = await api(M + "/fields");
@@ -62,6 +70,110 @@ export async function mount(root, ctx) {
       await load();
     } catch (e) { toast(humanError(e), "err"); }
     finally { busy = ""; render(); }
+  }
+
+  // Отсрочка — законный исход, но только с датой: «отложить навсегда» это не решение, а способ
+  // не решать. Дату спрашиваем сразу, по умолчанию через неделю — самый частый ответ.
+  async function отложить(ids) {
+    const через = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+    const поле = `<div style="display:flex;flex-direction:column;gap:8px">
+      <div style="font-size:12.5px;color:var(--ink-2)">Находка вернётся в список в этот день. До тех пор она не исчезает — её видно в сводке как отложенную.</div>
+      <input id="dDo" type="date" value="${через}" style="${INP}"/></div>`;
+    let дата = "";
+    await new Promise((готово) => {
+      modal("Отложить до даты", поле, (b) => { дата = (b.querySelector("#dDo") || {}).value || ""; готово(); },
+            "Отложить", { cancelLabel: "Отмена", onClose: () => готово() });
+    });
+    if (!дата) return;
+    await решитьПакетом(ids, "отложено", дата);
+  }
+
+  // Пакетное решение: один вопрос руководителя — одно нажатие. Сервер пишет в журнал каждую
+  // находку, поэтому в ответе честно сказано, сколько решено и сколько не нашлось.
+  async function решитьПакетом(ids, состояние, до) {
+    if (!ids || !ids.length) return;
+    busy = "пакет"; render();
+    try {
+      const р = await api(M + "/findings/decide-batch",
+                          { method: "POST", body: JSON.stringify({ ids, состояние, почему: "", до: до || "" }) });
+      const итог = (р && р.result) || {};
+      const решено = Number(итог["всего"] || 0), мимо = Number(итог["пропущено"] || 0);
+      toast(`${состояние === "отложено" ? "Отложено" : состояние === "подтверждено" ? "Признано проблемой" : "Отмечено нормой"}: ${решено}`
+            + (мимо ? ` · не нашлось: ${мимо}` : ""), мимо ? "warn" : "ok");
+      раскрытаГруппа = "";
+      await load();
+    } catch (e) { toast(humanError(e), "err"); }
+    finally { busy = ""; render(); }
+  }
+
+  // ── шапка раздела: четыре числа для руководителя ──────────────────────────────────────────
+  //
+  // «41 находка» руководителю не говорит ничего, «1,24 млн ₽ под риском» говорит. У каждого
+  // числа есть вторая строка — чем оно посчитано: число без происхождения на этом экране
+  // означало бы, что мы просим решения, не объяснив, на основании чего.
+  // Идентификаторы группы берём с СЕРВЕРА (он собрал группу), а не пересобираем на экране:
+  // пересборка по коду промахнулась бы мимо находок, которых нет в текущем фильтре.
+  const идыГруппы = (код) => ((группы.find((г) => String(г["код"]) === String(код)) || {})["ids"] || []);
+
+  function плитки() {
+    const заявок = ((данные || {})["queue"] || []).length;
+    const сумма = группы.reduce((н, г) => н + Number(г["сумма"] || 0), 0);
+    const безСуммы = группы.reduce((н, г) => н + Number(г["сумм_неизвестно"] || 0), 0);
+    const доля = сводка["доля_подтверждения"];
+    const числа = [
+      [String(заявок), "требуют вашего слова", заявок ? "внешние действия · решает исполнитель" : "внешних действий нет"],
+      [сумма ? деньги(сумма) : "—", "сумма под риском",
+       сумма ? `по документам находок${безСуммы ? ` · без суммы: ${безСуммы}` : ""}` : "величина не объявлена правилами"],
+      [String(сводка["открытых"] || 0), `находок в ${группы.length} ${склонение(группы.length, "группе", "группах", "группах")}`,
+       "одна причина — одна группа"],
+      [доля === "" || доля == null ? "—" : доля + " %", "доля признания",
+       `${сводка["подтверждено"] || 0} из ${(сводка["подтверждено"] || 0) + (сводка["отклонено"] || 0) || 0} решённых`],
+    ];
+    return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">${
+      числа.map(([ч, п, о]) => `<div style="${CARD};gap:3px;padding:12px 14px">
+        <span style="font-family:var(--mono);font-size:22px;font-weight:700;line-height:1.1">${esc(ч)}</span>
+        <span style="font-size:11.5px;color:var(--ink-2)">${esc(п)}</span>
+        <span style="font-size:10.5px;color:var(--ink-3);font-family:var(--mono)">${esc(о)}</span></div>`).join("")}</div>`;
+  }
+
+  const склонение = (н, од, дв, мн) => {
+    const о = Math.abs(н) % 100, е = о % 10;
+    if (о > 10 && о < 20) return мн;
+    if (е > 1 && е < 5) return дв;
+    return е === 1 ? од : мн;
+  };
+  const деньги = (ч) => ч >= 1000000 ? (ч / 1000000).toFixed(2).replace(".", ",") + " млн ₽"
+    : Math.round(ч).toLocaleString("ru-RU") + " ₽";
+
+  // ── группа: причина, а не список её следов ────────────────────────────────────────────────
+  function группаСтрокой(г) {
+    const раскрыта = раскрытаГруппа === г["код"];
+    const ждёт = busy === "пакет";
+    const части = [
+      `${г["находок"]} ${склонение(г["находок"], "находка", "находки", "находок")}`,
+      (г["организации"] || []).length ? `${г["организации"].length} ${склонение(г["организации"].length, "организация", "организации", "организаций")}` : "",
+      Number(г["сумма"] || 0) ? деньги(Number(г["сумма"])) : "",
+      Number(г["сумм_неизвестно"] || 0) ? `без суммы: ${г["сумм_неизвестно"]}` : "",
+      г["исход_способа"] === "выбран" && г["способ"] ? `способ: ${г["способ"]}` : "",
+      г["исход_способа"] && г["исход_способа"] !== "выбран" ? `способ — ${г["исход_способа"]}` : "",
+      Number(г["отложено"] || 0) ? `отложено: ${г["отложено"]}` : "",
+    ].filter(Boolean).join(" · ");
+    const свои = находки.filter((н) => String(н["код"] || "") === г["код"]);
+    return `<div style="${CARD};gap:8px">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <span style="font-size:13.5px;font-weight:650">${esc(г["код"])}${г["название"] ? " · " + esc(г["название"]) : ""}</span>
+        <span style="${LBL};padding:2px 7px;border:1px solid var(--line);border-radius:999px">${esc(г["серьёзность"] || "")}</span>
+      </div>
+      <div style="font-size:12px;color:var(--ink-2);font-family:var(--mono)">${esc(части)}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button data-gy="${esc(г["код"])}" style="${BTN_OK}" ${ждёт ? "disabled" : ""}>${icon("check")}Признать все</button>
+        <button data-gn="${esc(г["код"])}" style="${BTN_GHOST}" ${ждёт ? "disabled" : ""}>Это норма</button>
+        <button data-gp="${esc(г["код"])}" style="${BTN_GHOST}" ${ждёт ? "disabled" : ""}>${icon("clock")}Отложить</button>
+        <button data-gx="${esc(г["код"])}" style="${BTN}">${раскрыта ? "Свернуть" : `Раскрыть ${свои.length}`}</button>
+      </div>
+      ${раскрыта ? `<div style="display:flex;flex-direction:column;gap:10px;padding-top:4px">${
+        свои.map(находкаКарточка).join("") || `<span style="${LBL}">по этой причине нерешённых находок нет — все уже признаны или отложены</span>`}</div>` : ""}
+    </div>`;
   }
 
   function находкаКарточка(н) {
@@ -91,11 +203,18 @@ export async function mount(root, ctx) {
       "справа": [н["организация"], н["проект"], н["процесс"]].filter(Boolean).join(" · "),
       "суть": [н["предмет"] ? "предмет: " + н["предмет"] : "", н["название"] || "", способСтрокой]
         .filter(Boolean).join(" — "),
-      "происхождение": [доказательство, н["основание"] ? "основание: " + н["основание"] : "",
-                        пересмотр].filter(Boolean).join(" · "),
+      // «Почему это здесь» — первый вопрос руководителя к любому списку по важности. Разбор
+      // считает сервер из объявленных весов, панель только показывает: придумывать объяснение
+      // задним числом значило бы выдавать мнение за расчёт.
+      "происхождение": [(н["почему_наверху"] || []).length
+                          ? "почему это здесь: " + (н["почему_наверху"] || []).join(" · ") : "",
+                        доказательство, н["основание"] ? "основание: " + н["основание"] : "",
+                        пересмотр,
+                        (н["чего_не_хватило"] || []).join(" · ")].filter(Boolean).join(" · "),
       "действия": [
-        `<button data-fy="${esc(н.id)}" style="${BTN_OK}" ${ждёт ? "disabled" : ""}>Это проблема</button>`,
-        `<button data-fn="${esc(н.id)}" style="${BTN}" ${ждёт ? "disabled" : ""}>Так и должно быть</button>`,
+        `<button data-fy="${esc(н.id)}" style="${BTN_OK}" ${ждёт ? "disabled" : ""}>${icon("check")}Это проблема</button>`,
+        `<button data-fn="${esc(н.id)}" style="${BTN_GHOST}" ${ждёт ? "disabled" : ""}>Так и должно быть</button>`,
+        `<button data-fp="${esc(н.id)}" style="${BTN_GHOST}" ${ждёт ? "disabled" : ""}>${icon("clock")}Отложить</button>`,
       ],
     });
   }
@@ -271,6 +390,40 @@ export async function mount(root, ctx) {
     </div>`;
   }
 
+  // Верх списка: то, что требует человека раньше остального. Три штуки, а не все — экран
+  // отвечает на вопрос «с чего начать», а не «покажи всё»; остальное ниже, группами.
+  const ВЕРХ = 3;
+  function верхНаходок() {
+    if (!находки.length) return "";
+    const верх = порядок ? находки.slice(0, ВЕРХ) : находки.slice(0, ВЕРХ);
+    const показать = всеНаходки ? находки : верх;
+    const ещё = находки.length - показать.length;
+    return `<div style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+        <h3 style="margin:0;font-size:15px;font-weight:700">Сегодня требует вас · ${показать.length}</h3>
+        ${порядок ? `<span style="${LBL}">порядок: расчёт · объяснение: расчёт</span>` : ""}
+      </div>
+      ${показать.map(находкаКарточка).join("")}
+      ${ещё > 0 ? `<button id="dAll" style="${BTN_GHOST};align-self:flex-start">Показать все ${находки.length}</button>` : ""}
+    </div>`;
+  }
+
+  function разделГрупп() {
+    if (!группы.length) return "";
+    const закрытых = группы.reduce((н, г) => н + Number(г["находок"] || 0), 0);
+    return `<div style="display:flex;flex-direction:column;gap:10px;margin-top:4px">
+      <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+        <h3 style="margin:0;font-size:15px;font-weight:700">Можно закрыть пакетом · ${группы.length}</h3>
+        <span style="${LBL}">${закрытых} ${склонение(закрытых, "находка", "находки", "находок")}</span>
+      </div>
+      ${origin("Группа — это одна ПРИЧИНА, а не список похожих строк: решение по ней применяется ко всем её находкам сразу, и в журнал пишется каждая. Поштучный разбор остаётся за «Раскрыть».")}
+      ${группы.map(группаСтрокой).join("")}
+      ${сводка["отложено"] ? origin(`Отложено: ${сводка["отложено"]}`
+        + (сводка["отсрочка_истекла"] ? ` · срок отсрочки прошёл у ${сводка["отсрочка_истекла"]} — они снова требуют вас` : "")
+        + ". Отложенное не исчезает из счёта: это работа, которую решили сделать позже.") : ""}
+    </div>`;
+  }
+
   function render() {
     const q = (данные || {})["queue"] || [];
     root.innerHTML = `<div style="display:flex;flex-direction:column;gap:var(--gap-group);max-width:860px">
@@ -278,6 +431,7 @@ export async function mount(root, ctx) {
         <h2 style="margin:0;font-size:20px;font-weight:700">Что ждёт вашего решения</h2>
         ${origin("Решает тот, в чьи обязанности это входит: У2 — исполнитель прогона, У3 — владелец операции в карте процессов. Руководитель здесь не нажимает кнопки за других.")}
       </div>
+      ${плитки()}
       ${err ? `<div style="font-size:12.5px;color:var(--danger-ink)">${esc(err)}</div>` : ""}
       ${loading && !данные ? `<div style="${LBL}">читаю очередь…</div>` : ""}
       ${!loading && !err && !q.length ? `<div style="display:flex;flex-direction:column;gap:6px">
@@ -287,12 +441,17 @@ export async function mount(root, ctx) {
         ${origin("Письмо наружу и необратимое действие попадут сюда сами: цепочка при этом дойдёт до конца, а наружу ничего не уйдёт без вашего слова.")}
       </div>` : ""}
       ${q.map(карточка).join("")}
-      ${находки.length || ошибкаНаходок ? `<div style="display:flex;flex-direction:column;gap:4px;margin-top:6px">
+      ${находки.length || группы.length || ошибкаНаходок ? `<div style="display:flex;flex-direction:column;gap:4px;margin-top:6px">
         <h2 style="margin:0;font-size:17px;font-weight:700">Что нашёл расчёт</h2>
-        ${origin("Это не отправка наружу, а признание: «да, это проблема» или «так и должно быть». Отказ записывается так же, как согласие — по отклонённым находкам правят правила.")}
+        ${origin(порядок
+          ? "Порядок считает расчёт по весам, объявленным методологом: деньги, срок, повторяемость, доля признания по похожим находкам. Модель здесь не участвует — у каждой находки написано, из чего сложился её приоритет."
+          : (почемуБезПорядка || "Порядок важности не объявлен — находки идут по состоянию и тяжести."))}
+        ${незнакомыеФакторы.length ? origin("В весах есть факторы, которых движок не знает: "
+          + незнакомыеФакторы.join(", ") + ". Они не учтены — это правило методолога не сработало.") : ""}
       </div>` : ""}
       ${ошибкаНаходок ? `<div style="font-size:12.5px;color:var(--danger-ink)">${esc(ошибкаНаходок)}</div>` : ""}
-      ${находки.map(находкаКарточка).join("")}
+      ${верхНаходок()}
+      ${разделГрупп()}
       ${разделПолей()}
       ${польза()}
     </div>`;
@@ -311,6 +470,14 @@ export async function mount(root, ctx) {
     root.querySelectorAll("[data-go]").forEach((b) => b.onclick = () => решить(b.dataset.go, "approve"));
     root.querySelectorAll("[data-no]").forEach((b) => b.onclick = () => решить(b.dataset.no, "reject"));
     root.querySelectorAll("[data-fy]").forEach((b) => b.onclick = () => решитьНаходку(b.dataset.fy, "подтверждено"));
+    root.querySelectorAll("[data-fp]").forEach((b) => b.onclick = () => отложить([b.dataset.fp]));
+    root.querySelectorAll("[data-gy]").forEach((b) => b.onclick = () => решитьПакетом(идыГруппы(b.dataset.gy), "подтверждено"));
+    root.querySelectorAll("[data-gn]").forEach((b) => b.onclick = () => решитьПакетом(идыГруппы(b.dataset.gn), "отклонено"));
+    root.querySelectorAll("[data-gp]").forEach((b) => b.onclick = () => отложить(идыГруппы(b.dataset.gp)));
+    root.querySelectorAll("[data-gx]").forEach((b) => b.onclick = () => {
+      раскрытаГруппа = раскрытаГруппа === b.dataset.gx ? "" : b.dataset.gx; render();
+    });
+    if (root.querySelector("#dAll")) root.querySelector("#dAll").onclick = () => { всеНаходки = true; render(); };
     root.querySelectorAll("[data-fn]").forEach((b) => b.onclick = () => решитьНаходку(b.dataset.fn, "отклонено"));
   }
 

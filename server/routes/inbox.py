@@ -119,7 +119,16 @@ async def findings_list(project: str = "", process: str = "", state: str = "",
     Путь свой, а не `/api/findings`: тот занят журналом находок пилота 1С, и две ручки на одном пути означали бы, что одна из них мёртвая — молча.
     """
     строки = реестр.список(project, process, state, bool(open_only), organisation)
-    return {"findings": строки, "всего": len(строки),
+    # Порядок считает код по объявленным весам, и вместе с ним отдаётся разбор: из чего сложился
+    # приоритет каждой находки. Весов нет — порядок остаётся прежним, и об этом сказано прямо, а
+    # не подменяется молчаливой сортировкой «как получилось».
+    ранжир = реестр.с_приоритетом(строки, process, organisation)
+    return {"findings": ранжир["находки"], "всего": len(строки),
+            "порядок": ранжир.get("порядок") or "",
+            "факторы": ранжир.get("факторы") or [],
+            "незнакомые_факторы": ранжир.get("незнакомые_факторы") or [],
+            "почему_без_порядка": ранжир.get("почему_без_порядка") or "",
+            "группы": реестр.группы(project, process, organisation),
             "сводка": реестр.сводка(project, process, organisation)}
 
 
@@ -138,13 +147,52 @@ async def findings_decide(finding_id: str, body: dict | None = None,
     try:
         итог = реестр.решение(finding_id, состояние=состояние,
                               кем=str(u.get("name") or u.get("sub") or "—"),
-                              почему=str(тело.get("почему") or ""))
+                              почему=str(тело.get("почему") or ""),
+                              до=str(тело.get("до") or ""))
     except ValueError as ex:
         raise HTTPException(400, str(ex))
     if not итог:
         raise HTTPException(404, "находки с таким id в реестре нет")
     return {"ok": True, "finding": итог, "сводка": реестр.сводка(
         str(итог.get("проект") or ""), str(итог.get("процесс") or ""))}
+
+
+@router.get("/api/registry/groups")
+async def findings_groups(project: str = "", process: str = "", organisation: str = "",
+                          u: dict = Depends(user)) -> dict:
+    """Открытые находки, собранные по причине: один код — одна группа.
+
+    Сорок семь находок — это не сорок семь задач руководителя, а шесть причин. Группа несёт то,
+    что нужно для решения: сколько находок, в скольких организациях, на какую сумму и какой
+    способ устранения объявлен правилом.
+    """
+    группы = реестр.группы(project, process, organisation)
+    return {"группы": группы, "всего": len(группы),
+            "находок": sum(int(г.get("находок") or 0) for г in группы)}
+
+
+@router.post("/api/registry/findings/decide-batch")
+async def findings_decide_batch(body: dict | None = None, u: dict = Depends(user)) -> dict:
+    """Решение по группе находок сразу. В журнал пишется КАЖДАЯ находка, а не одно событие.
+
+    Иначе через месяц на вопрос «кто признал эти четырнадцать» ответа не будет. Уровень тот же,
+    что у решения по одной: пакет не делает решение менее ответственным — он делает его быстрее.
+    """
+    require_level(u, "manager")
+    тело = body or {}
+    ids = [str(x) for x in (тело.get("ids") or []) if str(x).strip()]
+    if not ids:
+        raise HTTPException(400, "не передано ни одной находки")
+    if len(ids) > 500:
+        raise HTTPException(400, "за раз решается не больше 500 находок")
+    состояние = str(тело.get("состояние") or "").strip()
+    try:
+        итог = реестр.решение_пакетом(
+            ids, состояние=состояние, кем=str(u.get("name") or u.get("sub") or "—"),
+            почему=str(тело.get("почему") or ""), до=str(тело.get("до") or ""))
+    except ValueError as ex:
+        raise HTTPException(400, str(ex))
+    return {"ok": True, **итог, "сводка": реестр.сводка()}
 
 
 @router.get("/api/registry/fix-methods")

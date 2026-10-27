@@ -397,6 +397,10 @@
  ],
  [
   "GET",
+  "/api/registry/groups"
+ ],
+ [
+  "GET",
   "/api/reglament"
  ],
  [
@@ -870,6 +874,10 @@
  [
   "POST",
   "/api/process/revision/{rev_id}/submit"
+ ],
+ [
+  "POST",
+  "/api/registry/findings/decide-batch"
  ],
  [
   "POST",

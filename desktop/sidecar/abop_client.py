@@ -479,7 +479,7 @@ def vertical_activate(vid: str) -> dict:
     return _req("POST", "/api/verticals/" + имя + "/activate", {}, timeout=30) or {}
 
 
-def findings_open(project: str = "", process: str = "") -> dict:
+def findings_open(project: str = "", process: str = "", organisation: str = "") -> dict:
     """Находки реестра без решения: что нашёл расчёт и ждёт слова человека.
 
     Отдельно от очереди подтверждений: заявка требует «отправить или нет», находка — «это
@@ -491,15 +491,38 @@ def findings_open(project: str = "", process: str = "") -> dict:
         запрос.append("project=" + urllib.parse.quote(str(project)))
     if str(process or "").strip():
         запрос.append("process=" + urllib.parse.quote(str(process)))
+    if str(organisation or "").strip():
+        запрос.append("organisation=" + urllib.parse.quote(str(organisation)))
+    # Спрашиваем нерешённые: подтверждённые и отложенные находки — уже работа, а не вопрос к
+    # человеку. Группы по причине приходят тем же ответом и считаются по ВСЕМ открытым.
     запрос.append("state=найдено")
     r = _req("GET", "/api/registry/findings?" + "&".join(запрос), timeout=25)
     return r if isinstance(r, dict) else {"findings": r or [], "сводка": {}}
 
 
-def finding_decide(finding_id: str, состояние: str, почему: str = "") -> dict:
-    """Решение человека по находке. Отказ — такой же законный исход, как согласие."""
+def finding_decide(finding_id: str, состояние: str, почему: str = "", до: str = "") -> dict:
+    """Решение человека по находке. Отказ и отсрочка — такие же законные исходы, как согласие.
+
+    `до` — дата возврата для состояния «отложено»: отсрочка без срока это не решение, а способ
+    не решать, и сервер её не примет.
+    """
+    тело = {"состояние": состояние, "почему": почему}
+    if str(до or "").strip():
+        тело["до"] = str(до).strip()
     return _req("POST", "/api/registry/findings/" + urllib.parse.quote(str(finding_id)) + "/decide",
-                {"состояние": состояние, "почему": почему}, timeout=30) or {}
+                тело, timeout=30) or {}
+
+
+def findings_decide_batch(ids: list, состояние: str, почему: str = "", до: str = "") -> dict:
+    """Решение по группе находок сразу: один вопрос руководителя — одно нажатие.
+
+    Сервер пишет в журнал КАЖДУЮ находку, поэтому ответ честно говорит, сколько решено и
+    сколько пропущено: пакет не должен выглядеть успешным, если часть находок не нашлась.
+    """
+    тело = {"ids": [str(x) for x in (ids or [])], "состояние": состояние, "почему": почему}
+    if str(до or "").strip():
+        тело["до"] = str(до).strip()
+    return _req("POST", "/api/registry/findings/decide-batch", тело, timeout=60) or {}
 
 
 def pervichka_fields(organisation: str = "", limit: int = 200) -> dict:

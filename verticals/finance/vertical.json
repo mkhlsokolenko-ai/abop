@@ -21,7 +21,8 @@
       "finding",
       "primary_doc",
       "doc_type_rule",
-      "recon_line"
+      "recon_line",
+      "rank_weight"
     ],
     "адаптеры": [
       "json",
@@ -51,12 +52,14 @@
       "finance_inbox",
       "finance_ocr",
       "finance_parse",
-      "finance_recon"
+      "finance_recon",
+      "finance_priority"
     ],
     "данные": [
       "data/fix_rules.json",
       "data/binding.json",
-      "data/doc_types.json"
+      "data/doc_types.json",
+      "data/priority.json"
     ],
     "бланк": "sverka",
     "панели": [
