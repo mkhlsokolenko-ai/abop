@@ -5,6 +5,8 @@
 //
 // Выборка и фильтры считаются на сервере (Postgres — источник истины), панель ничего не хранит.
 import { CARD, LBL, INP, BTN, BTN_OK } from "../../core/cards.js";
+// Значок — из общего набора ядра: панель не заводит своих символов.
+import { icon } from "../../core/icons.js";
 // Стили — из ядра: шесть разных карточек и пять разных подписей в панелях были
 // расхождением, а не выбором (DIZAJN, раздел 2).
 const R = "/api/modules/runs";
@@ -100,7 +102,7 @@ export async function mount(root, ctx) {
       <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-2);cursor:pointer">
         <input type="checkbox" id="rDeep"${deep ? " checked" : ""}/> искать внутри прогонов
       </label>
-      <button class="ico" id="rReload" title="Обновить журнал прогонов" aria-label="Обновить журнал прогонов">↻</button>
+      <button class="ico" id="rReload" title="Обновить журнал прогонов" aria-label="Обновить журнал прогонов">${icon("refresh", "lg")}</button>
     </div>`;
   }
 
@@ -253,7 +255,7 @@ export async function mount(root, ctx) {
       const ждёт = режим === "awaiting_hitl";
       const кнопки = ждёт && x.hitl_id
         ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
-            <button type="button" class="dGo" data-id="${esc(x.hitl_id)}" style="${BTN_OK}">Показать и подтвердить</button>
+            <button type="button" class="dGo" data-id="${esc(x.hitl_id)}" style="${BTN_OK}">${icon("shield")}Показать и подтвердить</button>
             <button type="button" class="dNo" data-id="${esc(x.hitl_id)}" style="${BTN}">Оставить черновиком</button></div>`
         : ждёт
           ? `<div style="font-size:11.5px;color:var(--ink-3);margin-top:6px">Заявка на подтверждение к этой записи не привязана — подтвердить отсюда нечем, откройте раздел «Решения».</div>`
@@ -268,7 +270,7 @@ export async function mount(root, ctx) {
         ${кнопки}</div>`;
     }).join("");
     const шапка = ждут
-      ? `<div class="wait-row" style="margin:0 0 8px"><span class="wait-head" style="font-size:12.5px">🛡 Ждёт вашего решения: ${ждут}</span>
+      ? `<div class="wait-row" style="margin:0 0 8px"><span class="wait-head" style="font-size:12.5px;display:inline-flex;align-items:center;gap:7px">${icon("shield")}Ждёт вашего решения: ${ждут}</span>
           <div style="font-size:12px;color:var(--ink-2);margin-top:4px">Наружу ничего не ушло. Прогон дошёл до конца, действие собрано и ждёт — подтвердите или оставьте черновиком.</div></div>`
       : "";
     return шапка + строки;
@@ -364,7 +366,7 @@ export async function mount(root, ctx) {
       ? `<select id="oTpl" style="${INP}">${templates.map((t) => `<option value="${esc(t.id)}">${esc(t.name || t.id)}</option>`).join("")}</select>` : "";
     return `<div style="${CARD}">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <button class="btn sm" id="oBack">← К журналу</button>
+        <button class="btn sm" id="oBack">${icon("left")}К журналу</button>
         <span style="font-size:15px;font-weight:700">${esc(d.agent_name || d.agent_id || "")}</span>
         <span style="font-size:11.5px;color:${v.ok ? "var(--ok-ink)" : "var(--warn-ink)"}">${v.ok ? "пройден" : "есть замечания"}${v.autonomy_used ? " · " + esc(v.autonomy_used) : ""}</span>
         <span style="margin-left:auto;display:flex;gap:7px;align-items:center">${tplOpts}

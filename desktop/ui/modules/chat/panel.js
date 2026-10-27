@@ -67,7 +67,22 @@ const TEMPLATES = [
 ];
 const PROFILES = [["standard", "Обычный ответ"], ["code", "Код и таблицы"], ["research", "Исследование"]];
 const DELIVER_LABEL = { chat: "в чат", email: "на почту", redmine: "в Redmine", bookstack: "в BookStack", system: "в систему" };
-const CH_ICON = (ch) => { const c = (ch || "").toLowerCase(); return c.includes("redmine") ? "🎫" : (c.includes("book") || c.includes("вики")) ? "📚" : (c.includes("почт") || c.includes("mail") || c.includes("email")) ? "✉" : c.includes("pdf") ? "📄" : c.includes("yougile") ? "📋" : c === "chat" ? "💬" : "↗"; };
+// Значки — из общего набора ядра (`core/icons.js`): одна линия на всё приложение.
+import { icon } from "../../core/icons.js";
+
+// Канал доставки значком из общего набора. Таблица эмодзи («🎫», «📚», «✉») жила здесь
+// с первых дней: в светлой теме они оставались цветными, а рядом с текстом строки
+// выглядели крупнее подписи и ломали её базовую линию.
+const CH_ICON = (ch) => {
+  const c = (ch || "").toLowerCase();
+  const имя = c.includes("redmine") ? "ticket"
+    : (c.includes("book") || c.includes("вики")) ? "doc"
+      : (c.includes("почт") || c.includes("mail") || c.includes("email")) ? "send"
+        : c.includes("pdf") ? "doc"
+          : c.includes("yougile") ? "board"
+            : c === "chat" ? "chat" : "ext";
+  return icon(имя);
+};
 const NEW_TITLE = "Новый чат";
 
 export async function mount(root, ctx) {
@@ -90,7 +105,7 @@ export async function mount(root, ctx) {
 
   root.innerHTML = `
     <aside aria-label="Чаты" style="flex:none;width:252px;display:flex;flex-direction:column;gap:10px;padding:14px 12px;border-right:1px solid var(--line);background:var(--rail);min-height:0">
-      <button id="newTh" class="btn primary" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:10px;border-radius:11px;font-size:13px">＋ Новый чат</button>
+      <button id="newTh" class="btn primary" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:10px;border-radius:11px;font-size:13px">${icon("plus")}Новый чат</button>
       <button id="boardPin" title="Общая доска: факты, которые вы вынесли из прогонов. Их читают следующие разговоры и агенты, объявившие эти ключи." aria-label="Общая доска" style="display:flex;align-items:center;gap:8px;padding:9px 11px;border:1px solid var(--warn-line);border-radius:11px;background:var(--warn-bg);color:var(--warn-ink);font-size:12.5px;font-weight:700;text-align:left">
         <span aria-hidden="true">&#129523;</span><span style="flex:1;min-width:0">Общая доска</span><span id="boardCnt" style="font-family:var(--mono);font-size:11px;font-weight:600;opacity:.8"></span>
       </button>
@@ -345,10 +360,10 @@ export async function mount(root, ctx) {
       ${dl ? `<div class="ape-label" style="margin-top:4px">доставка</div>${dl}` : ""}
       ${waits.length ? (s.hitl_done ? `<div style="font-size:12px;font-weight:600;color:${s.hitl_done === "approve" ? "var(--ok-ink)" : "var(--ink-3)"}">${s.hitl_done === "approve" ? "✓ Действие подтверждено" : "⃠ Действие отклонено"}${s.hitl_result ? `<div style="font-size:11px;color:var(--ink-3);font-weight:400;margin-top:3px">${esc(String(s.hitl_result).slice(0, 140))}</div>` : ""}</div>`
         : `<div class="hitl-panel" data-hitl="${esc(hitlIds.join(","))}" data-agent="${esc(s.agent_id || "")}" style="margin-top:4px">
-        <span class="hitl-head">🛡 Агент подготовил внешнее действие — нужно ваше решение</span>
+        <span class="hitl-head">${icon("shield")}Агент подготовил внешнее действие — нужно ваше решение</span>
         <span style="font-size:11.5px;color:var(--ink-2)">${waits.map((d) => `${CH_ICON(d.channel)} ${esc(d.title || d.channel)}${d.to ? " → " + esc(d.to) : ""}`).join(" · ")}</span>
         <span style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn ok hitlOk">Посмотреть и подтвердить</button><button type="button" class="btn hitlNo">Отклонить</button></span></div>`) : ""}
-      <span style="display:flex;gap:8px;flex-wrap:wrap;margin-top:2px"><button type="button" class="btn sm mkRecurring" data-agent="${esc(s.agent_id || "")}" data-name="${esc(name)}">🔁 Сделать регулярной</button>${s.run_id ? `<button type="button" class="btn sm runOpen" data-run="${esc(s.run_id)}" title="Все находки, доставка и затраты прогона">Открыть прогон</button><button type="button" class="btn sm runPdf" data-run="${esc(s.run_id)}" title="Отчёт прогона по шаблону — PDF в «Загрузки»">📄 Отчёт PDF</button><button type="button" class="btn sm toBoard" data-run="${esc(s.run_id)}" title="Вынести итоги прогона на общую доску: их увидят ваши следующие разговоры и агенты, которые объявили эти ключи">🧷 На доску</button>` : ""}</span></div>`;
+      <span style="display:flex;gap:8px;flex-wrap:wrap;margin-top:2px"><button type="button" class="btn sm mkRecurring" data-agent="${esc(s.agent_id || "")}" data-name="${esc(name)}">${icon("repeat")}Сделать регулярной</button>${s.run_id ? `<button type="button" class="btn sm runOpen" data-run="${esc(s.run_id)}" title="Все находки, доставка и затраты прогона">Открыть прогон</button><button type="button" class="btn sm runPdf" data-run="${esc(s.run_id)}" title="Отчёт прогона по шаблону — PDF в «Загрузки»">${icon("doc")}Отчёт PDF</button><button type="button" class="btn sm toBoard" data-run="${esc(s.run_id)}" title="Вынести итоги прогона на общую доску: их увидят ваши следующие разговоры и агенты, которые объявили эти ключи">${icon("board")}На доску</button>` : ""}</span></div>`;
   }
   // карточка результата цепочки — из данных (D-H3), legacy-строка HTML тоже поддерживается
   function pipelineHTML(pr) {
@@ -790,10 +805,10 @@ export async function mount(root, ctx) {
   function renderDock() {
     const d = $("dock"); if (!d) return;
     const chips = [];
-    if (schedules.length) chips.push(`<button type="button" class="dock-chip" id="dkSched" title="Мои расписания">🔁 Расписания <b>${schedules.length}</b></button>`);
-    chips.push(`<button type="button" class="dock-chip" id="dkPipes" title="Цепочки агентов">🔗 Цепочки <b>${pipelines.length}</b></button>`);
-    if (quota) { const pct = Math.round(quota.tokens_pct || 0); chips.push(`<button type="button" class="dock-chip${pct >= 90 ? " danger" : pct >= 70 ? " warn" : ""}" id="dkQuota" title="Реальные токены из прогонов. Остаток ${fmtK(quota.tokens_remaining)}">🎫 <b>${fmtK(quota.tokens)}</b> / ${fmtK(quota.token_quota)}<span class="meter"><span style="width:${Math.min(100, pct)}%"></span></span></button>`); }
-    kbFiles.forEach((f) => chips.push(`<span class="dock-chip" title="${esc(f.name)} · в контексте чата">📎 ${esc(String(f.name).length > 22 ? String(f.name).slice(0, 20) + "…" : f.name)}<button type="button" class="kbrm" data-id="${f.id}" aria-label="Убрать файл ${esc(f.name)}" style="width:20px;height:20px;border:none;border-radius:9999px;background:var(--hover);color:var(--ink-3);font-size:11px;margin:-4px -6px -4px 0">✕</button></span>`));
+    if (schedules.length) chips.push(`<button type="button" class="dock-chip" id="dkSched" title="Мои расписания">${icon("repeat")}Расписания <b>${schedules.length}</b></button>`);
+    chips.push(`<button type="button" class="dock-chip" id="dkPipes" title="Цепочки агентов">${icon("chain")}Цепочки <b>${pipelines.length}</b></button>`);
+    if (quota) { const pct = Math.round(quota.tokens_pct || 0); chips.push(`<button type="button" class="dock-chip${pct >= 90 ? " danger" : pct >= 70 ? " warn" : ""}" id="dkQuota" title="Реальные токены из прогонов. Остаток ${fmtK(quota.tokens_remaining)}">${icon("ticket")}<b>${fmtK(quota.tokens)}</b> / ${fmtK(quota.token_quota)}<span class="meter"><span style="width:${Math.min(100, pct)}%"></span></span></button>`); }
+    kbFiles.forEach((f) => chips.push(`<span class="dock-chip" title="${esc(f.name)} · в контексте чата">${icon("clip")}${esc(String(f.name).length > 22 ? String(f.name).slice(0, 20) + "…" : f.name)}<button type="button" class="kbrm" data-id="${f.id}" aria-label="Убрать файл ${esc(f.name)}" style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border:none;border-radius:9999px;background:var(--hover);color:var(--ink-3);margin:-4px -6px -4px 0">${icon("close", "sm")}</button></span>`));
     d.innerHTML = chips.join("");
     const sc = d.querySelector("#dkSched"); if (sc) sc.onclick = openSchedules;
     const pp = d.querySelector("#dkPipes"); if (pp) pp.onclick = openPipelines;
@@ -1176,8 +1191,8 @@ export async function mount(root, ctx) {
     const profSel = `<select id="prof" title="Профиль ответа" aria-label="Профиль ответа" style="padding:6px 10px;border-radius:9999px;color:var(--ink-2);font-size:11.5px">${PROFILES.map(([v, l]) => `<option value="${v}"${prof === v ? " selected" : ""}>${l}</option>`).join("")}</select>`;
     const onChips = sk.map((sid) => { const s = skills.find((x) => x.id === sid) || { id: sid }; return `<button type="button" class="skc chip on" data-id="${esc(sid)}" title="${esc(s.hint || "")} · снять" style="padding:6px 11px;font-family:var(--ui);font-size:11.5px;font-weight:600">${esc(s.title || sid)} ✕</button>`; }).join("");
     const moreBtn = `<button type="button" id="skMore" title="Каталог навыков" style="padding:6px 11px;border:1px dashed var(--line-2);border-radius:9999px;background:transparent;color:var(--ink-2);font-size:11.5px;font-weight:600">＋ навыки</button>`;
-    const ic = (id, gl, ti) => `<button type="button" id="${id}" class="ico" title="${ti}" aria-label="${ti}">${gl}</button>`;
-    $("tools").innerHTML = profSel + onChips + moreBtn + `<span id="agentSug" style="display:flex;gap:6px;flex-wrap:wrap"></span>` + `<span style="margin-left:auto;display:flex;align-items:center;gap:6px">${ic("tRag", "📎", "Прикрепить файл")}${ic("tAgents", "🕸", "Агенты ABOP")}${ic("tExport", "📥", "Экспорт чата")}</span><input type="file" id="fileIn" accept=".txt,.md,.csv,.json,.pdf,.docx,.xlsx" style="display:none"/>`;
+    const ic = (id, зн, ti) => `<button type="button" id="${id}" class="ico" title="${ti}" aria-label="${ti}">${icon(зн, "lg")}</button>`;
+    $("tools").innerHTML = profSel + onChips + moreBtn + `<span id="agentSug" style="display:flex;gap:6px;flex-wrap:wrap"></span>` + `<span style="margin-left:auto;display:flex;align-items:center;gap:6px">${ic("tRag", "clip", "Прикрепить файл")}${ic("tAgents", "agents", "Агенты ABOP")}${ic("tExport", "export", "Экспорт чата")}</span><input type="file" id="fileIn" accept=".txt,.md,.csv,.json,.pdf,.docx,.xlsx" style="display:none"/>`;
     $("prof").onchange = async (e) => { if (cur) { cur.profile = e.target.value; await saveThread(cur); renderThreads(); } else pendingProfile = e.target.value; };
     $("tools").querySelectorAll(".skc").forEach((c) => c.onclick = async () => { const arr = cur ? cur.skills : pendingSkills; const i = arr.indexOf(c.dataset.id); if (i >= 0) arr.splice(i, 1); if (cur) await saveThread(cur); renderTools(); });
     $("skMore").onclick = openSkillPicker;
@@ -1760,9 +1775,9 @@ export async function mount(root, ctx) {
           <span style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="font-size:13px;font-weight:600">${title}</span><span style="font-size:11.5px;line-height:1.4;color:var(--ink-3)">${note_}</span></span></div>${inner || ""}</div>`;
       const fmts = ["md", "pdf", "docx", "xlsx"].map((f) => `<button type="button" class="expf chip" data-f="${f}" style="padding:6px 11px;font-weight:600">${f}</button>`).join("");
       b.innerHTML =
-        tool("📎", "Вложения", "файл → контекст чата, ответы с опорой на него", `<button type="button" id="tlRag" class="btn" style="border-color:var(--accent);background:var(--accent-bg);color:var(--accent-ink)">Прикрепить файл</button>`) +
-        tool("🔎", "Распознать", "скан или картинка → текст → в контекст чата", `<button type="button" id="tlOcr" class="btn">Открыть «Распознать»</button>`) +
-        tool("🗄", "Источники", "коннекторы и рецепты ABOP, локальные файлы", `<button type="button" id="tlSrc" class="btn">Открыть «Источники»</button>`) +
+        tool(icon("clip", "lg"), "Вложения", "файл → контекст чата, ответы с опорой на него", `<button type="button" id="tlRag" class="btn" style="border-color:var(--accent);background:var(--accent-bg);color:var(--accent-ink)">Прикрепить файл</button>`) +
+        tool(icon("ocr", "lg"), "Распознать", "скан или картинка → текст → в контекст чата", `<button type="button" id="tlOcr" class="btn">Открыть «Распознать»</button>`) +
+        tool(icon("connectors", "lg"), "Источники", "коннекторы и рецепты ABOP, локальные файлы", `<button type="button" id="tlSrc" class="btn">Открыть «Источники»</button>`) +
         tool("📥", "Экспорт чата", "сохранить в «Загрузки»", `<div style="display:flex;gap:6px;flex-wrap:wrap">${fmts}</div>`);
       const fileIn = document.createElement("input"); fileIn.type = "file"; fileIn.accept = ".txt,.md,.csv,.json,.pdf,.docx,.xlsx"; fileIn.style.display = "none"; b.appendChild(fileIn);
       b.querySelector("#tlRag").onclick = () => fileIn.click();

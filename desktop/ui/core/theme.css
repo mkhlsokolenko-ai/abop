@@ -248,9 +248,10 @@ a { color: var(--accent-ink-2); } a:hover { color: var(--accent-ink); }
 .navitem.on { background: var(--accent-bg); color: var(--accent-ink); border-left-color: var(--accent-2); }
 .navitem .glyph {
   width: 27px; height: 27px; flex: none; border-radius: var(--r-xs); display: flex;
-  align-items: center; justify-content: center; font-size: 14px; line-height: 1;
+  align-items: center; justify-content: center; line-height: 1;
   background: var(--panel-2); box-shadow: var(--edge); transition: background .15s, box-shadow .2s;
 }
+.navitem .glyph .i { width: 16px; height: 16px; }
 .navitem.on .glyph { background: var(--grad); color: #fff; box-shadow: var(--shadow-accent), var(--edge-strong); }
 .navitem .lbl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .navitem .bdg {
@@ -295,7 +296,16 @@ a { color: var(--accent-ink-2); } a:hover { color: var(--accent-ink); }
 .ape-iconbtn { width: 30px; height: 30px; flex: none; border: 1px solid var(--line); border-radius: 9px; background: transparent; color: var(--ink-2); font-size: 13px; cursor: pointer; }
 .ape-iconbtn:hover { background: var(--hover); color: var(--ink); }
 
+/* ── значки (core/icons.js) ──
+   Цвет берётся от текста, поэтому один значок живёт в обеих темах и внутри любой роли кнопки.
+   Размер — классом, а не атрибутом: значок в кнопке и значок в рейле отличаются только им. */
+.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.i-sm { width: 14px; height: 14px; }
+.i-lg { width: 19px; height: 19px; }
+.i-xl { width: 22px; height: 22px; stroke-width: 1.5; }
+
 .btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
   border: 1px solid var(--line); background-color: var(--panel); background-image: var(--panel-grad);
   backdrop-filter: var(--blur); color: var(--ink); box-shadow: var(--edge);
   padding: 8px 14px; border-radius: var(--r-md); font-weight: 600; font-size: 12.5px;
@@ -306,6 +316,12 @@ a { color: var(--accent-ink-2); } a:hover { color: var(--accent-ink); }
 .btn.primary { background-image: var(--grad); border-color: transparent; color: #fff; box-shadow: var(--shadow-accent), var(--edge-strong); }
 .btn.primary:hover { filter: brightness(1.07); box-shadow: 0 14px 38px rgba(99, 102, 241, .38), var(--edge-strong); }
 .btn.sm { padding: 5px 10px; font-size: 12px; border-radius: var(--r-sm); }
+/* Крупная — для единственного действия, ради которого экран открывали. */
+.btn.lg { padding: 11px 18px; font-size: 13.5px; }
+/* Тихая — отказ, отмена, «потом»: не спорит за внимание с утвердительной и основной.
+   До этого отказ выглядел так же, как согласие, и человек выбирал по подписи, а не по виду. */
+.btn.ghost { background-color: transparent; background-image: none; border-color: var(--line); color: var(--ink-2); box-shadow: none; }
+.btn.ghost:hover { background-color: var(--hover); color: var(--ink); }
 .btn:disabled { opacity: .5; cursor: default; transform: none; box-shadow: none; }
 .btn:focus-visible { box-shadow: var(--ring), var(--edge); }
 .chip {

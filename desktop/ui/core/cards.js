@@ -35,7 +35,10 @@ export const S_ORIGIN = "font-size:11px;color:var(--ink-3);line-height:1.45";
 export const CARD = S_CARD;
 export const LBL = S_LBL;
 export const INP = "padding:7px 10px;border-radius:9px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-size:12.5px";
-export const BTN = "padding:7px 13px;border-radius:9px;border:1px solid var(--line-2);background:var(--panel-2);color:var(--ink);font-size:12.5px;font-weight:600;cursor:pointer";
+export const BTN = "display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border-radius:9px;border:1px solid var(--line-2);background:var(--panel-2);color:var(--ink);font-size:12.5px;font-weight:600;cursor:pointer";
+// Тихая кнопка: отказ, отмена, «потом». Отличается от обычной тем, что не спорит за внимание —
+// до этого отказ выглядел ровно как согласие, и выбирать приходилось чтением подписи.
+export const BTN_GHOST = "display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border-radius:9px;border:1px solid var(--line);background:transparent;color:var(--ink-2);font-size:12.5px;font-weight:600;cursor:pointer";
 // Утвердительное действие — заливка, а не подкрашенная рамка.
 //
 // `BTN_OK` отличался от обычной кнопки ОДНИМ оттенком рамки, и на тёмном фоне «Отправить» в
@@ -43,7 +46,7 @@ export const BTN = "padding:7px 13px;border-radius:9px;border:1px solid var(--li
 // Необратимое действие обязано быть самым заметным элементом карточки — иначе человек либо не
 // найдёт его, либо нажмёт соседнее. Цвет берётся из токенов темы (`--ok-solid`), а не литералом:
 // в светлой теме это тёмно-зелёный с белым текстом, и оба проходят AA (tests/test_desktop_contrast).
-export const BTN_OK = "padding:7px 13px;border-radius:9px;border:1px solid transparent;background:var(--ok-solid);color:var(--ok-solid-ink);font-size:12.5px;font-weight:700;cursor:pointer;box-shadow:0 10px 26px var(--ok-glow)";
+export const BTN_OK = "display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border-radius:9px;border:1px solid transparent;background:var(--ok-solid);color:var(--ok-solid-ink);font-size:12.5px;font-weight:700;cursor:pointer;box-shadow:0 10px 26px var(--ok-glow)";
 // Строка списка: высота из токена, а не из воздуха вокруг текста. Двенадцать строк на экране
 // 1366×768 вместо восьми — критерий из раздела 9 того же документа.
 export const ROW = "display:flex;align-items:center;gap:10px;min-height:var(--row-h);padding:0 var(--pad-card);font-size:12.5px;border-bottom:1px solid var(--line)";

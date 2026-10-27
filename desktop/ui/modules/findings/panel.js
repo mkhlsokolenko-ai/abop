@@ -6,6 +6,7 @@
 // методологу) или прочтение модели. Смешивать их в одну карточку без пометки значит выдавать прозу
 // за расчёт — а решение по находке человек принимает, глядя именно на её надёжность.
 import { LBL, CARD, INP } from "../../core/cards.js";
+import { icon } from "../../core/icons.js";
 // Стили — из ядра: шесть разных карточек и пять разных подписей в панелях были
 // расхождением, а не выбором (DIZAJN, раздел 2).
 const F = "/api/modules/findings";
@@ -71,7 +72,7 @@ export async function mount(root, ctx) {
           <select id="fsev" style="${INP}">${opts(d.severities, severity)}</select></label>
         <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink-2);margin-top:14px">
           <input type="checkbox" id="fcross" ${cross ? "checked" : ""} style="accent-color:var(--accent)"/> только межучастковые</label>
-        <button class="ico" id="fReload" style="margin-top:14px" title="Обновить журнал находок" aria-label="Обновить журнал находок">↻</button>
+        <button class="ico" id="fReload" style="margin-top:14px" title="Обновить журнал находок" aria-label="Обновить журнал находок">${icon("refresh", "lg")}</button>
       </div>
       <div style="font-size:11.5px;color:var(--ink-3)">Показано ${esc(String(d.shown || 0))} из ${esc(String(d.total || 0))} находок по ${esc(String((d.runs || []).length))} последним прогонам.</div>
     </div>`;

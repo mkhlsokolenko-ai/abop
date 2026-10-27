@@ -11,7 +11,8 @@
 //    внешняя коммуникация, в рамках ваших должностных обязанностей».
 // 4. **Срок виден, и истёкший срок — не ошибка.** «Решение не принято за N ч» означает, что
 //    доставка не состоялась, а черновик лежит. Красным это рисовать нельзя: ничего не сломалось.
-import { LBL, BTN, BTN_OK } from "../../core/cards.js";
+import { LBL, BTN, BTN_GHOST, BTN_OK } from "../../core/cards.js";
+import { icon } from "../../core/icons.js";
 // Стили — из ядра: шесть разных карточек и пять разных подписей в панелях были
 // расхождением, а не выбором (DIZAJN, раздел 2).
 const M = "/api/modules/decisions";
@@ -239,9 +240,9 @@ export async function mount(root, ctx) {
     // спрашивают разрешение на внешнее действие. Второе слово говорит, ЧТО он подтверждает.
     const дa = команда ? "Подтвердить действие" : "Подтвердить отправку";
     const действия = [
-      `<button data-go="${esc(з.id)}" style="${BTN_OK}" ${ждёт ? "disabled" : ""}>${ждёт ? "…" : дa}</button>`,
+      `<button data-go="${esc(з.id)}" style="${BTN_OK}" ${ждёт ? "disabled" : ""}>${ждёт ? "…" : icon("shield") + дa}</button>`,
       `<button data-open="${esc(з.id)}" style="${BTN}">${открыт === з.id ? "Свернуть" : "Показать целиком"}</button>`,
-      `<button data-no="${esc(з.id)}" style="${BTN}" ${ждёт ? "disabled" : ""}>Оставить черновиком</button>`,
+      `<button data-no="${esc(з.id)}" style="${BTN_GHOST}" ${ждёт ? "disabled" : ""}>Оставить черновиком</button>`,
       з["срок_истёк"] ? `<span style="${LBL};color:var(--warn-ink)">срок прошёл</span>` : "",
     ];
     return card({

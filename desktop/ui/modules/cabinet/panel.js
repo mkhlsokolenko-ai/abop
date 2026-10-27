@@ -6,6 +6,7 @@
 // пока энфорс на шлюзе не отдаёт реальную; «источники» считаются из реального каталога коннекторов.
 // D-H13: хоткей Ctrl+Shift+A описан здесь. Терминология без JWT/realm (D-H12).
 import { CARD } from "../../core/cards.js";
+import { icon } from "../../core/icons.js";
 // Стили — из ядра: шесть разных карточек и пять разных подписей в панелях были
 // расхождением, а не выбором (DIZAJN, раздел 2).
 const C = "/api/modules/cabinet";
@@ -131,7 +132,7 @@ export async function mount(root, ctx) {
           </div>
           ${mine.length ? `<div style="display:flex;flex-direction:column;gap:5px">${mine.slice(0, 6).map((a) => `<span style="font-size:12px;color:var(--ink-2)">🤖 ${esc(a.name)} <span style="color:var(--ink-3)">· ${esc(a.family || "")} · v${esc(String(a.version || 1))}</span></span>`).join("")}</div>` : `<span style="font-size:12px;color:var(--ink-3)">Своих агентов пока нет — соберите в разделе «Мои агенты».</span>`}
           ${abopConns.length ? `<div style="display:flex;flex-direction:column;gap:5px">${abopConns.slice(0, 6).map((s) => `<span style="font-size:12px;color:var(--ink-2)">🔌 ${esc(s.title || s.id)} <span style="color:${s.status === "blocked" ? "var(--danger-ink)" : "var(--ink-3)"}">· ${s.status === "blocked" ? "нет доступа" : "агент видит"}</span></span>`).join("")}</div>` : ""}
-          <div><button class="btn sm" id="goAgents">Мои агенты →</button> <button class="btn sm" id="goSrc">Источники →</button></div>
+          <div><button class="btn sm" id="goAgents">${icon("agents")}Мои агенты</button> <button class="btn sm" id="goSrc">${icon("connectors")}Источники</button></div>
         </div>
       </div>
       ${(pol.roles && pol.roles.length) ? `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="ape-label">политика ролей · роль → разрешено / запрещено</span>${enforced ? "" : '<span class="chip" title="Реальная политика применяется на шлюзе ABOP; здесь — справочный пример">пример</span>'}</div>

@@ -12,6 +12,9 @@ export { card, tile, origin, esc };
 // термин «ABOP»), D-H15 (стек оверлеев: Esc закрывает верхний, фокус-ловушка), D-H16 (стек тостов).
 
 import { apeLogo, apeMascot } from "./ape.js";
+// Значки: один набор на приложение, спрайт вставляется при старте (см. core/icons.js).
+import { icon, установитьСпрайт } from "./icons.js";
+export { icon };
 
 const API = new URLSearchParams(location.search).get("api") || "http://127.0.0.1:8799";
 
@@ -208,7 +211,7 @@ export async function copyText(text, btn, what) {
   if (btn) {
     const was = btn.dataset.copyWas || btn.textContent;
     btn.dataset.copyWas = was;
-    btn.textContent = ok ? "✓ скопировано" : "✕ не удалось";
+    btn.innerHTML = icon(ok ? "check" : "close") + (ok ? " скопировано" : " не удалось");
     setTimeout(() => { btn.textContent = btn.dataset.copyWas || was; delete btn.dataset.copyWas; }, 1400);
   }
   say(ok ? `Скопировано${what ? ": " + what : ""}` : "Скопировать не удалось: буфер обмена недоступен");
@@ -260,6 +263,8 @@ export function sanitizeHtml(html) {
 export const ctx = {
   api, base: API, user: null, roles: [], email: null, authed: false,
   card, tile, origin,
+  // Значок из общего набора: панель рисует его тем же вызовом, что оболочка, и не заводит свой.
+  icon,
   // Чьи данные на экране. Считает СЕРВЕР (`tenant_active`), десктоп только показывает: правило
   // вычисления арендатора живёт на сервере, и местная копия разошлась бы с ним молча.
   tenant: "", tenantOwn: "", tenantKnown: false, tenantCanSwitch: false,
@@ -298,10 +303,10 @@ let MODULES = [];
 let active = null;
 const mounted = new Map();        // id → { root, mod }   (D-H11: кэш модулей)
 
-function icon(name) {
-  // Реальные глифы из эталона APE Desktop (standalone): геометрические, не смайлы.
-  return { chat: "✦", runs: "◷", findings: "◬", agents: "⎔", cabinet: "◉", graphlens: "◈", opslens: "◎", connectors: "⛁", security: "⛨", ocr: "◵", watch: "▤", ml: "❖", abop: "⬡", decisions: "⌦", control: "◰" }[name] || "◆";
-}
+// Значок раздела — из общего набора (`core/icons.js`). Раньше здесь жила таблица символов
+// шрифта («✦», «◷», «⎔»): у них нет общей толщины линии и оптического размера, а рядом с
+// эмодзи кнопок получался набор из трёх разных миров. Имя значка приходит из манифеста
+// модуля, поэтому неизвестное имя рисует точку и пишет предупреждение, а не похожий значок.
 
 // ── вход: единый термин «ABOP» (Keycloak за шлюзом — детали пользователю не нужны) (D-H12) ──────
 let _authTimer = null;
@@ -339,7 +344,7 @@ function renderVertical() {
   // настроена».
   const подпись = текущая ? (текущая["название"] || текущая.id) : "Широкий режим";
   box.innerHTML = `<button id="vertBtn" class="btn sm" title="Представление: какие разделы и какими словами">
-      🧩 ${esc(подпись)}</button>`;
+      ${icon("abop")}${esc(подпись)}</button>`;
   $("vertBtn").onclick = () => {
     const строки = [["", "Широкий режим — все разделы и конструктор агентов"]].concat(
       поставленные.map((в) => [в.id, в["название"] || в.id]));
@@ -418,7 +423,7 @@ function renderAuthBox(me) {
     const подпись = me["нужен_вход"] && почему ? почему : "одна учётная запись: почта и доступы";
     const цвет = me["нужен_вход"] && почему ? "var(--warn, #fbbf24)" : "var(--ink-3)";
     box.innerHTML = `<span style="display:flex;flex-direction:column;align-items:flex-end;gap:3px">
-        <button class="btn primary sm" id="loginBtn">🔑 Войти в ABOP</button>
+        <button class="btn primary sm" id="loginBtn">${icon("key")}Войти в ABOP</button>
         <label for="rememberMe" style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--ink-3);cursor:pointer">
           <input type="checkbox" id="rememberMe" checked style="margin:0">Запомнить меня</label>
         <span style="font-size:11px;color:${цвет};max-width:260px;text-align:right">${esc(подпись)}</span></span>`;
@@ -628,7 +633,7 @@ function applyRail() {
   aside.style.padding = narrow ? "14px 8px" : "14px 10px 14px 0";
   const q = $("railQuick"); if (q) q.style.padding = narrow ? "0" : "0 0 0 11px";
   if (btn) {
-    btn.textContent = narrow ? "»" : "«";
+    btn.innerHTML = icon(narrow ? "right" : "left", "lg");
     btn.title = btn.ariaLabel = narrow ? "Развернуть меню разделов" : "Свернуть меню разделов";
     btn.setAttribute("aria-expanded", narrow ? "false" : "true");
   }
@@ -643,12 +648,14 @@ function toggleRail() {
 const QF_DEFAULT = ["new"];
 function quickActions() {
   const a = [
-    { id: "new", label: "Новый чат", icon: "➕", run: () => loadModule("chat", { newChat: true }) },
-    { id: "palette", label: "Команды", icon: "⌘", run: openPalette },
-    { id: "theme", label: "Тема", icon: "🌓", run: toggleTheme },
+    { id: "new", label: "Новый чат", icon: "plus", run: () => loadModule("chat", { newChat: true }) },
+    { id: "palette", label: "Команды", icon: "search", run: openPalette },
+    { id: "theme", label: "Тема", icon: "moon", run: toggleTheme },
   ];
   // В палитре — ВСЕ разделы, включая убранные из маршрута: убрать кнопку не значит отнять раздел.
-  MODULES.filter((m) => canSee(m.id)).forEach((m) => a.push({ id: "mod:" + m.id, label: m.title, icon: icon(m.icon), run: () => loadModule(m.id) }));
+  // Храним ИМЯ значка, а не его разметку: кнопка рисуется в двух видах (узкий рейл и широкий),
+  // и готовая разметка в данных означала бы, что один из видов получит чужой размер.
+  MODULES.filter((m) => canSee(m.id)).forEach((m) => a.push({ id: "mod:" + m.id, label: m.title, icon: m.icon, run: () => loadModule(m.id) }));
   return a;
 }
 function getPins() { try { return JSON.parse(localStorage.getItem("ape_quickfns")) || QF_DEFAULT; } catch { return QF_DEFAULT; } }
@@ -665,15 +672,15 @@ function slotBtn(inner, attrs, title, dashed) {
 function renderQuick() {
   const el = $("railQuick"); if (!el) return;
   const acts = quickActions(), pins = getPins();
-  el.innerHTML = pins.map((id) => { const a = acts.find((x) => x.id === id); return a ? slotBtn(a.icon, `data-id="${esc(a.id)}"`, a.label) : ""; }).join("")
-    + slotBtn("＋", `id="qfAdd"`, "Настроить", true);
+  el.innerHTML = pins.map((id) => { const a = acts.find((x) => x.id === id); return a ? slotBtn(icon(a.icon, "lg"), `data-id="${esc(a.id)}"`, a.label) : ""; }).join("")
+    + slotBtn(icon("plus", "lg"), `id="qfAdd"`, "Настроить", true);
   el.querySelectorAll("[data-id]").forEach((b) => b.onclick = () => { const a = acts.find((x) => x.id === b.dataset.id); if (a) a.run(); });
   $("qfAdd").onclick = openQuickManage;
 }
 function openQuickManage() {
   const acts = quickActions(), pins = getPins();
   modal("Быстрые функции в меню",
-    acts.map((a) => `<label style="display:flex;gap:8px;align-items:center;padding:7px 0;font-size:13px;cursor:pointer"><input type="checkbox" class="qfc" value="${esc(a.id)}" ${pins.includes(a.id) ? "checked" : ""}/> ${a.icon} ${esc(a.label)}</label>`).join(""),
+    acts.map((a) => `<label style="display:flex;gap:8px;align-items:center;padding:7px 0;font-size:13px;cursor:pointer"><input type="checkbox" class="qfc" value="${esc(a.id)}" ${pins.includes(a.id) ? "checked" : ""}/> ${icon(a.icon)} ${esc(a.label)}</label>`).join(""),
     (b) => { localStorage.setItem("ape_quickfns", JSON.stringify([...b.querySelectorAll(".qfc:checked")].map((x) => x.value))); renderQuick(); }, "Сохранить", { width: "420px" });
 }
 
@@ -752,10 +759,10 @@ function renderUpdate(s) {
     bar.style.cssText += ";align-items:center;gap:12px;padding:8px 16px;border-bottom:1px solid var(--line);font-size:13px;" + (bg ? "background:var(--accent-bg)" : "background:var(--panel)");
     bar.innerHTML = html;
   };
-  if (s.state === "downloading") show(`⬇ Обновление ${s.version ? "v" + esc(s.version) : ""} — скачивается ${s.percent || 0}%`);
-  else if (s.state === "available") show(`⬇ Найдено обновление v${esc(s.version)} — скачиваю…`);
+  if (s.state === "downloading") show(`${icon("download")} Обновление ${s.version ? "v" + esc(s.version) : ""} — скачивается ${s.percent || 0}%`);
+  else if (s.state === "available") show(`${icon("download")} Найдено обновление v${esc(s.version)} — скачиваю…`);
   else if (s.state === "ready") {
-    show(`<span style="flex:1">✓ Обновление <b>v${esc(s.version)}</b> готово к установке</span><button class="btn primary sm" id="updNow">Перезапустить и обновить</button>`, true);
+    show(`<span style="flex:1;display:flex;align-items:center;gap:8px">${icon("check")} Обновление <b>v${esc(s.version)}</b> готово к установке</span><button class="btn primary sm" id="updNow">Перезапустить и обновить</button>`, true);
     const b = $("updNow"); if (b) b.onclick = () => window.ape.updater.install();
   } else if (s.state === "error") show(`<span class="faint">Апдейтер: ${esc((s.message || "").slice(0, 120))}</span>`);
   else bar.style.display = "none";
@@ -764,7 +771,7 @@ function renderUpdate(s) {
 function applyTheme(t) {
   document.documentElement.dataset.theme = t;
   const b = $("themeBtn");
-  if (b) { b.textContent = t === "light" ? "☀️" : "🌙"; b.setAttribute("aria-label", t === "light" ? "Тема: светлая. Переключить на тёмную" : "Тема: тёмная. Переключить на светлую"); }
+  if (b) { b.innerHTML = icon(t === "light" ? "sun" : "moon", "lg"); b.setAttribute("aria-label", t === "light" ? "Тема: светлая. Переключить на тёмную" : "Тема: тёмная. Переключить на светлую"); }
 }
 function toggleTheme() { const t = (localStorage.getItem("ape_theme") || "dark") === "dark" ? "light" : "dark"; localStorage.setItem("ape_theme", t); applyTheme(t); }
 function initTheme() { applyTheme(localStorage.getItem("ape_theme") || "dark"); const b = $("themeBtn"); if (b) b.onclick = toggleTheme; }
@@ -774,13 +781,13 @@ function buildCommands() {
   // Палитра знает про ВСЕ разделы, включая убранные из маршрута («Находки», «Источники»): кнопку
   // убрали, раздел остался — иначе это не уборка интерфейса, а потеря функции.
   const cmds = MODULES.filter((m) => canSee(m.id)).map((m) => ({
-    glyph: icon(m.icon), label: "Открыть: " + (RAIL_TITLE[m.id] || m.title),
+    glyph: m.icon, label: "Открыть: " + (RAIL_TITLE[m.id] || m.title),
     note: HIDDEN_MODULES.has(m.id) ? "раздел · не в маршруте" : "раздел",
     run: () => loadModule(m.id) }));
-  cmds.push({ glyph: "➕", label: "Новый чат", note: "чат", keys: "Ctrl N", run: () => loadModule("chat", { newChat: true }) });
-  cmds.push({ glyph: "🌓", label: "Переключить тему", note: "светлая / тёмная", run: toggleTheme });
-  if (!ctx.authed) cmds.push({ glyph: "🔑", label: "Войти в ABOP", note: "вход", run: startLogin });
-  if (window.ape && window.ape.updater) cmds.push({ glyph: "⬇", label: "Проверить обновления", note: "апдейтер", run: () => window.ape.updater.check() });
+  cmds.push({ glyph: "plus", label: "Новый чат", note: "чат", keys: "Ctrl N", run: () => loadModule("chat", { newChat: true }) });
+  cmds.push({ glyph: "moon", label: "Переключить тему", note: "светлая / тёмная", run: toggleTheme });
+  if (!ctx.authed) cmds.push({ glyph: "key", label: "Войти в ABOP", note: "вход", run: startLogin });
+  if (window.ape && window.ape.updater) cmds.push({ glyph: "download", label: "Проверить обновления", note: "апдейтер", run: () => window.ape.updater.check() });
   return cmds;
 }
 function openPalette() {
@@ -801,7 +808,7 @@ function openPalette() {
   const runSel = () => { const c = items[sel]; ov.close(); if (c) c.run(); };
   const paint = () => {
     list.innerHTML = items.map((c, i) => `<button class="cmd" role="option" aria-selected="${i === sel}" data-i="${i}" style="width:100%;display:flex;align-items:center;gap:12px;padding:11px 12px;border:none;border-radius:10px;background:${i === sel ? "var(--hover)" : "transparent"};text-align:left;cursor:pointer;color:inherit">
-      <span style="width:26px;height:26px;flex:none;border-radius:8px;background:var(--hover);display:flex;align-items:center;justify-content:center;font-size:13px">${c.glyph || "▸"}</span>
+      <span style="width:26px;height:26px;flex:none;border-radius:8px;background:var(--hover);display:flex;align-items:center;justify-content:center;font-size:13px">${icon(c.glyph || "dot")}</span>
       <span style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="font-size:13px;font-weight:600;color:var(--ink)">${esc(c.label)}</span>${c.note ? `<span style="font-size:11px;color:var(--ink-3)">${esc(c.note)}</span>` : ""}</span>
       ${c.keys ? `<span style="font-family:var(--mono);font-size:11px;color:var(--ink-3)">${esc(c.keys)}</span>` : ""}</button>`).join("")
       || `<div style="padding:26px;text-align:center;font-size:12.5px;color:var(--ink-3)">Ничего не нашлось.</div>`;
@@ -995,6 +1002,7 @@ async function pingLink(manual) {
 }
 
 async function boot() {
+  установитьСпрайт();               // значки доступны всем разделам с первой отрисовки
   const lg = $("apeLogo"); if (lg) lg.innerHTML = apeLogo(32);
   const rt = $("railToggle"); if (rt) rt.onclick = toggleRail;
   applyRail();
