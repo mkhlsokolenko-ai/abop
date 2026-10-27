@@ -65,15 +65,97 @@ export async function mount(root, ctx) {
   const свои = организация ? находки.filter((н) => орг(н) === организация) : находки;
 
   const счёт = (пред) => свои.filter(пред).length;
+
+  // Сумма под риском. Разбираем ту же человеческую запись, что показывает отчёт («612 000,50 ₽»),
+  // и НЕ подставляем ноль, когда величина не объявлена: «денег не касается» и «мы не знаем» —
+  // разные утверждения, и второе считается отдельно.
+  const число = (значение) => {
+    const текст = String(значение == null ? "" : значение).trim().replace(/,/g, ".");
+    const цифры = текст.replace(/[^0-9.]/g, "").replace(/^\.+|\.+$/g, "");
+    if (!цифры || (цифры.match(/\./g) || []).length > 1) return null;
+    const ч = Number(цифры);
+    return isFinite(ч) ? ч : null;
+  };
+  const деньги = (ч) => ч >= 1000000 ? (ч / 1000000).toFixed(2).replace(".", ",") + " млн ₽"
+    : Math.round(ч).toLocaleString("ru-RU") + " ₽";
+  const открытыеСвои = свои.filter((н) => ["найдено", "подтверждено", "отложено"]
+    .includes(String(н["состояние"] || "")));
+  const суммаПодРиском = открытыеСвои.reduce((н, x) => н + (число(x["величина"]) || 0), 0);
+  const безСуммы = открытыеСвои.filter((x) => число(x["величина"]) === null).length;
   const безСпособа = счёт((н) => String(н["исход_способа"] || "") === "не объявлен");
   const варианты = счёт((н) => String(н["исход_способа"] || "") === "несколько вариантов");
   const пересмотр = счёт((н) => String(н["к_пересмотру"] || "") === "да");
   const открытых = счёт((н) => ["найдено", "подтверждено"].includes(String(н["состояние"] || "")));
 
-  const плашка = (подпись, значение, тон) => `<div class="kpi" ${тон === "warn"
-    ? `style="border-color:var(--warn-line);background:var(--warn-bg)"`
-    : тон === "ok" ? `style="border-color:var(--ok-line);background:var(--ok-bg)"` : ""
-    }><span class="k">${esc(подпись)}</span><span class="v">${esc(знач(значение))}</span></div>`;
+  // Плашка числа. Рисуем стилями, а не классом `.kpi`: такого класса в теме нет вовсе — плашки
+  // выезжали голыми строками «Расхождений4» и на экране бухгалтерии читались как сломанный
+  // список. Поймано при осмотре живого экрана 27.10.2026.
+  const плашка = (подпись, значение, тон) => `<div style="padding:9px 11px;border-radius:var(--r-sm);border:1px solid ${
+    тон === "warn" ? "var(--warn-line)" : тон === "ok" ? "var(--ok-line)" : "var(--line)"};background:${
+    тон === "warn" ? "var(--warn-bg)" : тон === "ok" ? "var(--ok-bg)" : "var(--field)"};display:flex;flex-direction:column;gap:2px;min-width:0">
+    <span style="font-family:var(--mono);font-size:17px;font-weight:700;line-height:1.1;color:${
+      тон === "warn" ? "var(--warn-ink)" : тон === "ok" ? "var(--ok-ink)" : "var(--ink)"}">${esc(знач(значение))}</span>
+    <span style="font-size:11px;color:var(--ink-2)">${esc(подпись)}</span></div>`;
+  const РЯД = "display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:8px";
+
+  // Плитка числа со второй строкой: число без происхождения на этом экране означало бы
+  // «поверьте на слово» — а решения по нему принимает бухгалтерия.
+  const плитка = (ч, подпись, откуда, тон) => `<div style="padding:11px 13px;border-radius:var(--r-md);border:1px solid ${
+    тон === "warn" ? "var(--warn-line)" : тон === "ok" ? "var(--ok-line)" : "var(--line)"};background:${
+    тон === "warn" ? "var(--warn-bg)" : тон === "ok" ? "var(--ok-bg)" : "var(--field)"};display:flex;flex-direction:column;gap:3px;min-width:0">
+    <span style="font-family:var(--mono);font-size:21px;font-weight:700;line-height:1.1;color:${
+      тон === "warn" ? "var(--warn-ink)" : тон === "деньги" ? "var(--accent-ink)" : "var(--ink)"}">${esc(ч)}</span>
+    <span style="font-size:11.5px;color:var(--ink-2)">${esc(подпись)}</span>
+    <span style="font-size:10.5px;color:var(--ink-3);font-family:var(--mono);overflow-wrap:anywhere">${esc(откуда)}</span>
+  </div>`;
+
+  // Период берём из актов сверки: это единственное место, где он объявлен данными. Нет актов —
+  // нет и периода, и выдумывать «за всё время» на экране бухгалтерии нельзя.
+  const периодЧип = () => {
+    const итоги = акты.filter((с) => String(с["вид"] || "") === "итог"
+      && (!организация || String(с["организация"] || "") === организация));
+    const с_ = итоги.map((и) => String(и["период_с"] || "")).filter(Boolean).sort()[0] || "";
+    const по_ = итоги.map((и) => String(и["период_по"] || "")).filter(Boolean).sort().slice(-1)[0] || "";
+    if (!с_ && !по_) return "";
+    return `<span class="chip mono">${esc(с_ || "…")} — ${esc(по_ || "…")}</span>`;
+  };
+
+  const полейЖдёт = () => первичка
+    .filter((д) => (!организация || String(д["организация"] || "") === организация))
+    .reduce((н, д) => н + Object.values(д["поля"] || {})
+      .filter((п) => String((п || {})["нужна_проверка"]) === "да").length, 0);
+
+  // Противоречия с учётом (P1–P6) — не рядовые расхождения: они говорят, что документ нельзя
+  // проводить. Поэтому отдельной карточкой наверху, а не строкой в общей таблице.
+  const противоречия = () => {
+    const свои_п = свои.filter((н) => /^P\d/.test(String(н["код"] || "")));
+    if (!свои_п.length) return "";
+    return `<div style="${CARD};gap:8px;border-color:var(--warn-line);background:var(--warn-bg)">
+      <span style="${LBL};color:var(--warn-ink)">противоречия с учётом · ${свои_п.length}</span>
+      ${свои_п.slice(0, 6).map((н) => `<div style="font-size:12.5px;color:var(--ink-2)">
+        <span class="mono">${esc(String(н["код"]))}</span> ${esc(String(н["название"] || ""))}${
+          н["предмет"] ? " — " + esc(String(н["предмет"])) : ""}${
+          н["доказательство"] ? `<span style="display:block;font-size:11.5px;color:var(--ink-3)">${esc(String(н["доказательство"]))}</span>` : ""}</div>`).join("")}
+      ${origin("Это не расхождение в учёте, а предупреждение о документе: провести его как есть нельзя. Проверяется ДО загрузки — там, где ошибка ещё дешёвая.")}
+    </div>`;
+  };
+
+  // «Сравнивать не с чем» — отдельная карточка, а не тишина: не посчитанное на этом экране
+  // стоит денег, и выдавать его за «сошлось» нельзя.
+  const сальдоБезНаших = () => акты.filter((с) => String(с["вид"] || "") === "итог"
+    && (!организация || String(с["организация"] || "") === организация)
+    && !String(с["сальдо_наше"] || "").trim() && String(с["почему"] || "").trim());
+  const сальдоНечем = () => {
+    const список = сальдоБезНаших();
+    if (!список.length) return "";
+    const почему = String(список[0]["почему"] || "");
+    return `<div style="${CARD};gap:6px">
+      <span style="${LBL}">сравнивать не с чем · ${список.length} ${
+        список.length === 1 ? "акт" : "актов"}</span>
+      <div style="font-size:12.5px;color:var(--ink-2)">${esc(почему)}</div>
+      ${origin("Исход R5 (сальдо не сходится) не считается, пока наших остатков нет в данных. Пустое место здесь честнее галочки «сошлось»: по сальдо мы ничего не проверяли.")}
+    </div>`;
+  };
 
   const кнопкаОрг = (имя, подпись) => `<button data-org="${esc(имя)}" class="chip${
     организация === имя ? " on" : ""}" style="cursor:pointer">${esc(подпись)}</button>`;
@@ -107,15 +189,12 @@ export async function mount(root, ctx) {
   // «Что делать сейчас» — первое, что человек видит. Три числа и ни одного термина конвейера:
   // он открывает экран, чтобы понять, за что браться, а не чтобы изучить устройство платформы.
   const чтоДелать = () => {
-    const полейЖдёт = первичка
-      .filter((д) => (!организация || String(д["организация"] || "") === организация))
-      .reduce((н, д) => н + Object.values(д["поля"] || {})
-        .filter((п) => String((п || {})["нужна_проверка"]) === "да").length, 0);
+    const полей = полейЖдёт();
     const ждутПризнания = счёт((н) => String(н["состояние"] || "") === "найдено");
     const строкиАктов = актыСвои().filter((с) => String(с["вид"] || "") !== "итог"
       && String(с["код"] || ""));
     const актовСРасхождениями = new Set(строкиАктов.map((с) => String(с["акт"] || ""))).size;
-    if (!полейЖдёт && !ждутПризнания && !актовСРасхождениями) return "";
+    if (!полей && !ждутПризнания && !актовСРасхождениями) return "";
     const пункт = (число, что, пояснение) => `<div style="display:flex;gap:10px;align-items:baseline">
       <span class="mono" style="font-size:19px;font-weight:800;min-width:2.2em;text-align:right">${
         esc(String(число))}</span>
@@ -123,7 +202,7 @@ export async function mount(root, ctx) {
         <span style="color:var(--ink-3);font-size:12px">${esc(пояснение)}</span></span></div>`;
     return `<div style="${CARD};gap:12px;border-color:var(--warn-line)">
       <span style="${LBL}">что делать сейчас</span>
-      ${полейЖдёт ? пункт(полейЖдёт, "полей проверить в документах",
+      ${полей ? пункт(полей, "полей проверить в документах",
         "расчёт прочитал их, но не настолько уверенно, чтобы брать в расчёт без вас. Подтвердить — в разделе «Решения»") : ""}
       ${ждутПризнания ? пункт(ждутПризнания, "расхождений ждут вашего слова",
         "«да, это проблема» или «так и должно быть» — по отклонённым правят правила") : ""}
@@ -165,7 +244,7 @@ export async function mount(root, ctx) {
           <span style="${LBL}">период ${esc(знач(и["период_с"]))} — ${esc(знач(и["период_по"]))}</span>
           <span class="mono" style="font-size:11.5px;color:var(--ink-3)">${esc(String(и["файл"] || ""))}</span>
         </div>
-        <div class="kpis">${плашки.map(([п, v, т]) => плашка(п, v, т)).join("")}</div>
+        <div style="${РЯД}">${плашки.map(([п, v, т]) => плашка(п, v, т)).join("")}</div>
         ${строки.length ? `<div style="overflow-x:auto"><table class="reg"><thead><tr>
           <th>дата</th><th>документ контрагента</th><th style="text-align:right">сумма</th>
           <th>наш документ</th><th>исход</th><th>в чём дело</th></tr></thead>
@@ -274,8 +353,16 @@ export async function mount(root, ctx) {
 
   root.innerHTML = `<div style="flex:1;min-width:0;overflow-y:auto;padding:26px 30px">
     <div style="max-width:1100px;margin:0 auto;display:flex;flex-direction:column;gap:var(--gap-group)">
+      <div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap">
+        <h1 style="margin:0;font-size:24px;font-weight:800;letter-spacing:-.7px">Сверка расхождений</h1>
+        <span class="chip${организация ? " on" : ""}">${esc(организация || "все организации")}</span>
+        ${периодЧип()}
+        <span style="margin-left:auto;display:flex;gap:7px;align-items:center">
+          ${полейЖдёт() ? `<button class="btn sm ok" id="свРешения">Очередь полей · ${полейЖдёт()}</button>` : ""}
+          <button class="btn sm" id="свОбновить">Обновить</button>
+        </span>
+      </div>
       <div style="display:flex;flex-direction:column;gap:6px">
-        <h1 style="margin:0;font-size:26px;font-weight:800;letter-spacing:-.7px">Сверка расхождений</h1>
         ${origin("Расхождения считает код по выгрузке из 1С. Способ устранения выбирает правило методолога — у него обязательны основание (пункт учётной политики, статья НК, ФСБУ) и версия политики; модель его не выбирает и не правит. Организация здесь измерение: политика одной компании к данным другой не применяется никогда.")}
       </div>
 
@@ -288,7 +375,23 @@ export async function mount(root, ctx) {
         ${origin("Это отсутствие прогона, а не отсутствие расхождений. Загрузите выгрузку 1С (рецепты вертикали) и запустите сверщика; «расхождений нет» выглядит так же, как «проверять было нечем», поэтому мы это различаем словами.")}
       </div>` : ""}
 
+      ${свои.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(176px,1fr));gap:10px">
+        ${плитка(String(открытыеСвои.length), "расхождений открыто",
+                 `всего по этой организации: ${свои.length}`, открытыеСвои.length ? "warn" : "ok")}
+        ${плитка(суммаПодРиском ? деньги(суммаПодРиском) : "—", "сумма под риском",
+                 суммаПодРиском
+                   ? `по документам находок${безСуммы ? ` · без суммы: ${безСуммы}` : ""}`
+                   : "величина не объявлена правилами — деньги не посчитаны", "деньги")}
+        ${плитка(сводка["доля_подтверждения"] === "" || сводка["доля_подтверждения"] == null
+                   ? "—" : сводка["доля_подтверждения"] + " %", "доля признания",
+                 `${сводка["подтверждено"] || 0} из ${(сводка["подтверждено"] || 0) + (сводка["отклонено"] || 0) || 0} решённых`)}
+        ${плитка(String(полейЖдёт()), "полей на проверку",
+                 полейЖдёт() ? "прочитаны ниже порога — подтверждает человек" : "всё, что прочитано, выше порога")}
+      </div>` : ""}
+
       ${чтоДелать()}
+      ${противоречия()}
+      ${сальдоНечем()}
 
       ${организации.length ? `<div style="${CARD};gap:8px">
         <span style="${LBL}">организация · ${организации.length} в обслуживании</span>
@@ -298,7 +401,7 @@ export async function mount(root, ctx) {
         </div>
       </div>` : ""}
 
-      ${свои.length ? `<div class="kpis">
+      ${свои.length ? `<div style="${РЯД}">
         ${плашка("Расхождений", свои.length)}
         ${плашка("Открытых", открытых, открытых > 0 ? "warn" : "ok")}
         ${плашка("Со способом", свои.length - безСпособа - варианты,
@@ -350,6 +453,15 @@ export async function mount(root, ctx) {
 
       ${польза()}
     </div></div>`;
+
+  const обновить = root.querySelector("#свОбновить");
+  if (обновить) обновить.addEventListener("click", () => { mount(root, ctx); });
+  // Очередь полей живёт в «Решениях»: там же, где все вопросы к человеку. Панель не заводит
+  // второй такой же экран — она ведёт в тот, который уже есть.
+  const кРешениям = root.querySelector("#свРешения");
+  if (кРешениям && typeof ctx.open === "function") {
+    кРешениям.addEventListener("click", () => ctx.open("decisions"));
+  }
 
   root.querySelectorAll("[data-org]").forEach((b) => b.addEventListener("click", () => {
     root.dataset.org = b.getAttribute("data-org") || "";
