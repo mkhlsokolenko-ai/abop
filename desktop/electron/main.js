@@ -1,6 +1,6 @@
 // Electron main: спавнит Python-сайдкар (движок) и рендерит модульный UI поверх него.
 // Оболочка тонкая — вся логика в сайдкаре; окно можно заменить, не трогая движок.
-const { app, BrowserWindow, Menu, Tray, Notification, nativeImage, dialog, shell, ipcMain, globalShortcut, clipboard } = require("electron");
+const { app, BrowserWindow, Menu, Tray, Notification, nativeImage, dialog, shell, ipcMain, globalShortcut, clipboard, powerMonitor } = require("electron");
 const { spawn } = require("child_process");
 const path = require("path");
 const net = require("net");
@@ -161,10 +161,18 @@ function обновитьТрей() {
   if (!tray) return;
   const хвост = ждут ? ` · ждут решения: ${ждут}` : "";
   tray.setToolTip("ABOP Desktop" + хвост);
+  // Про обновление трей говорит сам: окно закрывают на недели, и баннер в нём никто не видит —
+  // ровно поэтому 1.0.31 неделю не доезжала до машины, где стояла 1.0.27.
+  const строкаОбновления = обновление.state === "ready"
+    ? { label: `Установить обновление v${обновление.version}`, click: () => установитьОбновление() }
+    : обновление.state === "error"
+      ? { label: "Проверка обновлений не удалась — повторить", click: () => проверитьОбновление("по кнопке") }
+      : { label: "Проверить обновления", click: () => проверитьОбновление("по кнопке") };
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: ждут ? `Ждут вашего решения: ${ждут}` : "Ничего не ждёт", enabled: false },
     { type: "separator" },
     { label: "Открыть ABOP", click: () => показать() },
+    строкаОбновления,
     { label: "Выход (полностью закрыть)", click: () => { выходим = true; stop(); app.quit(); } },
   ]));
   // Значок на иконке приложения поддерживают не все системы — там, где нет, остаётся трей.
@@ -213,7 +221,42 @@ ipcMain.handle("os:notify", (_e, данные) => уведомить(данны�
 ipcMain.handle("os:badge", (_e, n) => { ждут = Math.max(0, Number(n) || 0); обновитьТрей(); return ждут; });
 
 // Видимый авто-апдейт: события electron-updater транслируем в UI (баннер с кнопкой).
+//
+// **Почему проверка повторяется, а не одна при старте.** Приложение живёт в трее: окно закрывают,
+// процесс остаётся, и «запуск» случается раз в несколько недель. 27.10.2026 владелец сидел на
+// 1.0.27 при вышедшей 1.0.31 — в журнале апдейтера единственная запись от 16.10, ровно та
+// проверка при старте. Одноразовая проверка в приложении, которое не перезапускают, означает
+// «обновлений не бывает».
+//
+// Поэтому три повода проверить: старт, каждые шесть часов и возвращение машины к жизни (сон,
+// блокировка экрана). И четвёртый — повтор после ошибки: сорвавшаяся проверка (релиз ещё
+// заливается, сеть мигнула) иначе гасила обновления до следующего запуска. Ровно это и
+// случилось 16.10: `Cannot find latest.yml` на v1.0.27, пока CI не дозалил артефакты.
 let updater = null;
+const ЧАС = 3600000;
+const ПРОВЕРЯТЬ_РАЗ_В = 6 * ЧАС;
+const ПОВТОР_ПОСЛЕ_ОШИБКИ = 30 * 60000;
+const НЕ_ЧАЩЕ = 15 * 60000;          // resume и unlock-screen приходят парой — не дёргаем дважды
+// Состояние апдейтера для интерфейса: молчание не должно читаться как «у вас последняя версия».
+const обновление = { state: "", version: "", проверено: 0, ошибка: "" };
+let повторТаймер = null;
+
+function проверитьОбновление(повод) {
+  if (!updater) return;
+  const сейчас = Date.now();
+  if (повод !== "по кнопке" && обновление.проверено && сейчас - обновление.проверено < НЕ_ЧАЩЕ) return;
+  обновление.проверено = сейчас;
+  obsЛог("[updater] проверка: " + повод);
+  try {
+    const p = updater.checkForUpdates();
+    if (p && p.catch) p.catch((e) => obsЛог("[updater] проверка не удалась: " + ((e && e.message) || e)));
+  } catch (e) { obsЛог("[updater] проверка не удалась: " + ((e && e.message) || e)); }
+}
+
+function obsЛог(строка) {
+  try { console.log(строка); } catch (e) { /* noop */ }
+}
+
 function setupUpdater() {
   if (!app.isPackaged) return;
   if (process.platform === "darwin") {
@@ -231,21 +274,48 @@ function setupUpdater() {
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = true;
     const send = (s) => { if (win && !win.isDestroyed()) win.webContents.send("updater:status", s); };
-    autoUpdater.on("checking-for-update", () => send({ state: "checking" }));
-    autoUpdater.on("update-available", (i) => send({ state: "available", version: i && i.version }));
-    autoUpdater.on("update-not-available", () => send({ state: "none" }));
+    const запомнить = (s) => {
+      обновление.state = s.state || "";
+      if (s.version) обновление.version = s.version;
+      if (s.state === "error") обновление.ошибка = String(s.message || "").slice(0, 300);
+      if (s.state === "none" || s.state === "available" || s.state === "ready") обновление.ошибка = "";
+      if (s.state !== "checking") обновление.проверено = Date.now();
+      send(s);
+      обновитьТрей();              // готовое обновление видно и при закрытом окне
+    };
+    autoUpdater.on("checking-for-update", () => запомнить({ state: "checking" }));
+    autoUpdater.on("update-available", (i) => запомнить({ state: "available", version: i && i.version }));
+    autoUpdater.on("update-not-available", () => запомнить({ state: "none" }));
     autoUpdater.on("download-progress", (p) => send({ state: "downloading", percent: Math.round(p.percent || 0) }));
-    autoUpdater.on("update-downloaded", (i) => send({ state: "ready", version: i && i.version }));
-    autoUpdater.on("error", (e) => send({ state: "error", message: String((e && e.message) || e) }));
-    autoUpdater.checkForUpdates();
+    autoUpdater.on("update-downloaded", (i) => запомнить({ state: "ready", version: i && i.version }));
+    autoUpdater.on("error", (e) => {
+      запомнить({ state: "error", message: String((e && e.message) || e) });
+      // Один повтор в очереди, а не по одному на каждую ошибку: иначе таймеры множатся.
+      if (повторТаймер) clearTimeout(повторТаймер);
+      повторТаймер = setTimeout(() => { повторТаймер = null; обновление.проверено = 0;
+                                        проверитьОбновление("повтор после ошибки"); },
+                                ПОВТОР_ПОСЛЕ_ОШИБКИ);
+    });
+    проверитьОбновление("старт");
+    setInterval(() => проверитьОбновление("по расписанию"), ПРОВЕРЯТЬ_РАЗ_В);
+    // Машину закрывают крышкой, а не выключают: пробуждение — самый частый момент, когда
+    // приложение снова в сети, а проверка по расписанию ещё не подошла.
+    try {
+      powerMonitor.on("resume", () => проверитьОбновление("после сна"));
+      powerMonitor.on("unlock-screen", () => проверитьОбновление("после разблокировки"));
+    } catch (e) { /* не на всех системах есть */ }
   } catch (e) {
     console.error("[updater] недоступен:", e && e.message);
   }
 }
 
 // действия из UI
-ipcMain.handle("updater:check", () => { try { updater && updater.checkForUpdates(); } catch (e) { /* noop */ } });
-ipcMain.handle("updater:install", () => {
+ipcMain.handle("updater:check", () => { проверитьОбновление("по кнопке"); });
+// Состояние апдейтера для интерфейса: когда проверяли в последний раз и чем кончилось. Без этого
+// «баннера нет» значит сразу две разные вещи: «у вас последняя версия» и «проверка не доходит».
+ipcMain.handle("updater:state", () => ({ ...обновление, версия: app.getVersion(),
+                                         поддержано: !!updater }));
+function установитьОбновление() {
   // Выход должен быть НАСТОЯЩИМ: при живом трее приложение остаётся в фоне, а установщик
   // упирается в запущенный процесс и встаёт. Поэтому снимаем трей, гасим сайдкар и только
   // потом отдаём управление установщику.
@@ -257,7 +327,8 @@ ipcMain.handle("updater:install", () => {
     // приложение само поднимается — иначе выглядит так, будто обновление «закрыло программу».
     updater && updater.quitAndInstall(false, true);
   } catch (e) { /* noop */ }
-});
+}
+ipcMain.handle("updater:install", () => установитьОбновление());
 
 // экспорт в PDF: рендерим HTML в скрытом окне → printToPDF → в «Загрузки» (кириллица ок, Chromium)
 // Готовый файл (отчёт, выгрузка) раньше показывался только путём в уведомлении: открыть его или

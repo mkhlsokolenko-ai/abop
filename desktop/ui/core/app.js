@@ -722,6 +722,29 @@ function reloadModule(id) { const rec = mounted.get(id); if (rec) { rec.root.rem
 function relinkModules() { mounted.forEach((rec) => rec.root.dispatchEvent(new CustomEvent("ape:relink"))); }
 function reloadAll() { const cur = active; mounted.forEach((rec) => rec.root.remove()); mounted.clear(); if (cur) loadModule(cur); }
 
+// Когда проверяли обновления — на самом значке версии. Молчание апдейтера не должно читаться
+// как «у вас последняя версия»: 27.10.2026 на машине неделю стояла 1.0.27 при вышедшей 1.0.31,
+// и по экрану это было никак не отличить от «всё свежее».
+async function показатьПроверку() {
+  const v = $("verChip"); if (!v || !window.ape || !window.ape.updater || !window.ape.updater.state) return;
+  let с = null;
+  try { с = await window.ape.updater.state(); } catch { с = null; }
+  if (!с) return;
+  if (!с["поддержано"]) { v.title = "Авто-обновление выключено в этой сборке — обновлять вручную"; return; }
+  const когда = с["проверено"] ? Math.round((Date.now() - с["проверено"]) / 60000) : null;
+  const давность = когда == null ? "проверки ещё не было"
+    : когда < 1 ? "проверено только что"
+      : когда < 60 ? `проверено ${когда} мин назад`
+        : `проверено ${Math.round(когда / 60)} ч назад`;
+  v.title = с["ошибка"]
+    ? `Обновления: проверка не удалась (${с["ошибка"]}). Повторю сама, можно и вручную: «Проверить обновления».`
+    : с.state === "ready" ? `Обновление v${с.version} скачано — перезапустите, чтобы поставить`
+      : с.state === "available" ? `Найдено обновление v${с.version} — скачиваю`
+        : `Установлена последняя версия · ${давность}`;
+  // Сорвавшуюся проверку человек должен видеть, а не узнавать из подсказки под курсором.
+  if (с["ошибка"]) renderUpdate({ state: "error", message: с["ошибка"] });
+}
+
 function renderUpdate(s) {
   const bar = $("updateBar"); if (!bar) return;
   const show = (html, bg) => {
@@ -978,7 +1001,7 @@ async function boot() {
   initTheme();
   const h = await waitEngine();
   const v = $("verChip"); if (v) v.textContent = "v" + ((h && h.version) || "?");
-  if (window.ape && window.ape.updater) window.ape.updater.onStatus(renderUpdate);
+  if (window.ape && window.ape.updater) { window.ape.updater.onStatus(renderUpdate); показатьПроверку(); }
   // глобальный хоткей: выделенный текст из Word/Excel/браузера → открыть чат и отправить на анализ
   if (window.ape && window.ape.onAnalyze) window.ape.onAnalyze((text) => loadModule("chat", { analyze: text || "" }));
   await renderAuth();

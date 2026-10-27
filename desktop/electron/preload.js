@@ -6,6 +6,9 @@ contextBridge.exposeInMainWorld("ape", {
   updater: {
     onStatus: (cb) => ipcRenderer.on("updater:status", (_e, data) => cb(data)),
     check: () => ipcRenderer.invoke("updater:check"),
+    // Когда проверяли и чем кончилось: без этого «баннера нет» читается как «у вас последняя
+    // версия», даже когда проверка просто не доходит.
+    state: () => ipcRenderer.invoke("updater:state"),
     install: () => ipcRenderer.invoke("updater:install"),
   },
   exportPdf: (html, filename) => ipcRenderer.invoke("export:pdf", { html, filename }),
