@@ -86,6 +86,48 @@ export async function mount(root, ctx) {
                       "происхождение": итог["происхождение"] || "" });
   }
 
+  // ── четыре числа карточки ────────────────────────────────────────────────────────────────
+  //
+  // Журнал отвечает на четыре вопроса сразу: что нашли, сколько это стоило, сколько заняло и
+  // сколько ждёт человека. До этого они жили в разных вкладках — «сколько это стоило» лежало в
+  // «Затратах», а «ждёт решения» не было видно вовсе, пока не откроешь «Доставку».
+  //
+  // Правило числа действует и здесь: у каждого есть вторая строка — чем оно посчитано. Число
+  // без происхождения на этом экране означало бы «поверьте на слово».
+  function числаПрогона(d) {
+    const rm = d.run_metrics || {};
+    const cst = rm.cost || {};
+    const tm = rm.timings || {};
+    const доставка = d.delivery || [];
+    const ждут = доставка.filter((x) => String(x.mode || "") === "awaiting_hitl").length;
+    const волн = (d.waves || []).length;
+    const секунды = tm.total_ms ? (Math.round(tm.total_ms / 100) / 10) + " с" : "—";
+    const плитки = [
+      [String((d.findings || []).length), "находок",
+       [(d.skill_outputs || []).length ? `${(d.skill_outputs || []).length} навыков` : "",
+        волн ? `${волн} ${волн === 1 ? "волна" : "волн"}` : ""].filter(Boolean).join(" · ")
+       || "расчёт по источникам прогона"],
+      [fmtCost(rm.cost != null ? rm.cost : d.cost) || "—", "стоимость прогона",
+       cst.input_tokens != null
+         ? `${(cst.input_tokens || 0).toLocaleString("ru-RU")} → ${(cst.output_tokens || 0).toLocaleString("ru-RU")} токенов`
+           + (cst.calls != null ? ` · ${cst.calls} вызовов` : "")
+         : "токены прогона не записаны"],
+      [секунды, "время",
+       tm.slowest ? `дольше всех: ${tm.slowest.skill}` : "замер по шагам не записан"],
+      [String(ждут), "ждут вашего решения",
+       ждут ? "наружу ничего не ушло" : (доставка.length ? "всё решено" : "наружу ничего не уходило")],
+    ];
+    return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">${
+      плитки.map(([ч, п, о], i) => `<div style="padding:11px 13px;border-radius:var(--r-md);border:1px solid ${
+        i === 3 && ждут ? "var(--warn-line)" : "var(--line)"};background:${
+        i === 3 && ждут ? "var(--warn-bg)" : "var(--field)"};display:flex;flex-direction:column;gap:3px;min-width:0">
+        <span style="font-family:var(--mono);font-size:21px;font-weight:700;line-height:1.1;color:${
+          i === 3 && ждут ? "var(--warn-ink)" : i === 1 ? "var(--accent-ink)" : "var(--ink)"}">${esc(ч)}</span>
+        <span style="font-size:11.5px;color:var(--ink-2)">${esc(п)}</span>
+        <span style="font-size:10.5px;color:var(--ink-3);font-family:var(--mono);overflow-wrap:anywhere">${esc(о)}</span>
+      </div>`).join("")}</div>`;
+  }
+
   // ── список ──
   function filterBar() {
     const opts = [`<option value="">все агенты</option>`]
@@ -116,6 +158,7 @@ export async function mount(root, ctx) {
       </span>
       <span style="font-size:11px;color:var(--ink-3);font-family:var(--mono);flex:none">${esc(fmtCost(r.cost))}</span>
       <span style="font-size:11px;flex:none;color:${ok ? "var(--ok-ink)" : "var(--warn-ink)"}">${ok ? "пройден" : "замечания"}</span>
+      <span style="flex:none;color:var(--ink-3);display:flex">${icon("right")}</span>
     </button>${(hits[r.id] || []).length ? `<div style="margin:-2px 0 6px 30px;display:flex;flex-direction:column;gap:3px">${hits[r.id].map((h) => `<div style="font-size:11.5px;color:var(--ink-3);line-height:1.45">…${esc(h)}…</div>`).join("")}</div>` : ""}`;
   }
 
@@ -323,9 +366,17 @@ export async function mount(root, ctx) {
     const rm = d.run_metrics || {};
     const miss = so.filter((o) => (o.schema_miss || []).length);
     const bs = (rm.board || {});
-    const tabs = [["findings", "Находки · " + fnd.length], ["skills", "Навыки · " + so.length],
-                  ["board", "Доска" + (bs.entries ? " · " + bs.entries : "")], ["delivery", "Доставка"], ["metrics", "Затраты"]]
-      .map(([id, t]) => `<button type="button" class="btn sm rtab${id === openTab ? " primary" : ""}" data-tab="${id}">${esc(t)}</button>`).join("");
+    // Счётчик на вкладке — это не украшение: «Доставка» без числа выглядела пустой, и человек
+    // не открывал её, пока агент не напоминал о себе сам.
+    const дост = d.delivery || [];
+    const ждутРешения = дост.filter((x) => String(x.mode || "") === "awaiting_hitl").length;
+    const tabs = [["findings", "Находки · " + fnd.length, ""], ["skills", "Навыки · " + so.length, ""],
+                  ["board", "Доска" + (bs.entries ? " · " + bs.entries : ""), ""],
+                  ["delivery", "Доставка" + (дост.length ? " · " + дост.length : ""), ждутРешения ? "shield" : "ext"],
+                  ["metrics", "Затраты", ""]]
+      .map(([id, t, зн]) => `<button type="button" class="btn sm rtab${id === openTab ? " primary" : ""}${
+        id === "delivery" && ждутРешения && openTab !== id ? " ok" : ""}" data-tab="${id}">${
+        зн ? icon(зн) : ""}${esc(t)}</button>`).join("");
     let body = "";
     if (openTab === "findings") {
       body = fnd.length
@@ -366,15 +417,18 @@ export async function mount(root, ctx) {
       ? `<select id="oTpl" style="${INP}">${templates.map((t) => `<option value="${esc(t.id)}">${esc(t.name || t.id)}</option>`).join("")}</select>` : "";
     return `<div style="${CARD}">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <button class="btn sm" id="oBack">${icon("left")}К журналу</button>
-        <span style="font-size:15px;font-weight:700">${esc(d.agent_name || d.agent_id || "")}</span>
-        <span style="font-size:11.5px;color:${v.ok ? "var(--ok-ink)" : "var(--warn-ink)"}">${v.ok ? "пройден" : "есть замечания"}${v.autonomy_used ? " · " + esc(v.autonomy_used) : ""}</span>
+        <button class="ico" id="oBack" title="К журналу" aria-label="Вернуться к журналу прогонов">${icon("left", "lg")}</button>
+        <span style="font-size:16px;font-weight:700;letter-spacing:-.3px">${esc(d.agent_name || d.agent_id || "")}</span>
+        <span style="font-size:11px;font-family:var(--mono);color:var(--ink-3)">${esc(fmtDate(d.created_at || ""))}</span>
+        <span class="chip${v.ok ? " on" : ""}" style="color:${v.ok ? "var(--ok-ink)" : "var(--warn-ink)"};border-color:${v.ok ? "var(--ok-line)" : "var(--warn-line)"}">${
+          icon(v.ok ? "check" : "alert")}${v.ok ? "пройден" : "есть замечания"}${v.autonomy_used ? " · " + esc(v.autonomy_used) : ""}</span>
         <span style="margin-left:auto;display:flex;gap:7px;align-items:center">${tplOpts}
-          <button class="btn sm" id="oHtml">Показать отчёт</button>
-          <button class="btn sm primary" id="oPdf">Отчёт PDF</button>
+          <button class="btn sm" id="oHtml">${icon("doc")}Показать отчёт</button>
+          <button class="btn sm primary" id="oPdf">${icon("download")}Отчёт PDF</button>
           <button class="btn sm" id="oDiff">Сравнить с прошлым</button></span>
       </div>
       <div style="font-size:11.5px;color:var(--ink-3);font-family:var(--mono)">${esc(open)}</div>
+      ${числаПрогона(d)}
       ${итогHTML()}
       ${miss.length ? `<div style="font-size:12px;color:var(--warn-ink)">Навыки заполнили схему не полностью: ${esc(miss.map((m) => m.skill).join(", "))}. В отчёте это отмечено.</div>` : ""}
       <div style="display:flex;gap:7px;flex-wrap:wrap">${tabs}</div>
