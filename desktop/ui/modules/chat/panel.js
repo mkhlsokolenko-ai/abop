@@ -73,7 +73,9 @@ import { icon } from "../../core/icons.js";
 // Канал доставки значком из общего набора. Таблица эмодзи («🎫», «📚», «✉») жила здесь
 // с первых дней: в светлой теме они оставались цветными, а рядом с текстом строки
 // выглядели крупнее подписи и ломали её базовую линию.
-const CH_ICON = (ch) => {
+// Имя значка канала отдельно от его разметки: в окно подтверждения уходит ИМЯ (окно рисует
+// значок само), в строку чата — готовая разметка.
+const CH_NAME = (ch) => {
   const c = (ch || "").toLowerCase();
   const имя = c.includes("redmine") ? "ticket"
     : (c.includes("book") || c.includes("вики")) ? "doc"
@@ -81,8 +83,9 @@ const CH_ICON = (ch) => {
         : c.includes("pdf") ? "doc"
           : c.includes("yougile") ? "board"
             : c === "chat" ? "chat" : "ext";
-  return icon(имя);
+  return имя;
 };
+const CH_ICON = (ch) => icon(CH_NAME(ch));
 const NEW_TITLE = "Новый чат";
 
 export async function mount(root, ctx) {
@@ -1122,7 +1125,8 @@ export async function mount(root, ctx) {
     }
     if (!it || it.ok === false) { toast("Заявка уже обработана или недоступна", "warn"); loadHitlQueue(); return; }
     if (legacy) it.body = "Предпросмотр содержимого недоступен в этой версии ABOP Desktop — обновите приложение. Подтверждение отправит отчёт агента в указанный канал.";
-    const fields = [["Агент", it.agent_name || agentName(it.agent_id, it.agent_id)], ["Канал", (CH_ICON(it.channel) + " " + (it.channel || ""))], ["Адресат", it.to || "—"]];
+    const fields = [["Агент", it.agent_name || agentName(it.agent_id, it.agent_id)],
+                    ["Канал", it.channel || "—", CH_NAME(it.channel)], ["Адресат", it.to || "—"]];
     if (it.kind === "command") {
       fields[1] = ["Действие", `${it.system || ""} · ${it.type || ""}`];
       fields[2] = ["Куда", it.to || it.system || "—"];

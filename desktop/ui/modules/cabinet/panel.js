@@ -54,13 +54,24 @@ export async function mount(root, ctx) {
   // Подпись «анализа выделенного» — по факту занятого сочетания, а не по тому, что мы задумали.
   const analyzeKey = await analyzeShortcut();
   // Руководства отдаёт сам ABOP: документ, лежащий в репозитории, до пользователя не доходит.
-  const [u, me, pol, agents, conns, guides] = await Promise.all([
+  // Состояние апдейтера берём у главного процесса: «баннера нет» значит сразу две разные вещи —
+  // «у вас последняя версия» и «проверка не доходит», и различать их должен экран, а не человек.
+  let апдейтер = null;
+  try {
+    if (window.ape && window.ape.updater && window.ape.updater.state) {
+      апдейтер = await window.ape.updater.state();
+    }
+  } catch { апдейтер = null; }
+
+  const [u, me, pol, agents, conns, guides, деньги] = await Promise.all([
     api(C + "/usage").catch(keep),
     api(SEC + "/me").catch(keep),
     api(SEC + "/policy").catch(keep),
     api(AG + "/catalog").catch(keep),
     api(K + "/list").catch(keep),
     api(C + "/guides").catch(() => ({ guides: [] })),
+    // Квота и расход: вопрос «сколько осталось» задают раньше, чем «сколько потрачено».
+    api(C + "/billing").catch(() => null),
   ]).then((r) => r.map((x, i) => x === null ? (i === 3 ? [] : {}) : x));
 
   // Ссылки открываем во внешнем браузере: руководство — документ на 90 страниц, ему не место в окне чата.
@@ -101,13 +112,94 @@ export async function mount(root, ctx) {
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="ape-label" style="width:84px">разрешено</span>${chips(r.allowed)}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="ape-label" style="width:84px">запрещено</span>${chips(r.denied, true)}</div></div>`;
 
+  // ── состояние установки: обновление, связь, расход ────────────────────────────────────────
+  const давность = (когда) => {
+    if (!когда) return "проверки ещё не было";
+    const мин = Math.round((Date.now() - Number(когда)) / 60000);
+    if (мин < 1) return "проверено только что";
+    if (мин < 60) return `проверено ${мин} мин назад`;
+    const ч = Math.round(мин / 60);
+    return ч < 48 ? `проверено ${ч} ч назад` : `проверено ${Math.round(ч / 24)} дн. назад`;
+  };
+  const карточкаОбновления = () => {
+    if (!апдейтер) {
+      return `<div style="${CARD};gap:8px">
+        <span class="ape-label">обновление</span>
+        <div style="font-size:13px">Авто-обновление в этой сборке выключено.</div>
+        <span style="font-size:11.5px;color:var(--ink-3)">Так собран клиент под macOS (нет подписи Developer ID) и веб-версия. Обновлять вручную — новым установщиком.</span></div>`;
+    }
+    const состояние = String(апдейтер.state || "");
+    const готово = состояние === "ready";
+    const ошибка = String(апдейтер["ошибка"] || "");
+    const цвет = готово ? "var(--ok-line)" : ошибка ? "var(--warn-line)" : "var(--line)";
+    const фон = готово ? "var(--ok-bg)" : ошибка ? "var(--warn-bg)" : "var(--panel)";
+    const подпись = готово ? `Обновление v${esc(String(апдейтер.version || ""))} скачано`
+      : ошибка ? "Проверка обновлений не удалась"
+        : состояние === "available" ? `Найдено обновление v${esc(String(апдейтер.version || ""))} — скачиваю`
+          : `Установлена последняя версия · v${esc(String(апдейтер["версия"] || ""))}`;
+    const пояснение = ошибка
+      ? esc(ошибка) + " · повторю сама, можно и вручную"
+      : готово
+        ? "Приложение обновится при перезапуске."
+        : "Проверка идёт при запуске, каждые 6 часов и после пробуждения машины — ждать запуска больше не нужно.";
+    return `<div style="${CARD};gap:8px;border-color:${цвет};background:${фон}">
+      <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+        <span style="color:${готово ? "var(--ok-ink)" : ошибка ? "var(--warn-ink)" : "var(--ink-2)"}">${
+          icon(готово ? "download" : ошибка ? "alert" : "check", "lg")}</span>
+        <span style="font-size:13.5px;font-weight:650">${подпись}</span>
+        <span class="chip" style="margin-left:auto">${esc(давность(апдейтер["проверено"]))}</span>
+      </div>
+      <div style="font-size:12.5px;color:var(--ink-2);line-height:1.5">${пояснение}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${готово ? `<button class="btn ok" id="cabUpdNow">${icon("refresh")}Перезапустить и обновить</button>` : ""}
+        <button class="btn sm" id="cabUpdCheck">${icon("download")}Проверить обновления</button>
+      </div></div>`;
+  };
+  const карточкаСвязи = () => {
+    const свой = !ctx.tenant || ctx.tenant === ctx.tenantOwn;
+    // Строка переносится целиком, а не по буквам: в узкой карточке колонка «1fr» ломала адрес
+    // сервера в столбик из отдельных символов — на экране это читалось как сбой.
+    const строка = (подпись, значение, метка, тон) => `<div style="display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline;padding:6px 0;font-size:12.5px">
+      <span class="ape-label" style="flex:none">${esc(подпись)}</span>
+      <span class="mono" style="flex:1 1 150px;min-width:0;font-size:11.5px;color:var(--ink-2);word-break:break-word">${esc(значение)}</span>
+      <span class="chip${тон === "ok" ? " on" : ""}"${тон === "warn" ? ' style="color:var(--warn-ink);border-color:var(--warn-line)"' : ""}>${esc(метка)}</span></div>`;
+    return `<div style="${CARD};gap:2px">
+      <span class="ape-label">связь и данные</span>
+      ${строка("Сервер ABOP", String(ctx.base || "—"), ctx.authed ? "есть связь" : "нет входа", ctx.authed ? "ok" : "warn")}
+      ${строка("Организация", String(ctx.tenant || "—"),
+               свой ? "вы в своих данных" : "данные клиента", свой ? "ok" : "warn")}
+      ${строка("Движок приложения", "сайдкар " + String((rt && rt.version) || u.version || "—"),
+               ok ? "работает" : "не отвечает", ok ? "ok" : "warn")}
+      <span style="font-size:11.5px;color:var(--ink-3);line-height:1.5;margin-top:4px">«Вы в своих данных» сказано утвердительно: состояние должно быть видно и когда всё в порядке, а не только когда что-то не так.</span></div>`;
+  };
+  const карточкаРасхода = () => {
+    const б = деньги || {};
+    if (!б || (!б.tokens && !б.spent_rub)) return "";
+    const доля = Math.min(100, Math.round(Number(б.tokens_pct || 0)));
+    return `<div style="${CARD};gap:8px">
+      <span class="ape-label">расход</span>
+      <div style="display:flex;align-items:baseline;gap:9px;flex-wrap:wrap">
+        <span style="font-family:var(--mono);font-size:24px;font-weight:700">${
+          esc(б.spent_rub != null ? Number(б.spent_rub).toLocaleString("ru-RU") + " ₽" : "≈0 ₽")}</span>
+        <span style="font-size:12px;color:var(--ink-2)">из квоты ${esc(String(б.token_quota || "—"))} токенов</span>
+      </div>
+      <div style="height:6px;border-radius:6px;background:var(--hover);overflow:hidden">
+        <div style="width:${доля}%;height:100%;background-image:var(--grad)"></div></div>
+      <span style="font-size:11.5px;color:var(--ink-3)">Использовано ${esc(String(б.tokens || 0))} токенов (${доля} %) · остаток ${esc(String(б.tokens_remaining || "—"))}. Токены реальные, из прогонов агентов и чата.</span></div>`;
+  };
+
   root.innerHTML = `<div style="flex:1;min-width:0;overflow-y:auto;padding:26px 30px">
     <div style="max-width:1020px;margin:0 auto;display:flex;flex-direction:column;gap:22px;animation:ape-in .35s ease-out">
       <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap">
         <div style="flex:1 1 340px;display:flex;flex-direction:column;gap:6px">
           <h1 class="ape-h1">Личный кабинет</h1>
           <p style="margin:0;font-size:13px;color:var(--ink-2)">Мой доступ, мои агенты и источники, настройки ответа и горячие клавиши.</p>
-        </div>${enforced ? '<span class="chip on">права проверяются на шлюзе ABOP</span>' : (authed ? '<span class="chip">права из учётной записи ABOP</span>' : `<button class="btn primary sm" id="cabLogin">🔑 Войти в ABOP</button>`)}
+        </div>${enforced ? '<span class="chip on">права проверяются на шлюзе ABOP</span>' : (authed ? '<span class="chip">права из учётной записи ABOP</span>' : `<button class="btn primary sm" id="cabLogin">${icon("key")}Войти в ABOP</button>`)}
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px">
+        ${карточкаОбновления()}
+        ${карточкаСвязи()}
+        ${карточкаРасхода()}
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px">
         ${kpi("отдел", dept, "область доступа к данным")}
@@ -223,6 +315,18 @@ export async function mount(root, ctx) {
     p.onchange = () => { try { localStorage.setItem("ape_persona", p.value); toast("Персона сохранена — чат учтёт её в следующем ответе", "ok"); } catch { toast("Не удалось сохранить на этом устройстве", "danger"); } show(); };
   }
   const lg = root.querySelector("#cabLogin"); if (lg) lg.onclick = () => ctx.login();
+  // Обновление ставит тот же путь, что и баннер в шапке: один способ установки на приложение.
+  const upNow = root.querySelector("#cabUpdNow");
+  if (upNow) upNow.onclick = () => { if (window.ape && window.ape.updater) window.ape.updater.install(); };
+  const upChk = root.querySelector("#cabUpdCheck");
+  if (upChk) upChk.onclick = async () => {
+    if (!(window.ape && window.ape.updater)) return;
+    window.ape.updater.check();
+    toast("Проверяю обновления…", "ok");
+    // Состояние придёт не мгновенно: перечитываем карточку через пару секунд, чтобы человек
+    // увидел исход проверки, а не остался с прежней надписью.
+    setTimeout(() => mount(root, ctx), 2500);
+  };
   root.querySelector("#goAgents").onclick = () => ctx.open("agents");
   root.querySelector("#goSrc").onclick = () => ctx.open("connectors");
 }

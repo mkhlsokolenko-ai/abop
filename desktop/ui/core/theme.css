@@ -404,7 +404,12 @@ button { cursor: pointer; }
 button:disabled { cursor: default; }
 /* оверлей + модалка (стек, Esc закрывает верхний, фокус-ловушка — core/app.js openOverlay) */
 .ape-overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(2, 6, 23, .55); backdrop-filter: blur(3px); animation: ape-fade .16s ease; }
-.ape-modal { width: min(560px, 92vw); max-height: 86vh; overflow: auto; padding: 22px; border-radius: var(--r-xl); background: var(--panel-2); backdrop-filter: var(--blur-strong); border: 1px solid var(--line-2); box-shadow: var(--shadow-3), var(--edge); animation: ape-drop .18s ease; display: flex; flex-direction: column; gap: 12px; }
+/* Прокручивается ТЕЛО, а не окно целиком: в длинном окне (подтверждение показывает предмет
+   решения целиком) ряд действий уезжал под обрез, и человек не находил кнопку «Подтвердить».
+   Поймано владельцем на живом экране 27.10.2026. */
+.ape-modal { width: min(560px, 92vw); max-height: 86vh; overflow: hidden; padding: 22px; border-radius: var(--r-xl); background: var(--panel-2); backdrop-filter: var(--blur-strong); border: 1px solid var(--line-2); box-shadow: var(--shadow-3), var(--edge); animation: ape-drop .18s ease; display: flex; flex-direction: column; gap: 12px; }
+.ape-modal > #mBody { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.ape-modal > .ape-actions { flex: none; }
 :root:not([data-theme="light"]) .ape-modal { background: rgba(15, 23, 42, .92); }
 .ape-modal h2 { margin: 0; font-size: 16px; font-weight: 700; letter-spacing: -.3px; }
 .ape-modal .ape-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px; }

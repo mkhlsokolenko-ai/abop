@@ -120,7 +120,8 @@ export function modal(title, bodyHTML, onOk, okLabel, opts = {}) {
       <div id="mBody">${bodyHTML || ""}</div>
       <div class="ape-actions">
         <button class="btn" id="mCancel">${esc(opts.cancelLabel || (onOk ? "Отмена" : "Закрыть"))}</button>
-        ${onOk ? `<button class="btn ${opts.danger ? "danger" : "primary"}" id="mOk">${esc(okLabel || "Готово")}</button>` : ""}
+        ${onOk ? `<button class="btn ${opts.danger ? "danger" : (opts.okKind || "primary")}" id="mOk">${
+          opts.okIcon ? icon(opts.okIcon) : ""}${esc(okLabel || "Готово")}</button>` : ""}
       </div></div>`,
     onClose: opts.onClose,
   });
@@ -158,14 +159,18 @@ export function confirmDialog({ title, text, okLabel = "Удалить", danger 
 // действие наружу (письмо/тикет/публикация) требует явного разрешения. Promise<bool>.
 export function apeGate(action) {
   const a = action || {};
-  const rows = (a.fields || []).map((f) => `<div style="display:flex;gap:10px;font-size:13px;margin-bottom:6px"><span class="faint" style="width:110px;flex:none">${esc(f[0])}</span><span style="min-width:0;overflow-wrap:anywhere">${esc(f[1])}</span></div>`).join("");
+  // Строка окна: [подпись, значение, имя значка?]. Значок рисует ОКНО — в данных его быть не
+  // должно: значения приходят из письма и из команды в систему, и они экранируются. Разметка,
+  // положенная в значение, напечаталась бы тегом (так и случилось 27.10.2026 с каналом «yandex»).
+  const rows = (a.fields || []).map((f) => `<div style="display:flex;gap:10px;font-size:13px;margin-bottom:6px;align-items:baseline"><span class="faint" style="width:110px;flex:none">${esc(f[0])}</span><span style="min-width:0;overflow-wrap:anywhere;display:flex;align-items:center;gap:6px">${f[2] ? icon(String(f[2])) : ""}${esc(f[1])}</span></div>`).join("");
   return new Promise((resolve) => {
     modal(a.title || "Подтверждение действия",
       `${rows}${a.body ? `<div style="background:var(--field);border:1px solid var(--line);border-radius:11px;padding:11px 13px;font-size:12.5px;line-height:1.5;margin:8px 0;white-space:pre-wrap;max-height:40vh;overflow:auto">${esc(a.body)}</div>` : ""}
        ${a.html ? `<div style="background:var(--field);border:1px solid var(--line);border-radius:11px;padding:11px 13px;font-size:12.5px;line-height:1.5;margin:8px 0;max-height:40vh;overflow:auto">${a.html}</div>` : ""}
        <div class="faint" style="font-size:11.5px;margin:6px 0 2px">${esc(a.note || "Наружу ничего не уйдёт без вашего решения.")}</div>`,
       () => { resolve(true); }, a.allowLabel || "Разрешить",
-      { kicker: a.kicker || "Требуется подтверждение · governance", cancelLabel: a.denyLabel || "Отклонить", onClose: (v) => { if (v !== true) resolve(false); } });
+      { kicker: a.kicker || "Требуется подтверждение · governance", cancelLabel: a.denyLabel || "Отклонить",
+        okKind: "ok", okIcon: "shield", onClose: (v) => { if (v !== true) resolve(false); } });
   });
 }
 
@@ -393,8 +398,8 @@ function renderAuthBox(me) {
           <div class="dcard-note">Под этой почтой агенты отправляют письма и заводят задачи — проверяйте её перед внешними действиями.${
             me["запомнили"] ? " Сессия запомнена: на этом компьютере лежит действующий ключ доступа — выходите, если оставляете его другим." : ""}</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
-            <button class="btn danger" id="logoutBtn">Выйти из ABOP</button>
-            <button class="btn sm" id="tenantBtn">Чьи данные на экране</button>
+            <button class="btn danger" id="logoutBtn">${icon("exit")}Выйти из ABOP</button>
+            <button class="btn sm" id="tenantBtn">${icon("watch")}Чьи данные на экране</button>
           </div></div>`,
         null, "Закрыть", { width: "420px" });
       ov.querySelector("#tenantBtn").onclick = () => { ov.close(true); tenantDetails(); };
@@ -884,14 +889,41 @@ function renderTenant() {
   const чужое = ctx.authed && ctx.tenantKnown && ctx.tenant && ctx.tenant !== ctx.tenantOwn;
   pill.hidden = !чужое;
   if (!чужое) return;
-  if (txt) txt.textContent = "данные клиента: " + ctx.tenant;
+  // Было: глаз, слова «данные клиента» и код арендатора — из них непонятно ни что это, ни что
+  // делать. Владелец так и сказал (27.10.2026): «так и не понял, что это и почему оно там».
+  // Теперь плашка называет состояние и держит выход из него рядом с предупреждением.
+  if (txt) txt.innerHTML = `Вы в данных клиента · <b style="font-weight:700">${esc(ctx.tenant)}</b>`
+    + `<span id="tenantBack" role="button" tabindex="0" style="margin-left:9px;padding:3px 9px;border-radius:9999px;`
+    + `background:var(--warn-ink);color:#2a1a00;font-size:11px;font-weight:700">Вернуться к своим</span>`;
   pill.title = "Вы смотрите установку клиента «" + ctx.tenant + "», а не свою («" + (ctx.tenantOwn || "—")
     + "»). Переход записан в журнал сервера. Нажмите, чтобы вернуться к своим данным.";
-  pill.onclick = () => tenantDetails();
+  pill.onclick = (e) => {
+    // Нажали прямо на «Вернуться к своим» — возвращаем, не открывая подробностей: это самое
+    // частое действие в этом состоянии, и оно не должно стоить двух нажатий.
+    const быстро = e && e.target && e.target.id === "tenantBack";
+    if (быстро) { перейтиКАрендатору(""); return; }
+    tenantDetails();
+  };
 }
 
 // Подробности и переход. Переключатель показываем только поддержке вендора — но отказ всё равно
 // придёт с сервера, и показываем мы то, что ПО ЕГО МНЕНИЮ действует, а не то, что попросили.
+// Переход между арендаторами. Одна функция на оба места — плашку в шапке и окно подробностей:
+// две копии разошлись бы, и в одной из них забыли бы перечитать разделы после перехода.
+async function перейтиКАрендатору(куда, ov) {
+  try {
+    const r = await api("/api/auth/tenant", { method: "POST", body: JSON.stringify({ tenant: куда }) });
+    ctx.tenant = r.tenant || ""; ctx.tenantOwn = r.tenant_own || ctx.tenantOwn;
+    ctx.tenantKnown = !!r.tenant_known;
+    renderTenant();
+    if (ov) ov.close(true);
+    // Сервер мог переход НЕ пустить. Говорим о том, что действует, а не о том, что просили.
+    if (куда && ctx.tenant !== куда) toast("Сервер оставил арендатора «" + (ctx.tenant || "—") + "»: переход не разрешён", "danger");
+    else toast(куда ? ("Смотрим данные клиента «" + ctx.tenant + "»") : "Вернулись к своим данным", "ok");
+    reloadAll();
+  } catch (e) { toast("Переход не удался: " + humanError(e), "danger"); }
+}
+
 function tenantDetails() {
   const своё = !ctx.tenant || ctx.tenant === ctx.tenantOwn;
   const rows = [
@@ -915,19 +947,7 @@ function tenantDetails() {
     + rows.map(([k, v]) => `<div style="color:var(--ink-3)">${esc(k)}</div><div style="color:var(--ink-1);word-break:break-word">${esc(String(v))}</div>`).join("")
     + `</div>` + свитч;
   const ov = modal("Чьи данные на экране", body, null, "Закрыть", { kicker: "Арендатор", width: "460px" });
-  const перейти = async (куда) => {
-    try {
-      const r = await api("/api/auth/tenant", { method: "POST", body: JSON.stringify({ tenant: куда }) });
-      ctx.tenant = r.tenant || ""; ctx.tenantOwn = r.tenant_own || ctx.tenantOwn;
-      ctx.tenantKnown = !!r.tenant_known;
-      renderTenant();
-      ov.close(true);
-      // Сервер мог переход НЕ пустить. Говорим о том, что действует, а не о том, что просили.
-      if (куда && ctx.tenant !== куда) toast("Сервер оставил арендатора «" + (ctx.tenant || "—") + "»: переход не разрешён", "danger");
-      else toast(куда ? ("Смотрим данные клиента «" + ctx.tenant + "»") : "Вернулись к своим данным", "ok");
-      reloadAll();
-    } catch (e) { toast("Переход не удался: " + humanError(e), "danger"); }
-  };
+  const перейти = (куда) => перейтиКАрендатору(куда, ov);
   const go = ov.querySelector("#tnGo");
   if (go) go.onclick = () => перейти(String((ov.querySelector("#tnInp") || {}).value || "").trim());
   const back = ov.querySelector("#tnBack");
