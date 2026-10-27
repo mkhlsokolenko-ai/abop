@@ -169,10 +169,11 @@ export async function mount(root, ctx) {
         <button data-gy="${esc(г["код"])}" style="${BTN_OK}" ${ждёт ? "disabled" : ""}>${icon("check")}Признать все</button>
         <button data-gn="${esc(г["код"])}" style="${BTN_GHOST}" ${ждёт ? "disabled" : ""}>Это норма</button>
         <button data-gp="${esc(г["код"])}" style="${BTN_GHOST}" ${ждёт ? "disabled" : ""}>${icon("clock")}Отложить</button>
-        <button data-gx="${esc(г["код"])}" style="${BTN}">${раскрыта ? "Свернуть" : `Раскрыть ${свои.length}`}</button>
+        <button data-gx="${esc(г["код"])}" style="${BTN}">${раскрыта ? "Свернуть" : "Раскрыть"}</button>
       </div>
       ${раскрыта ? `<div style="display:flex;flex-direction:column;gap:10px;padding-top:4px">${
-        свои.map(находкаКарточка).join("") || `<span style="${LBL}">по этой причине нерешённых находок нет — все уже признаны или отложены</span>`}</div>` : ""}
+        свои.map(находкаКарточка).join("") || `<span style="${LBL}">по этой причине нерешённых находок нет — все уже признаны или отложены</span>`}
+        ${свои.length && свои.length < Number(г["находок"] || 0) ? `<span style="${LBL}">показаны ${свои.length} из ${г["находок"]}: остальные уже признаны или отложены — решение по группе применится ко всем</span>` : ""}</div>` : ""}
     </div>`;
   }
 
