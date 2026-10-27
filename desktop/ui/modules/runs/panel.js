@@ -4,7 +4,7 @@
 // сравнение прогонов и выбор шаблона отчёта были доступны только в вебе.
 //
 // Выборка и фильтры считаются на сервере (Postgres — источник истины), панель ничего не хранит.
-import { CARD, LBL, INP, BTN, BTN_OK } from "../../core/cards.js";
+import { CARD, LBL, INP, BTN, BTN_OK, kpis } from "../../core/cards.js";
 // Значок — из общего набора ядра: панель не заводит своих символов.
 import { icon } from "../../core/icons.js";
 // Стили — из ядра: шесть разных карточек и пять разных подписей в панелях были
@@ -117,15 +117,10 @@ export async function mount(root, ctx) {
       [String(ждут), "ждут вашего решения",
        ждут ? "наружу ничего не ушло" : (доставка.length ? "всё решено" : "наружу ничего не уходило")],
     ];
-    return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">${
-      плитки.map(([ч, п, о], i) => `<div style="padding:11px 13px;border-radius:var(--r-md);border:1px solid ${
-        i === 3 && ждут ? "var(--warn-line)" : "var(--line)"};background:${
-        i === 3 && ждут ? "var(--warn-bg)" : "var(--field)"};display:flex;flex-direction:column;gap:3px;min-width:0">
-        <span style="font-family:var(--mono);font-size:21px;font-weight:700;line-height:1.1;color:${
-          i === 3 && ждут ? "var(--warn-ink)" : i === 1 ? "var(--accent-ink)" : "var(--ink)"}">${esc(ч)}</span>
-        <span style="font-size:11.5px;color:var(--ink-2)">${esc(п)}</span>
-        <span style="font-size:10.5px;color:var(--ink-3);font-family:var(--mono);overflow-wrap:anywhere">${esc(о)}</span>
-      </div>`).join("")}</div>`;
+    return kpis(плитки.map(([ч, п, о], i) => ({
+      "число": ч, "подпись": п, "откуда": о,
+      "тон": i === 3 && ждут ? "ждёт" : i === 1 ? "деньги" : "",
+    })));
   }
 
   // ── список ──

@@ -18,7 +18,7 @@
 //
 // Нулевой прогон остаётся точкой отсчёта, а широкий режим — выбором, а не состоянием «не
 // настроено»: обе мысли переехали сюда без изменений.
-import { CARD, LBL, BTN, BTN_GHOST, BTN_OK } from "../../core/cards.js";
+import { CARD, LBL, TAG, BTN, BTN_GHOST, BTN_OK, head } from "../../core/cards.js";
 import { icon } from "../../core/icons.js";
 
 const M = "/api/modules/verticals";
@@ -93,12 +93,17 @@ export async function mount(root, ctx) {
       </div>
       <div style="font-size:12.5px;color:var(--ink-2);line-height:1.5">${esc(String(в["описание"] || в["область"] || "").slice(0, 220))}</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">${метки.map((м) =>
-        `<span style="${LBL};padding:3px 8px;border:1px solid var(--line);border-radius:999px">${esc(м)}</span>`).join("")}</div>
+        `<span style="${TAG}">${esc(м)}</span>`).join("")}</div>
       ${первая ? `<div style="font-size:11.5px;color:var(--warn-ink)">${esc(первая)}</div>` : ""}
-      <div style="display:flex;align-items:center;gap:10px;margin-top:2px">
+      <div style="display:flex;align-items:center;gap:8px;margin-top:2px;flex-wrap:wrap">
         <span style="font:600 11px/1 var(--mono);color:${с.цвет}">● ${esc(с.текст)}</span>
-        <button data-open="${esc(в.id)}" style="${в["годен"] && !в["установлена"] ? BTN_OK : BTN};margin-left:auto">${
-          в["установлена"] ? "Что в поставке" : "Посмотреть"}</button>
+        <span style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
+          ${в["установлена"] && !активна(в.id)
+            ? `<button data-act="${esc(в.id)}" style="${BTN_OK}">${icon("play")}Включить представление</button>` : ""}
+          ${активна(в.id) ? `<button data-act="-" style="${BTN_GHOST}">Вернуться в широкий режим</button>` : ""}
+          <button data-open="${esc(в.id)}" style="${в["годен"] && !в["установлена"] ? BTN_OK : BTN}">${
+            в["установлена"] ? "Что в поставке" : "Посмотреть"}</button>
+        </span>
       </div>
     </article>`;
   }
@@ -236,6 +241,10 @@ export async function mount(root, ctx) {
         ${origin(String(б["почему"] || ""))}` : ""}
       ${о["агент"] ? `<div style="font-size:12.5px;color:var(--ink-2)">Агент поставлен: <span class="mono">${
         esc(String(о["агент"]))}</span> — посадить его на участок карты процессов нужно отдельно.</div>` : ""}
+      ${отчёт.что === "Установка" && !активна(отчёт.вертикаль) ? `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding-top:6px;border-top:1px solid var(--line)">
+        <span style="font-size:12.5px;color:var(--ink-2)">Пакет установлен. Чтобы увидеть его разделы и слова, включите представление — это обратимо.</span>
+        <button data-act="${esc(отчёт.вертикаль)}" style="${BTN_OK};margin-left:auto">${icon("play")}Включить представление</button>
+      </div>` : ""}
     </div>`;
   }
 
@@ -263,11 +272,9 @@ export async function mount(root, ctx) {
     const активная = (данные || {}).активная || {};
     const поставлено = список.filter((в) => в["установлена"]).length;
     root.innerHTML = `<div style="display:flex;flex-direction:column;gap:var(--gap-group);max-width:1040px">
-      <div style="display:flex;align-items:baseline;gap:11px;flex-wrap:wrap">
-        <h2 style="margin:0;font-size:20px;font-weight:700">Вертикали</h2>
-        <span style="${LBL}">установлено: ${поставлено} · доступно: ${список.length}</span>
-      </div>
-      ${origin("Вертикаль — это пакет: процессы, правила, рецепты на ваши системы, бланк документа, экран и контракт автономии. Установка меняет и то, что видят люди, и то, что считает расчёт, — поэтому до кнопки показано и то, и другое.")}
+      ${head({ "глаз": "поставка", "что": "Вертикали",
+               "метки": [`установлено: ${поставлено}`, `доступно: ${список.length}`],
+               "подпись": "Вертикаль — это пакет: процессы, правила, рецепты на ваши системы, бланк документа, экран и контракт автономии. Установка меняет и то, что видят люди, и то, что считает расчёт, — поэтому до кнопки показано и то, и другое. Установка и включение — разные шаги: поставленный пакет ничего не меняет на экране, пока вы не включите его представление (кнопка на карточке или переключатель в шапке приложения)." })}
       ${ошибка ? `<div style="font-size:12.5px;color:var(--danger-ink)">${esc(ошибка)}</div>` : ""}
       ${loading && !данные ? `<div style="${LBL}">читаю каталог…</div>` : ""}
       ${активная.id ? `<div style="${CARD};gap:6px;border-color:var(--ok-line)">

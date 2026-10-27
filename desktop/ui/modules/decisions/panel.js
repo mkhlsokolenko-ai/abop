@@ -11,7 +11,7 @@
 //    внешняя коммуникация, в рамках ваших должностных обязанностей».
 // 4. **Срок виден, и истёкший срок — не ошибка.** «Решение не принято за N ч» означает, что
 //    доставка не состоялась, а черновик лежит. Красным это рисовать нельзя: ничего не сломалось.
-import { CARD, INP, LBL, BTN, BTN_GHOST, BTN_OK } from "../../core/cards.js";
+import { CARD, INP, LBL, BTN, BTN_GHOST, BTN_OK, kpi, kpis, head } from "../../core/cards.js";
 import { icon } from "../../core/icons.js";
 // Стили — из ядра: шесть разных карточек и пять разных подписей в панелях были
 // расхождением, а не выбором (DIZAJN, раздел 2).
@@ -136,11 +136,10 @@ export async function mount(root, ctx) {
       [доля === "" || доля == null ? "—" : доля + " %", "доля признания",
        `${сводка["подтверждено"] || 0} из ${(сводка["подтверждено"] || 0) + (сводка["отклонено"] || 0) || 0} решённых`],
     ];
-    return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">${
-      числа.map(([ч, п, о]) => `<div style="${CARD};gap:3px;padding:12px 14px">
-        <span style="font-family:var(--mono);font-size:22px;font-weight:700;line-height:1.1">${esc(ч)}</span>
-        <span style="font-size:11.5px;color:var(--ink-2)">${esc(п)}</span>
-        <span style="font-size:10.5px;color:var(--ink-3);font-family:var(--mono)">${esc(о)}</span></div>`).join("")}</div>`;
+    return kpis(числа.map(([ч, п, о], i) => ({
+      "число": ч, "подпись": п, "откуда": о,
+      "тон": i === 0 && заявок ? "ждёт" : i === 1 && сумма ? "деньги" : "",
+    })));
   }
 
   const склонение = (н, од, дв, мн) => {
@@ -435,10 +434,8 @@ export async function mount(root, ctx) {
   function render() {
     const q = (данные || {})["queue"] || [];
     root.innerHTML = `<div style="display:flex;flex-direction:column;gap:var(--gap-group);max-width:860px">
-      <div style="display:flex;flex-direction:column;gap:4px">
-        <h2 style="margin:0;font-size:20px;font-weight:700">Что ждёт вашего решения</h2>
-        ${origin("Решает тот, в чьи обязанности это входит: У2 — исполнитель прогона, У3 — владелец операции в карте процессов. Руководитель здесь не нажимает кнопки за других.")}
-      </div>
+      ${head({ "глаз": "решения", "что": "Что ждёт вашего решения",
+               "подпись": "Решает тот, в чьи обязанности это входит: У2 — исполнитель прогона, У3 — владелец операции в карте процессов. Руководитель здесь не нажимает кнопки за других." })}
       ${плитки()}
       ${err ? `<div style="font-size:12.5px;color:var(--danger-ink)">${esc(err)}</div>` : ""}
       ${loading && !данные ? `<div style="${LBL}">читаю очередь…</div>` : ""}
