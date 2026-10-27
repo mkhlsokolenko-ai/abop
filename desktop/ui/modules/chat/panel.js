@@ -77,7 +77,7 @@ const CH_ICON = (ch) => {
   const c = (ch || "").toLowerCase();
   const имя = c.includes("redmine") ? "ticket"
     : (c.includes("book") || c.includes("вики")) ? "doc"
-      : (c.includes("почт") || c.includes("mail") || c.includes("email")) ? "send"
+      : (c.includes("почт") || c.includes("mail") || c.includes("email")) ? "mail"
         : c.includes("pdf") ? "doc"
           : c.includes("yougile") ? "board"
             : c === "chat" ? "chat" : "ext";
@@ -107,7 +107,7 @@ export async function mount(root, ctx) {
     <aside aria-label="Чаты" style="flex:none;width:252px;display:flex;flex-direction:column;gap:10px;padding:14px 12px;border-right:1px solid var(--line);background:var(--rail);min-height:0">
       <button id="newTh" class="btn primary" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:10px;border-radius:11px;font-size:13px">${icon("plus")}Новый чат</button>
       <button id="boardPin" title="Общая доска: факты, которые вы вынесли из прогонов. Их читают следующие разговоры и агенты, объявившие эти ключи." aria-label="Общая доска" style="display:flex;align-items:center;gap:8px;padding:9px 11px;border:1px solid var(--warn-line);border-radius:11px;background:var(--warn-bg);color:var(--warn-ink);font-size:12.5px;font-weight:700;text-align:left">
-        <span aria-hidden="true">&#129523;</span><span style="flex:1;min-width:0">Общая доска</span><span id="boardCnt" style="font-family:var(--mono);font-size:11px;font-weight:600;opacity:.8"></span>
+        ${icon("board")}<span style="flex:1;min-width:0">Общая доска</span><span id="boardCnt" style="font-family:var(--mono);font-size:11px;font-weight:600;opacity:.8"></span>
       </button>
       <div style="height:1px;background:var(--line);margin:2px 0"></div>
       <input id="thSearch" placeholder="Поиск по чатам" aria-label="Поиск по чатам" style="padding:9px 12px;border-radius:10px;font-size:12.5px"/>
@@ -128,29 +128,74 @@ export async function mount(root, ctx) {
             <div id="tools" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"></div>
             <div style="display:flex;align-items:flex-end;gap:10px">
               <textarea id="inp" rows="2" aria-label="Сообщение" placeholder="Опишите задачу…  (Enter — отправить, Shift+Enter — перенос)" style="flex:1;min-width:0;padding:10px 12px;border-radius:12px;font-size:13.5px;line-height:1.55"></textarea>
-              <button id="sendBtn" class="btn primary" title="Отправить · Enter" aria-label="Отправить" style="width:44px;height:44px;flex:none;padding:0;border-radius:12px;font-size:16px">↑</button>
+              <button id="sendBtn" class="btn primary" title="Отправить · Enter" aria-label="Отправить" style="width:44px;height:44px;flex:none;padding:0;border-radius:12px">${icon("send", "lg")}</button>
             </div>
           </div>
         </div>
       </div>
-      <div id="drawer" role="complementary" aria-label="Инструменты и агенты" inert aria-hidden="true" style="position:absolute;top:0;right:0;bottom:0;width:386px;max-width:88%;transform:translateX(100%);transition:transform .28s cubic-bezier(.4,0,.2,1);background:var(--rail);backdrop-filter:blur(20px);border-left:1px solid var(--line-2);z-index:41;display:flex;flex-direction:column;box-shadow:-20px 0 50px rgba(0,0,0,.32)">
-        <div style="flex:none;display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--line)">
-          <div style="flex:1;display:flex;gap:4px;padding:4px;border-radius:11px;background:var(--hover);border:1px solid var(--line)">
-            <button id="drTabTools" style="flex:1;padding:8px 10px;border:none;border-radius:8px;font-size:12.5px;font-weight:600">Инструменты</button>
-            <button id="drTabAgents" style="flex:1;padding:8px 10px;border:none;border-radius:8px;font-size:12.5px;font-weight:600">Агенты</button>
-          </div>
-          <button id="drClose" class="ico" title="Убрать шторку · Esc" aria-label="Закрыть шторку">→</button>
+    </section>
+    <!-- Ящик инструментов и агентов. На широком окне — колонка рядом с разговором, на узком
+         шторка поверх него: три колонки на 1280 превращают чат в колодец. -->
+    <div id="drawer" role="complementary" aria-label="Инструменты и агенты" inert aria-hidden="true" style="position:absolute;top:0;right:0;bottom:0;width:386px;max-width:88%;transform:translateX(100%);transition:transform .28s cubic-bezier(.4,0,.2,1);background:var(--rail);backdrop-filter:blur(20px);border-left:1px solid var(--line-2);z-index:41;display:flex;flex-direction:column;box-shadow:-20px 0 50px rgba(0,0,0,.32)">
+      <div style="flex:none;display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--line)">
+        <div style="flex:1;display:flex;gap:4px;padding:4px;border-radius:11px;background:var(--hover);border:1px solid var(--line)">
+          <button id="drTabTools" style="flex:1;padding:8px 10px;border:none;border-radius:8px;font-size:12.5px;font-weight:600">Инструменты</button>
+          <button id="drTabAgents" style="flex:1;padding:8px 10px;border:none;border-radius:8px;font-size:12.5px;font-weight:600">Агенты</button>
         </div>
-        <div id="drBody" style="flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:11px"></div>
+        <button id="drClose" class="ico" title="Убрать панель · Esc" aria-label="Убрать панель инструментов">${icon("right", "lg")}</button>
       </div>
-    </section>`;
+      <div id="drBody" style="flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:11px"></div>
+    </div>`;
+  // Шторка позиционируется от корня раздела, а не от секции разговора: в прикреплённом виде она
+  // стоит рядом с ним, а не поверх.
+  root.style.position = "relative";
   const $ = (id) => root.querySelector("#" + id);
-  const drawerOpen = () => $("drawer").style.transform === "translateX(0px)";
+  // ── ящик инструментов: колонка или шторка ──────────────────────────────────────────────────
+  //
+  // Ширину окна решает ОДНО число, и оно здесь: ниже 1180 px разговор становится у́же 640 и
+  // читается как колонка новостей. Выбор человека («убрал панель») переживает перезапуск —
+  // иначе каждое открытие чата возвращало бы ящик, который он закрыл.
+  const ЯЩИК_ШИРИНА = 1180;
+  const ЯЩИК_LS = "ape_chat_drawer";
+  const широкоеОкно = () => window.innerWidth >= ЯЩИК_ШИРИНА;
+  const ящикНужен = () => { try { return localStorage.getItem(ЯЩИК_LS) !== "0"; } catch { return true; } };
+  const запомнитьЯщик = (нужен) => { try { localStorage.setItem(ЯЩИК_LS, нужен ? "1" : "0"); } catch { /* приватный режим */ } };
+  let прикреплён = false;
+
+  function применитьЯщик() {
+    const d = $("drawer"); if (!d) return;
+    const надо = широкоеОкно() && ящикНужен();
+    прикреплён = надо;
+    if (надо) {
+      // Колонка: место своё, тень и перекрытие не нужны — она ничего не закрывает.
+      d.style.cssText = "position:static;width:320px;flex:none;transform:none;background:var(--rail);"
+        + "border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0";
+      d.inert = false; d.removeAttribute("aria-hidden");
+      const t = $("tAgents"); if (t) t.classList.add("on");
+    } else {
+      d.style.cssText = "position:absolute;top:0;right:0;bottom:0;width:386px;max-width:88%;"
+        + "transform:translateX(100%);transition:transform .28s cubic-bezier(.4,0,.2,1);background:var(--rail);"
+        + "backdrop-filter:blur(20px);border-left:1px solid var(--line-2);z-index:41;display:flex;"
+        + "flex-direction:column;box-shadow:-20px 0 50px rgba(0,0,0,.32)";
+      d.inert = true; d.setAttribute("aria-hidden", "true");
+      const t = $("tAgents"); if (t) t.classList.remove("on");
+    }
+    renderDrawer();
+  }
+  // Окно меняют редко, но когда меняют — вид обязан догнать: иначе на развёрнутом окне ящик
+  // остаётся шторкой, а на суженном закрывает разговор.
+  if (window.__apeChatResize) window.removeEventListener("resize", window.__apeChatResize);
+  window.__apeChatResize = () => { if (root.isConnected) применитьЯщик(); };
+  window.addEventListener("resize", window.__apeChatResize);
+
+  const drawerOpen = () => прикреплён || $("drawer").style.transform === "translateX(0px)";
   // inert снимает закрытую шторку с обхода Tab и прячет её от диктора; фокус возвращается тому
   // элементу, который шторку открыл, — иначе после закрытия он улетал в начало страницы.
   let drawerOpener = null;
   const closeDrawer = () => {
     const d = $("drawer");
+    // Прикреплённую колонку «закрыть» — значит убрать её совсем, и это запоминается.
+    if (прикреплён) { запомнитьЯщик(false); применитьЯщик(); return; }
     d.style.transform = "translateX(100%)";
     d.inert = true; d.setAttribute("aria-hidden", "true");
     if (drawerOpener && drawerOpener.isConnected) drawerOpener.focus();
@@ -158,6 +203,8 @@ export async function mount(root, ctx) {
   };
   const showDrawer = () => {
     const d = $("drawer");
+    // На широком окне кнопка «Агенты» не выдвигает шторку, а возвращает колонку на место.
+    if (широкоеОкно()) { запомнитьЯщик(true); применитьЯщик(); return; }
     drawerOpener = document.activeElement;
     d.style.transform = "translateX(0)";
     d.inert = false; d.removeAttribute("aria-hidden");
@@ -194,7 +241,7 @@ export async function mount(root, ctx) {
         </button>
         <button class="ico ghost thren" data-id="${t.id}" title="Переименовать" aria-label="Переименовать чат" style="width:26px;height:26px;font-size:12px">✎</button>
         <button class="ico ghost thfav" data-id="${t.id}" title="${t.favorite ? "Убрать из избранного" : "В избранное"}" aria-label="Избранное" style="width:26px;height:26px;font-size:12px;color:${t.favorite ? "var(--warn-ink)" : "var(--ink-3)"}">★</button>
-        <button class="ico ghost danger thdel" data-id="${t.id}" title="Удалить чат" aria-label="Удалить чат" style="width:26px;height:26px;font-size:11px">✕</button>
+        <button class="ico ghost danger thdel" data-id="${t.id}" title="Удалить чат" aria-label="Удалить чат" style="width:26px;height:26px;font-size:11px">${icon("close")}</button>
       </div>`; };
     const group = (folder, arr) => arr.length ? `<div style="display:flex;flex-direction:column;gap:5px"><span class="ape-label" style="padding:0 4px">${folder}</span>${arr.map(row).join("")}</div>` : "";
     const emptyHTML = threadsError
@@ -441,7 +488,7 @@ export async function mount(root, ctx) {
   }
   // Крестик на карточке предложения: отказаться было нечем — оставался только уход со страницы.
   function cardCloseHTML(i, label) {
-    return `<button type="button" class="ico ghost cardNo" data-i="${i}" title="Отменить: ${esc(label)}" aria-label="Отменить: ${esc(label)}" style="margin-left:auto;width:24px;height:24px;font-size:12px">✕</button>`;
+    return `<button type="button" class="ico ghost cardNo" data-i="${i}" title="Отменить: ${esc(label)}" aria-label="Отменить: ${esc(label)}" style="margin-left:auto;width:24px;height:24px;font-size:12px">${icon("close")}</button>`;
   }
   async function cancelCard(i, what) {
     const m = messages[i]; if (!m) return;
@@ -817,7 +864,7 @@ export async function mount(root, ctx) {
   }
   function openSchedules() {
     const rows = schedules.map((s) => `<div class="hitl-row" style="background:var(--field)"><span style="font-size:15px">🔁</span><span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-size:12.5px;font-weight:600">${esc(s.agent)}</span><span style="font-size:11.5px;color:var(--ink-3)">${esc(s.cron)} · ${DELIVER_LABEL[s.deliver] || esc(s.deliver)}${s.enabled === false ? " · выключено" : ""}${s.last_run && s.last_run.at ? ` · последний: ${esc(String(s.last_run.at).slice(0, 16).replace("T", " "))}${s.last_run.findings != null ? " (" + s.last_run.findings + " нах.)" : ""}` : ""}</span></span>
-      <button type="button" class="ico danger schDel" data-a="${esc(s.agent_id)}" data-t="${esc(s.trigger_id)}" data-n="${esc(s.agent)}" title="Убрать расписание" aria-label="Убрать расписание">✕</button></div>`).join("");
+      <button type="button" class="ico danger schDel" data-a="${esc(s.agent_id)}" data-t="${esc(s.trigger_id)}" data-n="${esc(s.agent)}" title="Убрать расписание" aria-label="Убрать расписание">${icon("close")}</button></div>`).join("");
     const ov = modal("Мои расписания", `<div style="display:flex;flex-direction:column;gap:6px">${rows || '<span style="font-size:12.5px;color:var(--ink-3)">Расписаний нет. Кнопка «🔁 Сделать регулярной» есть на карточке прогона агента.</span>'}</div>`, null, null, { width: "560px" });
     ov.querySelectorAll(".schDel").forEach((b) => b.onclick = async () => {
       if (!(await confirmDialog({ title: "Убрать расписание?", text: `«${esc(b.dataset.n)}» перестанет запускаться автоматически. Будет создана новая версия агента без триггера.`, okLabel: "Убрать" }))) return;
@@ -827,7 +874,7 @@ export async function mount(root, ctx) {
   }
   function openPipelines() {
     const rows = pipelines.map((p) => `<div class="hitl-row" style="background:var(--field)"><span style="font-size:15px">🔗</span><span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-size:12.5px;font-weight:600">${esc(p.name)}</span><span style="font-size:11.5px;color:var(--ink-3)">${(p.steps || []).map((s) => esc(s.agent_name || agentName(s.agent_id))).join(" → ")}</span></span>
-      <button type="button" class="ico go plRun" data-id="${esc(p.id)}" title="Запустить цепочку «${esc(p.name)}»" aria-label="Запустить цепочку ${esc(p.name)}">▶</button><button type="button" class="ico danger plDel" data-id="${esc(p.id)}" data-n="${esc(p.name)}" title="Удалить цепочку" aria-label="Удалить цепочку">✕</button></div>`).join("");
+      <button type="button" class="ico go plRun" data-id="${esc(p.id)}" title="Запустить цепочку «${esc(p.name)}»" aria-label="Запустить цепочку ${esc(p.name)}">▶</button><button type="button" class="ico danger plDel" data-id="${esc(p.id)}" data-n="${esc(p.name)}" title="Удалить цепочку" aria-label="Удалить цепочку">${icon("close")}</button></div>`).join("");
     const ov = modal("Цепочки агентов", `<div style="font-size:12px;color:var(--ink-2);margin-bottom:4px">Выход одного агента идёт в контекст следующего; последний шаг доставляет результат.</div><div style="display:flex;flex-direction:column;gap:6px">${rows || '<span style="font-size:12.5px;color:var(--ink-3)">Пока нет цепочек — соберите из двух и более агентов.</span>'}</div>`,
       () => { ov.close(); openPipeBuilder(); return false; }, "＋ Собрать цепочку", { width: "600px", cancelLabel: "Закрыть" });
     // Подбор цепочки ИЗ ГОТОВЫХ АГЕНТОВ остаётся здесь — в инструменте цепочек, где человек этого
@@ -865,7 +912,7 @@ export async function mount(root, ctx) {
     }, "Сохранить цепочку", { width: "600px" });
     ov.querySelectorAll(".pld").forEach((b) => b.onclick = () => { finalDeliver = b.dataset.d; ov.querySelectorAll(".pld").forEach((x) => x.classList.toggle("on", x.dataset.d === finalDeliver)); });
     const stepsEl = ov.querySelector("#plSteps");
-    const drawSteps = () => { stepsEl.innerHTML = chosen.map((id, i) => `<div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:6px 9px;border-radius:9px;background:var(--field);border:1px solid var(--line)"><span style="color:var(--ink-3)">${i + 1}.</span><span style="flex:1">${esc(agentName(id))}</span><button type="button" data-i="${i}" class="ico ghost plX" title="Убрать шаг из цепочки" aria-label="Убрать шаг" style="width:26px;height:26px">✕</button></div>`).join("") || `<span style="font-size:11.5px;color:var(--ink-3)">Добавьте шаги ниже.</span>`; stepsEl.querySelectorAll(".plX").forEach((x) => x.onclick = () => { chosen.splice(+x.dataset.i, 1); drawSteps(); }); };
+    const drawSteps = () => { stepsEl.innerHTML = chosen.map((id, i) => `<div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:6px 9px;border-radius:9px;background:var(--field);border:1px solid var(--line)"><span style="color:var(--ink-3)">${i + 1}.</span><span style="flex:1">${esc(agentName(id))}</span><button type="button" data-i="${i}" class="ico ghost plX" title="Убрать шаг из цепочки" aria-label="Убрать шаг" style="width:26px;height:26px">${icon("close")}</button></div>`).join("") || `<span style="font-size:11.5px;color:var(--ink-3)">Добавьте шаги ниже.</span>`; stepsEl.querySelectorAll(".plX").forEach((x) => x.onclick = () => { chosen.splice(+x.dataset.i, 1); drawSteps(); }); };
     ov.querySelector("#plAdd").onclick = () => { const v = ov.querySelector("#plPick").value; if (v) { chosen.push(v); drawSteps(); } };
     drawSteps();
   }
@@ -972,7 +1019,7 @@ export async function mount(root, ctx) {
     const rows = cs.steps.map((st, n) => `<div style="display:flex;gap:7px;align-items:center">
         <span style="font-family:var(--mono);font-size:11px;color:var(--ink-3);min-width:14px">${n + 1}.</span>
         <select class="chStep" data-i="${i}" data-n="${n}" style="flex:1;min-width:0;padding:5px 8px;border-radius:8px;border:1px solid var(--line-field);background:var(--field);color:var(--ink);font-size:12px">${opts(st.agent_id)}</select>
-        <button type="button" class="ico ghost chDel" data-i="${i}" data-n="${n}" title="Убрать шаг" aria-label="Убрать шаг ${n + 1}" style="width:24px;height:24px;font-size:11px"${cs.steps.length < 2 ? " disabled" : ""}>✕</button>
+        <button type="button" class="ico ghost chDel" data-i="${i}" data-n="${n}" title="Убрать шаг" aria-label="Убрать шаг ${n + 1}" style="width:24px;height:24px;font-size:11px"${cs.steps.length < 2 ? " disabled" : ""}>${icon("close")}</button>
       </div>`).join("");
     return `<details style="border:1px solid var(--line);border-radius:10px;padding:8px 10px">
       <summary style="font-size:11.5px;color:var(--ink-2);cursor:pointer">Поправить цепочку</summary>
@@ -1038,7 +1085,7 @@ export async function mount(root, ctx) {
       ${ctx.canApprove === false
         ? `<span style="font-size:11px;color:var(--ink-3)" title="Подтверждать внешние действия может сотрудник с правами менеджера">только просмотр</span><button type="button" class="btn sm hqView" data-id="${esc(h.id)}">Посмотреть</button>`
         : `<button type="button" class="btn sm ok hqOk" data-id="${esc(h.id)}">Посмотреть и подтвердить</button>`}
-      <button type="button" class="ico hqNo" data-id="${esc(h.id)}" title="Отклонить" aria-label="Отклонить">✕</button></div>`).join("");
+      <button type="button" class="ico hqNo" data-id="${esc(h.id)}" title="Отклонить" aria-label="Отклонить">${icon("close")}</button></div>`).join("");
     bar.innerHTML = `<div class="hitl-panel">
       <div class="hitl-head">🛡 Требуют вашего подтверждения · ${hitlQueue.length}
         ${hitlQueue.length > 1 ? `<button type="button" id="hqAllOk" class="btn sm" style="margin-left:auto">Подтвердить все…</button>` : ""}</div>
@@ -1189,8 +1236,8 @@ export async function mount(root, ctx) {
   function renderTools() {
     const prof = cur ? cur.profile : pendingProfile, sk = cur ? cur.skills : pendingSkills;
     const profSel = `<select id="prof" title="Профиль ответа" aria-label="Профиль ответа" style="padding:6px 10px;border-radius:9999px;color:var(--ink-2);font-size:11.5px">${PROFILES.map(([v, l]) => `<option value="${v}"${prof === v ? " selected" : ""}>${l}</option>`).join("")}</select>`;
-    const onChips = sk.map((sid) => { const s = skills.find((x) => x.id === sid) || { id: sid }; return `<button type="button" class="skc chip on" data-id="${esc(sid)}" title="${esc(s.hint || "")} · снять" style="padding:6px 11px;font-family:var(--ui);font-size:11.5px;font-weight:600">${esc(s.title || sid)} ✕</button>`; }).join("");
-    const moreBtn = `<button type="button" id="skMore" title="Каталог навыков" style="padding:6px 11px;border:1px dashed var(--line-2);border-radius:9999px;background:transparent;color:var(--ink-2);font-size:11.5px;font-weight:600">＋ навыки</button>`;
+    const onChips = sk.map((sid) => { const s = skills.find((x) => x.id === sid) || { id: sid }; return `<button type="button" class="skc chip on" data-id="${esc(sid)}" title="${esc(s.hint || "")} · снять" style="padding:6px 11px;font-family:var(--ui);font-size:11.5px;font-weight:600;display:inline-flex;align-items:center;gap:6px">${esc(s.title || sid)}${icon("close", "sm")}</button>`; }).join("");
+    const moreBtn = `<button type="button" id="skMore" title="Каталог навыков" style="display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border:1px dashed var(--line-2);border-radius:9999px;background:transparent;color:var(--ink-2);font-size:11.5px;font-weight:600">${icon("plus", "sm")}навыки</button>`;
     const ic = (id, зн, ti) => `<button type="button" id="${id}" class="ico" title="${ti}" aria-label="${ti}">${icon(зн, "lg")}</button>`;
     $("tools").innerHTML = profSel + onChips + moreBtn + `<span id="agentSug" style="display:flex;gap:6px;flex-wrap:wrap"></span>` + `<span style="margin-left:auto;display:flex;align-items:center;gap:6px">${ic("tRag", "clip", "Прикрепить файл")}${ic("tAgents", "agents", "Агенты ABOP")}${ic("tExport", "export", "Экспорт чата")}</span><input type="file" id="fileIn" accept=".txt,.md,.csv,.json,.pdf,.docx,.xlsx" style="display:none"/>`;
     $("prof").onchange = async (e) => { if (cur) { cur.profile = e.target.value; await saveThread(cur); renderThreads(); } else pendingProfile = e.target.value; };
@@ -1411,7 +1458,7 @@ export async function mount(root, ctx) {
         </span>
         ${st.score != null ? meterHTML(st.score, { short: true }) : ""}
         <button type="button" class="ico ghost asmEdit" data-i="${i}" data-n="${n}" title="Заменить навык этого шага" aria-label="Заменить навык шага ${n + 1}" style="width:26px;height:26px;font-size:12px">✎</button>
-        ${(a.steps || []).length > 1 ? `<button type="button" class="ico ghost danger asmDrop" data-i="${i}" data-n="${n}" title="Убрать шаг" aria-label="Убрать шаг ${n + 1}" style="width:26px;height:26px;font-size:11px">✕</button>` : ""}
+        ${(a.steps || []).length > 1 ? `<button type="button" class="ico ghost danger asmDrop" data-i="${i}" data-n="${n}" title="Убрать шаг" aria-label="Убрать шаг ${n + 1}" style="width:26px;height:26px;font-size:11px">${icon("close")}</button>` : ""}
         </div>`).join("");
     const chain = (a.steps || []).map((st) => skillName(st.skill) || st.skill).join(" → ");
     return `<div class="dcard">
@@ -1928,6 +1975,7 @@ export async function mount(root, ctx) {
   $("inp").oninput = () => { clearTimeout(_sugTimer); _sugTimer = setTimeout(() => { renderAgentSuggest($("inp").value); remember(LS_DRAFT, $("inp").value); }, 280); };
   setBusy(false);
   render(); renderTools();            // первый экран сразу: шаблоны + живой композер
+  применитьЯщик();                    // ящик инструментов: колонка на широком окне, шторка на узком
   await loadThreads();
   const intent = ctx.takeIntent ? ctx.takeIntent() : null;
   if (!(intent && (intent.newChat || intent.runAgent))) {
