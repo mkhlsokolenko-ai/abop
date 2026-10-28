@@ -658,6 +658,34 @@ button:disabled { cursor: default; }
 .mbox.warn { border-color: var(--warn-line); background: var(--warn-bg); }
 .mbox.warn .lbl { color: var(--warn-ink); }
 
+/* ── лента ступеней конвейера (пульт расчётчика, 28.10.2026) ──────────────────────────────────
+   Рецепт из макета «Сверка: пульт и портфель». Экран показывал только прошлое: числа честные, но
+   человек не мог отличить свежий расчёт от трёхнедельного и не мог ничего запустить сам. Ступени
+   соединены чертой — это один поток, а не пять независимых плиток. */
+.flow { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.stage { position: relative; display: flex; flex-direction: column; gap: 4px; min-width: 0;
+         padding: 12px 13px; border: 1px solid var(--line); border-radius: var(--r-md);
+         background-color: var(--panel); background-image: var(--panel-grad); box-shadow: var(--edge); }
+.stage + .stage::before { content: ""; position: absolute; left: -11px; top: 50%;
+                          width: 12px; height: 1px; background: var(--line-2); }
+.stage .cap { font: 600 10px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
+.stage .n { font: 700 19px/1.15 var(--mono); font-variant-numeric: tabular-nums; }
+.stage .when { font-size: 11px; line-height: 1.4; color: var(--ink-3); }
+.stage .st { display: inline-flex; align-items: center; gap: 6px; margin-top: 2px;
+             font: 600 11px/1 var(--mono); color: var(--ink-2); }
+.stage .st i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
+.stage .btn { margin-top: 6px; align-self: flex-start; }
+.stage.ok .st { color: var(--ok-ink); }
+.stage.run { border-color: var(--accent); }
+.stage.run .n, .stage.run .st { color: var(--accent-ink); }
+/* «Устарело» — не ошибка и не успех: данные приехали ПОСЛЕ расчёта. Отдельное состояние, которого
+   у экрана не было вовсе, и из-за этого вчерашние числа выдавались за сегодняшние. */
+.stage.cold { border-color: var(--warn-line); background-color: var(--warn-bg); background-image: none; }
+.stage.cold .n, .stage.cold .st { color: var(--warn-ink); }
+/* «Стоит» рисуем пунктиром: ступень не работает, и это видно до чтения подписи. */
+.stage.stop { border-style: dashed; background-image: none; }
+.stage.stop .n { color: var(--ink-3); }
+
 /* таблица строк (журнал прогонов, связь в кабинете) */
 .rows { border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; background: var(--field); }
 .row { display: grid; gap: 12px; align-items: center; padding: 10px 13px;
@@ -686,7 +714,12 @@ button:disabled { cursor: default; }
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .two { grid-template-columns: 1fr; }
 }
+@media (max-width: 1080px) {
+  .flow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stage + .stage::before { display: none; }
+}
 @media (max-width: 760px) {
+  .flow { grid-template-columns: 1fr; }
   .market { grid-template-columns: 1fr; }
   .r5, .r4 { grid-template-columns: 1fr auto; }
   .row > :nth-child(n+2):not(:last-child) { display: none; }

@@ -185,6 +185,22 @@ def panel_data(path: str) -> dict:
         raise HTTPException(код if 400 <= код < 600 else 502, str(ex)[:400]) from ex
 
 
+@app.post("/api/panel-action/{path:path}")
+def panel_action(path: str, тело: dict | None = None) -> dict:
+    """Действие панели вертикали на платформе (только POST, только свой белый список).
+
+    Появилось для пульта «Сверки» (28.10.2026): расчётчику нужно считать свою организацию и
+    закрывать её период, а панель до этого умела только читать. Чтение и действие разведены по
+    разным спискам намеренно — см. `abop_client.ПАНЕЛЯМ_ДЕЙСТВИЯ`.
+    """
+    from . import abop_client as abop
+    try:
+        return {"ok": True, "data": abop.panel_action(path, тело or {})}
+    except Exception as ex:  # noqa: BLE001
+        код = int(getattr(ex, "code", 0) or 0)
+        raise HTTPException(код if 400 <= код < 600 else 502, str(ex)[:400]) from ex
+
+
 @app.get("/api/auth/me")
 def me() -> dict:
     if not auth.token():

@@ -1,6 +1,6 @@
 {
   "name": "abop-desktop",
-  "version": "1.0.33",
+  "version": "1.0.34",
   "description": "ABOP Desktop — тонкий клиент-рантайм ABOP (Electron + Python sidecar)",
   "author": {
     "name": "ABOP",

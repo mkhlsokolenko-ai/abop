@@ -423,6 +423,14 @@ def control_revoke(binding: str) -> dict:
     "/api/registry/findings", "/api/inbox", "/api/health/links",
     "/api/verticals/active", "/api/runs", "/api/agents",
     "/api/pervichka/fields", "/api/pervichka/quality",
+    "/api/periods",
+)
+
+# Что панель вертикали может не только читать, но и ДЕЛАТЬ. Список отдельный и намеренно короткий:
+# чтение чужой ручки — неприятность, вызов чужой ручки под правами открывшего — происшествие.
+# Сюда попадает только работа расчётчика над своим периодом (решение владельца 28.10.2026).
+ПАНЕЛЯМ_ДЕЙСТВИЯ = (
+    "/api/periods/",
 )
 
 
@@ -436,6 +444,20 @@ def panel_read(path: str) -> dict:
     if not any(путь.startswith(п) for п in ПАНЕЛЯМ_РАЗРЕШЕНО):
         raise AbopError(403, "панелям вертикалей этот путь не разрешён: " + путь)
     r = _req("GET", путь, timeout=60)
+    return r if isinstance(r, (dict, list)) else {}
+
+
+def panel_action(path: str, тело: dict = None) -> dict:
+    """POST к платформе от имени человека — для панели вертикали.
+
+    Отдельный белый список (`ПАНЕЛЯМ_ДЕЙСТВИЯ`), а не общий с чтением: читать чужую ручку —
+    неприятность, вызвать её под правами открывшего — происшествие. Таймаут больше, чем у чтения:
+    «посчитать организацию» — это настоящий прогон рецептов, а не выборка.
+    """
+    путь = "/" + str(path or "").lstrip("/")
+    if not any(путь.startswith(п) for п in ПАНЕЛЯМ_ДЕЙСТВИЯ):
+        raise AbopError(403, "панелям вертикалей это действие не разрешено: " + путь)
+    r = _req("POST", путь, тело or {}, timeout=300)
     return r if isinstance(r, (dict, list)) else {}
 
 
