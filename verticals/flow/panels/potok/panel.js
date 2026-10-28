@@ -12,7 +12,7 @@
 //   2. показатель из заглушки подписан заглушкой — решение по нему принимать нельзя;
 //   3. пустой экран объясняет себя: «нет данных» и «всё в порядке» выглядят одинаково, если не
 //      сказать, чего не хватает.
-import { CARD, LBL } from "../../core/cards.js";
+import { CARD, LBL, kpi } from "../../core/cards.js";
 
 const П = "/api/panel-data/api/data/query/flow_line?limit=400";
 
@@ -35,13 +35,12 @@ export async function mount(root, ctx) {
   // Ноль — это факт: `||` превратил бы «закрыто 0» в пустоту, и худшее число исчезло бы с экрана.
   const знач = (v) => (v === null || v === undefined || v === "" ? "—" : String(v));
 
-  const плашка = (подпись, значение, тон) => `<div class="kpi" ${
-    tone(тон)}><span class="k">${esc(подпись)}</span><span class="v">${esc(знач(значение))}</span></div>`;
-  function tone(т) {
-    if (т === "warn") return `style="border-color:var(--warn-line);background:var(--warn-bg)"`;
-    if (т === "ok") return `style="border-color:var(--ok-line);background:var(--ok-bg)"`;
-    return "";
-  }
+  // Плитка числа — из ядра: панель вертикали говорит тем же языком, что оболочка. Раньше она
+  // рисовала её классами `.k` и `.v`, которых в теме нет, — на экране выходили голые строки.
+  const плашка = (подпись, значение, тон) => kpi({
+    "число": знач(значение), "подпись": подпись, "откуда": "",
+    "тон": тон === "warn" ? "ждёт" : тон === "ok" ? "готово" : "",
+  });
 
   const метрикаСтрока = (м) => {
     const хуже = String(м["исход"] || "") === "хуже цели";

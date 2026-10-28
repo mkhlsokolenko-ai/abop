@@ -237,23 +237,30 @@ a { color: var(--accent-ink-2); } a:hover { color: var(--accent-ink); }
    полоса показывает, где ты находишься, не раскрашивая всю кнопку. Десктоп рисовал иконку с
    подписью по центру, и при семи разделах это читалось как сетка плиток, а не как маршрут.
    Сворачивание — тоже из веба: в узком виде остаются плашки знаков, подписи прячутся. */
+/* Строка рейла 1:1 с макетом: значок и подпись в одной строке, активная отличается подложкой
+   и кромкой света. Было: плашка значка 27×27 с градиентом при активности плюс акцентная полоса
+   слева — три приёма на один элемент, из-за которых живой рейл читался иначе, чем концепт. */
 .navitem {
   position: relative; display: flex; align-items: center; gap: 10px; width: 100%;
-  padding: 9px 11px 9px 8px; border: none; border-left: 3px solid transparent;
+  padding: 8px 11px 8px 8px; border: none; border-left: 3px solid transparent;
   border-radius: 0 var(--r-md) var(--r-md) 0; background: transparent; color: var(--ink-2);
-  font-size: 13px; font-weight: 600; text-align: left;
-  transition: background .15s, color .15s, border-color .15s;
+  font-size: 12.5px; font-weight: 500; text-align: left;
+  transition: background .15s, color .15s, border-color .15s, box-shadow .2s;
 }
 .navitem:hover { background: var(--hover); color: var(--ink); }
-.navitem.on { background: var(--accent-bg); color: var(--accent-ink); border-left-color: var(--accent-2); }
+/* Подложка и кромка — из макета; полоса слева и скругление только справа остаются от веба:
+   маршрут в двух наших продуктах имеет одну форму, и расходиться ей незачем (сторож на это
+   есть в tests/test_desktop_premium_ui.py). */
+.navitem.on { background: var(--panel-2); color: var(--accent-ink); border-left-color: var(--accent-2); box-shadow: var(--edge); }
 .navitem .glyph {
-  width: 27px; height: 27px; flex: none; border-radius: var(--r-xs); display: flex;
-  align-items: center; justify-content: center; line-height: 1;
-  background: var(--panel-2); box-shadow: var(--edge); transition: background .15s, box-shadow .2s;
+  flex: none; display: flex; align-items: center; justify-content: center; line-height: 1;
+  color: inherit;
 }
-.navitem .glyph .i { width: 16px; height: 16px; }
-.navitem.on .glyph { background: var(--grad); color: #fff; box-shadow: var(--shadow-accent), var(--edge-strong); }
+.navitem .glyph .i { width: 19px; height: 19px; }
+.navitem.on .glyph { color: var(--accent-ink); }
+
 .navitem .lbl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.navitem.on .bdg { background: var(--warn-bg); color: var(--warn-ink); }
 .navitem .bdg {
   flex: none; padding: 1px 7px; border-radius: var(--r-pill); background: var(--warn-ink);
   color: #1a1205; font-family: var(--mono); font-size: 10.5px; font-weight: 800;
@@ -315,7 +322,7 @@ a { color: var(--accent-ink-2); } a:hover { color: var(--accent-ink); }
 .btn:active { transform: translateY(0); box-shadow: var(--edge); }
 .btn.primary { background-image: var(--grad); border-color: transparent; color: #fff; box-shadow: var(--shadow-accent), var(--edge-strong); }
 .btn.primary:hover { filter: brightness(1.07); box-shadow: 0 14px 38px rgba(99, 102, 241, .38), var(--edge-strong); }
-.btn.sm { padding: 5px 10px; font-size: 12px; border-radius: var(--r-sm); }
+.btn.sm { padding: 6px 11px; font-size: 11.5px; border-radius: var(--r-sm); }
 /* Крупная — для единственного действия, ради которого экран открывали. */
 .btn.lg { padding: 11px 18px; font-size: 13.5px; }
 /* Тихая — отказ, отмена, «потом»: не спорит за внимание с утвердительной и основной.
@@ -330,6 +337,61 @@ a { color: var(--accent-ink-2); } a:hover { color: var(--accent-ink); }
   border: 1px solid var(--line); color: var(--ink-2); box-shadow: var(--edge);
 }
 .chip.on { background: var(--accent-bg); color: var(--accent-ink); border-color: var(--accent); }
+/* Метка состояния — не то же самое, что чип-фильтр: она ничего не переключает, а называет.
+   Поэтому мельче, заглавными и моноширинной: в макетах ими подписаны серьёзность, исход и
+   принадлежность. Варианты — по смыслу, а не по цвету: sev (опасно) · mid (внимание) ·
+   ok (хорошо) · ai (расчёт). */
+.tag {
+  display: inline-flex; align-items: center; gap: 5px; font: 600 10.5px/1 var(--mono);
+  letter-spacing: .05em; text-transform: uppercase; padding: 4px 8px; border-radius: var(--r-pill);
+  border: 1px solid var(--line); color: var(--ink-3); white-space: nowrap;
+}
+.tag.sev { color: var(--danger-ink); border-color: var(--danger-line); background: var(--danger-bg); }
+.tag.mid { color: var(--warn-ink); border-color: var(--warn-line); background: var(--warn-bg); }
+.tag.ok { color: var(--ok-ink); border-color: var(--ok-line); background: var(--ok-bg); }
+.tag.ai { color: var(--info-ink); border-color: var(--info-line); background: var(--info-bg); }
+.tag.right { margin-left: auto; }
+
+/* Плитка числа: рисуется классом, а примитив ядра (`cards.js: kpi`) только подставляет данные.
+   Рецепт из макета — крупное моночисло, подпись и строка «чем посчитано». */
+.kpi {
+  padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-md);
+  background-color: var(--field); box-shadow: var(--edge);
+  display: flex; flex-direction: column; gap: 3px; min-width: 0;
+}
+.kpi b { font: 700 22px/1.1 var(--mono); font-variant-numeric: tabular-nums; color: var(--ink); }
+.kpi .cap { font-size: 11.5px; color: var(--ink-2); }
+.kpi .sub { font-size: 10.5px; color: var(--ink-3); font-family: var(--mono); overflow-wrap: anywhere; }
+.kpi.money b { color: var(--accent-ink); }
+.kpi.alert { border-color: var(--warn-line); background-color: var(--warn-bg); }
+.kpi.alert b { color: var(--warn-ink); }
+.kpi.good { border-color: var(--ok-line); background-color: var(--ok-bg); }
+.kpi.good b { color: var(--ok-ink); }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(176px, 1fr)); gap: 10px; }
+
+/* Строка чата в списке слева (рецепт из макета): спокойная строка, активная — подложкой. */
+.thr { display: flex; align-items: center; gap: 4px; padding: 6px 6px 6px 9px; border: 1px solid var(--line); border-radius: var(--r-sm); background: transparent; }
+.thr:hover { background: var(--hover); }
+.thr.on { background: var(--panel-2); border-color: var(--line-2); box-shadow: var(--edge); }
+
+/* Таблица отчёта (`.reg`). Её рисовали три панели — «Вертикали», «Сверка» и «Поток», — а правила
+   для класса в теме не было вовсе: таблицы выезжали голыми, без шапки и разделителей. Рецепт
+   взят из макетов: шапка моношрифтом заглавными, тонкие разделители, числа по правому краю. */
+table.reg { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+table.reg th, table.reg td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.reg th { font: 600 10.5px/1 var(--mono); letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3); white-space: nowrap; background: var(--panel); }
+table.reg tr:last-child td { border-bottom: 0; }
+table.reg td.num, table.reg th.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+table.reg tbody tr:hover { background: var(--hover); }
+
+/* Лента шагов прогона: статус, что произошло и цена — одной строкой на шаг. */
+.steps { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; background: var(--field); }
+.steps > .step { display: grid; grid-template-columns: 24px 1fr auto; gap: 11px; align-items: center; padding: 9px 12px; border-top: 1px solid var(--line); font-size: 12.5px; }
+.steps > .step:first-child { border-top: 0; }
+.step .st { color: var(--ok-ink); display: grid; place-items: center; }
+.step .st.run { color: var(--accent-2); }
+.step .st.wait { color: var(--warn-ink); }
+.step .meta { font: 500 11px/1 var(--mono); color: var(--ink-3); }
 /* Граница поля ввода — не декор, а единственный признак того, что сюда можно писать: заливка
    поля от подложки почти не отличается (1.34:1 в тёмной, 1.01:1 в светлой). На --line
    (rgba(255,255,255,.10) → 1.34:1 и #e5e7eb → 1.18:1) граница ниже 3:1 по WCAG 1.4.11, то есть
@@ -431,7 +493,7 @@ button:disabled { cursor: default; }
 .ape-toast.ok { border-color: var(--ok-line); } .ape-toast.warn { border-color: var(--warn-line); } .ape-toast.danger { border-color: var(--danger-line); }
 .ape-toast button { border: 1px solid rgba(255, 255, 255, .25); background: rgba(255, 255, 255, .1); color: #fff; border-radius: 8px; padding: 5px 10px; font-size: 12px; font-weight: 600; }
 /* кнопка-иконка: цель ≥ 30px (аудит: 15–22px) */
-.ico { width: 30px; height: 30px; flex: none; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: var(--r-sm); background: transparent; color: var(--ink-2); font-size: 13px; transition: background .15s, color .15s, border-color .15s; }
+.ico { width: 32px; height: 32px; flex: none; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: var(--r-sm); background: transparent; color: var(--ink-2); font-size: 13px; transition: background .15s, color .15s, border-color .15s; }
 .ico:hover { background: var(--hover); color: var(--ink); border-color: var(--line-2); }
 .ico.ghost { border-color: transparent; }
 .ico.go { border-color: var(--line-2); background: var(--accent-bg); color: var(--accent-ink); }

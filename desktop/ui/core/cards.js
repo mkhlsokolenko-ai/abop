@@ -27,6 +27,8 @@ export const S_LBL = "font-family:var(--mono);font-size:11px;letter-spacing:.07e
 export const S_EYE = "display:block;font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--accent-2)";
 export const S_NUM = "font-family:var(--mono);font-size:17px;font-weight:700;line-height:1.1";
 export const S_ORIGIN = "font-size:11px;color:var(--ink-3);line-height:1.45";
+// Метка: тот же рецепт, что класс `.tag` в теме — панели вставляют её инлайном, и вид обязан
+// совпадать до пикселя, иначе одна и та же метка в двух разделах будет разной.
 export const S_TAG = "display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;padding:4px 8px;border-radius:999px;border:1px solid var(--line);color:var(--ink-3);white-space:nowrap";
 
 // ── общие стили панелей: ОДИН источник на приложение ───────────────────────────────────────────
@@ -78,16 +80,12 @@ export function tile(число, подпись) {
  */
 export function kpi(o = {}) {
   const тон = String(o["тон"] || "");
-  const рамка = тон === "ждёт" ? "var(--warn-line)" : тон === "готово" ? "var(--ok-line)" : "var(--line)";
-  const фон = тон === "ждёт" ? "var(--warn-bg)" : тон === "готово" ? "var(--ok-bg)" : "var(--field)";
-  const цвет = тон === "ждёт" ? "var(--warn-ink)" : тон === "деньги" ? "var(--accent-ink)"
-    : тон === "готово" ? "var(--ok-ink)" : "var(--ink)";
+  const класс = тон === "ждёт" ? " alert" : тон === "готово" ? " good" : тон === "деньги" ? " money" : "";
   const откуда = String(o["откуда"] || "");
-  return `<div style="padding:12px 14px;border-radius:var(--r-md);border:1px solid ${рамка};background:${фон};display:flex;flex-direction:column;gap:3px;min-width:0">
-    <span style="font-family:var(--mono);font-size:22px;font-weight:700;line-height:1.1;color:${цвет}">${esc(o["число"])}</span>
-    <span style="font-size:11.5px;color:var(--ink-2)">${esc(o["подпись"] || "")}</span>
-    <span style="font-size:10.5px;color:var(--ink-3);font-family:var(--mono);overflow-wrap:anywhere">${
-      esc(откуда || "чем посчитано — не объявлено")}</span>
+  return `<div class="kpi${класс}">
+    <b>${esc(o["число"])}</b>
+    <span class="cap">${esc(o["подпись"] || "")}</span>
+    <span class="sub">${esc(откуда || "чем посчитано — не объявлено")}</span>
   </div>`;
 }
 
@@ -95,8 +93,7 @@ export function kpi(o = {}) {
 export function kpis(список) {
   const плитки = (список || []).filter(Boolean);
   if (!плитки.length) return "";
-  return `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(176px,1fr));gap:10px">${
-    плитки.map((п) => (typeof п === "string" ? п : kpi(п))).join("")}</div>`;
+  return `<div class="kpis">${плитки.map((п) => (typeof п === "string" ? п : kpi(п))).join("")}</div>`;
 }
 
 /**

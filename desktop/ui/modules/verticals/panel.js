@@ -25,6 +25,10 @@ const M = "/api/modules/verticals";
 
 export async function mount(root, ctx) {
   const { api, esc, toast, humanError, origin, modal } = ctx;
+  // Включение представления делает ОБОЛОЧКА: она пересобирает рейл, слова и начальный экран.
+  // Раньше раздел звал ручку сайдкара сам — пакет становился активным, а на экране не менялось
+  // ничего до перезапуска, и выглядело это как «кнопка не работает».
+  const включить = ctx["включитьПредставление"];
   let данные = null, ошибка = "", занят = "", отчёт = null, база = null, loading = true;
   let вкладка = "состав";
 
@@ -38,6 +42,13 @@ export async function mount(root, ctx) {
   async function действие(vid, путь, подпись) {
     занят = vid; отчёт = null; render();
     try {
+      if (путь === "activate" && typeof включить === "function") {
+        // Через оболочку: иначе представление включится, а экран останется прежним.
+        const имя = await включить(vid === "-" ? "" : vid);
+        toast("Представление: " + имя, "ok");
+        await load();
+        return;
+      }
       const р = await api(`${M}/${encodeURIComponent(vid)}/${путь}`, { method: "POST", body: "{}" });
       отчёт = { вертикаль: vid, что: подпись, ответ: р };
       toast(`${подпись}: готово`);
