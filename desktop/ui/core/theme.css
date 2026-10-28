@@ -331,6 +331,19 @@ a { color: var(--accent-ink-2); } a:hover { color: var(--accent-ink); }
 .btn.ghost:hover { background-color: var(--hover); color: var(--ink); }
 .btn:disabled { opacity: .5; cursor: default; transform: none; box-shadow: none; }
 .btn:focus-visible { box-shadow: var(--ring), var(--edge); }
+
+/* Действие под сообщением чата: «изменить», «копировать», «ещё раз».
+   Рецепт живёт здесь, а не дописывается стилями из скрипта: класс `.msgact` стоял в разметке, а
+   в теме его не было вовсе — кнопки держались на том, что панель после каждой отрисовки проходила
+   по ним и правила style. Значок внутри от этого вставал не по базовой линии с подписью. */
+.msgact {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 26px;
+  padding: 5px 9px; border: 1px solid transparent; border-radius: 8px;
+  background: transparent; color: var(--ink-3); font-size: 11.5px;
+}
+.msgact:hover { background-color: var(--hover); color: var(--ink-2); }
+.msgact:focus-visible { box-shadow: var(--ring); }
+
 .chip {
   display: inline-block; padding: 3px 9px; border-radius: var(--r-pill); font-size: 11px;
   font-family: var(--mono); background-color: var(--panel); background-image: var(--panel-grad);

@@ -58,12 +58,12 @@ function md(t) {
 
 // 1:1 из эталона APE Desktop: глифы/заголовки/подписи/промпты дословно.
 const TEMPLATES = [
-  ["✉", "Письмо клиенту", "Черновик по короткой вводной, тон на выбор", "Напиши письмо клиенту: переносим срок поставки на две недели, нужно сохранить отношения.", "email-draft"],
-  ["▤", "Саммари встречи", "Из расшифровки — решения и задачи", "Сделай саммари встречи: решения, ответственные, сроки.", ""],
-  ["★", "Разбор отзывов", "Кластеры боли и частота", "Разбери отзывы клиентов за квартал: кластеры проблем и частота.", ""],
-  ["◈", "Проверка идеи", "Экономика, риски, что проверить первым", "Оцени идею внутреннего маркетплейса подрядчиков: экономика и риски.", "devils-advocate"],
-  ["⇄", "Сравнение вариантов", "Таблица критериев и вывод", "Сравни два варианта подрядчика по стоимости, срокам и рискам.", ""],
-  ["◷", "План на неделю", "Приоритеты из списка задач", "Собери план на неделю из списка задач с приоритетами.", ""],
+  ["mail", "Письмо клиенту", "Черновик по короткой вводной, тон на выбор", "Напиши письмо клиенту: переносим срок поставки на две недели, нужно сохранить отношения.", "email-draft"],
+  ["doc", "Саммари встречи", "Из расшифровки — решения и задачи", "Сделай саммари встречи: решения, ответственные, сроки.", ""],
+  ["star", "Разбор отзывов", "Кластеры боли и частота", "Разбери отзывы клиентов за квартал: кластеры проблем и частота.", ""],
+  ["alert", "Проверка идеи", "Экономика, риски, что проверить первым", "Оцени идею внутреннего маркетплейса подрядчиков: экономика и риски.", "devils-advocate"],
+  ["repeat", "Сравнение вариантов", "Таблица критериев и вывод", "Сравни два варианта подрядчика по стоимости, срокам и рискам.", ""],
+  ["clock", "План на неделю", "Приоритеты из списка задач", "Собери план на неделю из списка задач с приоритетами.", ""],
 ];
 const PROFILES = [["standard", "Обычный ответ"], ["code", "Код и таблицы"], ["research", "Исследование"]];
 const DELIVER_LABEL = { chat: "в чат", email: "на почту", redmine: "в Redmine", bookstack: "в BookStack", system: "в систему" };
@@ -242,8 +242,8 @@ export async function mount(root, ctx) {
           <span style="font-size:12.5px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%">${esc(t.title)}</span>
           <span style="font-size:11px;color:var(--ink-3)">${esc((PROFILES.find((p) => p[0] === t.profile) || [0, t.profile])[1])}${t.skills && t.skills.length ? " · навыков: " + t.skills.length : ""}</span>
         </button>
-        <button class="ico ghost thren" data-id="${t.id}" title="Переименовать" aria-label="Переименовать чат" style="width:26px;height:26px;font-size:12px">✎</button>
-        <button class="ico ghost thfav" data-id="${t.id}" title="${t.favorite ? "Убрать из избранного" : "В избранное"}" aria-label="Избранное" style="width:26px;height:26px;font-size:12px;color:${t.favorite ? "var(--warn-ink)" : "var(--ink-3)"}">★</button>
+        <button class="ico ghost thren" data-id="${t.id}" title="Переименовать" aria-label="Переименовать чат" style="width:26px;height:26px">${icon("pencil")}</button>
+        <button class="ico ghost thfav" data-id="${t.id}" title="${t.favorite ? "Убрать из избранного" : "В избранное"}" aria-label="Избранное" style="width:26px;height:26px;color:${t.favorite ? "var(--warn-ink)" : "var(--ink-3)"}">${icon("star")}</button>
         <button class="ico ghost danger thdel" data-id="${t.id}" title="Удалить чат" aria-label="Удалить чат" style="width:26px;height:26px;font-size:11px">${icon("close")}</button>
       </div>`; };
     const group = (folder, arr) => arr.length ? `<div style="display:flex;flex-direction:column;gap:5px"><span class="ape-label" style="padding:0 4px">${folder}</span>${arr.map(row).join("")}</div>` : "";
@@ -446,8 +446,8 @@ export async function mount(root, ctx) {
     const cost = meta.model ? `<span style="margin-left:4px;font-family:var(--mono);font-size:11px;color:var(--ink-3)">${esc(meta.model)} · ${meta.cost_rub ?? 0} ₽</span>` : "";
     const isCard = !!(meta.run_agent || meta.pipeline_result || meta.chain_suggest || meta.assemble || meta.decision || meta.clarify || meta.notice || meta.cancelled || meta.work_hint);
     const acts = mine
-      ? `<button type="button" data-edit="${idx}" class="msgact">✎ изменить</button>`
-      : `<button type="button" data-copy="${idx}" class="msgact">⧉ копировать</button>${meta.decision || meta.chain_suggest || meta.assemble || meta.notice || meta.cancelled || meta.work_hint ? "" : `<button type="button" data-regen="${idx}" class="msgact">↻ ещё раз</button>`}${cost}`;
+      ? `<button type="button" data-edit="${idx}" class="msgact">${icon("pencil")} изменить</button>`
+      : `<button type="button" data-copy="${idx}" class="msgact">${icon("copy")} копировать</button>${meta.decision || meta.chain_suggest || meta.assemble || meta.notice || meta.cancelled || meta.work_hint ? "" : `<button type="button" data-regen="${idx}" class="msgact">${icon("refresh")} ещё раз</button>`}${cost}`;
     return `<div style="display:flex;flex-direction:column;align-items:${mine ? "flex-end" : "flex-start"};gap:7px;animation:ape-in .3s ease-out">
       <div class="bub" style="max-width:${isCard ? "96%" : "88%"};padding:13px 16px;border-radius:${radius};background:${mine ? "var(--user-bubble)" : "var(--panel)"};border:1px solid ${mine ? "var(--user-bubble-line)" : "var(--line)"};backdrop-filter:blur(16px);box-shadow:${mine ? "0 2px 10px rgba(99,102,241,.14)" : "var(--shadow-1)"};white-space:${isCard ? "normal" : "pre-wrap"};font-size:13.5px;line-height:1.6;min-width:0">${inner}</div>
       <div style="display:flex;align-items:center;gap:6px">${acts}</div></div>`;
@@ -487,7 +487,7 @@ export async function mount(root, ctx) {
       ${body ? `<div style="font-size:13.5px;line-height:1.6">${md(body)}</div>` : ""}
       <div class="dcard-note">${note}</div>
       ${!rep && wh.task ? `<div class="dcard-quote">${esc(String(wh.task).slice(0, 220))}</div>` : ""}
-      <button type="button" class="btn primary whRun" data-i="${i}">${rep ? "📄 Собрать отчёт прогона" : "▶ Подобрать исполнителя"}</button></div>`;
+      <button type="button" class="btn primary whRun" data-i="${i}">${rep ? icon("doc") + " Собрать отчёт прогона" : icon("play") + " Подобрать исполнителя"}</button></div>`;
   }
   // Крестик на карточке предложения: отказаться было нечем — оставался только уход со страницы.
   function cardCloseHTML(i, label) {
@@ -556,7 +556,7 @@ export async function mount(root, ctx) {
       ${myTilesHTML()}
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(214px,1fr));gap:12px">
         ${TEMPLATES.map((t, i) => `<button type="button" data-tpl="${i}" class="lift" style="display:flex;flex-direction:column;align-items:flex-start;gap:7px;padding:16px;border:1px solid var(--line);border-radius:var(--r-lg);background-color:var(--panel);background-image:var(--panel-grad);backdrop-filter:blur(16px);box-shadow:var(--shadow-1),var(--edge);text-align:left;color:inherit">
-          <span style="font-size:17px" aria-hidden="true">${t[0]}</span><span style="font-size:13.5px;font-weight:600;color:var(--ink)">${t[1]}</span><span style="font-size:11.5px;line-height:1.45;color:var(--ink-3)">${t[2]}</span></button>`).join("")}
+          <span style="color:var(--accent-ink)" aria-hidden="true">${icon(t[0], "lg")}</span><span style="font-size:13.5px;font-weight:600;color:var(--ink)">${t[1]}</span><span style="font-size:11.5px;line-height:1.45;color:var(--ink-3)">${t[2]}</span></button>`).join("")}
       </div>
       <div style="display:flex;align-items:center;gap:16px;padding:14px 18px;border-radius:var(--r-lg);background-color:var(--panel);background-image:var(--panel-grad);border:1px solid var(--line);box-shadow:var(--edge);flex-wrap:wrap">
         <span class="ape-label">${ctx.authed ? "как это работает" : "первый запуск"}</span>
@@ -745,7 +745,9 @@ export async function mount(root, ctx) {
       cs.stages = (cs.stages || []).filter((_, n) => n !== +b.dataset.n);
       render();
     });
-    $("col").querySelectorAll(".msgact").forEach((b) => { b.style.cssText += ";padding:5px 9px;border:1px solid transparent;border-radius:8px;background:transparent;color:var(--ink-3);font-size:11.5px;min-height:26px"; });
+    // Вид действий под сообщением объявлен в теме (`.msgact`). Раньше он дописывался отсюда
+    // стилями в каждый элемент: класс в разметке был, а в теме его не было вовсе — и значок
+    // внутри кнопки вставал не по базовой линии с подписью.
   }
   // ── общая доска ──
   // Факты живут на сервере (областями «личная» и «отдела»), а не в этой вкладке: человек должен
@@ -877,9 +879,9 @@ export async function mount(root, ctx) {
   }
   function openPipelines() {
     const rows = pipelines.map((p) => `<div class="hitl-row" style="background:var(--field)"><span style="font-size:15px">🔗</span><span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-size:12.5px;font-weight:600">${esc(p.name)}</span><span style="font-size:11.5px;color:var(--ink-3)">${(p.steps || []).map((s) => esc(s.agent_name || agentName(s.agent_id))).join(" → ")}</span></span>
-      <button type="button" class="ico go plRun" data-id="${esc(p.id)}" title="Запустить цепочку «${esc(p.name)}»" aria-label="Запустить цепочку ${esc(p.name)}">▶</button><button type="button" class="ico danger plDel" data-id="${esc(p.id)}" data-n="${esc(p.name)}" title="Удалить цепочку" aria-label="Удалить цепочку">${icon("close")}</button></div>`).join("");
+      <button type="button" class="ico go plRun" data-id="${esc(p.id)}" title="Запустить цепочку «${esc(p.name)}»" aria-label="Запустить цепочку ${esc(p.name)}">${icon("play")}</button><button type="button" class="ico danger plDel" data-id="${esc(p.id)}" data-n="${esc(p.name)}" title="Удалить цепочку" aria-label="Удалить цепочку">${icon("close")}</button></div>`).join("");
     const ov = modal("Цепочки агентов", `<div style="font-size:12px;color:var(--ink-2);margin-bottom:4px">Выход одного агента идёт в контекст следующего; последний шаг доставляет результат.</div><div style="display:flex;flex-direction:column;gap:6px">${rows || '<span style="font-size:12.5px;color:var(--ink-3)">Пока нет цепочек — соберите из двух и более агентов.</span>'}</div>`,
-      () => { ov.close(); openPipeBuilder(); return false; }, "＋ Собрать цепочку", { width: "600px", cancelLabel: "Закрыть" });
+      () => { ov.close(); openPipeBuilder(); return false; }, icon("plus") + " Собрать цепочку", { width: "600px", cancelLabel: "Закрыть" });
     // Подбор цепочки ИЗ ГОТОВЫХ АГЕНТОВ остаётся здесь — в инструменте цепочек, где человек этого
     // и ждёт. Из решения по задаче он убран: там работает оркестратор, и два механизма подбора,
     // не знающие друг о друге, расходились (владелец: «это прямо UX-дыра»).
@@ -903,7 +905,7 @@ export async function mount(root, ctx) {
     const body = `<input id="plName" placeholder="Название цепочки (напр. Почта → Менеджер)" style="width:100%;margin-bottom:10px" autofocus/>
       <div style="font-size:12px;color:var(--ink-2);margin-bottom:6px">Шаги по порядку — выход агента идёт в контекст следующего:</div>
       <div id="plSteps" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px"></div>
-      <div style="display:flex;gap:8px;margin-bottom:12px"><select id="plPick" style="flex:1">${opts}</select><button type="button" id="plAdd" class="btn">＋ Шаг</button></div>
+      <div style="display:flex;gap:8px;margin-bottom:12px"><select id="plPick" style="flex:1">${opts}</select><button type="button" id="plAdd" class="btn">${icon("plus")} Шаг</button></div>
       <div style="font-size:12px;color:var(--ink-2);margin-bottom:6px">Куда результат цепочки (последний шаг):</div>
       <div id="plDeliver" style="display:flex;gap:6px;flex-wrap:wrap">${dOpt("chat", "💬 В чат")}${dOpt("email", "✉ Почта")}${dOpt("redmine", "🎫 Redmine")}${dOpt("bookstack", "📚 BookStack")}</div>
       <div style="font-size:11.5px;color:var(--ink-3);margin-top:8px">Ничего не уходит наружу без вашего подтверждения, если оно включено у агента.</div>`;
@@ -1461,7 +1463,7 @@ export async function mount(root, ctx) {
           <span class="drow-sub">${esc(st.why || st.short || "шаг плана")}</span>
         </span>
         ${st.score != null ? meterHTML(st.score, { short: true }) : ""}
-        <button type="button" class="ico ghost asmEdit" data-i="${i}" data-n="${n}" title="Заменить навык этого шага" aria-label="Заменить навык шага ${n + 1}" style="width:26px;height:26px;font-size:12px">✎</button>
+        <button type="button" class="ico ghost asmEdit" data-i="${i}" data-n="${n}" title="Заменить навык этого шага" aria-label="Заменить навык шага ${n + 1}" style="width:26px;height:26px">${icon("pencil")}</button>
         ${(a.steps || []).length > 1 ? `<button type="button" class="ico ghost danger asmDrop" data-i="${i}" data-n="${n}" title="Убрать шаг" aria-label="Убрать шаг ${n + 1}" style="width:26px;height:26px;font-size:11px">${icon("close")}</button>` : ""}
         </div>`).join("");
     const chain = (a.steps || []).map((st) => skillName(st.skill) || st.skill).join(" → ");
@@ -1478,7 +1480,7 @@ export async function mount(root, ctx) {
       ${a.note ? `<div class="dcard-note">${esc(a.note)}</div>` : ""}
       <div class="dcard-acts">
         <button type="button" class="btn primary asmRun" data-i="${i}">Собрать агента и запустить</button>
-        <button type="button" class="btn sm asmAdd" data-i="${i}" title="Добавить шаг в цепочку">＋ навык</button>
+        <button type="button" class="btn sm asmAdd" data-i="${i}" title="Добавить шаг в цепочку">${icon("plus")} навык</button>
         ${(a.alt_agent && a.alt_agent.id) ? `<button type="button" class="btn sm asmAgent" data-i="${i}" data-id="${esc(a.alt_agent.id)}" data-name="${esc(a.alt_agent.name)}" title="Запустить готового агента вместо сборки">Запустить «${esc(a.alt_agent.name)}»</button>` : ""}
         <button type="button" class="btn sm asmChat" data-i="${i}">Агент не нужен, ответь в чате</button>
         <button type="button" class="btn sm cardNo" data-i="${i}">Не запускать</button>
@@ -1863,9 +1865,9 @@ export async function mount(root, ctx) {
       ${catHTML}
       <div style="display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:11px;background:var(--hover);border:1px solid var(--line)">
         <span style="flex:1;font-size:12px;color:var(--ink-2);line-height:1.4">Выберите агента — запуск пойдёт в чат</span>
-        <button type="button" id="drRun" class="ico go" title="Запустить выбранного агента в чат" aria-label="Запустить выбранного агента в чат">▶</button></div>
+        <button type="button" id="drRun" class="ico go" title="Запустить выбранного агента в чат" aria-label="Запустить выбранного агента в чат">${icon("play")}</button></div>
       <details><summary style="cursor:pointer;font-size:12px;color:var(--ink-3)">Быстрые роли (импровизация без данных)</summary><div style="margin-top:6px">${roles.map((r) => `<label style="display:flex;gap:8px;align-items:flex-start;padding:5px 0;font-size:12.5px"><input type="checkbox" class="rl" value="${esc(r.id)}"/><span><b>${esc(r.name)}</b> <span style="color:var(--ink-3)">${esc(r.brief)}</span></span></label>`).join("")}</div>
-        <button type="button" id="drRunRoles" class="ico go" style="margin-top:6px" title="Запустить выбранные роли" aria-label="Запустить выбранные роли">▶</button></details>`;
+        <button type="button" id="drRunRoles" class="ico go" style="margin-top:6px" title="Запустить выбранные роли" aria-label="Запустить выбранные роли">${icon("play")}</button></details>`;
     if ($("inp").value.trim()) b.querySelector("#drTask").value = $("inp").value.trim();
     b.querySelectorAll(".drAgTab").forEach((x) => x.onclick = () => { drAgTab = x.dataset.t; renderDrawer(); });
     const dl = b.querySelector("#drLogin"); if (dl) dl.onclick = () => ctx.login();
