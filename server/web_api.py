@@ -415,6 +415,12 @@ from .routes import pervichka as _routes_pervichka  # noqa: E402
 
 app.include_router(_routes_pervichka.router)
 
+# Периоды закрытия: «закрыть октябрь» — действие расчётчика, и его надо куда-то записать.
+# Отдельный роутер по той же причине, что и первичка: это рабочее место, а не админка.
+from .routes import periods as _routes_periods  # noqa: E402
+
+app.include_router(_routes_periods.router)
+
 # Инъекция рецептов и коннекторов в ядро `ape` — забота СТАРТА, а не маршрута, но живёт она
 # рядом с доменом данных. Берём оттуда по имени: дублировать функцию ради чистоты импорта значило
 # бы завести второй путь инициализации Data Plane.

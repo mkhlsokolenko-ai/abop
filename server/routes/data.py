@@ -428,17 +428,28 @@ async def recipe_run(name: str, body: dict | None = None, u: dict = Depends(user
     Тело (необязательно): `{"reset": true}` — перечитать сущность НАЧИСТО. Нужно, когда записи в
     источнике УДАЛЯЛИ: у удаления нет новой версии, и без этого режима снесённая в трекере задача
     остаётся в Data Plane, а агент считает её существующей.
+
+    Ещё поле — `{"организация": "ООО Ромашка"}`: запуск ОДНОЙ организации вместо всех. Решение
+    владельца 28.10.2026: считает расчётчик, и считает он свою фирму. Разом по всей вертикали
+    дешевле в коде и в сотни раз дороже в деньгах, а в журнале оставляет один общий прогон, в
+    котором потом ищешь свою фирму. Параметр живёт один запуск и рецепт не переписывает.
     """
     reset = bool((body or {}).get("reset"))
+    организация = str((body or {}).get("организация") or "").strip()
+    параметры = {"организация": организация} if организация else None
     try:
-        entity, written, dropped, invalid = await _asyncio.to_thread(ape.data_run, name, reset)
+        entity, written, dropped, invalid = await _asyncio.to_thread(
+            ape.data_run, name, reset, параметры)
     except Exception as ex:  # noqa: BLE001 — сбой источника/рецепта → 400
         raise HTTPException(400, str(ex))
     if reset:
         await audit_store.record(u.get("name") or u.get("sub") or "dev", "data.recipe.reset", name,
                                  {"entity": entity, "written": written})
     return {"entity": entity, "written": written, "dropped": dropped, "invalid": invalid,
-            "mode": "начисто" if reset else "дозапись"}
+            "mode": "начисто" if reset else "дозапись",
+            # Говорим, ЧЕМ ограничили запуск: «записано 0» по одной фирме и «записано 0» по всем —
+            # разные новости, и экран обязан их различать.
+            "организация": организация, "ограничение": ("организация: " + организация) if организация else ""}
 
 
 @router.post("/api/data/recipes/{name}/rebind")
