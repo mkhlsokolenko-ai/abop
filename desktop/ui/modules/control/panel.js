@@ -12,7 +12,7 @@
 //    отправленное не вернуть. Подпись к экрану говорит это прямо.
 // 4. **Снятие объяснено последствием.** «Человек сможет привязать канал снова» — это не запрет
 //    навсегда, и прятать разницу значит обещать больше, чем происходит.
-import { LBL, BTN } from "../../core/cards.js";
+import { LBL, BTN, head } from "../../core/cards.js";
 // Стили — из ядра: шесть разных карточек и пять разных подписей в панелях были
 // расхождением, а не выбором (DIZAJN, раздел 2).
 const M = "/api/modules/control";
@@ -173,10 +173,8 @@ export async function mount(root, ctx) {
     const d = данные || {};
     const окна = [7, 14, 30].map((n) => `<button data-days="${n}" style="${BTN}${n === дней ? ";border-color:var(--line-2);font-weight:650" : ""}">${n} дн.</button>`).join("");
     root.innerHTML = `<div style="display:flex;flex-direction:column;gap:var(--gap-group);max-width:980px;padding:24px 26px;overflow:auto">
-      <div style="display:flex;flex-direction:column;gap:5px">
-        <h2 style="margin:0;font-size:20px;font-weight:700">Что происходит в отделе</h2>
-        ${origin(d["подпись"] || "")}
-      </div>
+      ${head({ "глаз": "лента контроля", "что": "Что происходит в отделе",
+               "подпись": d["подпись"] || "" })}
       <div style="display:flex;gap:7px;align-items:center">${окна}
         <span style="${LBL};margin-left:auto">отдел: ${esc(d["отдел"] || "—")}</span></div>
       ${err ? `<div style="font-size:12.5px;color:var(--danger-ink)">${esc(err)}</div>` : ""}

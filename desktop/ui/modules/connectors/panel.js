@@ -1,6 +1,8 @@
 // Модуль «Источники» — тонкий клиент ABOP: каталог коннекторов и рецептов Data Plane из ABOP
 // (что реально видит агент, ABAC по отделу) + локальные файлы под правами пользователя ОС.
-import { LBL, CARD } from "../../core/cards.js";
+import { LBL, CARD, head } from "../../core/cards.js";
+// Значки — из общего набора ядра: панель не заводит своих символов.
+import { icon } from "../../core/icons.js";
 // Стили — из ядра: шесть разных карточек и пять разных подписей в панелях были
 // расхождением, а не выбором (DIZAJN, раздел 2).
 const K = "/api/modules/connectors";
@@ -63,10 +65,8 @@ export async function mount(root, ctx) {
 
   root.innerHTML = `<div style="flex:1;min-width:0;overflow-y:auto;padding:26px 30px">
     <div style="max-width:1020px;margin:0 auto;display:flex;flex-direction:column;gap:20px;animation:ape-in .35s ease-out">
-      <div style="display:flex;flex-direction:column;gap:6px">
-        <h1 style="margin:0;font-size:26px;font-weight:800;letter-spacing:-.7px">Источники</h1>
-        <p style="margin:0;font-size:13px;color:var(--ink-2)">Источники и наборы данных приходят из ABOP — это ровно то, что видит агент под вашими правами. Локальные файлы читаются под правами вашей учётной записи в системе.</p>
-      </div>
+      ${head({ "глаз": "данные", "что": "Источники",
+               "подпись": "Источники и наборы данных приходят из ABOP — это ровно то, что видит агент под вашими правами. Локальные файлы читаются под правами вашей учётной записи в системе." })}
 
       ${abopBlock || `<div style="${CARD}"><span style="${LBL}">коннекторы</span><span style="font-size:12.5px;color:var(--ink-3)">В ABOP пока нет подключённых коннекторов.</span></div>`}
 
@@ -99,7 +99,7 @@ export async function mount(root, ctx) {
 
   function showIngested(name, text) {
     $("ingRes").innerHTML = `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="ok-ink">✓ «${esc(name)}» распознан (${text.length} симв.)</span>
-      <button class="btn primary sm" id="toChat">💬 Добавить в чат</button><button class="btn sm" id="copyTxt">⧉ копировать</button></div>`;
+      <button class="btn primary sm" id="toChat">${icon("chat")} Добавить в чат</button><button class="btn sm" id="copyTxt">${icon("copy")} копировать</button></div>`;
     $("toChat").onclick = () => ctx.open("chat", { attach: { name, text } });
     $("copyTxt").onclick = (e) => ctx.copy(text, e.currentTarget, "команду");
   }

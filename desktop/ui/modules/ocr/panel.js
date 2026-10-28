@@ -1,6 +1,8 @@
 // Модуль «Распознать» (OCR) — локально (RapidOCR), под правами пользователя.
 // Перетащи/выбери картинку или скан → текст → «Добавить в чат» (текст попадает в контекст чата). Вёрстка по ДС.
-import { LBL, CARD } from "../../core/cards.js";
+import { LBL, CARD, head } from "../../core/cards.js";
+// Значки — из общего набора ядра: панель не заводит своих символов.
+import { icon } from "../../core/icons.js";
 // Стили — из ядра: шесть разных карточек и пять разных подписей в панелях были
 // расхождением, а не выбором (DIZAJN, раздел 2).
 const O = "/api/modules/ocr";
@@ -14,12 +16,10 @@ export async function mount(root, ctx) {
 
   root.innerHTML = `<div style="flex:1;min-width:0;overflow-y:auto;padding:26px 30px">
     <div style="max-width:900px;margin:0 auto;display:flex;flex-direction:column;gap:20px;animation:ape-in .35s ease-out">
-      <div style="display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap">
-        <div style="flex:1 1 340px;display:flex;flex-direction:column;gap:6px">
-          <h1 style="margin:0;font-size:26px;font-weight:800;letter-spacing:-.7px">Распознать текст</h1>
-          <p style="margin:0;font-size:13px;color:var(--ink-2)">Картинка или скан → текст. Локально, ${eng}. Ничего не уходит наружу.</p>
-        </div>
-      </div>
+      ${head({ "глаз": "страница в текст", "что": "Распознать текст",
+               // Строка в «метках» экранируется и сама одевается в метку — отдаём текст, не разметку.
+               "метки": [eng],
+               "подпись": "Картинка или скан → текст. Локально. Ничего не уходит наружу." })}
 
       <div id="drop" style="${CARD};align-items:center;justify-content:center;gap:12px;min-height:200px;border:2px dashed var(--line-2);cursor:pointer;text-align:center">
         ${mascot("scan", 52)}
@@ -41,7 +41,7 @@ export async function mount(root, ctx) {
     const note = r.note ? `<span class="chip">${esc(r.note)}</span>` : "";
     $("result").innerHTML = `<div style="${CARD};gap:10px">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="${LBL};flex:1">распознанный текст · ${r.chars} симв.</span>${note}
-        ${r.text ? `<button id="toChat" class="btn primary sm">💬 Добавить в чат</button>` : ""}<button id="copyTxt" class="btn sm">⧉ копировать</button></div>
+        ${r.text ? `<button id="toChat" class="btn primary sm">${icon("chat")} Добавить в чат</button>` : ""}<button id="copyTxt" class="btn sm">${icon("copy")} копировать</button></div>
       <div style="white-space:pre-wrap;font-size:13px;line-height:1.6;color:var(--ink);max-height:340px;overflow:auto;background:var(--field);border:1px solid var(--line);border-radius:11px;padding:12px">${esc(r.text) || '<span style="color:var(--ink-3)">текст не найден</span>'}</div></div>`;
     if ($("copyTxt")) $("copyTxt").onclick = (e) => ctx.copy(r.text || "", e.currentTarget, "распознанный текст");
     if ($("toChat")) $("toChat").onclick = () => ctx.open("chat", { attach: { name: lastName, text: r.text } });

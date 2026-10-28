@@ -103,8 +103,17 @@ export function kpis(список) {
  * кнопки. {глаз, что, метки:[], действия:[], подпись}
  */
 export function head(o = {}) {
+  // «Метки» — это ТЕКСТ: строка экранируется и сама одевается в метку. Готовая разметка идёт в
+  // «действия». Перепутать легко (28.10 я перепутал дважды за один заход), а расплата некрасивая:
+  // на экран выезжает «<span class="chip">…» буквами. Поэтому не молчим.
   const метки = (o["метки"] || []).filter(Boolean)
-    .map((м) => (typeof м === "string" ? `<span style="${S_TAG}">${esc(м)}</span>` : м)).join("");
+    .map((м) => {
+      if (typeof м !== "string") return м;
+      if (м.indexOf("<") >= 0) {
+        console.warn("[head] в «метках» пришла разметка — она будет показана текстом: " + м.slice(0, 60));
+      }
+      return `<span style="${S_TAG}">${esc(м)}</span>`;
+    }).join("");
   const действия = (o["действия"] || []).filter(Boolean).join("");
   return `<div style="display:flex;flex-direction:column;gap:6px;min-width:0">
     ${o["глаз"] ? `<span style="${S_EYE}">${esc(o["глаз"])}</span>` : ""}

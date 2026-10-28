@@ -5,7 +5,7 @@
 // Источник каждой находки назван: правило из набора (его можно перепрогнать на истории и править
 // методологу) или прочтение модели. Смешивать их в одну карточку без пометки значит выдавать прозу
 // за расчёт — а решение по находке человек принимает, глядя именно на её надёжность.
-import { LBL, CARD, INP } from "../../core/cards.js";
+import { LBL, CARD, INP, head } from "../../core/cards.js";
 import { icon } from "../../core/icons.js";
 // Стили — из ядра: шесть разных карточек и пять разных подписей в панелях были
 // расхождением, а не выбором (DIZAJN, раздел 2).
@@ -133,7 +133,7 @@ export async function mount(root, ctx) {
         ${c.norm && c.norm.title ? row("норма", c.norm.title + (c.norm.section ? " · " + c.norm.section : "")) : ""}
         ${правилоHTML(c)}
         <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-          ${c.doc_url ? `<a class="btn sm" href="${esc(c.doc_url)}" target="_blank" rel="noopener">Документ в 1С ▸</a>` : ""}
+          ${c.doc_url ? `<a class="btn sm" href="${esc(c.doc_url)}" target="_blank" rel="noopener">Документ в 1С ${icon("ext")}</a>` : ""}
           <button class="btn sm fRun" data-run="${esc(c.run_id)}">Открыть прогон</button>
         </div>` : `<div style="font-size:12px;color:var(--ink-3)">${esc(String(e.what || "").slice(0, 160))}</div>`}
     </div>`;
@@ -154,11 +154,8 @@ export async function mount(root, ctx) {
     else body = `<div style="display:flex;flex-direction:column;gap:9px">${items.map(cardHTML).join("")}</div>`;
 
     root.innerHTML = `<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:14px;padding:26px 28px;overflow:auto;animation:ape-in .3s ease-out">
-      <div style="display:flex;flex-direction:column;gap:5px">
-        <span style="${LBL}">пилот 1С</span>
-        <h1 style="margin:0;font-size:26px;font-weight:800;letter-spacing:-.7px">Находки</h1>
-        <p style="margin:0;font-size:13px;color:var(--ink-2)">Расхождения по всем последним прогонам аудитора и следователя в одном списке. У каждой находки назван источник: правило из набора, обход цепочки или прочтение модели. Числа считает код по ссылкам 1С, объяснение и норму подбирает модель. Разметку эксперта видно, ставится она в веб-интерфейсе.</p>
-      </div>
+      ${head({ "глаз": "пилот 1С", "что": "Находки",
+               "подпись": "Расхождения по всем последним прогонам аудитора и следователя в одном списке. У каждой находки назван источник: правило из набора, обход цепочки или прочтение модели. Числа считает код по ссылкам 1С, объяснение и норму подбирает модель. Разметку эксперта видно, ставится она в веб-интерфейсе." })}
       ${loading || err ? "" : metricsHTML()}
       ${loading || err ? "" : filterHTML()}
       ${body}</div>`;

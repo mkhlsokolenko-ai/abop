@@ -4,7 +4,7 @@
 //
 // Главное в этом экране — не список папок, а ЖУРНАЛ: что взято, что не вышло и почему. Присмотр,
 // молча не берущий файлы, хуже отсутствия присмотра — человек считает, что работа идёт.
-import { LBL, CARD, INP } from "../../core/cards.js";
+import { LBL, CARD, INP, head } from "../../core/cards.js";
 // Стили — из ядра: шесть разных карточек и пять разных подписей в панелях были
 // расхождением, а не выбором (DIZAJN, раздел 2).
 const W = "/api/modules/watch";
@@ -144,11 +144,8 @@ export async function mount(root, ctx) {
     else body = `<div style="display:flex;flex-direction:column;gap:9px">${folders.map(папкаHTML).join("")}</div>`;
 
     root.innerHTML = `<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:14px;padding:26px 28px;overflow:auto;animation:ape-in .3s ease-out">
-      <div style="display:flex;flex-direction:column;gap:5px">
-        <span style="${LBL}">документы с диска</span>
-        <h1 style="margin:0;font-size:26px;font-weight:800;letter-spacing:-.7px">Присмотр</h1>
-        <p style="margin:0;font-size:13px;color:var(--ink-2)">Новый файл в папке сам становится задачей агента. Что взято и что не вышло — видно в журнале папки: присмотр, молча не берущий файлы, хуже отсутствия присмотра.</p>
-      </div>
+      ${head({ "глаз": "документы с диска", "что": "Присмотр",
+               "подпись": "Новый файл в папке сам становится задачей агента. Что взято и что не вышло — видно в журнале папки: присмотр, молча не берущий файлы, хуже отсутствия присмотра." })}
       ${loading || err ? "" : сводкаHTML()}
       ${loading || err ? "" : формаHTML()}
       ${body}</div>`;

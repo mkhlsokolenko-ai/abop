@@ -30,7 +30,7 @@ function md(t) {
   const src = esc(t || "");
   const blocks = [];
   let h = src.replace(/```(\w+)?\n?([\s\S]*?)```/g, (_m, lang, c) => {
-    blocks.push(`<span style="display:flex;flex-direction:column;border-radius:10px;overflow:hidden;border:1px solid var(--line-2);margin:6px 0"><span style="display:flex;align-items:center;gap:8px;padding:7px 11px;background:var(--code)"><span style="flex:1;font-family:var(--mono);font-size:11px;color:rgba(255,255,255,.55)">${esc(lang || "code")}</span><button type="button" class="codecopy" style="padding:3px 9px;border:1px solid rgba(255,255,255,.16);border-radius:7px;background:rgba(255,255,255,.06);color:rgba(255,255,255,.8);font-size:11px;cursor:pointer">⧉ копировать</button></span><span class="codebody" style="padding:12px;background:var(--code);font-family:var(--mono);font-size:11.5px;line-height:1.65;color:#c7d2fe;white-space:pre-wrap">${c.replace(/^\n/, "")}</span></span>`);
+    blocks.push(`<span style="display:flex;flex-direction:column;border-radius:10px;overflow:hidden;border:1px solid var(--line-2);margin:6px 0"><span style="display:flex;align-items:center;gap:8px;padding:7px 11px;background:var(--code)"><span style="flex:1;font-family:var(--mono);font-size:11px;color:rgba(255,255,255,.55)">${esc(lang || "code")}</span><button type="button" class="codecopy" style="padding:3px 9px;border:1px solid rgba(255,255,255,.16);border-radius:7px;background:rgba(255,255,255,.06);color:rgba(255,255,255,.8);font-size:11px;cursor:pointer">${icon("copy")} копировать</button></span><span class="codebody" style="padding:12px;background:var(--code);font-family:var(--mono);font-size:11.5px;line-height:1.65;color:#c7d2fe;white-space:pre-wrap">${c.replace(/^\n/, "")}</span></span>`);
     return `\u0000${blocks.length - 1}\u0000`;
   });
   const lines = h.split("\n"); const out = []; let i = 0;
@@ -1275,7 +1275,7 @@ export async function mount(root, ctx) {
     let matched = [];
     try { const r = await api(M + "/match", { method: "POST", body: JSON.stringify({ q: t }) }); matched = ((r && r.matches) || []).filter((m) => (m.score || 0) >= 0.3).slice(0, 3); } catch { /* подсказка не критична */ }
     if (seq !== _sugSeq || !box.isConnected) return;
-    box.innerHTML = matched.map((a) => `<button type="button" class="agSug chip" data-id="${esc(a.id)}" data-name="${esc(a.name)}" title="Запустить агента «${esc(a.name)}» по этой задаче (совпадение ${Math.round((a.score || 0) * 100)}%)" style="padding:6px 11px;border-color:var(--ok-line);background:var(--ok-bg);color:var(--ok-ink);font-family:var(--ui);font-size:11.5px;font-weight:600">▶ #${esc(a.name)}</button>`).join("");
+    box.innerHTML = matched.map((a) => `<button type="button" class="agSug chip" data-id="${esc(a.id)}" data-name="${esc(a.name)}" title="Запустить агента «${esc(a.name)}» по этой задаче (совпадение ${Math.round((a.score || 0) * 100)}%)" style="padding:6px 11px;border-color:var(--ok-line);background:var(--ok-bg);color:var(--ok-ink);font-family:var(--ui);font-size:11.5px;font-weight:600">${icon("play")} #${esc(a.name)}</button>`).join("");
     box.querySelectorAll(".agSug").forEach((b) => b.onclick = () => runAbopAgentDeliver(b.dataset.id, b.dataset.name || b.dataset.id, $("inp").value.trim(), ""));
   }
 

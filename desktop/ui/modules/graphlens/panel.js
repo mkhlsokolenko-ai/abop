@@ -1,6 +1,8 @@
 // Модуль «Граф» (GraphLens) — интерактивный редактор: палитра→холст→связи→инспектор→проверка→запуск.
 // Вёрстка в рецептах ДС. Узлы двигаются мышью, связи тянутся от правого порта к левому.
 import { LBL } from "../../core/cards.js";
+// Значки — из общего набора ядра: панель не заводит своих символов.
+import { icon } from "../../core/icons.js";
 // Стили — из ядра: шесть разных карточек и пять разных подписей в панелях были
 // расхождением, а не выбором (DIZAJN, раздел 2).
 const G = "/api/modules/graphlens";
@@ -30,11 +32,11 @@ export async function mount(root, ctx) {
       <span id="gDirty" class="chip"></span>
       <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <input id="gTask" placeholder="Задача для графа…" style="width:210px;padding:9px 12px;border-radius:10px;border:1px solid var(--line-field);background:var(--field);color:var(--ink);font-size:12.5px"/>
-        <button id="gNew" class="ico" title="Новый граф" aria-label="Новый граф">＋</button>
+        <button id="gNew" class="ico" title="Новый граф" aria-label="Новый граф">${icon("plus")}</button>
         <button id="gCheck" class="ico" title="Проверить граф: связи, права, автономия" aria-label="Проверить граф">✓</button>
         <button id="gSave" class="ico" title="Сохранить граф" aria-label="Сохранить граф">💾</button>
-        <button id="gRun" class="ico go" title="Запустить граф движком ABOP" aria-label="Запустить граф">▶</button>
-        <button id="gDel" class="ico danger" style="display:none" title="Удалить сохранённый граф" aria-label="Удалить сохранённый граф">✕</button>
+        <button id="gRun" class="ico go" title="Запустить граф движком ABOP" aria-label="Запустить граф">${icon("play")}</button>
+        <button id="gDel" class="ico danger" style="display:none" title="Удалить сохранённый граф" aria-label="Удалить сохранённый граф">${icon("trash")}</button>
       </div>
     </div>
     <div style="flex:1;display:flex;min-height:0">
@@ -262,7 +264,7 @@ export async function mount(root, ctx) {
         const skipped = (r.skipped || []).length
           ? `<div style="font-size:11.5px;color:var(--warn-ink);margin-top:6px">Пропущены узлы без агента: ${esc((r.skipped || []).join(", "))}</div>` : "";
         $("gChk").innerHTML = `<div style="border:1px solid var(--line);border-radius:10px;padding:11px;background:var(--panel);box-shadow:var(--shadow-1)">
-          <b style="font-size:12.5px" class="ok-ink">▶ ${esc(r.message || "Запущено")}</b>
+          <b style="font-size:12.5px" class="ok-ink">${icon("check")} ${esc(r.message || "Запущено")}</b>
           <div style="font-size:11.5px;color:var(--ink-2);margin-top:4px;font-family:var(--mono)">${esc(r.kind === "pipeline" ? ("цепочка " + (r.pipeline_id || "") + " · шагов " + (r.steps_total || 0)) : ("задание " + (r.job_id || "")))}</div>
           ${skipped}
           <button type="button" id="gGoRuns" class="btn" style="margin-top:9px;padding:6px 12px;font-size:11.5px">Открыть «Прогоны»</button>
@@ -270,7 +272,7 @@ export async function mount(root, ctx) {
         const gb = $("gGoRuns"); if (gb) gb.onclick = () => ctx.open && ctx.open("runs");
       }
     } catch (e) { $("gChk").innerHTML = `<span class="danger-ink">${esc(humanError(e))}</span>`; }
-    running = false; $("gRun").disabled = false; $("gRun").textContent = "▶"; $("gRun").title = "Запустить граф движком ABOP";
+    running = false; $("gRun").disabled = false; $("gRun").innerHTML = icon("play"); $("gRun").title = "Запустить граф движком ABOP";
   };
 
   paintPalette(); paintPick(); setDirty(false); paint(); syncDel();

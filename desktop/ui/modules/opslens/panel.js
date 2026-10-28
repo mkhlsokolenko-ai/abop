@@ -1,6 +1,8 @@
 // Модуль «Операции» (OpsLens) — интерактивная карта процесса: зум (±/reset), слои LIVE/AS-IS/TO-BE,
 // участки (из сохранённых графов + базовый процесс), клик по участку → инспектор. Вёрстка по ДС.
-import { LBL } from "../../core/cards.js";
+import { LBL, head } from "../../core/cards.js";
+// Значки — из общего набора ядра: панель не заводит своих символов.
+import { icon } from "../../core/icons.js";
 // Стили — из ядра: шесть разных карточек и пять разных подписей в панелях были
 // расхождением, а не выбором (DIZAJN, раздел 2).
 const G = "/api/modules/graphlens";
@@ -37,18 +39,15 @@ export async function mount(root, ctx) {
 
   root.innerHTML = `<div style="flex:1;min-width:0;display:flex;flex-direction:column">
     <div style="display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap">
-      <div style="display:flex;flex-direction:column;gap:4px">
-        <span style="${LBL}">карта процесса</span>
-        <h1 style="margin:0;font-size:22px;font-weight:800;letter-spacing:-.6px">Операции</h1>
-        <span style="font-size:11.5px;color:var(--ink-3)">Участки с пометкой «образец» — демонстрация формы, а не ваши данные.</span>
-      </div>
+      ${head({ "глаз": "карта процесса", "что": "Операции",
+               "подпись": "Участки с пометкой «образец» — демонстрация формы, а не ваши данные." })}
       <div style="display:flex;gap:4px;padding:4px;border-radius:10px;background:var(--hover);border:1px solid var(--line)">
         ${["LIVE", "AS-IS", "TO-BE"].map((l) => `<button type="button" class="lay" data-l="${l}" aria-pressed="false" aria-label="Слой ${l}" style="padding:7px 13px;border:none;border-radius:8px;font-family:var(--mono);font-size:11px;font-weight:600;cursor:pointer">${l}</button>`).join("")}
       </div>
       <div style="margin-left:auto;display:flex;align-items:center;gap:4px;padding:4px;border-radius:10px;border:1px solid var(--line)">
-        <button type="button" id="zOut" aria-label="Уменьшить карту" style="width:26px;height:26px;border:none;border-radius:7px;background:transparent;color:var(--accent-ink);font-size:15px;cursor:pointer">−</button>
+        <button type="button" id="zOut" aria-label="Уменьшить карту" style="width:26px;height:26px;border:none;border-radius:7px;background:transparent;color:var(--accent-ink);cursor:pointer">${icon("minus")}</button>
         <button type="button" id="zRst" aria-label="Масштаб 100 процентов" style="min-width:42px;height:26px;border:none;border-radius:7px;background:transparent;color:var(--ink-2);font-family:var(--mono);font-size:10.5px;font-weight:600;cursor:pointer">100%</button>
-        <button type="button" id="zIn" aria-label="Увеличить карту" style="width:26px;height:26px;border:none;border-radius:7px;background:transparent;color:var(--accent-ink);font-size:15px;cursor:pointer">＋</button>
+        <button type="button" id="zIn" aria-label="Увеличить карту" style="width:26px;height:26px;border:none;border-radius:7px;background:transparent;color:var(--accent-ink);cursor:pointer">${icon("plus")}</button>
       </div>
     </div>
     <div id="hint" style="padding:10px 20px;font-size:12.5px;color:var(--ink-2);border-bottom:1px solid var(--line)"></div>
