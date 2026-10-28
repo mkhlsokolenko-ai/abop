@@ -4,7 +4,7 @@
 // сравнение прогонов и выбор шаблона отчёта были доступны только в вебе.
 //
 // Выборка и фильтры считаются на сервере (Postgres — источник истины), панель ничего не хранит.
-import { CARD, LBL, INP, BTN, BTN_OK, kpis } from "../../core/cards.js";
+import { CARD, LBL, INP, BTN, BTN_OK, kpis, head } from "../../core/cards.js";
 // Значок — из общего набора ядра: панель не заводит своих символов.
 import { icon } from "../../core/icons.js";
 // Стили — из ядра: шесть разных карточек и пять разных подписей в панелях были
@@ -435,11 +435,11 @@ export async function mount(root, ctx) {
 
   function render() {
     root.innerHTML = `<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:14px;padding:26px 28px;overflow:auto;animation:ape-in .3s ease-out">
-      <div style="display:flex;flex-direction:column;gap:5px">
-        <span style="${LBL}">журнал</span>
-        <h1 style="margin:0;font-size:26px;font-weight:800;letter-spacing:-.7px">Прогоны</h1>
-        <p style="margin:0;font-size:13px;color:var(--ink-2)">Вся работа агентов: находки целиком, доставка, затраты и отчёт. Записи приходят с сервера ABOP и не зависят от чатов.</p>
-      </div>
+      ${head({
+        "глаз": "журнал",
+        "что": "Прогоны",
+        "подпись": "Вся работа агентов: находки целиком, доставка, затраты и отчёт. Записи приходят с сервера ABOP и не зависят от чатов.",
+      })}
       ${open ? openHTML() : filterBar() + listHTML()}</div>`;
     wire();
   }

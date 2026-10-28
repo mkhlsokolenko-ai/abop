@@ -24,24 +24,32 @@ def test_в_карточке_нет_подписанных_кнопок():
 
 
 def test_полный_набор_знаков_на_месте():
+    """Знаки берутся из спрайта ядра (28.10), а не из символов шрифта.
+
+    Было «▶ ✎ ↺ ⏹ ✕» — разной толщины и размера, зависят от системного шрифта и рядом с
+    остальными экранами выглядят дёшево. Набор действий остался тем же, сменился носитель.
+    """
     i = PANEL.index("const actions = (a) =>")
     row = PANEL[i:i + 1200]
-    for glyph, what in (("▶", "запуск"), ("✎", "настройка"), ("↺", "версии"), ("⏹", "архив"), ("✕", "удаление")):
-        assert glyph in row, f"нет знака для «{what}»"
-    assert "Обновить список агентов" in PANEL and "↻" in PANEL, "кнопка обновления осталась подписанной"
+    for имя, what in (("play", "запуск"), ("pencil", "настройка"), ("clock", "версии"),
+                      ("exit", "архив"), ("trash", "удаление")):
+        assert f'"{имя}"' in row, f"нет знака для «{what}»"
+    assert "Обновить список агентов" in PANEL and 'icon("refresh")' in PANEL, (
+        "кнопка обновления осталась подписанной или рисует свой символ")
 
 
 def test_у_каждого_знака_есть_подпись_для_человека():
     """Знак без подсказки — ребус: title и aria-label обязательны."""
-    i = PANEL.index("const ico = (cls, glyph, title, a) =>")
+    i = PANEL.index("const ico = (cls, имя, title, a) =>")
     body = PANEL[i:i + 400]
     assert 'title="${esc(title)}"' in body and "aria-label=" in body
+    assert "icon(имя)" in body, "значок рисуется не спрайтом ядра — панель завела свой символ"
 
 
 def test_разрушающее_отделено_от_запуска():
     i = PANEL.index("const actions = (a) =>")
     row = PANEL[i:i + 1200]
-    assert row.index('"▶"') < row.index('flex:1') < row.index('"✕"'), \
+    assert row.index('"play"') < row.index('flex:1') < row.index('"trash"'), \
         "удаление стоит рядом с запуском — промах мышью будет стоить агента"
 
 

@@ -5,7 +5,7 @@
 // передаёт её в system-подсказку каждого ответа; хардкод-политика ролей помечена честно как пример,
 // пока энфорс на шлюзе не отдаёт реальную; «источники» считаются из реального каталога коннекторов.
 // D-H13: хоткей Ctrl+Shift+A описан здесь. Терминология без JWT/realm (D-H12).
-import { CARD } from "../../core/cards.js";
+import { CARD, head } from "../../core/cards.js";
 import { icon } from "../../core/icons.js";
 // Стили — из ядра: шесть разных карточек и пять разных подписей в панелях были
 // расхождением, а не выбором (DIZAJN, раздел 2).
@@ -190,12 +190,16 @@ export async function mount(root, ctx) {
 
   root.innerHTML = `<div style="flex:1;min-width:0;overflow-y:auto;padding:26px 30px">
     <div style="max-width:1020px;margin:0 auto;display:flex;flex-direction:column;gap:22px;animation:ape-in .35s ease-out">
-      <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap">
-        <div style="flex:1 1 340px;display:flex;flex-direction:column;gap:6px">
-          <h1 class="ape-h1">Личный кабинет</h1>
-          <p style="margin:0;font-size:13px;color:var(--ink-2)">Мой доступ, мои агенты и источники, настройки ответа и горячие клавиши.</p>
-        </div>${enforced ? '<span class="chip on">права проверяются на шлюзе ABOP</span>' : (authed ? '<span class="chip">права из учётной записи ABOP</span>' : `<button class="btn primary sm" id="cabLogin">${icon("key")}Войти в ABOP</button>`)}
-      </div>
+      ${head({
+        "глаз": "рабочее место",
+        "что": "Личный кабинет",
+        "подпись": "Мой доступ, мои агенты и источники, настройки ответа и горячие клавиши.",
+        "действия": [enforced
+          ? '<span class="tag ok">права проверяются на шлюзе ABOP</span>'
+          : (authed
+            ? '<span class="tag">права из учётной записи ABOP</span>'
+            : `<button class="btn primary sm" id="cabLogin">${icon("key")} Войти в ABOP</button>`)],
+      })}
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px">
         ${карточкаОбновления()}
         ${карточкаСвязи()}

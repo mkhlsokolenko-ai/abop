@@ -5,7 +5,8 @@
 // UX-аудит 25.09: D-H6 — «▶ Запустить» открывает чат и запускает агента там (одна поверхность
 // результата, HITL и «сделать регулярной» в карточке чата); D-C1 — 401 показывается как «войдите»,
 // а не как «у вас нет агентов»; D-H9 — удаление через модалку подтверждения; D-H14 — токены цветов.
-import { CARD } from "../../core/cards.js";
+import { CARD, head, S_TAG } from "../../core/cards.js";
+import { icon } from "../../core/icons.js";
 // Стили — из ядра: шесть разных карточек и пять разных подписей в панелях были
 // расхождением, а не выбором (DIZAJN, раздел 2).
 const A = "/api/modules/agents";
@@ -135,34 +136,44 @@ export async function mount(root, ctx) {
     // переносились — отсюда и съехавшая вёрстка. Подпись у действия осталась в title и aria-label,
     // то есть и в подсказке, и для чтения с экрана.
     // Разрушающие действия стоят справа, отдельно от запуска: промах мышью не должен стоить агента.
-    const ico = (cls, glyph, title, a) =>
-      `<button class="ico ${cls}" data-id="${esc(a.id)}" data-name="${esc(a.name)}" title="${esc(title)}" aria-label="${esc(title)}: ${esc(a.name)}">${glyph}</button>`;
+    // Значок — из спрайта ядра, а не символ шрифта. Рисованные «▶ ✎ ↺ ⏹ ✕» были разного веса и
+    // размера, зависели от шрифта системы и выглядели дёшево рядом с остальными экранами.
+    const ico = (cls, имя, title, a) =>
+      `<button class="ico ${cls}" data-id="${esc(a.id)}" data-name="${esc(a.name)}" title="${esc(title)}" aria-label="${esc(title)}: ${esc(a.name)}">${icon(имя)}</button>`;
     // В архиве у агента одно осмысленное действие — вернуть. Диалог архивации обещает
     // «вернуть можно в любой момент», ручка /restore есть с самого начала, а кнопки не было:
     // обещание было невыполнимо из десктопа.
     const archActions = (a) => `<div style="display:flex;gap:6px;align-items:center">
-      <button class="btn sm restore" data-id="${esc(a.id)}" data-name="${esc(a.name)}" title="Вернуть из архива в работу" aria-label="Вернуть «${esc(a.name)}» из архива">↩ Вернуть</button>
+      <button class="btn sm restore" data-id="${esc(a.id)}" data-name="${esc(a.name)}" title="Вернуть из архива в работу" aria-label="Вернуть «${esc(a.name)}» из архива">${icon("repeat")}Вернуть</button>
       <span style="flex:1"></span>
-      ${ico("danger del", "✕", "Удалить навсегда — все версии", a)}
+      ${ico("danger del", "trash", "Удалить навсегда — все версии", a)}
     </div>`;
+    // Действия — знаками, без подписей: три подписанные кнопки не влезали в карточку 280 px и
+    // переносились, ломая ряд (03.10). Подпись живёт в title и aria-label — и в подсказке, и для
+    // чтения с экрана. Разрушающее стоит справа, отдельно: промах мышью не должен стоить агента.
     const actions = (a) => `<div style="display:flex;gap:6px;align-items:center">
-      ${ico("go run", "▶", "Запустить — откроется чат", a)}
-      ${a.owner ? ico("cfg", "✎", "Настроить — сохранит новую версию", a) : ""}
-      ${(a.version || 1) > 1 ? ico("back", "↺", "Вернуться к предыдущей версии", a) : ""}
+      ${ico("go run", "play", "Запустить — откроется чат", a)}
+      ${a.owner ? ico("cfg", "pencil", "Настроить — сохранит новую версию", a) : ""}
+      ${(a.version || 1) > 1 ? ico("back", "clock", "Вернуться к предыдущей версии", a) : ""}
       <span style="flex:1"></span>
-      ${a.owner ? ico("arch", "⏹", "В архив — перестанет запускаться, расписания остановятся", a) : ""}
-      ${a.owner ? ico("danger del", "✕", "Удалить навсегда — все версии", a) : ""}
+      ${a.owner ? ico("arch", "exit", "В архив — перестанет запускаться, расписания остановятся", a) : ""}
+      ${a.owner ? ico("danger del", "trash", "Удалить навсегда — все версии", a) : ""}
     </div>`;
-    const tabBtn = (id, label, n) => `<button class="tabBtn btn ${tab === id ? "" : ""}" data-tab="${id}" aria-pressed="${tab === id}" style="${tab === id ? "background:var(--accent-bg);color:var(--accent-ink);border-color:var(--line-2)" : "background:transparent;color:var(--ink-2)"}">${label} · ${n}</button>`;
+    // Вкладка — тот же рецепт, что в «Прогонах»: кнопка ядра со счётчиком. Своя вкладка с
+    // инлайновыми цветами была шестым способом нарисовать одно и то же.
+    const tabBtn = (id, label, n) =>
+      `<button type="button" class="tabBtn btn sm${tab === id ? " primary" : ""}" data-tab="${id}" aria-pressed="${tab === id}">${esc(label)} · ${n}</button>`;
     root.innerHTML = `<div style="flex:1;min-width:0;overflow-y:auto">
       <div style="display:flex;flex-direction:column;gap:18px;padding:22px 26px;max-width:960px;margin:0 auto;animation:ape-in .35s ease-out">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
-          <div><div class="ape-label">рантайм ABOP</div><h1 class="ape-h1" style="font-size:22px">Мои агенты</h1>
-            <p style="margin:6px 0 0;font-size:12.5px;color:var(--ink-2)">Запуск идёт в чате: там результат, подтверждение внешних действий и «сделать регулярной».</p></div>
-          <span style="display:flex;gap:8px;align-items:center">
-            ${tab === "mine" ? `<button id="build" class="btn primary">＋ Собрать агента</button>` : ""}
-            <button id="refresh" class="ico" title="Обновить список агентов" aria-label="Обновить список агентов">↻</button></span>
-        </div>
+        ${head({
+          "глаз": "рантайм ABOP",
+          "что": "Мои агенты",
+          "подпись": "Запуск идёт в чате: там результат, подтверждение внешних действий и «сделать регулярной».",
+          "действия": [
+            tab === "mine" ? `<button id="build" class="btn primary">${icon("plus")} Собрать агента</button>` : "",
+            `<button id="refresh" class="ico" title="Обновить список агентов" aria-label="Обновить список агентов">${icon("refresh")}</button>`,
+          ],
+        })}
         ${errorBlock()}
         <div style="display:flex;gap:8px">${tabBtn("mine", "Мои агенты", mine.length)}${tabBtn("common", "Общие агенты", common.length)}${tabBtn("arch", "Архив", archived.length)}</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">
@@ -175,9 +186,14 @@ export async function mount(root, ctx) {
                         style="padding:0;border:none;background:transparent;text-align:left;font-size:15px;font-weight:700;color:var(--ink);cursor:pointer">${esc(a.name)}</button></div>
             </div>
             ${a.description ? `<div style="font-size:12px;line-height:1.45;color:var(--ink-2)">${esc(a.description)}</div>` : ""}
-            <div style="font-size:11.5px;color:var(--ink-3)">автономия ${esc(a.autonomy_max || "?")} · v${esc(String(a.version || 1))}${a.owner ? " · мой" : " · общий"}${a.outward ? " · действует наружу 🛡" : ""}</div>
+            <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">
+              <span class="tag">автономия ${esc(a.autonomy_max || "?")}</span>
+              <span class="tag">v${esc(String(a.version || 1))}</span>
+              <span class="tag${a.owner ? "" : " ai"}">${a.owner ? "мой" : "общий"}</span>
+              ${a.outward ? `<span class="tag mid">${icon("shield")} действует наружу</span>` : ""}
+            </div>
             ${tab === "arch" ? archActions(a) : actions(a)}
-          </div>`).join("") : (loadErr ? "" : `<div class="faint" style="padding:20px;grid-column:1/-1">${tab === "mine" ? "У вас пока нет своих агентов — нажмите «＋ Собрать агента»." : (tab === "arch" ? "Архив пуст: выведенных из работы агентов нет." : "Нет общих агентов, доступных вашей роли.")}</div>`)}
+          </div>`).join("") : (loadErr ? "" : `<div class="faint" style="padding:20px;grid-column:1/-1">${tab === "mine" ? "У вас пока нет своих агентов — нажмите «Собрать агента» в шапке." : (tab === "arch" ? "Архив пуст: выведенных из работы агентов нет." : "Нет общих агентов, доступных вашей роли.")}</div>`)}
         </div>
       </div></div>`;
     root.querySelectorAll(".tabBtn").forEach((b) => (b.onclick = () => { tab = b.dataset.tab; render(); }));
@@ -244,7 +260,7 @@ export async function mount(root, ctx) {
   }
   async function deleteAgent(id, name) {
     if (!(await confirmDialog({ title: `Удалить «${name}» навсегда?`,
-      text: "Будут удалены все версии агента. Отменить нельзя. Если нужно просто остановить — отправьте в архив (⏹).",
+      text: "Будут удалены все версии агента. Отменить нельзя. Если нужно просто остановить — отправьте его в архив: оттуда агента можно вернуть в любой момент.",
       okLabel: "Удалить навсегда" }))) return;
     try { await api(A + "/" + encodeURIComponent(id), { method: "DELETE" }); toast(`Агент «${name}» удалён`, "ok"); }
     catch (e) { toast("Не удалось: " + humanError(e), "danger"); }
@@ -258,10 +274,11 @@ export async function mount(root, ctx) {
     const chain = [...bSkills];
     root.innerHTML = `<div style="flex:1;min-width:0;overflow-y:auto">
       <div style="display:flex;flex-direction:column;gap:16px;padding:22px 26px;max-width:820px;margin:0 auto;animation:ape-in .35s ease-out">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
-          <div><div class="ape-label">${editingId ? "настройка · новая версия" : "конструктор"}</div><h1 class="ape-h1" style="font-size:22px">${editingId ? "Настроить агента" : "Собрать агента"}</h1></div>
-          <button id="back" class="btn">← Каталог</button>
-        </div>
+        ${head({
+          "глаз": editingId ? "настройка · новая версия" : "конструктор",
+          "что": editingId ? "Настроить агента" : "Собрать агента",
+          "действия": [`<button id="back" class="btn ghost">${icon("left")} Каталог</button>`],
+        })}
         <div style="${CARD}">
           <label class="ape-label" for="fam">1 · Семья (отдел)</label>
           <select id="fam"><option value="">— выберите семью —</option>${families.map((f) => `<option value="${esc(f.id)}" ${f.id === bFamily ? "selected" : ""}>${esc(f.title)}</option>`).join("")}</select>
