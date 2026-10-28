@@ -77,8 +77,14 @@ def _sync_ui() -> None:
             if _UI_CACHE.exists():
                 shutil.rmtree(_UI_CACHE, ignore_errors=True)
             tmp.rename(_UI_CACHE)
+            # Версию кэша кладём рядом с файлами: после перезапуска надо знать, что лежит,
+            # не пересобирая бандл заново.
+            try:
+                (_UI_CACHE / ".version").write_text(str(data.get("version") or ""), encoding="utf-8")
+            except OSError:
+                pass
             print(f"[sidecar] UI обновлён с ABOP: {data.get('version')} ({len(files)} файлов, {len(binary)} бинарных)")
-            return
+            return True
     except Exception as e:  # noqa: BLE001 — офлайн/сбой → фолбэк
         print(f"[sidecar] UI с ABOP не получен ({e}); фолбэк на вшитый/кэш")
     if not (_UI_CACHE / "index.html").exists():
@@ -290,6 +296,49 @@ def do_logout() -> dict:
     формальность — не отозванный токен остаётся действующим ключом к рабочим системам."""
     итог = auth.logout() or {}
     return {"ok": True, "отозван": bool(итог.get("отозван")), "почему": итог.get("почему", "")}
+
+
+def _версия_кэша() -> str:
+    """Какая версия интерфейса лежит в кэше сейчас."""
+    try:
+        return (_UI_CACHE / ".version").read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def _версия_сервера() -> tuple[str, str]:
+    """Какая версия интерфейса на сервере. Возвращает (версия, почему пусто)."""
+    try:
+        req = urllib.request.Request(config.ABOP.rstrip("/") + "/desktop-ui-bundle")
+        with urllib.request.urlopen(req, timeout=10) as r:
+            data = json.loads(r.read().decode("utf-8", "replace"))
+        return str(data.get("version") or ""), ""
+    except Exception as ex:  # noqa: BLE001 — офлайн это состояние, а не ошибка приложения
+        return "", "сервер недоступен (%s)" % type(ex).__name__
+
+
+@app.get("/api/ui/version")
+def ui_version() -> dict:
+    """Версия интерфейса в кэше и на сервере.
+
+    Нужна, чтобы окно могло узнать об обновлении интерфейса, НЕ перезапуская приложение: оно
+    живёт в трее неделями, а синхронизация бандла раньше случалась только при старте — поэтому
+    правки «Путём А» доезжали лишь после перезапуска, и выглядело это как «ничего не изменилось».
+    """
+    кэш = _версия_кэша()
+    сервер, почему = _версия_сервера()
+    return {"кэш": кэш, "сервер": сервер, "почему": почему,
+            "изменилось": bool(сервер and кэш and сервер != кэш)}
+
+
+@app.post("/api/ui/sync")
+def ui_sync() -> dict:
+    """Перетянуть интерфейс с сервера прямо сейчас. Отвечает, что было и что стало."""
+    было = _версия_кэша()
+    ок = bool(_sync_ui())
+    стало = _версия_кэша()
+    return {"ok": ок, "было": было, "стало": стало, "изменилось": bool(стало and стало != было),
+            "почему": "" if ок else "сервер недоступен — остался прежний интерфейс"}
 
 
 @app.get("/api/vertical")

@@ -791,6 +791,12 @@ function renderUpdate(s) {
     bar.style.cssText += ";align-items:center;gap:12px;padding:8px 16px;border-bottom:1px solid var(--line);font-size:13px;" + (bg ? "background:var(--accent-bg)" : "background:var(--panel)");
     bar.innerHTML = html;
   };
+  if (s.state === "ui") {
+    show(`<span style="flex:1;display:flex;align-items:center;gap:8px">${icon("refresh")} Интерфейс обновился — обновите окно, чтобы увидеть изменения</span>`
+         + `<button class="btn ok sm" id="uiNow">Обновить окно</button>`, true);
+    const b = $("uiNow"); if (b) b.onclick = () => location.reload();
+    return;
+  }
   if (s.state === "downloading") show(`${icon("download")} Обновление ${s.version ? "v" + esc(s.version) : ""} — скачивается ${s.percent || 0}%`);
   else if (s.state === "available") show(`${icon("download")} Найдено обновление v${esc(s.version)} — скачиваю…`);
   else if (s.state === "ready") {
@@ -798,6 +804,38 @@ function renderUpdate(s) {
     const b = $("updNow"); if (b) b.onclick = () => window.ape.updater.install();
   } else if (s.state === "error") show(`<span class="faint">Апдейтер: ${esc((s.message || "").slice(0, 120))}</span>`);
   else bar.style.display = "none";
+}
+
+// ── обновление интерфейса без перезапуска ────────────────────────────────────────────────────
+//
+// Интерфейс приезжает с сервера, но сайдкар тянул его только при старте: приложение живёт в
+// трее неделями, и правки не доходили до человека. Теперь окно спрашивает версию бандла и, когда
+// она разошлась, предлагает обновиться. Молча не перезагружаем: в чате может лежать набранный
+// текст, а в «Решениях» — открытая карточка.
+const ИНТЕРФЕЙС_ПРОВЕРКА = 10 * 60 * 1000;
+let _версияUI = "";
+let _ждётОбновления = false;
+
+async function проверитьИнтерфейс(руками) {
+  let с = null;
+  try { с = await api("/api/ui/version"); }
+  catch (e) {
+    // Старый движок приложения этой ручки не знает — это не ошибка, а его версия.
+    if (руками) toast("Обновление интерфейса на лету появилось в версии 1.0.33 — обновите приложение", "warn");
+    return null;
+  }
+  if (!_версияUI) _версияUI = String((с && с["кэш"]) || "");
+  const сервер = String((с && с["сервер"]) || "");
+  if (руками && с && с["почему"]) toast("Интерфейс: " + с["почему"], "warn");
+  if (сервер && _версияUI && сервер !== _версияUI && !_ждётОбновления) {
+    _ждётОбновления = true;
+    // Тянем новый бандл в кэш сайдкара, чтобы перезагрузка окна показала уже свежий интерфейс.
+    try { await api("/api/ui/sync", { method: "POST", body: "{}" }); } catch (e) { /* покажем как есть */ }
+    renderUpdate({ state: "ui", version: сервер });
+  } else if (руками) {
+    toast("Интерфейс актуален", "ok");
+  }
+  return с;
 }
 
 function applyTheme(t) {
@@ -820,6 +858,7 @@ function buildCommands() {
   cmds.push({ glyph: "moon", label: "Переключить тему", note: "светлая / тёмная", run: toggleTheme });
   if (!ctx.authed) cmds.push({ glyph: "key", label: "Войти в ABOP", note: "вход", run: startLogin });
   if (window.ape && window.ape.updater) cmds.push({ glyph: "download", label: "Проверить обновления", note: "апдейтер", run: () => window.ape.updater.check() });
+  cmds.push({ glyph: "refresh", label: "Обновить интерфейс", note: "подтянуть свежий UI с сервера", run: () => проверитьИнтерфейс(true) });
   return cmds;
 }
 function openPalette() {
@@ -1057,6 +1096,11 @@ async function boot() {
   const h = await waitEngine();
   const v = $("verChip"); if (v) v.textContent = "v" + ((h && h.version) || "?");
   if (window.ape && window.ape.updater) { window.ape.updater.onStatus(renderUpdate); показатьПроверку(); }
+  // Интерфейс мог обновиться с момента запуска приложения: спрашиваем сразу и дальше по часам,
+  // а также когда человек возвращается в окно — он мог уйти на час и вернуться.
+  проверитьИнтерфейс(false);
+  setInterval(() => проверитьИнтерфейс(false), ИНТЕРФЕЙС_ПРОВЕРКА);
+  window.addEventListener("focus", () => проверитьИнтерфейс(false));
   // глобальный хоткей: выделенный текст из Word/Excel/браузера → открыть чат и отправить на анализ
   if (window.ape && window.ape.onAnalyze) window.ape.onAnalyze((text) => loadModule("chat", { analyze: text || "" }));
   await renderAuth();
