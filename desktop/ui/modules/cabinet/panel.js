@@ -123,16 +123,17 @@ export async function mount(root, ctx) {
   };
   const карточкаОбновления = () => {
     if (!апдейтер) {
-      return `<div style="${CARD};gap:8px">
-        <span class="ape-label">обновление</span>
-        <div style="font-size:13px">Авто-обновление в этой сборке выключено.</div>
+      return `<div class="card calm">
+        <div class="card-head"><span class="lbl">обновление</span>
+          <span class="t">Авто-обновление в этой сборке выключено</span></div>
         <span style="font-size:11.5px;color:var(--ink-3)">Так собран клиент под macOS (нет подписи Developer ID) и веб-версия. Обновлять вручную — новым установщиком.</span></div>`;
     }
     const состояние = String(апдейтер.state || "");
     const готово = состояние === "ready";
     const ошибка = String(апдейтер["ошибка"] || "");
-    const цвет = готово ? "var(--ok-line)" : ошибка ? "var(--warn-line)" : "var(--line)";
-    const фон = готово ? "var(--ok-bg)" : ошибка ? "var(--warn-bg)" : "var(--panel)";
+    // Тон карточки — класс темы: «скачано» спокойное, сбой проверки жёлтый. Подбирать цвета
+    // в панели значит заводить ещё одно определение тех же состояний.
+    const тонКласс = ошибка ? " warn" : готово ? "" : " calm";
     const подпись = готово ? `Обновление v${esc(String(апдейтер.version || ""))} скачано`
       : ошибка ? "Проверка обновлений не удалась"
         : состояние === "available" ? `Найдено обновление v${esc(String(апдейтер.version || ""))} — скачиваю`
@@ -142,50 +143,50 @@ export async function mount(root, ctx) {
       : готово
         ? "Приложение обновится при перезапуске."
         : "Проверка идёт при запуске, каждые 6 часов и после пробуждения машины — ждать запуска больше не нужно.";
-    return `<div style="${CARD};gap:8px;border-color:${цвет};background:${фон}">
-      <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
-        <span style="color:${готово ? "var(--ok-ink)" : ошибка ? "var(--warn-ink)" : "var(--ink-2)"}">${
-          icon(готово ? "download" : ошибка ? "alert" : "check", "lg")}</span>
-        <span style="font-size:13.5px;font-weight:650">${подпись}</span>
-        <span class="chip" style="margin-left:auto">${esc(давность(апдейтер["проверено"]))}</span>
+    return `<div class="card${тонКласс}"${готово ? ' style="border-color:var(--ok-line)"' : ""}>
+      <div class="card-head">
+        <span style="color:${готово ? "var(--ok-ink)" : ошибка ? "var(--warn-ink)" : "var(--ink-2)"};display:flex">${
+          icon(готово ? "download" : ошибка ? "alert" : "check", "xl")}</span>
+        <span class="t">${подпись}</span>
+        <span class="tag ${ошибка ? "mid" : "ok"} right">${esc(давность(апдейтер["проверено"]))}</span>
       </div>
-      <div style="font-size:12.5px;color:var(--ink-2);line-height:1.5">${пояснение}</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <div class="why">${пояснение}</div>
+      <div class="acts">
         ${готово ? `<button class="btn ok" id="cabUpdNow">${icon("refresh")}Перезапустить и обновить</button>` : ""}
-        <button class="btn sm" id="cabUpdCheck">${icon("download")}Проверить обновления</button>
+        <button class="btn ghost sm" id="cabUpdCheck">${icon("download")}Проверить обновления</button>
       </div></div>`;
   };
   const карточкаСвязи = () => {
     const свой = !ctx.tenant || ctx.tenant === ctx.tenantOwn;
     // Строка переносится целиком, а не по буквам: в узкой карточке колонка «1fr» ломала адрес
     // сервера в столбик из отдельных символов — на экране это читалось как сбой.
-    const строка = (подпись, значение, метка, тон) => `<div style="display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline;padding:6px 0;font-size:12.5px">
-      <span class="ape-label" style="flex:none">${esc(подпись)}</span>
-      <span class="mono" style="flex:1 1 150px;min-width:0;font-size:11.5px;color:var(--ink-2);word-break:break-word">${esc(значение)}</span>
-      <span class="chip${тон === "ok" ? " on" : ""}"${тон === "warn" ? ' style="color:var(--warn-ink);border-color:var(--warn-line)"' : ""}>${esc(метка)}</span></div>`;
-    return `<div style="${CARD};gap:2px">
-      <span class="ape-label">связь и данные</span>
+    const строка = (подпись, значение, метка, тон) => `<div class="row r4" style="border:0;padding:6px 0">
+      <span>${esc(подпись)}</span>
+      <span class="num" style="color:var(--ink-2);word-break:break-word">${esc(значение)}</span>
+      <span class="tag ${тон === "ok" ? "ok" : "mid"}">${esc(метка)}</span><span></span></div>`;
+    return `<div class="card calm">
+      <div class="card-head">${icon("link", "lg")}<span class="t">Связь и данные</span></div>
       ${строка("Сервер ABOP", String(ctx.base || "—"), ctx.authed ? "есть связь" : "нет входа", ctx.authed ? "ok" : "warn")}
       ${строка("Организация", String(ctx.tenant || "—"),
                свой ? "вы в своих данных" : "данные клиента", свой ? "ok" : "warn")}
       ${строка("Движок приложения", "сайдкар " + String((rt && rt.version) || u.version || "—"),
                ok ? "работает" : "не отвечает", ok ? "ok" : "warn")}
-      <span style="font-size:11.5px;color:var(--ink-3);line-height:1.5;margin-top:4px">«Вы в своих данных» сказано утвердительно: состояние должно быть видно и когда всё в порядке, а не только когда что-то не так.</span></div>`;
+      <div class="origin">«Вы в своих данных» сказано утвердительно: состояние должно быть видно и когда всё в порядке, а не только когда что-то не так.</div></div>`;
   };
   const карточкаРасхода = () => {
     const б = деньги || {};
     if (!б || (!б.tokens && !б.spent_rub)) return "";
     const доля = Math.min(100, Math.round(Number(б.tokens_pct || 0)));
-    return `<div style="${CARD};gap:8px">
-      <span class="ape-label">расход</span>
-      <div style="display:flex;align-items:baseline;gap:9px;flex-wrap:wrap">
-        <span style="font-family:var(--mono);font-size:24px;font-weight:700">${
-          esc(б.spent_rub != null ? Number(б.spent_rub).toLocaleString("ru-RU") + " ₽" : "≈0 ₽")}</span>
-        <span style="font-size:12px;color:var(--ink-2)">из квоты ${esc(String(б.token_quota || "—"))} токенов</span>
+    return `<div class="card calm">
+      <span class="lbl">расход</span>
+      <div class="kpi" style="border:0;background:none;box-shadow:none;padding:0">
+        <b style="font-size:26px">${esc(б.spent_rub != null ? Number(б.spent_rub).toLocaleString("ru-RU") + " ₽" : "≈0 ₽")}</b>
+        <span class="cap">из квоты ${esc(String(б.token_quota || "—"))} токенов</span>
+        <span class="sub">использовано ${esc(String(б.tokens || 0))} · остаток ${esc(String(б.tokens_remaining || "—"))}</span>
       </div>
       <div style="height:6px;border-radius:6px;background:var(--hover);overflow:hidden">
         <div style="width:${доля}%;height:100%;background-image:var(--grad)"></div></div>
-      <span style="font-size:11.5px;color:var(--ink-3)">Использовано ${esc(String(б.tokens || 0))} токенов (${доля} %) · остаток ${esc(String(б.tokens_remaining || "—"))}. Токены реальные, из прогонов агентов и чата.</span></div>`;
+      <div class="origin">Токены реальные, из прогонов агентов и чата.</div></div>`;
   };
 
   root.innerHTML = `<div style="flex:1;min-width:0;overflow-y:auto;padding:26px 30px">
@@ -200,10 +201,14 @@ export async function mount(root, ctx) {
             ? '<span class="tag">права из учётной записи ABOP</span>'
             : `<button class="btn primary sm" id="cabLogin">${icon("key")} Войти в ABOP</button>`)],
       })}
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px">
-        ${карточкаОбновления()}
-        ${карточкаСвязи()}
-        ${карточкаРасхода()}
+      <div class="two">
+        <div style="display:flex;flex-direction:column;gap:10px">
+          ${карточкаОбновления()}
+          ${карточкаСвязи()}
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          ${карточкаРасхода()}
+        </div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px">
         ${kpi("отдел", dept, "область доступа к данным")}

@@ -131,7 +131,7 @@ export async function mount(root, ctx) {
       .map(([v, t]) => `<option value="${v}"${v === verdict ? " selected" : ""}>${t}</option>`).join("");
     const dOpts = [[0, "за всё время"], [1, "за сутки"], [7, "за неделю"], [30, "за месяц"]]
       .map(([v, t]) => `<option value="${v}"${v === days ? " selected" : ""}>${t}</option>`).join("");
-    return `<div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center">
+    return `<div class="filters">
       <input id="rq" value="${esc(q)}" placeholder="Поиск: агент, отдел, а с галочкой — по находкам и ответам навыков" style="${INP};flex:1;min-width:220px"/>
       <select id="rag" style="${INP}">${opts}</select>
       <select id="rv" style="${INP}">${vOpts}</select>
@@ -143,18 +143,21 @@ export async function mount(root, ctx) {
     </div>`;
   }
 
+  // Строка журнала — рецепт `.row` из макета: колонки одной ширины на весь список, разделители
+  // рисует таблица, а не каждая строка сама. Раньше это были кнопки-карточки со своими рамками:
+  // одинаковые записи выглядели как набор отдельных плиток, и глазу не на что было опереться.
   function rowHTML(r) {
     const ok = r.verdict_ok;
-    return `<button type="button" class="rrow" data-id="${esc(r.id)}" style="display:flex;align-items:center;gap:12px;padding:11px 13px;border-radius:12px;border:1px solid var(--line);background:var(--panel);text-align:left;width:100%">
-      <span style="width:8px;height:8px;border-radius:9999px;flex:none;background:${ok ? "var(--ok-ink)" : "var(--warn-ink)"}"></span>
-      <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
-        <span style="font-size:13px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.agent_name || r.agent_id)}</span>
-        <span style="font-size:11px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(fmtDate(r.created_at))}${r.family ? " · " + esc(r.family) : ""}${r.started_by ? " · " + esc(r.started_by) : ""}</span>
+    return `<button type="button" class="row r5 rrow" data-id="${esc(r.id)}" style="width:100%;text-align:left;background:none;border-left:0;border-right:0;border-bottom:0">
+      <span style="min-width:0;display:flex;align-items:center;gap:9px">
+        <span style="width:8px;height:8px;border-radius:9999px;flex:none;background:${ok ? "var(--ok-ink)" : "var(--warn-ink)"}"></span>
+        <span class="num" style="color:var(--ink-2)">${esc(fmtDate(r.created_at))}</span>
       </span>
-      <span style="font-size:11px;color:var(--ink-3);font-family:var(--mono);flex:none">${esc(fmtCost(r.cost))}</span>
-      <span style="font-size:11px;flex:none;color:${ok ? "var(--ok-ink)" : "var(--warn-ink)"}">${ok ? "пройден" : "замечания"}</span>
-      <span style="flex:none;color:var(--ink-3);display:flex">${icon("right")}</span>
-    </button>${(hits[r.id] || []).length ? `<div style="margin:-2px 0 6px 30px;display:flex;flex-direction:column;gap:3px">${hits[r.id].map((h) => `<div style="font-size:11.5px;color:var(--ink-3);line-height:1.45">…${esc(h)}…</div>`).join("")}</div>` : ""}`;
+      <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink);font-weight:600">${esc(r.agent_name || r.agent_id)}</span>
+      <span class="num" style="color:var(--ink-3)">${esc(r.family || "")}${r.started_by ? " · " + esc(r.started_by) : ""}</span>
+      <span class="num" style="color:var(--ink-2)">${esc(fmtCost(r.cost))}</span>
+      <span class="tag ${ok ? "ok" : "mid"}">${ok ? "пройден" : "замечания"}</span>
+    </button>${(hits[r.id] || []).length ? `<div class="row" style="padding-top:0"><span style="grid-column:1/-1;font-size:11.5px;color:var(--ink-3);line-height:1.45">${hits[r.id].map((h) => "…" + esc(h) + "…").join("<br>")}</span></div>` : ""}`;
   }
 
   function listHTML() {
@@ -172,7 +175,9 @@ export async function mount(root, ctx) {
         <div style="font-size:12.5px;color:var(--ink-2)">${q || agentId || verdict || days ? "Измените условия поиска — всего в журнале записей: " + total : "Запустите агента в чате — его работа появится здесь."}</div>
         ${q || agentId || verdict || days ? `<button class="btn sm" id="rClear">Сбросить фильтры</button>` : ""}</div>`;
     }
-    return `<div style="display:flex;flex-direction:column;gap:7px">${runs.map(rowHTML).join("")}</div>`;
+    return `<div class="rows">
+      <div class="row head r5"><span>прогон</span><span>агент</span><span>отдел</span><span>цена</span><span>итог</span></div>
+      ${runs.map(rowHTML).join("")}</div>`;
   }
 
   // ── карточка прогона ──
@@ -369,8 +374,7 @@ export async function mount(root, ctx) {
                   ["board", "Доска" + (bs.entries ? " · " + bs.entries : ""), ""],
                   ["delivery", "Доставка" + (дост.length ? " · " + дост.length : ""), ждутРешения ? "shield" : "ext"],
                   ["metrics", "Затраты", ""]]
-      .map(([id, t, зн]) => `<button type="button" class="btn sm rtab${id === openTab ? " primary" : ""}${
-        id === "delivery" && ждутРешения && openTab !== id ? " ok" : ""}" data-tab="${id}">${
+      .map(([id, t, зн]) => `<button type="button" class="chip rtab${id === openTab ? " on" : ""}" data-tab="${id}">${
         зн ? icon(зн) : ""}${esc(t)}</button>`).join("");
     let body = "";
     if (openTab === "findings") {
@@ -426,7 +430,7 @@ export async function mount(root, ctx) {
       ${числаПрогона(d)}
       ${итогHTML()}
       ${miss.length ? `<div style="font-size:12px;color:var(--warn-ink)">Навыки заполнили схему не полностью: ${esc(miss.map((m) => m.skill).join(", "))}. В отчёте это отмечено.</div>` : ""}
-      <div style="display:flex;gap:7px;flex-wrap:wrap">${tabs}</div>
+      <div class="tabs">${tabs}</div>
       <div style="max-height:52vh;overflow:auto">${body}</div></div>`;
   }
 

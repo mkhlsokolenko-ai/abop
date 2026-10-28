@@ -141,29 +141,42 @@ export function origin(текст) {
 // Тон карточки: по умолчанию обычная панель, «ждёт» — тёплая подложка ожидания. Это не
 // украшение: карточка, которая держит необратимое действие, должна отличаться от сводки с
 // первого взгляда, а не читаться одинаково со всем остальным списком.
-const ТОН = {
-  "ждёт": "border-color:var(--warn-line);background:var(--warn-bg)",
-  "опасно": "border-color:var(--danger-line);background:var(--danger-bg)",
-  "готово": "border-color:var(--ok-line);background:var(--ok-bg)",
+// Тон карточки — класс темы, а не набор инлайновых цветов: в макетах это «.card.top» (требует
+// человека), «.card.warn» (ждёт) и спокойная «.card.calm». Цвет, подобранный в примитиве, стал бы
+// четвёртым определением того же состояния.
+const КЛАСС_ТОНА = {
+  "ждёт": "warn",
+  "опасно": "warn",
+  "готово": "calm",
+  "спокойно": "calm",
+  "важное": "top",
 };
 
 export function card(o = {}) {
   const ч = Array.isArray(o["числа"]) ? o["числа"].filter((x) => Array.isArray(x) && x.length) : [];
   const нет_происхождения = ч.length > 0 && !o["происхождение"];
-  const метки = [o["класс"], o["состояние"]].filter(Boolean)
-    .map((t) => `<span style="${S_LBL};padding:2px 7px;border:1px solid var(--line);border-radius:999px">${esc(t)}</span>`).join("");
+  // Разметка — из макетов (28.10.2026): шапка карточки с метками, объяснение, доказательство,
+  // ряд действий. Рецепты живут в теме (`.card`, `.card-head`, `.why`, `.ev`, `.acts`), а здесь
+  // только подстановка данных. Пока карточку собирает один примитив, экраны разойтись не могут.
+  // Тяжесть красит метку: в макете «высокая» — красная, «средняя» — жёлтая. Тон приходит полем,
+  // а не угадывается по тексту: слова у вертикалей свои, и разбирать их в ядре значит знать их.
+  const метки = [[o["класс"], o["класс_тон"]], [o["состояние"], ""]]
+    .filter(([т]) => т)
+    .map(([т, тон]) => `<span class="tag${тон ? " " + тон : ""}">${esc(т)}</span>`).join("");
   const действия = (o["действия"] || []).filter(Boolean).join("");
-  const тон = ТОН[String(o["тон"] || "")] || "";
-  return `<div style="${S_CARD}${тон ? ";" + тон : ""}">
-    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-      <span style="font-size:13.5px;font-weight:650">${esc(o["что"] || "")}</span>
+  const тон = КЛАСС_ТОНА[String(o["тон"] || "")] || "";
+  return `<div class="card${тон ? " " + тон : ""}">
+    <div class="card-head">
       ${метки}
-      ${o["справа"] ? `<span style="${S_LBL};margin-left:auto">${esc(o["справа"])}</span>` : ""}
+      <span class="t">${esc(o["что"] || "")}</span>
+      ${o["справа"] ? `<span class="tag right">${esc(o["справа"])}</span>` : ""}
     </div>
-    ${o["суть"] ? `<div style="font-size:12.5px;line-height:1.45;color:var(--ink-2)">${esc(o["суть"])}</div>` : ""}
+    ${o["суть"] ? `<div class="why">${esc(o["суть"])}</div>` : ""}
+    ${o["почему"] ? `<div class="why"><b>${esc(o["почему_лид"] || "Почему это здесь:")}</b> ${esc(o["почему"])}</div>` : ""}
+    ${o["доказательство"] ? `<div class="ev">${esc(o["доказательство"])}</div>` : ""}
     ${ч.length ? `<div style="display:flex;gap:var(--gap-group);flex-wrap:wrap">${ч.map(([n, p]) => tile(n, p)).join("")}</div>` : ""}
     ${origin(o["происхождение"])}
-    ${нет_происхождения ? `<div style="${S_ORIGIN};color:var(--warn-ink)">число без происхождения — карточка собрана неполно</div>` : ""}
-    ${действия ? `<div style="display:flex;gap:var(--gap-item);flex-wrap:wrap;align-items:center">${действия}</div>` : ""}
+    ${нет_происхождения ? `<div class="origin" style="color:var(--warn-ink)">число без происхождения — карточка собрана неполно</div>` : ""}
+    ${действия ? `<div class="acts">${действия}</div>` : ""}
   </div>`;
 }

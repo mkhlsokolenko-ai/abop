@@ -259,7 +259,11 @@ a { color: var(--accent-ink-2); } a:hover { color: var(--accent-ink); }
 .navitem .glyph .i { width: 19px; height: 19px; }
 .navitem.on .glyph { color: var(--accent-ink); }
 
-.navitem .lbl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Подпись раздела в рейле — обычный текст. Явно гасим общий рецепт `.lbl` (надзаголовок секции
+   из макетов): он моноширинный, разрядка и капс — и рейл вставал «ЧАТ · РЕШЕНИЯ · ПРОГОНЫ».
+   Имя класса общее, назначение разное; разводим правилом, а не переименованием в разметке. */
+.navitem .lbl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                font: inherit; letter-spacing: normal; text-transform: none; color: inherit; }
 .navitem.on .bdg { background: var(--warn-bg); color: var(--warn-ink); }
 .navitem .bdg {
   flex: none; padding: 1px 7px; border-radius: var(--r-pill); background: var(--warn-ink);
@@ -345,9 +349,12 @@ a { color: var(--accent-ink-2); } a:hover { color: var(--accent-ink); }
 .msgact:focus-visible { box-shadow: var(--ring); }
 
 .chip {
-  display: inline-block; padding: 3px 9px; border-radius: var(--r-pill); font-size: 11px;
-  font-family: var(--mono); background-color: var(--panel); background-image: var(--panel-grad);
-  border: 1px solid var(--line); color: var(--ink-2); box-shadow: var(--edge);
+  /* Фильтр и вкладка — рецепт из макетов: пилюля побольше, моноширинная, со слотом под значок.
+     Маленькая метка-бейдж — это `.tag`, у неё своя роль; смешивать их значит получить два
+     похожих, но разных вида одного и того же элемента на соседних экранах. */
+  display: inline-flex; align-items: center; gap: 6px; font: 500 11.5px/1 var(--mono);
+  padding: 7px 12px; border-radius: var(--r-pill); border: 1px solid var(--line);
+  background: var(--panel); color: var(--ink-2);
 }
 .chip.on { background: var(--accent-bg); color: var(--accent-ink); border-color: var(--accent); }
 /* Метка состояния — не то же самое, что чип-фильтр: она ничего не переключает, а называет.
@@ -577,5 +584,113 @@ button:disabled { cursor: default; }
 .dmeter.sure .dmeter-fill { background: var(--ok-ink); }
 .dmeter.weak .dmeter-fill { background: var(--warn-ink); }
 .dmeter.weak { color: var(--warn-ink); }
+
+/* ── Рецепты экранов из макетов (28.10.2026) ─────────────────────────────────────────────────────
+   Владелец: «экраны Решения, Прогоны, Вертикали, Кабинет должны иметь вот такой дизайн как тут» —
+   и показал два файла макетов. Токены там сняты с этой же темы, поэтому расходились не цвета, а
+   РЕЦЕПТЫ: карточка, её шапка, строка доказательства, ряд действий, витрина вертикалей, таблица
+   строк, модалка поставки. Панели собирали их инлайновыми стилями, каждая по-своему.
+
+   Перенесены один в один из макетов. Дальше панели зовут классы, а не рисуют стили. */
+
+/* заголовок экрана */
+.h-screen { display: flex; align-items: center; gap: 11px; flex-wrap: wrap; }
+.h-screen h3 { margin: 0; font: 800 20px/1.15 var(--ui); letter-spacing: -.5px; text-wrap: balance; }
+.origin { font-size: 11.5px; color: var(--ink-3); line-height: 1.5; }
+.lbl { font: 600 10.5px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+/* карточка экрана и её части */
+.card { padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--r-md);
+        background-color: var(--panel); background-image: var(--panel-grad);
+        box-shadow: var(--shadow-1), var(--edge); display: flex; flex-direction: column;
+        gap: 9px; min-width: 0; }
+.card.calm { background-image: none; background-color: var(--field); box-shadow: var(--edge); }
+.card.warn { border-color: var(--warn-line); background-color: var(--warn-bg); background-image: none; }
+.card.top { border-color: var(--warn-line); background-color: var(--warn-bg); }
+.card-head { display: flex; gap: 9px; align-items: center; flex-wrap: wrap; }
+.card-head .t { font-size: 14px; font-weight: 650; }
+/* «почему» — объяснение словами; «ev» — доказательство, из которого оно сделано */
+.why { font-size: 12.5px; color: var(--ink-2); }
+.why b { color: var(--ink); font-weight: 600; }
+.ev { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); background: var(--field);
+      border: 1px solid var(--line); border-radius: var(--r-sm); padding: 8px 10px;
+      overflow-wrap: anywhere; }
+.acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+/* группы, фильтры, вкладки */
+.group { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center;
+         padding: 11px 14px; border: 1px solid var(--line); border-radius: var(--r-md);
+         background: var(--field); }
+.group .g-t { font-size: 13px; font-weight: 600; }
+.group .g-s { font-size: 11.5px; color: var(--ink-3); font-family: var(--mono); }
+.filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* витрина вертикалей */
+.market { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.vcard { padding: 15px 16px; border: 1px solid var(--line); border-radius: var(--r-lg);
+         background-color: var(--panel); background-image: var(--panel-grad);
+         box-shadow: var(--shadow-1), var(--edge); display: flex; flex-direction: column;
+         gap: 10px; min-width: 0; }
+.vcard .ico { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center;
+              font-size: 19px; background: var(--accent-bg); border: 1px solid var(--line-2); }
+.vcard .nm { font-size: 15px; font-weight: 700; letter-spacing: -.2px; }
+.vcard .by { font: 500 11px/1 var(--mono); color: var(--ink-3); }
+.vcard .ds { font-size: 12.5px; color: var(--ink-2); margin: 0; }
+.vcard .meta { display: flex; gap: 6px; flex-wrap: wrap; }
+.vcard.active { border-color: var(--ok-line); }
+.vstat { display: flex; align-items: center; gap: 6px; font: 600 11px/1 var(--mono); color: var(--ok-ink); }
+.vstat.gray { color: var(--ink-3); }
+.vstat.warn { color: var(--warn-ink); }
+/* Четвёртого состояния в макете не было, а в жизни оно есть: пакет, чей манифест расходится с
+   содержимым. Красный здесь — не «ошибка приложения», а «в витрину такой пакет не пойдёт». */
+.vstat.sev { color: var(--danger-ink); }
+
+/* модалка поставки */
+.mrow { display: grid; grid-template-columns: 136px 1fr; gap: 10px 14px; font-size: 12.5px; }
+.mrow .k { color: var(--ink-3); font-family: var(--mono); font-size: 11.5px; }
+.mlist { display: flex; flex-direction: column; gap: 6px; }
+.mitem { display: grid; grid-template-columns: 18px 1fr; gap: 9px; font-size: 12.5px; color: var(--ink-2); }
+.mitem b { color: var(--ink); font-weight: 600; }
+.mbox { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--field);
+        padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.mbox.warn { border-color: var(--warn-line); background: var(--warn-bg); }
+.mbox.warn .lbl { color: var(--warn-ink); }
+
+/* таблица строк (журнал прогонов, связь в кабинете) */
+.rows { border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; background: var(--field); }
+.row { display: grid; gap: 12px; align-items: center; padding: 10px 13px;
+       border-top: 1px solid var(--line); font-size: 12.5px; }
+.row:first-child { border-top: 0; }
+.row.head { background: var(--panel); font: 600 10.5px/1 var(--mono); letter-spacing: .09em;
+            text-transform: uppercase; color: var(--ink-3); }
+.r5 { grid-template-columns: 1.6fr 1fr .8fr .7fr auto; }
+.r4 { grid-template-columns: 1.4fr 1fr .9fr auto; }
+.two { display: grid; grid-template-columns: 1.25fr .75fr; gap: 14px; align-items: start; }
+.meter { width: 44px; height: 5px; border-radius: 5px; background: var(--hover); overflow: hidden; }
+.meter span { display: block; height: 100%; background-image: var(--grad); }
+
+/* плитка числа — как в макетах: стекло, а не плоское поле; деньги и тревога подсвечивают само число */
+.kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.kpi { background-color: var(--panel); background-image: var(--panel-grad); box-shadow: var(--edge); }
+.kpi.alert b { color: var(--warn-ink); }
+.kpi.money b { color: var(--accent-ink); }
+
+/* Узко — раскладки складываются: четыре плитки в две, витрина в две колонки и в одну,
+   двухколоночный кабинет в одну, широкие строки в «главное + действие». */
+@media (max-width: 1080px) {
+  .market { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 900px) {
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .two { grid-template-columns: 1fr; }
+}
+@media (max-width: 760px) {
+  .market { grid-template-columns: 1fr; }
+  .r5, .r4 { grid-template-columns: 1fr auto; }
+  .row > :nth-child(n+2):not(:last-child) { display: none; }
+  .mrow { grid-template-columns: 1fr; gap: 4px 0; }
+}
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }

@@ -165,17 +165,17 @@ export async function mount(root, ctx) {
       Number(г["отложено"] || 0) ? `отложено: ${г["отложено"]}` : "",
     ].filter(Boolean).join(" · ");
     const свои = находки.filter((н) => String(н["код"] || "") === г["код"]);
-    return `<div style="${CARD};gap:8px">
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <span style="font-size:13.5px;font-weight:650">${esc(г["код"])}${г["название"] ? " · " + esc(г["название"]) : ""}</span>
-        <span style="${LBL};padding:2px 7px;border:1px solid var(--line);border-radius:999px">${esc(г["серьёзность"] || "")}</span>
+    return `<div class="card">
+      <div class="card-head">
+        <span class="tag${серьёзностьКласс(г["серьёзность"])}">${esc(г["серьёзность"] || "")}</span>
+        <span class="t">${esc(г["код"])}${г["название"] ? " · " + esc(г["название"]) : ""}</span>
       </div>
-      <div style="font-size:12px;color:var(--ink-2);font-family:var(--mono)">${esc(части)}</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <button data-gy="${esc(г["код"])}" style="${BTN_OK}" ${ждёт ? "disabled" : ""}>${icon("check")}Признать все</button>
-        <button data-gn="${esc(г["код"])}" style="${BTN_GHOST}" ${ждёт ? "disabled" : ""}>Это норма</button>
-        <button data-gp="${esc(г["код"])}" style="${BTN_GHOST}" ${ждёт ? "disabled" : ""}>${icon("clock")}Отложить</button>
-        <button data-gx="${esc(г["код"])}" style="${BTN}">${раскрыта ? "Свернуть" : "Раскрыть"}</button>
+      <div class="ev">${esc(части)}</div>
+      <div class="acts">
+        <button data-gy="${esc(г["код"])}" class="btn ok sm" ${ждёт ? "disabled" : ""}>${icon("check")}Признать все</button>
+        <button data-gn="${esc(г["код"])}" class="btn ghost sm" ${ждёт ? "disabled" : ""}>Это норма</button>
+        <button data-gp="${esc(г["код"])}" class="btn ghost sm" ${ждёт ? "disabled" : ""}>${icon("clock")}Отложить</button>
+        <button data-gx="${esc(г["код"])}" class="btn sm">${раскрыта ? "Свернуть" : "Раскрыть"}</button>
       </div>
       ${раскрыта ? `<div style="display:flex;flex-direction:column;gap:10px;padding-top:4px">${
         свои.map(находкаКарточка).join("") || `<span style="${LBL}">по этой причине нерешённых находок нет — все уже признаны или отложены</span>`}
@@ -183,7 +183,14 @@ export async function mount(root, ctx) {
     </div>`;
   }
 
-  function находкаКарточка(н) {
+  // Тяжесть находки — тон метки, а не свой цвет: «высокая» в группе и в карточке обязана
+  // выглядеть одинаково, иначе экран сам себе противоречит.
+  function серьёзностьКласс(с) {
+    const т = String(с || "").toLowerCase();
+    return т.startsWith("выс") ? " sev" : т.startsWith("сред") ? " mid" : "";
+  }
+
+  function находкаКарточка(н, верхняя) {
     const ждёт = busy === н.id;
     // Доказательство — главное на карточке: «работа заблокирована» без цитаты это мнение, а
     // решать человек должен по факту, а не по нашему слову.
@@ -204,8 +211,11 @@ export async function mount(root, ctx) {
       ? "к пересмотру: " + (String(н["почему_пересмотра"] || "") || "учётная политика изменилась")
       : "";
     return card({
+      // Карточка верха списка — та самая «.card.top» из макета: она требует человека сегодня.
+      "тон": верхняя ? "важное" : "",
       "что": н["код"] || "находка",
       "класс": н["серьёзность"] || "",
+      "класс_тон": серьёзностьКласс(н["серьёзность"]).trim(),
       "состояние": н["величина"] || "",
       "справа": [н["организация"], н["проект"], н["процесс"]].filter(Boolean).join(" · "),
       "суть": [н["предмет"] ? "предмет: " + н["предмет"] : "", н["название"] || "", способСтрокой]
@@ -213,15 +223,17 @@ export async function mount(root, ctx) {
       // «Почему это здесь» — первый вопрос руководителя к любому списку по важности. Разбор
       // считает сервер из объявленных весов, панель только показывает: придумывать объяснение
       // задним числом значило бы выдавать мнение за расчёт.
-      "происхождение": [(н["почему_наверху"] || []).length
-                          ? "почему это здесь: " + (н["почему_наверху"] || []).join(" · ") : "",
-                        доказательство, н["основание"] ? "основание: " + н["основание"] : "",
-                        пересмотр,
+      "почему_лид": верхняя ? "Почему это первым:" : "Почему это здесь:",
+      "почему": (н["почему_наверху"] || []).join(" · "),
+      // Доказательство — отдельной строкой моноширинным: из него сделан вывод, и человек решает
+      // по нему, а не по нашему пересказу.
+      "доказательство": доказательство,
+      "происхождение": [н["основание"] ? "основание: " + н["основание"] : "", пересмотр,
                         (н["чего_не_хватило"] || []).join(" · ")].filter(Boolean).join(" · "),
       "действия": [
-        `<button data-fy="${esc(н.id)}" style="${BTN_OK}" ${ждёт ? "disabled" : ""}>${icon("check")}Это проблема</button>`,
-        `<button data-fn="${esc(н.id)}" style="${BTN_GHOST}" ${ждёт ? "disabled" : ""}>Так и должно быть</button>`,
-        `<button data-fp="${esc(н.id)}" style="${BTN_GHOST}" ${ждёт ? "disabled" : ""}>${icon("clock")}Отложить</button>`,
+        `<button data-fy="${esc(н.id)}" class="btn ok sm" ${ждёт ? "disabled" : ""}>${icon("check")}Это проблема</button>`,
+        `<button data-fn="${esc(н.id)}" class="btn ghost sm" ${ждёт ? "disabled" : ""}>Так и должно быть</button>`,
+        `<button data-fp="${esc(н.id)}" class="btn ghost sm" ${ждёт ? "disabled" : ""}>${icon("clock")}Отложить</button>`,
       ],
     });
   }
@@ -366,10 +378,10 @@ export async function mount(root, ctx) {
     // спрашивают разрешение на внешнее действие. Второе слово говорит, ЧТО он подтверждает.
     const дa = команда ? "Подтвердить действие" : "Подтвердить отправку";
     const действия = [
-      `<button data-go="${esc(з.id)}" style="${BTN_OK}" ${ждёт ? "disabled" : ""}>${ждёт ? "…" : icon("shield") + дa}</button>`,
-      `<button data-open="${esc(з.id)}" style="${BTN}">${открыт === з.id ? "Свернуть" : "Показать целиком"}</button>`,
-      `<button data-no="${esc(з.id)}" style="${BTN_GHOST}" ${ждёт ? "disabled" : ""}>Оставить черновиком</button>`,
-      з["срок_истёк"] ? `<span style="${LBL};color:var(--warn-ink)">срок прошёл</span>` : "",
+      `<button data-go="${esc(з.id)}" class="btn ok" ${ждёт ? "disabled" : ""}>${ждёт ? "…" : icon("shield") + дa}</button>`,
+      `<button data-open="${esc(з.id)}" class="btn">${открыт === з.id ? "Свернуть" : "Показать целиком"}</button>`,
+      `<button data-no="${esc(з.id)}" class="btn ghost" ${ждёт ? "disabled" : ""}>Оставить черновиком</button>`,
+      з["срок_истёк"] ? `<span class="tag mid">срок прошёл</span>` : "",
     ];
     return card({
       "тон": "ждёт",
@@ -387,7 +399,7 @@ export async function mount(root, ctx) {
     if (!поля.length) return "";
     const всего = поля.reduce((н, д) => н + ((д["поля"] || []).length), 0);
     return `<div style="display:flex;flex-direction:column;gap:var(--gap-item)">
-      <h2 style="margin:0;font-size:17px;font-weight:700">Поля первички на проверку</h2>
+      <div class="h-screen"><h3>Поля первички на проверку</h3></div>
       ${origin(`Ждут человека: ${поля.length} ${поля.length === 1 ? "документ" : "документов"}, ` +
         `${всего} ${всего === 1 ? "поле" : "полей"}. Подтверждаются ПОЛЯ, а не документы: ` +
         "расчёт прочитал значение ниже порога, объявленного правилом типа, и показывает, чем он " +
@@ -406,12 +418,12 @@ export async function mount(root, ctx) {
     const показать = всеНаходки ? находки : верх;
     const ещё = находки.length - показать.length;
     return `<div style="display:flex;flex-direction:column;gap:10px">
-      <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
-        <h3 style="margin:0;font-size:15px;font-weight:700">Сегодня требует вас · ${показать.length}</h3>
-        ${порядок ? `<span style="${LBL}">порядок: расчёт · объяснение: расчёт</span>` : ""}
+      <div class="h-screen">
+        <h3 style="font-size:16px">Сегодня требует вас · ${показать.length}</h3>
+        ${порядок ? `<span class="tag ai">порядок: расчёт · объяснение: расчёт</span>` : ""}
       </div>
-      ${показать.map(находкаКарточка).join("")}
-      ${ещё > 0 ? `<button id="dAll" style="${BTN_GHOST};align-self:flex-start">Показать все ${находки.length}</button>` : ""}
+      ${показать.map((н, i) => находкаКарточка(н, !всеНаходки || i < ВЕРХ)).join("")}
+      ${ещё > 0 ? `<button id="dAll" class="btn ghost sm" style="align-self:flex-start">Показать все ${находки.length}</button>` : ""}
     </div>`;
   }
 
@@ -419,9 +431,9 @@ export async function mount(root, ctx) {
     if (!группы.length) return "";
     const закрытых = группы.reduce((н, г) => н + Number(г["находок"] || 0), 0);
     return `<div style="display:flex;flex-direction:column;gap:10px;margin-top:4px">
-      <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
-        <h3 style="margin:0;font-size:15px;font-weight:700">Можно закрыть пакетом · ${группы.length}</h3>
-        <span style="${LBL}">${закрытых} ${склонение(закрытых, "находка", "находки", "находок")}</span>
+      <div class="h-screen">
+        <h3 style="font-size:16px">Можно закрыть пакетом · ${группы.length}</h3>
+        <span class="tag">${закрытых} ${склонение(закрытых, "находка", "находки", "находок")}</span>
       </div>
       ${origin("Группа — это одна ПРИЧИНА, а не список похожих строк: решение по ней применяется ко всем её находкам сразу, и в журнал пишется каждая. Поштучный разбор остаётся за «Раскрыть».")}
       ${группы.map(группаСтрокой).join("")}
@@ -447,7 +459,7 @@ export async function mount(root, ctx) {
       </div>` : ""}
       ${q.map(карточка).join("")}
       ${находки.length || группы.length || ошибкаНаходок ? `<div style="display:flex;flex-direction:column;gap:4px;margin-top:6px">
-        <h2 style="margin:0;font-size:17px;font-weight:700">Что нашёл расчёт</h2>
+        <div class="h-screen"><h3>Что нашёл расчёт</h3></div>
         ${origin(порядок
           ? "Порядок считает расчёт по весам, объявленным методологом: деньги, срок, повторяемость, доля признания по похожим находкам. Модель здесь не участвует — у каждой находки написано, из чего сложился её приоритет."
           : (почемуБезПорядка || "Порядок важности не объявлен — находки идут по состоянию и тяжести."))}

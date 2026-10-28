@@ -75,12 +75,14 @@ export async function mount(root, ctx) {
 
   // Состояние пакета одним словом — тем же, что и в витрине приложений: «активна» значит, что
   // человек прямо сейчас видит её разделы, а не просто что она стоит.
+  // Состояние пакета словом и цветом. Класс — из темы (`.vstat`), а не цвет инлайном: в макете
+  // это один рецепт на четыре состояния, и подбирать оттенок в панели значит заводить пятый.
   function состояние(в) {
-    if (активна(в.id)) return { текст: "активна", цвет: "var(--ok-ink)" };
-    if (в["установлена"]) return { текст: "установлена", цвет: "var(--ink-3)" };
-    if (в["годен"]) return { текст: "годна к установке", цвет: "var(--warn-ink)" };
+    if (активна(в.id)) return { текст: "активна", класс: "" };
+    if (в["установлена"]) return { текст: "установлена", класс: "gray" };
+    if (в["годен"]) return { текст: "годна к установке", класс: "warn" };
     const нет = чегоНет(в);
-    return { текст: нет.length ? "не хватает в системе" : "пакет не сходится", цвет: "var(--danger-ink)" };
+    return { текст: нет.length ? "не хватает в системе" : "пакет не сходится", класс: "sev" };
   }
 
   // ── карточка витрины ─────────────────────────────────────────────────────────────────────
@@ -93,26 +95,27 @@ export async function mount(root, ctx) {
       в["бланк"] ? `бланк: ${в["бланк"]}` : "",
     ].filter(Boolean);
     const первая = чегоНет(в)[0] || (в["ошибки"] || [])[0] || "";
-    return `<article style="${CARD};gap:10px;min-width:0">
+    // Разметка карточки — из макета витрины: значок пакета, имя и автор, суть, метки, строка
+    // состояния и действия справа. Рецепты (`.vcard`, `.vstat`, `.meta`) живут в теме.
+    return `<article class="vcard${активна(в.id) ? " active" : ""}">
       <div style="display:flex;gap:11px;align-items:center;min-width:0">
-        <span style="width:38px;height:38px;flex:none;border-radius:11px;display:grid;place-items:center;background:var(--accent-bg);border:1px solid var(--line-2);color:var(--accent-ink)">${icon("abop", "lg")}</span>
-        <span style="min-width:0;display:flex;flex-direction:column;gap:2px">
-          <span style="font-size:15px;font-weight:700;letter-spacing:-.2px">${esc(в["название"] || в.id)}</span>
-          <span style="${LBL}">${esc(в["автор"] || "ABOP")} · ${(в["рецепты"] || []).length} ${
+        <span class="ico" style="color:var(--accent-ink)">${icon("abop", "lg")}</span>
+        <span style="min-width:0">
+          <span class="nm" style="display:block">${esc(в["название"] || в.id)}</span>
+          <span class="by">${esc(в["автор"] || "ABOP")} · ${(в["рецепты"] || []).length} ${
             (в["рецепты"] || []).length === 1 ? "рецепт" : "рецептов"}</span>
         </span>
       </div>
-      <div style="font-size:12.5px;color:var(--ink-2);line-height:1.5">${esc(String(в["описание"] || в["область"] || "").slice(0, 220))}</div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap">${метки.map((м) =>
-        `<span style="${TAG}">${esc(м)}</span>`).join("")}</div>
-      ${первая ? `<div style="font-size:11.5px;color:var(--warn-ink)">${esc(первая)}</div>` : ""}
-      <div style="display:flex;align-items:center;gap:8px;margin-top:2px;flex-wrap:wrap">
-        <span style="font:600 11px/1 var(--mono);color:${с.цвет}">● ${esc(с.текст)}</span>
-        <span style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
+      <p class="ds">${esc(String(в["описание"] || в["область"] || "").slice(0, 220))}</p>
+      <div class="meta">${метки.map((м) => `<span class="tag">${esc(м)}</span>`).join("")}
+        ${первая ? `<span class="tag mid">${esc(первая)}</span>` : ""}</div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:2px;flex-wrap:wrap">
+        <span class="vstat ${с.класс}">● ${esc(с.текст)}</span>
+        <span class="acts" style="margin-left:auto">
           ${в["установлена"] && !активна(в.id)
-            ? `<button data-act="${esc(в.id)}" style="${BTN_OK}">${icon("play")}Включить представление</button>` : ""}
-          ${активна(в.id) ? `<button data-act="-" style="${BTN_GHOST}">Вернуться в широкий режим</button>` : ""}
-          <button data-open="${esc(в.id)}" style="${в["годен"] && !в["установлена"] ? BTN_OK : BTN}">${
+            ? `<button class="btn ok sm" data-act="${esc(в.id)}">${icon("play")}Включить представление</button>` : ""}
+          ${активна(в.id) ? `<button class="btn ghost sm" data-act="-">Вернуться в широкий режим</button>` : ""}
+          <button class="btn sm${в["годен"] && !в["установлена"] ? " primary" : ""}" data-open="${esc(в.id)}">${
             в["установлена"] ? "Что в поставке" : "Посмотреть"}</button>
         </span>
       </div>
@@ -288,25 +291,25 @@ export async function mount(root, ctx) {
                "подпись": "Вертикаль — это пакет: процессы, правила, рецепты на ваши системы, бланк документа, экран и контракт автономии. Установка меняет и то, что видят люди, и то, что считает расчёт, — поэтому до кнопки показано и то, и другое. Установка и включение — разные шаги: поставленный пакет ничего не меняет на экране, пока вы не включите его представление (кнопка на карточке или переключатель в шапке приложения)." })}
       ${ошибка ? `<div style="font-size:12.5px;color:var(--danger-ink)">${esc(ошибка)}</div>` : ""}
       ${loading && !данные ? `<div style="${LBL}">читаю каталог…</div>` : ""}
-      ${активная.id ? `<div style="${CARD};gap:6px;border-color:var(--ok-line)">
-        <span style="${LBL}">активное представление</span>
-        <div style="font-size:13px;font-weight:600">${esc(String(активная["название"] || активная.id))}</div>
-        <div style="font-size:12px;color:var(--ink-2)">Разделы: ${
-          esc((активная["разделы"] || []).join(", "))}${активная["начальный_экран"]
-            ? ` · начальный экран: ${esc(String(активная["начальный_экран"]))}` : ""}</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
-          <button data-act="-" style="${BTN}">Вернуться в широкий режим</button>
+      ${активная.id ? `<div class="card calm" style="border-color:var(--ok-line)">
+        <div class="card-head">
+          <span class="lbl">активное представление</span>
+          <span class="t">${esc(String(активная["название"] || активная.id))}</span>
+          <span class="tag ok right">включено</span>
         </div>
+        <div class="why">Разделы: ${esc((активная["разделы"] || []).join(", "))}${
+          активная["начальный_экран"]
+            ? ` · начальный экран: ${esc(String(активная["начальный_экран"]))}` : ""}</div>
+        <div class="acts"><button class="btn sm" data-act="-">Вернуться в широкий режим</button></div>
         ${origin("Широкий режим — это выбор, а не состояние «не настроено»: в нём доступны все разделы и агенты всех семей.")}
-      </div>` : `<div style="${CARD};gap:6px">
-        <span style="${LBL}">активное представление</span>
-        <div style="font-size:13px">Широкий режим: доступны все разделы.</div>
+      </div>` : `<div class="card calm">
+        <div class="card-head"><span class="lbl">активное представление</span>
+          <span class="t">Широкий режим: доступны все разделы</span></div>
         ${origin("Узкое представление показывает человеку только то, что нужно его работе, и называет вещи его словами.")}
       </div>`}
       ${отчётHTML()}
       ${базаHTML()}
-      ${список.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px">
-        ${список.map(карточка).join("")}</div>` : ""}
+      ${список.length ? `<div class="market">${список.map(карточка).join("")}</div>` : ""}
       ${!loading && !ошибка && !список.length ? `<div style="${CARD};gap:8px">
         <span style="${LBL}">пусто</span>
         <div style="font-size:13px">В поставке нет ни одного пакета вертикали.</div>
