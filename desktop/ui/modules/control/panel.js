@@ -172,7 +172,7 @@ export async function mount(root, ctx) {
   function render() {
     const d = данные || {};
     const окна = [7, 14, 30].map((n) => `<button data-days="${n}" style="${BTN}${n === дней ? ";border-color:var(--line-2);font-weight:650" : ""}">${n} дн.</button>`).join("");
-    root.innerHTML = `<div style="display:flex;flex-direction:column;gap:var(--gap-group);max-width:980px;padding:24px 26px;overflow:auto">
+    root.innerHTML = `<div style="display:flex;flex-direction:column;gap:var(--gap-group);max-width:980px;margin:0 auto;padding:24px 26px;overflow:auto">
       ${head({ "глаз": "лента контроля", "что": "Что происходит в отделе",
                "подпись": d["подпись"] || "" })}
       <div style="display:flex;gap:7px;align-items:center">${окна}

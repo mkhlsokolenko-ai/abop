@@ -46,7 +46,7 @@ async function analyzeShortcut() {
 
 export async function mount(root, ctx) {
   const { api, toast, humanError } = ctx;
-  root.innerHTML = `<div style="flex:1;padding:30px;display:flex;flex-direction:column;gap:12px;max-width:760px"><div class="skeleton" style="height:28px;width:40%"></div><div class="skeleton" style="height:14px;width:70%"></div><div class="skeleton" style="height:120px"></div></div>`;
+  root.innerHTML = `<div style="flex:1;min-width:0;overflow-y:auto;padding:30px;display:flex;flex-direction:column;gap:12px;max-width:760px;margin:0 auto"><div class="skeleton" style="height:28px;width:40%"></div><div class="skeleton" style="height:14px;width:70%"></div><div class="skeleton" style="height:120px"></div></div>`;
   // Раньше все пять запросов глушились, и при недоступном ABOP кабинет выглядел рабочим:
   // отдел «—», уровень «—», источников 0. Теперь сбой виден, и есть чем его повторить.
   let loadError = "";
@@ -83,7 +83,7 @@ export async function mount(root, ctx) {
       <span style="color:var(--ink-3)">${esc(g.about || "")}</span>
     </div>`).join("");
   if (loadError && !(u && u.ok)) {
-    root.innerHTML = `<div style="flex:1;padding:30px;display:flex;flex-direction:column;gap:10px;max-width:560px">
+    root.innerHTML = `<div style="flex:1;min-width:0;overflow-y:auto;padding:30px;display:flex;flex-direction:column;gap:10px;max-width:560px;margin:0 auto">
       <div style="font-size:16px;font-weight:700">Кабинет не загрузился</div>
       <div style="font-size:12.5px;color:var(--ink-2);line-height:1.6">${esc(loadError)}</div>
       <button class="btn" id="cabRetry" style="align-self:flex-start;margin-top:6px">Повторить</button></div>`;

@@ -285,7 +285,8 @@ export async function mount(root, ctx) {
     const список = (данные || {}).вертикали || [];
     const активная = (данные || {}).активная || {};
     const поставлено = список.filter((в) => в["установлена"]).length;
-    root.innerHTML = `<div style="display:flex;flex-direction:column;gap:var(--gap-group);max-width:1040px">
+    root.innerHTML = `<div style="flex:1;min-width:0;overflow-y:auto;padding:22px 24px 30px">
+      <div style="max-width:1120px;margin:0 auto;display:flex;flex-direction:column;gap:var(--gap-group);animation:ape-in .3s ease-out">
       ${head({ "глаз": "поставка", "что": "Вертикали",
                "метки": [`установлено: ${поставлено}`, `доступно: ${список.length}`],
                "подпись": "Вертикаль — это пакет: процессы, правила, рецепты на ваши системы, бланк документа, экран и контракт автономии. Установка меняет и то, что видят люди, и то, что считает расчёт, — поэтому до кнопки показано и то, и другое. Установка и включение — разные шаги: поставленный пакет ничего не меняет на экране, пока вы не включите его представление (кнопка на карточке или переключатель в шапке приложения)." })}
@@ -315,7 +316,7 @@ export async function mount(root, ctx) {
         <div style="font-size:13px">В поставке нет ни одного пакета вертикали.</div>
         ${origin("Это отсутствие поставки, а не ошибка: широкий режим работает и без вертикалей.")}
       </div>` : ""}
-    </div>`;
+    </div></div>`;
     root.querySelectorAll("[data-open]").forEach((b) => b.onclick = () => окноПакета(b.dataset.open));
     root.querySelectorAll("[data-act]").forEach((b) => b.onclick = () =>
       действие(b.dataset.act, "activate", b.dataset.act === "-" ? "Широкий режим" : "Переключение"));

@@ -445,7 +445,8 @@ export async function mount(root, ctx) {
 
   function render() {
     const q = (данные || {})["queue"] || [];
-    root.innerHTML = `<div style="display:flex;flex-direction:column;gap:var(--gap-group);max-width:860px">
+    root.innerHTML = `<div style="flex:1;min-width:0;overflow-y:auto;padding:22px 24px 30px">
+      <div style="max-width:880px;margin:0 auto;display:flex;flex-direction:column;gap:var(--gap-group);animation:ape-in .3s ease-out">
       ${head({ "глаз": "решения", "что": "Что ждёт вашего решения",
                "подпись": "Решает тот, в чьи обязанности это входит: У2 — исполнитель прогона, У3 — владелец операции в карте процессов. Руководитель здесь не нажимает кнопки за других." })}
       ${плитки()}
@@ -471,7 +472,7 @@ export async function mount(root, ctx) {
       ${разделГрупп()}
       ${разделПолей()}
       ${польза()}
-    </div>`;
+    </div></div>`;
     // Правка живёт в памяти раздела, а не в DOM: перерисовка карточек не должна терять то, что
     // человек уже набрал в соседнем поле.
     root.querySelectorAll("[data-field]").forEach((вход) => {
