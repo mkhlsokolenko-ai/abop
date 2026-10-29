@@ -174,6 +174,22 @@ def modules() -> list[dict]:
     return свои
 
 
+def _код_отказа(ex: Exception) -> int:
+    """Код отказа платформы, а не «502» на всё подряд.
+
+    `AbopError` держит статус в `.status`, а здесь читали `.code` — его у неё нет, и наружу всегда
+    уходило 502. Для панели это значило, что «нет прав» и «сервер недоступен» выглядят одинаково:
+    человек шёл чинить сеть там, где не хватало доступа. Поймано 29.10.2026 на живом вызове.
+
+    `.code` оставляем вторым: так называет статус `urllib.error.HTTPError`, и он тоже сюда долетает.
+    """
+    for имя in ("status", "code", "status_code"):
+        код = int(getattr(ex, имя, 0) or 0)
+        if 400 <= код < 600:
+            return код
+    return 502
+
+
 @app.get("/api/panel-data/{path:path}")
 def panel_data(path: str) -> dict:
     """Чтение данных платформы для панели вертикали (только GET, только белый список путей)."""
@@ -181,8 +197,7 @@ def panel_data(path: str) -> dict:
     try:
         return {"ok": True, "data": abop.panel_read(path)}
     except Exception as ex:  # noqa: BLE001
-        код = int(getattr(ex, "code", 0) or 0)
-        raise HTTPException(код if 400 <= код < 600 else 502, str(ex)[:400]) from ex
+        raise HTTPException(_код_отказа(ex), str(ex)[:400]) from ex
 
 
 @app.post("/api/panel-action/{path:path}")
@@ -197,8 +212,7 @@ def panel_action(path: str, тело: dict | None = None) -> dict:
     try:
         return {"ok": True, "data": abop.panel_action(path, тело or {})}
     except Exception as ex:  # noqa: BLE001
-        код = int(getattr(ex, "code", 0) or 0)
-        raise HTTPException(код if 400 <= код < 600 else 502, str(ex)[:400]) from ex
+        raise HTTPException(_код_отказа(ex), str(ex)[:400]) from ex
 
 
 @app.get("/api/auth/me")
@@ -379,8 +393,7 @@ def vertical_switch(body: dict | None = None) -> dict:
     try:
         return abop.vertical_activate(str((body or {}).get("id") or ""))
     except Exception as ex:  # noqa: BLE001
-        код = int(getattr(ex, "code", 0) or 0)
-        raise HTTPException(код if 400 <= код < 600 else 502, str(ex)[:400]) from ex
+        raise HTTPException(_код_отказа(ex), str(ex)[:400]) from ex
 
 
 # UI десктопа с 127.0.0.1/ui (один origin с /api/* → без PNA). Каталог наполняется в startup (_sync_ui).
