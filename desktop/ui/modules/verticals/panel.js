@@ -97,6 +97,9 @@ export async function mount(root, ctx) {
     const первая = чегоНет(в)[0] || (в["ошибки"] || [])[0] || "";
     // Разметка карточки — из макета витрины: значок пакета, имя и автор, суть, метки, строка
     // состояния и действия справа. Рецепты (`.vcard`, `.vstat`, `.meta`) живут в теме.
+    // Описание обрезает ТЕМА (`.ds` — четыре строки с настоящим многоточием), а не код:
+    // `slice(0, 220)` обрывал слово («…из экспертного справочник»), не ставил многоточия и не
+    // оставлял способа дочитать. Целиком описание показывает окно пакета.
     return `<article class="vcard${активна(в.id) ? " active" : ""}">
       <div style="display:flex;gap:11px;align-items:center;min-width:0">
         <span class="ico" style="color:var(--accent-ink)">${icon("abop", "lg")}</span>
@@ -106,7 +109,7 @@ export async function mount(root, ctx) {
             (в["рецепты"] || []).length === 1 ? "рецепт" : "рецептов"}</span>
         </span>
       </div>
-      <p class="ds">${esc(String(в["описание"] || в["область"] || "").slice(0, 220))}</p>
+      <p class="ds">${esc(String(в["описание"] || в["область"] || ""))}</p>
       <div class="meta">${метки.map((м) => `<span class="tag">${esc(м)}</span>`).join("")}
         ${первая ? `<span class="tag mid">${esc(первая)}</span>` : ""}</div>
       <div style="display:flex;align-items:center;gap:10px;margin-top:2px;flex-wrap:wrap">
@@ -199,7 +202,11 @@ export async function mount(root, ctx) {
     const в = пакет(vid); if (!в) return;
     вкладка = "состав";
     const вкладки = [["состав", "Что в поставке"], ["влияние", "На что влияет"], ["нужно", "Что нужно"]];
+    // Описание целиком — здесь: на карточке оно обрезано рамкой, и дочитать его больше негде.
+    const описание = String(в["описание"] || в["область"] || "").trim();
     const тело = () => `<div style="display:flex;flex-direction:column;gap:12px">
+      ${описание ? `<p style="margin:0;font-size:12.5px;line-height:1.55;color:var(--ink-2)">${
+        esc(описание)}</p>` : ""}
       <div style="display:flex;gap:6px;flex-wrap:wrap">${вкладки.map(([id, т]) =>
         `<button data-tab="${id}" class="chip${вкладка === id ? " on" : ""}">${esc(т)}</button>`).join("")}</div>
       <div id="vBody">${вкладка === "состав" ? составHTML(в)
@@ -281,6 +288,15 @@ export async function mount(root, ctx) {
     </div>`;
   }
 
+  // «Разделы:» и пустота после двоеточия — это не «разделов нет», а «вертикаль их не
+  // перечислила», и тогда доступны ВСЕ (см. `разделыПрофиля` в ядре: пустой список = не
+  // фильтруем). Молчание здесь читалось как поломка поставки.
+  function разделыСтрока(активная) {
+    const список = (активная["разделы"] || []).filter(Boolean);
+    if (список.length) return `Разделы: ${esc(список.join(", "))}`;
+    return "Разделы: вертикаль не перечислила свои — значит доступны все разделы приложения";
+  }
+
   function render() {
     const список = (данные || {}).вертикали || [];
     const активная = (данные || {}).активная || {};
@@ -298,7 +314,7 @@ export async function mount(root, ctx) {
           <span class="t">${esc(String(активная["название"] || активная.id))}</span>
           <span class="tag ok right">включено</span>
         </div>
-        <div class="why">Разделы: ${esc((активная["разделы"] || []).join(", "))}${
+        <div class="why">${разделыСтрока(активная)}${
           активная["начальный_экран"]
             ? ` · начальный экран: ${esc(String(активная["начальный_экран"]))}` : ""}</div>
         <div class="acts"><button class="btn sm" data-act="-">Вернуться в широкий режим</button></div>
