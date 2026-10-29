@@ -33,6 +33,12 @@ export async function mount(root, ctx) {
   // Третий поток раздела: поля первички ниже порога. Вопрос человеку здесь третий и по смыслу:
   // не «отправить ли» и не «проблема ли это», а «что в документе на самом деле».
   let поля = [], первичка = {}, ошибкаПолей = "", правки = {};
+  // Разрез: чья это работа. Реестр держит находки ВСЕХ прогонов и всех организаций — это
+  // сознательно (одна проблема — одна запись, а не новая в каждом прогоне). Но показывать их
+  // кучей нельзя: у расчётчика четыреста фирм, и «что требует меня» без разреза не читается.
+  // Выбор живёт в разметке раздела, как и в «Сверке»: раздел не владеет маршрутом.
+  let организация = root.dataset.org || "", процесс = root.dataset.proc || "";
+  let разрезы = {};
 
   async function load() {
     loading = true; render();
@@ -44,8 +50,12 @@ export async function mount(root, ctx) {
       if (typeof setHitlCount === "function") setHitlCount((данные["queue"] || []).length);
     } catch (e) { err = humanError(e); данные = null; }
     try {
-      const р = await api(M + "/findings");
+      const фильтр = [];
+      if (организация) фильтр.push("organisation=" + encodeURIComponent(организация));
+      if (процесс) фильтр.push("process=" + encodeURIComponent(процесс));
+      const р = await api(M + "/findings" + (фильтр.length ? "?" + фильтр.join("&") : ""));
       находки = р.findings || []; сводка = р["сводка"] || {}; ошибкаНаходок = "";
+      разрезы = р["разрезы"] || {};
       группы = р["группы"] || [];
       порядок = String(р["порядок"] || "");
       почемуБезПорядка = String(р["почему_без_порядка"] || "");
@@ -121,6 +131,28 @@ export async function mount(root, ctx) {
   // Идентификаторы группы берём с СЕРВЕРА (он собрал группу), а не пересобираем на экране:
   // пересборка по коду промахнулась бы мимо находок, которых нет в текущем фильтре.
   const идыГруппы = (код) => ((группы.find((г) => String(г["код"]) === String(код)) || {})["ids"] || []);
+
+  // Разрез раздела: чья это работа. Реестр держит находки всех прогонов — и это задумано: одна
+  // проблема одна запись, иначе каждый прогон плодил бы дубли. Но показывать их кучей нельзя:
+  // у расчётчика сотни фирм. Чипы считаются по ВСЕМУ реестру, поэтому, сузив экран до одной
+  // организации, человек не теряет способ переключиться на другую.
+  function разрезыHTML() {
+    const орг = разрезы["организации"] || [];
+    const проц = разрезы["процессы"] || [];
+    if (орг.length < 2 && проц.length < 2) return "";
+    const чип = (имя, подпись, число, активен, поле) =>
+      `<button type="button" class="chip${активен ? " on" : ""}" data-cut="${esc(поле)}" data-val="${esc(имя)}">${
+        esc(подпись)}${число == null ? "" : " · " + число}</button>`;
+    const всего = Number(разрезы["открытых_всего"] || 0);
+    const безОрг = Number(разрезы["без_организации"] || 0);
+    return `<div class="filters">
+      ${орг.length >= 2 ? чип("", "все фирмы", всего, !организация, "org") : ""}
+      ${орг.map((о) => чип(о["имя"], о["имя"], о["открытых"], организация === о["имя"], "org")).join("")}
+      ${проц.length >= 2 ? `<span style="width:10px"></span>` + проц.map((п) =>
+        чип(п["имя"], п["имя"], п["открытых"], процесс === п["имя"], "proc")).join("") : ""}
+      ${безОрг ? `<span class="origin">без организации: ${безОрг}</span>` : ""}
+    </div>`;
+  }
 
   function плитки() {
     const заявок = ((данные || {})["queue"] || []).length;
@@ -449,6 +481,7 @@ export async function mount(root, ctx) {
       <div style="max-width:880px;margin:0 auto;display:flex;flex-direction:column;gap:var(--gap-group);animation:ape-in .3s ease-out">
       ${head({ "глаз": "решения", "что": "Что ждёт вашего решения",
                "подпись": "Решает тот, в чьи обязанности это входит: У2 — исполнитель прогона, У3 — владелец операции в карте процессов. Руководитель здесь не нажимает кнопки за других." })}
+      ${разрезыHTML()}
       ${плитки()}
       ${err ? `<div style="font-size:12.5px;color:var(--danger-ink)">${esc(err)}</div>` : ""}
       ${loading && !данные ? `<div style="${LBL}">читаю очередь…</div>` : ""}
@@ -483,6 +516,12 @@ export async function mount(root, ctx) {
         правки[документ][поле] = вход.value;
       };
     });
+    root.querySelectorAll("[data-cut]").forEach((b) => b.onclick = () => {
+      if (b.dataset.cut === "org") { организация = b.dataset.val || ""; root.dataset.org = организация; }
+      else { процесс = b.dataset.val || ""; root.dataset.proc = процесс; }
+      всеНаходки = false; раскрытаГруппа = "";
+      load();
+    });
     root.querySelectorAll("[data-fc]").forEach((b) => b.onclick = () => подтвердитьПоля(b.dataset.fc));
     root.querySelectorAll("[data-open]").forEach((b) => b.onclick = () => раскрыть(b.dataset.open));
     root.querySelectorAll("[data-go]").forEach((b) => b.onclick = () => решить(b.dataset.go, "approve"));
@@ -498,6 +537,18 @@ export async function mount(root, ctx) {
     if (root.querySelector("#dAll")) root.querySelector("#dAll").onclick = () => { всеНаходки = true; render(); };
     root.querySelectorAll("[data-fn]").forEach((b) => b.onclick = () => решитьНаходку(b.dataset.fn, "отклонено"));
   }
+
+  // Переход из «Сверки»: там выбрана фирма, и терять этот выбор при переходе нельзя — человек
+  // шёл решать вопросы ИМЕННО по ней.
+  const намерение = ctx.takeIntent ? ctx.takeIntent() : null;
+  if (намерение && намерение["организация"]) {
+    организация = String(намерение["организация"]);
+    root.dataset.org = организация;
+  }
+  root.addEventListener("ape:intent", (e) => {
+    const о = e.detail && e.detail["организация"];
+    if (о) { организация = String(о); root.dataset.org = организация; load(); }
+  });
 
   render();
   await load();
