@@ -759,3 +759,8 @@ button:disabled { cursor: default; }
 .gate-prev th,.gate-prev td{border:1px solid var(--line);padding:4px 7px;text-align:left}
 .gate-prev h1,.gate-prev h2,.gate-prev h3{font-size:13.5px;margin:10px 0 4px}
 .gate-prev a{color:var(--accent-ink)}
+/* Вместе с чужими стилями уходит и чужая раскладка: пара «подпись + значение» слипалась в
+   «Карточек проверено51». Разделяем её САМИ — на структуре (подпись внутри значения), а не на
+   именах классов конкретного отчёта: имена у каждого агента свои, промежуток нужен всем. */
+.gate-prev i{font-style:normal;color:var(--ink-3)}
+.gate-prev span:has(> i){display:inline-flex;align-items:baseline;gap:7px;margin-right:18px}
