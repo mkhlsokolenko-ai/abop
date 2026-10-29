@@ -163,10 +163,13 @@ export function apeGate(action) {
   // должно: значения приходят из письма и из команды в систему, и они экранируются. Разметка,
   // положенная в значение, напечаталась бы тегом (так и случилось 27.10.2026 с каналом «yandex»).
   const rows = (a.fields || []).map((f) => `<div style="display:flex;gap:10px;font-size:13px;margin-bottom:6px;align-items:baseline"><span class="faint" style="width:110px;flex:none">${esc(f[0])}</span><span style="min-width:0;overflow-wrap:anywhere;display:flex;align-items:center;gap:6px">${f[2] ? icon(String(f[2])) : ""}${esc(f[1])}</span></div>`).join("");
+  // Предпросмотр чистим ЗДЕСЬ, а не надеемся на вызывающего: html приходит из отчёта агента,
+  // то есть снаружи, и источников вызова у окна много. Сервер отдаёт уже тело документа — это
+  // второй слой, не замена первому.
   return new Promise((resolve) => {
     modal(a.title || "Подтверждение действия",
       `${rows}${a.body ? `<div style="background:var(--field);border:1px solid var(--line);border-radius:11px;padding:11px 13px;font-size:12.5px;line-height:1.5;margin:8px 0;white-space:pre-wrap;max-height:40vh;overflow:auto">${esc(a.body)}</div>` : ""}
-       ${a.html ? `<div style="background:var(--field);border:1px solid var(--line);border-radius:11px;padding:11px 13px;font-size:12.5px;line-height:1.5;margin:8px 0;max-height:40vh;overflow:auto">${a.html}</div>` : ""}
+       ${a.html ? `<div class="gate-prev">${sanitizeHtml(a.html)}</div>` : ""}
        <div class="faint" style="font-size:11.5px;margin:6px 0 2px">${esc(a.note || "Наружу ничего не уйдёт без вашего решения.")}</div>`,
       () => { resolve(true); }, a.allowLabel || "Разрешить",
       { kicker: a.kicker || "Требуется подтверждение · governance", cancelLabel: a.denyLabel || "Отклонить",
@@ -254,11 +257,21 @@ export function toast(msg, kind = "", opts = {}) {
 // Один санитайзер на приложение. Их было два: строгий в чате и слабее в прогонах — последний
 // пропускал обработчики в одинарных кавычках (onclick='…'). Один и тот же HTML отчёта с сервера
 // очищался по-разному, и слабый рано или поздно стал бы дырой.
+// НЕЗАКРЫТЫЙ `<style>` вырезаем до конца строки. Иначе — случай 29.10.2026: сервер отдал отчёт,
+// обрезанный посреди стилей, закрывающего тега не нашлось, санитайзер не убрал ничего, и браузер
+// счёл стилями весь остаток документа. Предпросмотр стал пустым, а светлая тема отчёта растеклась
+// по тёмному приложению: «сливается с фоном по шрифтам, что подтверждать не раскрывается».
+// Голову документа убираем тоже: в окне показывают содержание, а не целый html-файл.
 export function sanitizeHtml(html) {
   return String(html || "")
     .replace(/<script[\s\S]*?<\/script>/gi, "")
     .replace(/<style[\s\S]*?<\/style>/gi, "")
     .replace(/<iframe[\s\S]*?<\/iframe>/gi, "")
+    .replace(/<(?:script|style|iframe)\b[\s\S]*$/i, "")
+    .replace(/<!DOCTYPE[^>]*>/gi, "")
+    .replace(/<title\b[^>]*>[\s\S]*?<\/title\s*>/gi, "")
+    .replace(/<\/?(?:html|head|body)\b[^>]*>/gi, "")
+    .replace(/<(?:meta|link|base)\b[^>]*>/gi, "")
     .replace(/\son\w+\s*=\s*"[^"]*"/gi, "")
     .replace(/\son\w+\s*=\s*'[^']*'/gi, "")
     .replace(/\son\w+\s*=\s*[^\s>]+/gi, "")

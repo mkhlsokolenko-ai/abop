@@ -10,6 +10,8 @@
 """
 from __future__ import annotations
 
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from fastapi.responses import JSONResponse
@@ -107,6 +109,49 @@ async def hitl_queue(u: dict = Depends(user), mine: str = "") -> dict:
     return {"queue": видно, "всего": len(видно)}
 
 
+# ── предпросмотр содержимого заявки ─────────────────────────────────────────────────────────
+#
+# Отчёт агента — целый HTML-документ со своим оформлением. Отдавать его наружу как есть нельзя
+# по двум причинам, и вторая дороже первой:
+#
+# 1. документ длинный, и резать его по длине значит резать посреди тега;
+# 2. его `<style>` — ЧУЖОЙ для приложения: попав в окно подтверждения, он переписывает шрифты и
+#    цвета всего экрана. Именно это и случилось 29.10.2026 — разрез пришёлся внутрь `<style>`,
+#    закрывающего тега не осталось, браузер счёл стилями весь остаток: предпросмотр стал пустым,
+#    а приложение серым («сливается с фоном по шрифтам, что подтверждать не раскрывается»).
+#
+# Поэтому наружу уходит ТЕЛО документа без головы, стилей и скриптов: подтверждают содержание,
+# а не вёрстку. Если тело пришлось укоротить — об этом сказано полем, а не молчанием.
+
+_ПРЕДЕЛ_ПРЕДПРОСМОТРА = 20000
+
+
+def _тело_документа(html: str):
+    """Тело html-документа без головы, стилей и скриптов. Возвращает (тело, обрезано ли)."""
+    текст = str(html or "")
+    if not текст.strip():
+        return "", False
+    # Скрипты и стили убираем ВМЕСТЕ с незакрытыми: обрывок «<style> без конца» опаснее целого.
+    for тег in ("script", "style"):
+        текст = re.sub(r"<%s\b[\s\S]*?</%s\s*>" % (тег, тег), "", текст, flags=re.I)
+        текст = re.sub(r"<%s\b[\s\S]*$" % тег, "", текст, flags=re.I)
+    тело = re.search(r"<body[^>]*>([\s\S]*?)</body\s*>", текст, flags=re.I)
+    if тело:
+        текст = тело.group(1)
+    else:
+        текст = re.sub(r"<!DOCTYPE[^>]*>", "", текст, flags=re.I)
+        текст = re.sub(r"</?(?:html|head|body)\b[^>]*>", "", текст, flags=re.I)
+        текст = re.sub(r"<title\b[^>]*>[\s\S]*?</title\s*>", "", текст, flags=re.I)
+        текст = re.sub(r"<(?:meta|link|base)\b[^>]*>", "", текст, flags=re.I)
+    текст = текст.strip()
+    if len(текст) <= _ПРЕДЕЛ_ПРЕДПРОСМОТРА:
+        return текст, False
+    # Режем по границе тега, а не по счётчику байт: обрывок разметки — это снова незакрытый тег.
+    кусок = текст[:_ПРЕДЕЛ_ПРЕДПРОСМОТРА]
+    граница = кусок.rfind("><")
+    return (кусок[:граница + 1] if граница > 0 else кусок), True
+
+
 @router.get("/api/hitl/{item_id}")
 async def hitl_item(item_id: str, u: dict = Depends(user)) -> dict:
     """Одна HITL-заявка с содержимым доставки (html/cfg) — превью перед подтверждением
@@ -127,7 +172,7 @@ async def hitl_item(item_id: str, u: dict = Depends(user)) -> dict:
         for _k in ("description", "body", "text", "content", "comment", "message", "html"):
             _v = cp.get(_k)
             if isinstance(_v, str) and _v.strip():
-                _body = _v[:20000]
+                _body = _тело_документа(_v)[0]
                 break
         for _k, _v in cp.items():
             if _k in ("description", "body", "text", "content", "comment", "message", "html"):
@@ -135,12 +180,16 @@ async def hitl_item(item_id: str, u: dict = Depends(user)) -> dict:
             if isinstance(_v, (str, int, float, bool)) and str(_v).strip():
                 _fields.append([_k, str(_v)[:300]])
         _fields = _fields[:12]
+    _предпросмотр = _тело_документа(payload.get("html") or "")
     return {"body": _body, "command_fields": _fields,
             "id": item.get("id"), "state": item.get("state"), "agent_id": item.get("agent_id"),
             "agent_name": payload.get("agent_name"), "title": item.get("title"), "channel": item.get("channel"),
             "to": item.get("to_addr"), "format": cfg.get("format") or ("command" if cp else None),
             "subject": cfg.get("subject") or cfg.get("title") or cp.get("subject") or cp.get("title"),
-            "html": (payload.get("html") or "")[:20000], "created_at": item.get("created_at"),
+            "html": _предпросмотр[0], "html_обрезан": _предпросмотр[1],
+            "html_почему": ("показано начало документа — он длиннее предела предпросмотра"
+                            if _предпросмотр[1] else ""),
+            "created_at": item.get("created_at"),
             "requested_by": item.get("requested_by"),
             "kind": payload.get("kind") or "report", "system": payload.get("system"), "type": payload.get("type"),
             "command_id": payload.get("command_id"), "result_state": payload.get("result_state"),

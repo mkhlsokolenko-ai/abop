@@ -747,3 +747,15 @@ button:disabled { cursor: default; }
 }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+
+/* Рамка предпросмотра в окне подтверждения. Внутри — разметка ЧУЖОГО документа (отчёт агента),
+   поэтому цвет, фон и шрифт задаёт рамка, а не то, что принесли: иначе светлая тема отчёта
+   читается на тёмном фоне приложения как пустое место (29.10.2026). */
+.gate-prev{background:var(--field);border:1px solid var(--line);border-radius:11px;
+  padding:11px 13px;font-size:12.5px;line-height:1.5;font-family:inherit;color:var(--ink);
+  margin:8px 0;max-height:40vh;overflow:auto;overflow-wrap:anywhere}
+.gate-prev *{color:inherit;background:transparent;font-family:inherit;max-width:100%}
+.gate-prev table{border-collapse:collapse;width:100%}
+.gate-prev th,.gate-prev td{border:1px solid var(--line);padding:4px 7px;text-align:left}
+.gate-prev h1,.gate-prev h2,.gate-prev h3{font-size:13.5px;margin:10px 0 4px}
+.gate-prev a{color:var(--accent-ink)}

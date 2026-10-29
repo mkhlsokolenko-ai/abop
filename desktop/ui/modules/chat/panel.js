@@ -1138,6 +1138,9 @@ export async function mount(root, ctx) {
     }
     if (it.subject) fields.push(["Тема", it.subject]);
     if (it.format && it.kind !== "command") fields.push(["Формат", it.format]);
+    // Укороченный предпросмотр ОБЪЯВЛЕН. Молчание читалось бы как «это всё письмо», и человек
+    // подтверждал бы то, чего не видел целиком.
+    if (it.html_обрезан) fields.push(["Предпросмотр", it.html_почему || "показано начало документа"]);
     const ok = await ctx.gate({ title: it.title || "Внешнее действие", kicker: "требуется ваше решение", fields, html: it.html ? sanitize(it.html) : "", body: it.html ? "" : (it.body || "Содержимое не приложено."), allowLabel: "Подтвердить", denyLabel: "Отклонить", note: it.kind === "command" ? "Действие выполнится в вашей системе. Ссылка на созданный объект вернётся в карточку прогона." : "Отправится только после вашего подтверждения. Персональные данные замаскированы." });
     let reason = "";
     if (!ok) {

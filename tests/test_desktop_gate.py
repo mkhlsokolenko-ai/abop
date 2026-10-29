@@ -19,7 +19,12 @@
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
+
+import pytest
 
 КОРЕНЬ = Path(__file__).resolve().parents[1]
 ЯДРО = (КОРЕНЬ / "desktop" / "ui" / "core" / "app.js").read_text(encoding="utf-8")
@@ -92,3 +97,96 @@ def test_переход_между_арендаторами_в_одном_мес
     assert "перейтиКАрендатору(куда, ov)" in ЖИВОЕ_ЯДРО, "окно подробностей не зовёт общую функцию"
     assert ЖИВОЕ_ЯДРО.count("api(\"/api/auth/tenant\"") == 1, (
         "переход выполняется в двух местах — они разойдутся")
+
+
+# ── 4. предпросмотр содержимого (29.10.2026) ─────────────────────────────────────────────────────
+#
+# Владелец с живого десктопа: «модальное окно сливается с фоном по шрифтам, что подтверждать не
+# раскрывается». Причина была в трёх местах сразу, и каждое по отдельности прятало поломку:
+# сервер отдавал отчёт, обрезанный посреди `<style>`; санитайзер искал закрывающий тег и, не найдя
+# его, не убирал ничего; окно вставляло полученное СЫРЫМ. Браузер счёл стилями весь остаток
+# документа — предпросмотр опустел, а светлая тема отчёта перекрасила тёмное приложение.
+#
+# Серверную половину держит tests/test_hitl_preview.py; здесь — клиентская.
+
+def _санитайзер(код: str) -> str:
+    """Поведение настоящего `sanitizeHtml` из ядра: берём его текст из app.js и зовём в node.
+
+    Проверять санитайзер глазами по регулярке нельзя — именно так и проехала поломка: выражение
+    выглядело правильным, а на незакрытом теге не делало ничего.
+    """
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node недоступен — поведение санитайзера не проверить")
+    начало = ЯДРО.index("export function sanitizeHtml")
+    тело = ЯДРО[начало:ЯДРО.index("\n}\n", начало) + 3]
+    with tempfile.NamedTemporaryFile("w", suffix=".mjs", delete=False, encoding="utf-8") as f:
+        f.write(тело + "\n" + код)
+        имя = f.name
+    try:
+        p = subprocess.run([node, имя], capture_output=True, text=True, encoding="utf-8", timeout=30)
+        assert p.returncode == 0, p.stderr
+        return (p.stdout or "") + (p.stderr or "")
+    finally:
+        Path(имя).unlink(missing_ok=True)
+
+
+def test_незакрытый_style_вырезается_до_конца_строки():
+    вывод = _санитайзер(
+        'const битый = \'<p>начало</p><style>body{color:#111;font-family:Georgia\';\n'
+        'const чистый = sanitizeHtml(битый);\n'
+        'console.log("СТИЛЕЙ:", /<style/i.test(чистый));\n'
+        'console.log("CSS:", чистый.includes("font-family"));\n'
+        'console.log("ТЕКСТ:", чистый.includes("начало"));\n')
+    assert "СТИЛЕЙ: false" in вывод, (
+        "незакрытый <style> остаётся — браузер сочтёт стилями весь остаток и погасит приложение")
+    assert "CSS: false" in вывод, "обрывок чужого CSS всё ещё в разметке окна"
+    assert "ТЕКСТ: true" in вывод, "вместе со стилями вырезали содержание письма"
+
+
+def test_незакрытые_script_и_iframe_тоже_вырезаются():
+    вывод = _санитайзер(
+        'console.log("SCRIPT:", /<script|alert/i.test(sanitizeHtml("<b>a</b><script>alert(1)")));\n'
+        'console.log("IFRAME:", /<iframe/i.test(sanitizeHtml("<b>a</b><iframe src=x")));\n')
+    assert "SCRIPT: false" in вывод and "IFRAME: false" in вывод, (
+        "правило починили только для <style> — остальные незакрытые теги проедут так же")
+
+
+def test_голова_документа_не_попадает_в_окно():
+    вывод = _санитайзер(
+        'const док = \'<!DOCTYPE html><html><head><meta charset="utf-8">\''
+        ' + \'<title>Отчёт</title><link rel="stylesheet" href="x.css"></head><body><p>суть</p></body></html>\';\n'
+        'const чистый = sanitizeHtml(док);\n'
+        'console.log("ГОЛОВА:", /<!DOCTYPE|<html|<head|<meta|<link|<title|<body/i.test(чистый));\n'
+        'console.log("ЗАГОЛОВОК:", чистый.includes("Отчёт"));\n'
+        'console.log("СУТЬ:", чистый.includes("суть"));\n')
+    assert "ГОЛОВА: false" in вывод, "в окно подтверждения вставляют целый html-файл, а не содержание"
+    assert "ЗАГОЛОВОК: false" in вывод, "<title> напечатался текстом посреди письма"
+    assert "СУТЬ: true" in вывод
+
+
+def test_окно_чистит_предпросмотр_само_а_не_надеется_на_вызывающего():
+    блок = ЖИВОЕ_ЯДРО[ЖИВОЕ_ЯДРО.index("export function apeGate"):]
+    блок = блок[:блок.index("\n}\n")]
+    assert "sanitizeHtml(a.html)" in блок, (
+        "окно вставляет html сырым — чистота зависит от того, кто его позвал, а источников "
+        "вызова больше одного")
+    assert "${a.html}" not in блок, "сырая вставка осталась рядом с очищенной"
+
+
+def test_рамка_предпросмотра_задаёт_свои_цвета_и_шрифт():
+    правило = re.search(r"\.gate-prev\s*\{[^}]*\}", ТЕМА)
+    assert правило, "у рамки предпросмотра нет своего правила — внутри чужой документ"
+    текст = правило.group(0)
+    for свойство in ("color", "background", "font-family", "font-size"):
+        assert свойство in текст, (
+            f"рамка не задаёт {свойство} — светлая тема отчёта прочтётся на тёмном фоне "
+            "приложения как пустое место")
+    assert re.search(r"\.gate-prev \*\s*\{[^}]*color:\s*inherit", ТЕМА), (
+        "вложенные элементы отчёта несут свой цвет — текст снова сольётся с фоном")
+
+
+def test_укороченный_предпросмотр_объявлен_словами():
+    assert "it.html_обрезан" in ЖИВОЙ_ЧАТ, (
+        "неполный предпросмотр показывается молча — человек подтвердит то, чего не видел целиком")
+    assert "it.html_почему" in ЖИВОЙ_ЧАТ, "причина укорачивания не показана"
