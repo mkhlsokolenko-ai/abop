@@ -74,10 +74,12 @@ def контекст(agent: dict, run: dict) -> dict:
 
 def образец_прогона(for_skills: list[str]) -> dict:
     """Прогон-образец по схемам навыков формы — то, что видит превью шаблона в вебе."""
-    from server import web_api
+    # Образец собирает та же ручка, что и превью шаблона в интерфейсе: иначе «посмотреть вид»
+    # показывало бы не то, что увидит человек.
+    from server.routes import templates as _шаблоны
     if not for_skills:
         return dict(ОБРАЗЕЦ_ПРОГОНА)
-    run = web_api._example_run(for_skills)
+    run = _шаблоны._example_run(for_skills)
     # Служебные поля шапки и подвала в образце по схемам отсутствуют — дорисовываем, иначе
     # реквизиты и подвал окажутся пустыми, и документ нельзя оценить целиком.
     run.update({"created_at": ОБРАЗЕЦ_ПРОГОНА["created_at"],
