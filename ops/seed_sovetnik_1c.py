@@ -89,13 +89,56 @@ def рецепты(база: str, пользователь: str, env: str, с: s
     }
 
 
+def подключить_хранилища(арендатор: str = ""):
+    """Серверные сторы, если скрипт запущен внутри сервера; иначе файловый режим ядра.
+
+    Определения и записи на проде живут в Postgres, а `ape` без инъекции читает файлы тома. Без
+    этой развилки запуск на сервере проходил бы «успешно» и не попадал бы в прогон вовсе.
+    Возвращает функцию сохранения рецепта — она тоже разная: на сервере рецепт принадлежит
+    арендатору.
+    """
+    try:
+        sys.path.insert(0, "/app")
+        sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+        import asyncio
+
+        from server import dataplane_records as dr
+        from server import dataplane_store, tenancy
+    except Exception:  # noqa: BLE001 — нет сервера рядом: это обычный локальный запуск
+        print("серверных хранилищ рядом нет — пишу в файлы ядра (локальный режим)")
+        return ape.data_save_recipe
+
+    # Модули сервера лежат в том же репозитории, поэтому «импортируются» и на машине
+    # разработчика. Признак сервера — настроенный Postgres: без него серверные сторы работают
+    # в памяти, и засев ушёл бы в никуда.
+    if not dataplane_store._has_pg():
+        print("серверные модули есть, но Postgres не настроен — пишу в файлы ядра (локальный режим)")
+        return ape.data_save_recipe
+    if арендатор:
+        tenancy.установить(арендатор) if hasattr(tenancy, "установить") else None
+    dr.init()
+    ape.set_record_store(dr)
+    ape.set_recipe_store(dr.рецепты)
+    asyncio.run(dataplane_store.init())
+    print("серверные хранилища подключены: записи — стор Data Plane, рецепты — арендатор «%s»"
+          % tenancy.текущий())
+
+    def сохранить(имя: str, спека: dict) -> None:
+        asyncio.run(dataplane_store.save_recipe(имя, спека, editor="seed-sovetnik"))
+
+    return сохранить
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description="рецепты живой 1С для пилота (OData, только чтение)")
     p.add_argument("--base", required=True, help="адрес публикации 1С из адресной строки браузера")
     p.add_argument("--пользователь", default="odata.user", help="служебный пользователь REST-сервиса")
     p.add_argument("--пароль-env", default="ODATA1C_PWD", help="имя переменной среды с паролем")
     p.add_argument("--период", default="2026-01-01..2026-11-01", help="ГГГГ-ММ-ДД..ГГГГ-ММ-ДД")
-    p.add_argument("--прогнать", action="store_true", help="сразу выполнить рецепты (начисто)")
+    p.add_argument("--прогнать", action="store_true", help="сразу выполнить рецепты")
+    p.add_argument("--начисто", action="store_true",
+                   help="перечитать сущности начисто (СНЕСЁТ записи демо-кейса в doc1c/ref1c)")
+    p.add_argument("--арендатор", default="", help="ключ арендатора на сервере (по умолчанию общий)")
     a = p.parse_args()
 
     с, _, по = a.период.partition("..")
@@ -106,16 +149,17 @@ def main() -> int:
         print("нет пароля в переменной среды %s — рецепты сохраню, но прогнать не смогу"
               % a.пароль_env, file=sys.stderr)
 
+    сохранить = подключить_хранилища(a.арендатор)
     набор = рецепты(a.base.rstrip("/"), a.пользователь, a.пароль_env, с, по)
     for имя, рецепт in набор.items():
-        ape.data_save_recipe(имя, рецепт)
+        сохранить(имя, рецепт)
         print("сохранён рецепт %s → %s" % (имя, рецепт["entity"]))
     if not a.прогнать:
         print("\nготово. Запускать их — из интерфейса (раздел данных) или прогоном агента.")
         return 0
     for имя in набор:
         try:
-            предмет, записано, отброшено, невалидно = ape.data_run(имя, reset=True)
+            предмет, записано, отброшено, невалидно = ape.data_run(имя, reset=a.начисто)
             print("прогон %-22s → %-10s записано %5d отброшено %d невалидно %d"
                   % (имя, предмет, записано, отброшено, невалидно))
         except Exception as ex:  # noqa: BLE001 — отчёт о сбое полезнее стектрейса
