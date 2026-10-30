@@ -1,27 +1,141 @@
 {
-  "name": "Аудитор 1С",
-  "contract_audit_id": "audit1c-holding-2026",
-  "graph": {
-    "nodes": [
-      { "id": "audit1c-extract", "kind": "skill", "skill": "audit1c-extract", "autonomy": "A1", "hitl": false },
-      { "id": "audit1c-graph-build", "kind": "skill", "skill": "audit1c-graph-build", "autonomy": "A1", "hitl": false },
-      { "id": "audit1c-match-weak", "kind": "skill", "skill": "audit1c-match-weak", "autonomy": "A1", "hitl": false },
-      { "id": "audit1c-checks", "kind": "skill", "skill": "audit1c-checks", "autonomy": "A1", "hitl": false },
-      { "id": "audit1c-root-cause", "kind": "skill", "skill": "audit1c-root-cause", "autonomy": "A1", "hitl": false },
-      { "id": "audit1c-rank", "kind": "skill", "skill": "audit1c-rank", "autonomy": "A1", "hitl": false },
-      { "id": "audit1c-explain", "kind": "skill", "skill": "audit1c-explain", "autonomy": "A1", "hitl": true },
-      { "id": "out", "kind": "out", "title": "Отчёт → почта главбуху",
-        "out": { "channel": "email", "to": "glavbuh@demo.local", "subject": "Отчёт аудита данных 1С",
-                 "format": "pdf", "run": false, "hitl": true } }
-    ],
-    "edges": [
-      { "from": "audit1c-extract", "to": "audit1c-graph-build" },
-      { "from": "audit1c-graph-build", "to": "audit1c-match-weak" },
-      { "from": "audit1c-match-weak", "to": "audit1c-checks" },
-      { "from": "audit1c-checks", "to": "audit1c-root-cause" },
-      { "from": "audit1c-root-cause", "to": "audit1c-rank" },
-      { "from": "audit1c-rank", "to": "audit1c-explain" },
-      { "from": "audit1c-explain", "to": "out" }
-    ]
-  }
+ "name": "Аудитор 1С",
+ "contract_audit_id": "audit1c-holding-2026",
+ "graph": {
+  "nodes": [
+   {
+    "id": "src-doc1c",
+    "kind": "source",
+    "title": "Документы 1С (OData)",
+    "entity": "doc1c"
+   },
+   {
+    "id": "src-ref1c",
+    "kind": "source",
+    "title": "Справочники 1С",
+    "entity": "ref1c"
+   },
+   {
+    "id": "src-akt1c",
+    "kind": "source",
+    "title": "Акты сверки (две стороны)",
+    "entity": "акт1с"
+   },
+   {
+    "id": "src-saldo1c",
+    "kind": "source",
+    "title": "Обороты расчётов 60/62",
+    "entity": "сальдо1с"
+   },
+   {
+    "id": "audit1c-extract",
+    "kind": "skill",
+    "skill": "audit1c-extract",
+    "autonomy": "A1",
+    "hitl": false
+   },
+   {
+    "id": "audit1c-graph-build",
+    "kind": "skill",
+    "skill": "audit1c-graph-build",
+    "autonomy": "A1",
+    "hitl": false
+   },
+   {
+    "id": "audit1c-match-weak",
+    "kind": "skill",
+    "skill": "audit1c-match-weak",
+    "autonomy": "A1",
+    "hitl": false
+   },
+   {
+    "id": "audit1c-checks",
+    "kind": "skill",
+    "skill": "audit1c-checks",
+    "autonomy": "A1",
+    "hitl": false
+   },
+   {
+    "id": "audit1c-root-cause",
+    "kind": "skill",
+    "skill": "audit1c-root-cause",
+    "autonomy": "A1",
+    "hitl": false
+   },
+   {
+    "id": "audit1c-rank",
+    "kind": "skill",
+    "skill": "audit1c-rank",
+    "autonomy": "A1",
+    "hitl": false
+   },
+   {
+    "id": "audit1c-explain",
+    "kind": "skill",
+    "skill": "audit1c-explain",
+    "autonomy": "A1",
+    "hitl": true
+   },
+   {
+    "id": "out",
+    "kind": "out",
+    "title": "Отчёт → почта главбуху",
+    "out": {
+     "channel": "email",
+     "to": "glavbuh@demo.local",
+     "subject": "Отчёт аудита данных 1С",
+     "format": "pdf",
+     "run": false,
+     "hitl": true
+    }
+   }
+  ],
+  "edges": [
+   {
+    "from": "src-doc1c",
+    "to": "audit1c-extract"
+   },
+   {
+    "from": "src-ref1c",
+    "to": "audit1c-extract"
+   },
+   {
+    "from": "src-akt1c",
+    "to": "audit1c-extract"
+   },
+   {
+    "from": "src-saldo1c",
+    "to": "audit1c-extract"
+   },
+   {
+    "from": "audit1c-extract",
+    "to": "audit1c-graph-build"
+   },
+   {
+    "from": "audit1c-graph-build",
+    "to": "audit1c-match-weak"
+   },
+   {
+    "from": "audit1c-match-weak",
+    "to": "audit1c-checks"
+   },
+   {
+    "from": "audit1c-checks",
+    "to": "audit1c-root-cause"
+   },
+   {
+    "from": "audit1c-root-cause",
+    "to": "audit1c-rank"
+   },
+   {
+    "from": "audit1c-rank",
+    "to": "audit1c-explain"
+   },
+   {
+    "from": "audit1c-explain",
+    "to": "out"
+   }
+  ]
+ },
+ "зачем": "Прогон идёт по данным живой базы: четыре предмета приходят рецептами коннектора odata1c (документы с проводками, справочники, акты сверки с двумя сторонами, обороты 60/62). Какие наборы правил применить, прогон не знает по именам — он берёт все наборы, чей предмет лежит в Data Plane, а вариант набора (розничная схема) объявляет организации, к которым применим. Поэтому добавленное методологом правило попадает в отчёт без правки кода."
 }
