@@ -2273,6 +2273,7 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, sta
     # их ОБЪЯСНЯЛИ (grounded), а не искали заново на сэмпле-дайджесте (иначе LLM ложно пишет «расхождений нет»).
     _skills = [n.get("skill") for n in (agent.get("graph") or {}).get("nodes", [])]
     _det_findings, _det_findings_err, _audit_scope = [], None, None
+    _det_акты: list = []
     if "audit1c-checks" in _skills:
         try:
             def _checks_with_scope():
@@ -2332,9 +2333,13 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, sta
                         "первичка: " + str(к_первички["почему_пусто"])]
                 _сверка_в_реестр(находки, организация=орг,
                                  ещё=(акты.get("находки") or []) + (первичка.get("находки") or []))
-                result["_акты_сверки"] = акты.get("строки") or []
-                return находки, scope
-            _det_findings, _audit_scope = await _asyncio.to_thread(_checks_with_scope)
+                # Строки актов ВОЗВРАЩАЕМ, а не пишем в `result`: он создаётся позже, и запись в
+                # него отсюда валила весь расчёт находок с NameError. Прогон при этом считался
+                # успешным, а отчёт уходил без единой посчитанной находки — только с прозой
+                # модели. Поймано первым сквозным прогоном через очередь, а не тестом: ошибка
+                # сидела в замыкании и на вызовах по отдельности не воспроизводилась.
+                return находки, scope, (акты.get("строки") or [])
+            _det_findings, _audit_scope, _det_акты = await _asyncio.to_thread(_checks_with_scope)
         except Exception as ex:  # noqa: BLE001
             _det_findings_err = f"{type(ex).__name__}: {ex}"
     _det_invs, _det_invs_err = [], None
@@ -2512,7 +2517,7 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, sta
     # структурированный ответ, из которого бланк собирает документ.
     _сверка_подменить(result, _det_findings,
                       (_audit_scope or {}).get("заметки") or (),
-                      result.pop("_акты_сверки", ()), _audit_scope or {})
+                      _det_акты, _audit_scope or {})
     # Структурированные ответы навыков (по шаблонам) — отдельно: ниже findings подменяются детерминированными
     # Выходы навыков: берём КАЖДЫЙ, а не только отдавший строгий JSON. Прежде условие было
     # «structured — словарь», и навык, пишущий прозой (разбор идеи, адвокат дьявола, ревью
