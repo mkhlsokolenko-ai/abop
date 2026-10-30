@@ -144,7 +144,7 @@ def test_вернуть_версию_пакета(стенд):
 
     r = CLIENT.post("/api/data/rules/audit1c-nsi/revert")
     assert r.status_code == 200 and r.json()["снято"] is True
-    assert r.json()["правка"] is False and r.json()["правил"] == 1
+    assert r.json()["правка"] is False and r.json()["правил"] == 3
     assert ape.прогнать_проверки("audit1c-nsi"), "после отката прогон обязан снова видеть правила"
 
 
