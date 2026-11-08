@@ -18,10 +18,38 @@ _NO_REFS = ("note", "sign", "ctx")
 
 
 def _schema(sid: str) -> dict:
+    """Поля навыка: что возвращает МОДЕЛЬ (`json_schema`) плюс что добавляет РАСЧЁТ
+    (`computed_schema`).
+
+    Разделять их обязательно: поле, которое заполняет код, нельзя держать в схеме ответа модели —
+    она начнёт его выписывать и упрётся в лимит ответа (на облачной модели так потерялся весь
+    отчёт целиком). Но бланку эти поля нужны, и графа, ссылающаяся в пустоту, — ошибка формы.
+    """
     p = ROOT / "skills" / sid / "template.json"
     if not p.is_file():
         return {}
-    return (json.loads(p.read_text(encoding="utf-8")) or {}).get("json_schema") or {}
+    карточка = json.loads(p.read_text(encoding="utf-8")) or {}
+    схема = dict(карточка.get("json_schema") or {})
+    расчётные = (карточка.get("computed_schema") or {}).get("properties") or {}
+    if расчётные:
+        поля = dict(схема.get("properties") or {})
+        for имя, узел in расчётные.items():
+            если_есть = поля.get(имя)
+            if isinstance(если_есть, dict) and isinstance(узел, dict):
+                # поле есть и у модели, и у расчёта (вид расхождения): графы ищутся в обоих
+                свои = dict((если_есть.get("items") or {}).get("properties") or {})
+                свои.update(((узел.get("items") or {}).get("properties") or {}))
+                слито = dict(если_есть)
+                if свои:
+                    слито["items"] = dict(если_есть.get("items") or {}, properties=свои)
+                иначе = dict((если_есть.get("properties") or {}), **(узел.get("properties") or {}))
+                if иначе:
+                    слито["properties"] = иначе
+                поля[имя] = слито
+            else:
+                поля[имя] = узел
+        схема["properties"] = поля
+    return схема
 
 
 def _props(node: dict) -> dict:
