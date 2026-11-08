@@ -115,7 +115,11 @@
                     <sc-if value="{{ gl.hasServerAgents }}" hint-placeholder-val="{{ true }}">
                       <sc-for list="{{ gl.serverAgents }}" as="a" hint-placeholder-count="2">
                         <button onClick="{{ a.pick }}" title="Открыть сохранённый граф агента" style="display: flex; flex-direction: column; gap: 2px; padding: 7px 10px; border: 1px solid {{ a.border }}; border-radius: 8px; background: {{ a.outlineBg }}; color: {{ a.fg }}; font-size: 12px; font-weight: 600; text-align: left;" style-hover="border-color: #34d399;">
-                          <span>{{ a.label }}</span>
+                          <span style="display: flex; align-items: baseline; gap: 6px;">{{ a.label }}
+                            <sc-if value="{{ a.tag }}" hint-placeholder-val="{{ false }}">
+                              <span style="flex: none; padding: 1px 5px; border-radius: 5px; background: var(--w8); font-family: 'JetBrains Mono', monospace; font-size: 9px; font-weight: 600; color: var(--w50);">{{ a.tag }}</span>
+                            </sc-if>
+                          </span>
                           <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 500; color: var(--w42);">{{ a.hint }}</span>
                         </button>
                       </sc-for>
@@ -169,6 +173,17 @@
                   <span style="position: absolute; left: {{ mn.left }}; top: {{ mn.top }}; width: {{ mn.size }}; height: {{ mn.size }}; border-radius: 9999px; background: {{ mn.bg }};"></span>
                 </sc-for>
               </div>
+              <sc-if value="{{ gl.canvasGraphBusy }}" hint-placeholder-val="{{ false }}">
+                <div style="position: absolute; inset: 56px 0 0 0; z-index: 7; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: rgba(13,15,23,.62);">
+                  <svg width="42" height="42" viewBox="0 0 60 60" fill="none" style="animation: ab-spin 1.1s linear infinite;"><circle cx="30" cy="30" r="24" stroke="var(--w14)" stroke-width="7"></circle><circle cx="30" cy="30" r="24" stroke="var(--acc-ink)" stroke-width="7" stroke-linecap="round" stroke-dasharray="46 150"></circle></svg>
+                  <span style="font-size: 12px; color: var(--w60);">{{ gl.canvasGraphBusyNote }}</span>
+                </div>
+              </sc-if>
+              <sc-if value="{{ gl.canvasGraphErr }}" hint-placeholder-val="{{ false }}">
+                <div style="position: absolute; inset: 56px 0 0 0; z-index: 7; display: flex; align-items: center; justify-content: center;">
+                  <span style="max-width: 420px; padding: 12px 16px; border: 1px solid rgba(245,158,11,.3); border-radius: 12px; background: rgba(245,158,11,.1); color: var(--warn-ink); font-size: 12.5px; text-align: center;">{{ gl.canvasGraphErr }}</span>
+                </div>
+              </sc-if>
               <div style="position: absolute; inset: 56px 0 0 0; overflow: auto; background-image: radial-gradient(var(--w9) 1px, transparent 1px); background-size: {{ gl.canvasGrid }};">
               <div style="position: relative; width: {{ gl.canvasSizerW }}px; height: {{ gl.canvasSizerH }}px;">
               <div ref="{{ gl.canvasRef }}" onDragOver="{{ gl.onDragOver }}" onDrop="{{ gl.onDrop }}" onPointerMove="{{ gl.onCanvasMove }}" onPointerUp="{{ gl.onCanvasUp }}" onClick="{{ gl.onCanvasClick }}" style="position: absolute; left: 0; top: 0; width: {{ gl.surfaceW }}px; height: {{ gl.surfaceH }}px; transform: scale({{ gl.zoomVal }}); transform-origin: 0 0;">

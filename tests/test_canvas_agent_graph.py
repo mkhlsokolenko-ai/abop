@@ -21,9 +21,15 @@ from pathlib import Path
 
 def test_канва_берёт_граф_агента():
     assert "loadAgentGraphToCanvas" in ШАБЛОН
-    блок = ШАБЛОН[ШАБЛОН.index("  loadAgentGraphToCanvas(agentId, auditId) {"):][:2200]
+    блок = ШАБЛОН[ШАБЛОН.index("  loadAgentGraphToCanvas(agentId, auditId, опции) {"):][:3600]
     assert "/api/agents/" in блок, "граф агента не запрашивается"
-    assert "if (!gn.length) return" in блок, "пустой граф затрёт цепочку контракта"
+    # Пустой граф не затирает цепочку контракта (путь «открыт контракт»), а когда агента открыли
+    # сами — об отсутствии графа говорится словами, иначе на холсте останется предыдущий агент.
+    assert "if (!gn.length) {" in блок and "return;" in блок, "пустой граф затрёт цепочку контракта"
+    assert "нет сохранённого графа" in блок, "пустой граф молча оставляет чужую схему"
+    # Ответ запоздавшего запроса не должен рисоваться: иначе два клика подряд оставляют на холсте
+    # агента, которого уже закрыли.
+    assert "устарел()" in блок, "нет защиты от гонки запросов"
     assert "layoutFlow" in блок and "canvasNodes" in блок
     # Узел должен сам рассказывать, что он: сущность у источника, канал у выхода.
     assert "n.entity" in блок and "out.channel" in блок
@@ -60,9 +66,15 @@ def test_на_канве_есть_вход_в_агентов_платформы(
     assert "{{ gl.serverAgents }}" in ЛИНЗА and "АГЕНТЫ ПЛАТФОРМЫ" in ЛИНЗА
     assert "{{ gl.hasServerAgents }}" in ЛИНЗА, "раздел должен скрываться, когда агентов нет"
     assert "serverAgents: (s.agentsList || [])" in ШАБЛОН, "список берётся из /api/agents"
-    блок = ШАБЛОН[ШАБЛОН.index("  openAgentOnCanvas(a) {"):][:700]
-    assert "loadAgentGraphToCanvas(a.id" in блок, "открывается не сохранённый граф агента"
-    assert "canvasAgentId" in блок and "lens: 'build'" in блок
+    # Клик по агенту идёт через предохранитель несохранённой правки, а граф грузит openAgentNow.
+    блок = ШАБЛОН[ШАБЛОН.index("  openAgentOnCanvas(a) {"):][:400]
+    assert "guardedGo({ kind: 'agent'" in блок, "переключение агента обходит предохранитель холста"
+    блок2 = ШАБЛОН[ШАБЛОН.index("  openAgentNow(a) {"):][:1100]
+    assert "loadAgentGraphToCanvas(a.id" in блок2, "открывается не сохранённый граф агента"
+    assert "canvasAgentId" in блок2 and "lens: 'build'" in блок2
+    # Холст очищается сразу и показывает индикатор — узлы предыдущего агента не остаются на экране
+    # под именем нового.
+    assert "canvasNodes: []" in блок2 and "canvasGraphBusy: true" in блок2
 
 
 def test_заголовок_канвы_называет_открытого_агента():

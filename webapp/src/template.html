@@ -3435,24 +3435,49 @@ class Component extends DCLogic {
   // Открыть РЕАЛЬНОГО агента платформы на канве. До этого канва знала только демо-сценарии и
   // личные черновики, и агент, собранный методологом на сервере, на «Строю» было нечем открыть.
   openAgentOnCanvas(a) {
+    // Переключение агента заменяет холст, значит проходит через тот же предохранитель, что смена
+    // сценария: несохранённая правка не должна исчезать от клика по списку.
     if (!a || !a.id) return;
+    this.guardedGo({ kind: 'agent', agent: a });
+  }
+
+  openAgentNow(a) {
+    if (!a || !a.id) return;
+    // Холст очищается СРАЗУ, и на нём появляется индикатор. Раньше состояние менялось мгновенно
+    // (подпись сверху уже называла нового агента), а узлы оставались от предыдущего до ответа
+    // сервера — человек читал чужую схему как схему того, кого открыл.
     this.setState({ screen: 'canvas', lens: 'build', canvasAgentId: a.id,
-                    canvasAgentName: a.name || a.id, inspectorOpen: true, selectedNode: null });
+                    canvasAgentName: a.name || a.id, inspectorOpen: true, selectedNode: null,
+                    canvasNodes: [], edges: [], canvasGraphBusy: true, canvasGraphErr: '',
+                    canvasDirty: false });
     this.route('canvas');
-    this.loadAgentGraphToCanvas(a.id, a.contract_audit_id || '');
+    this.loadAgentGraphToCanvas(a.id, a.contract_audit_id || '', { свой: true });
     this.showToast('Граф агента «' + (a.name || a.id) + '» открыт');
   }
 
   // Граф сохранённого агента → узлы канвы. Узел источника подписан сущностью, выход — каналом:
   // на канве должно читаться, откуда данные и куда уходит результат, без открытия инспектора.
-  loadAgentGraphToCanvas(agentId, auditId) {
+  loadAgentGraphToCanvas(agentId, auditId, опции) {
     var self = this;
+    var свой = !!(опции && опции.свой);        // агента открыли сами, а не подтянули к контракту
+    // Метка запроса. Два клика подряд дают два запроса, и выигрывает тот, что ответил ПОЗЖЕ —
+    // то есть на холсте мог остаться граф агента, которого человек уже закрыл. Применяем только
+    // ответ последнего запроса.
+    var метка = (self._графТокен = (self._графТокен || 0) + 1);
+    var устарел = function () { return метка !== self._графТокен; };
     fetch('/api/agents/' + encodeURIComponent(agentId)).then(function (r) {
       return r.ok ? r.json() : null;
     }).then(function (a) {
+      if (устарел()) return;                    // человек успел переключиться — чужое не рисуем
       var g = (a && a.graph) || null;
       var gn = (g && g.nodes) || [];
-      if (!gn.length) return;                   // нечего показывать — остаётся цепочка контракта
+      if (!gn.length) {
+        // У агента правда нет графа (на проде такой есть — внешний «Досье подрядчика»). Когда
+        // агента открыли сами, молчать нельзя: пустой холст с прежними узлами — это ложь.
+        if (свой) self.setState({ canvasNodes: [], edges: [], canvasGraphBusy: false,
+                                  canvasGraphErr: 'у этого агента нет сохранённого графа — собери его из палитры' });
+        return;                                 // из контракта — остаётся цепочка контракта
+      }
       var nodes = gn.map(function (n) {
         var out = (n.out || {});
         var title = n.title || n.skill || n.entity || n.id;
@@ -3466,9 +3491,10 @@ class Component extends DCLogic {
       var L = self.layoutFlow(nodes, edges);
       self.setState({ canvasNodes: L.nodes, edges: edges,
                       surfaceW: Math.max(1560, L.w), surfaceH: Math.max(1200, L.h),
-                      canvasDirty: false });
+                      canvasDirty: false, canvasGraphBusy: false, canvasGraphErr: '' });
       // Раскладка, которую человек подвинул руками, сильнее автоматической — она его.
       self.loadLayout('agent:' + agentId, function (saved) {
+        if (устарел()) return;                  // раскладка чужого агента сдвинула бы узлы этого
         if (saved) {
           var byId = {}; saved.nodes.forEach(function (n) { byId[n.id] = n; });
           self.setState({ canvasNodes: (self.state.canvasNodes || []).map(function (n) {
@@ -3477,7 +3503,12 @@ class Component extends DCLogic {
         }
         setTimeout(function () { self.fitZoom(); }, 60);
       });
-    }).catch(function () { /* агент недоступен → остаётся цепочка контракта */ });
+    }).catch(function () {
+      // Отказ запроса тоже обязан быть виден: иначе «открыл агента, а холст пустой» выглядит как
+      // «у агента нет графа», и человек начнёт собирать заново то, что уже собрано.
+      if (свой && !устарел()) self.setState({ canvasGraphBusy: false,
+        canvasGraphErr: 'граф агента не загрузился — проверь связь и открой ещё раз' });
+    });
   }
 
   openContractInCanvas(auditId) {
@@ -6178,6 +6209,11 @@ agentTabs: [['work', 'В работе (' + s.agentsList.length + ')'], ['limbo',
         bg: n.id === s.selectedNode ? 'var(--acc-ink2)' : (n.kind === 'hitl' || n.kind === 'out') ? 'rgba(245,158,11,.75)' : 'rgba(129,140,248,.6)',
         size: n.id === s.selectedNode ? '7px' : '5px'
       })),
+      // Состояние загрузки графа: пока он идёт, на холсте круговой индикатор, а не узлы
+      // предыдущего агента. Текст называет, чей граф грузится, — чтобы было видно, что это он.
+      canvasGraphBusy: !!s.canvasGraphBusy,
+      canvasGraphBusyNote: 'Загружаю граф агента «' + (s.canvasAgentName || '—') + '»',
+      canvasGraphErr: s.canvasGraphErr || '',
       canCreateScenario: true,
       newScenario: () => this.guardedGo({ kind: 'newScenario' }),
       ownScenario: !!(s.userScenarios || {})[s.scenario],
@@ -6188,6 +6224,11 @@ agentTabs: [['work', 'В работе (' + s.agentsList.length + ')'], ['limbo',
       // «черновик» и «в проде» это разные вещи, и человек должен видеть, что открывает.
       serverAgents: (s.agentsList || []).map(a => ({
         label: a.name || a.id,
+        // Два агента с одним названием (на проде это два «Финаналитика» — свой черновик и общий
+        // из контракта) различаются только припиской. Без неё выбор делается наугад; с ней она
+        // стоит ровно там, где нужна, и не шумит на остальных.
+        tag: (s.agentsList || []).filter(x => String(x.name || '') === String(a.name || '')).length > 1
+             ? (a.owner ? 'мой' : 'общий') : '',
         // `running` приходит от сервера, когда в проде стоит ДРУГАЯ версия этого же агента:
         // строка в списке одна (1 агент = 1 запись), и она обязана сказать, что работает не она.
         // Без этого развёрнутый агент просто исчезал из списка за более новым черновиком.
@@ -6208,7 +6249,16 @@ agentTabs: [['work', 'В работе (' + s.agentsList.length + ')'], ['limbo',
             : ((s.limboList || []).length ? 'ещё ' + (s.limboList || []).length + ' в Лимбе — экран «Агенты»' : ''))),
       serverAgentsNoteFg: s.agentsError ? 'var(--err-ink)' : 'var(--w42)',
       openLimbo: () => this.setState({ screen: 'agents', showLimbo: true }),
-      scenarioTabs: Object.keys(this.allScenarios()).map(k => ({
+      // Сценарий — черновик на холсте, агент платформы — то, что исполняется. Когда у них одно
+      // название, в списке стоят два пункта, и различить их человеку нечем: ровно это и выглядело
+      // как «много похожих, отличающихся только названием». Сценарий, уже ставший агентом, из
+      // списка уходит — он промежуточная версия. Открытый остаётся виден всегда, иначе исчезнет
+      // активная вкладка.
+      scenarioTabs: Object.keys(this.allScenarios()).filter(k => {
+        if (k === s.scenario) return true;
+        var имя = String((this.allScenarios()[k] || {}).label || '').trim().toLowerCase();
+        return !(s.agentsList || []).some(a => String(a.name || '').trim().toLowerCase() === имя);
+      }).map(k => ({
         label: this.allScenarios()[k].label,
         pick: () => { this.setState({ canvasAgentId: null, canvasAgentName: '' });
                       this.guardedGo({ kind: 'scenario', key: k }); },
@@ -7043,7 +7093,7 @@ agentTabs: [['work', 'В работе (' + s.agentsList.length + ')'], ['limbo',
   }
 
   guardedGo(desc) {
-    const replaces = desc && (desc.kind === 'scenario' || desc.kind === 'graph' || desc.kind === 'newScenario');
+    const replaces = desc && (desc.kind === 'scenario' || desc.kind === 'graph' || desc.kind === 'newScenario' || desc.kind === 'agent');
     if (replaces && this.state.canvasDirty) { this.setState({ modal: 'guard', guardTo: desc }); return; }
     if (this.state.canvasDirty) this.saveGraph();
     this.applyGo(desc);
@@ -7054,6 +7104,7 @@ agentTabs: [['work', 'В работе (' + s.agentsList.length + ')'], ['limbo',
     if (desc.kind === 'lens') this.setState({ screen: 'canvas', lens: desc.lens, modal: null, guardTo: null }); if(desc.kind==='lens'&&desc.lens==='envelope'&&this.state.contract&&this.state.contract.audit_id) this.loadPassport();
     if (desc.kind === 'scenario') { this.loadScenario(desc.key); this.setState({ modal: null, guardTo: null }); }
     if (desc.kind === 'newScenario') { this.setState({ modal: null, guardTo: null }, () => this.createScenario()); }
+    if (desc.kind === 'agent') { this.setState({ modal: null, guardTo: null }, () => this.openAgentNow(desc.agent)); }
     if (desc.kind === 'screen') { this.setState({ modal: null, guardTo: null }); this.goNow(desc.screen); }
     if (desc.kind === 'graph') {
       this.loadScenario(desc.scenario);
