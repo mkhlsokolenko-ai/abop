@@ -20,201 +20,201 @@
 
 /* ── основа ──────────────────────────────────────────────────────────────────────────────────── */
 .vk{
-  background:var(--desk);
-  color:var(--ink);
-  font:400 var(--t-body)/1.55 var(--f-ui);
+  background:var(--vk-desk);
+  color:var(--vk-ink);
+  font:400 var(--vk-t-body)/1.55 var(--vk-f-ui);
 }
 .vk *{box-sizing:border-box}
 .vk-eyebrow{
-  font:700 12px/1 var(--f-label);
+  font:700 12px/1 var(--vk-f-label);
   letter-spacing:.14em;
   text-transform:uppercase;
-  color:var(--ink-3);
+  color:var(--vk-ink-3);
 }
-.vk-mono{font-family:var(--f-mono); font-variant-numeric:tabular-nums}
+.vk-mono{font-family:var(--vk-f-mono); font-variant-numeric:tabular-nums}
 .vk h2.vk-section{
-  font:700 var(--t-h2)/1 var(--f-label);
+  font:700 var(--vk-t-h2)/1 var(--vk-f-label);
   letter-spacing:.12em;
   text-transform:uppercase;
   margin:34px 0 14px;
 }
-.vk :focus-visible{outline:2px solid var(--brass); outline-offset:2px}
+.vk :focus-visible{outline:2px solid var(--vk-brass); outline-offset:2px}
 
 /* ── панель: любая рабочая поверхность ───────────────────────────────────────────────────────── */
 .vk-panel{
-  background:var(--bench);
-  border:var(--line) solid var(--groove);
-  border-radius:var(--r-soft);
-  padding:var(--pad) calc(var(--pad) + 2px);
-  box-shadow:var(--shadow);
+  background:var(--vk-bench);
+  border:var(--vk-line) solid var(--vk-groove);
+  border-radius:var(--vk-r-soft);
+  padding:var(--vk-pad) calc(var(--vk-pad) + 2px);
+  box-shadow:var(--vk-shadow);
 }
 
 /* ── слот предмета работы: «чьи данные считаем» ──────────────────────────────────────────────── */
 .vk-slot{
-  display:flex; align-items:center; gap:var(--gap-2);
-  background:var(--bench);
-  border:var(--line) solid var(--groove);
-  border-left:3px solid var(--brass);
-  border-radius:var(--r-sharp);
+  display:flex; align-items:center; gap:var(--vk-gap-2);
+  background:var(--vk-bench);
+  border:var(--vk-line) solid var(--vk-groove);
+  border-left:3px solid var(--vk-brass);
+  border-radius:var(--vk-r-sharp);
   padding:9px 14px;
 }
 .vk-slot .q{
-  font:700 var(--t-micro)/1 var(--f-label);
-  letter-spacing:.12em; text-transform:uppercase; color:var(--ink-3);
+  font:700 var(--vk-t-micro)/1 var(--vk-f-label);
+  letter-spacing:.12em; text-transform:uppercase; color:var(--vk-ink-3);
 }
 .vk-slot .who{font-weight:600}
-.vk-slot .who small{display:block; font-weight:400; color:var(--ink-3); font-size:12px}
+.vk-slot .who small{display:block; font-weight:400; color:var(--vk-ink-3); font-size:12px}
 
 /* ── стадии прогона: кто именно работает на каждом шаге ──────────────────────────────────────── */
 .vk-stages{display:flex; flex-wrap:wrap; gap:0}
 .vk-stages .st{
   flex:1 1 150px; min-width:140px;
   padding:10px 14px 10px 16px;
-  border-left:var(--line) solid var(--groove);
+  border-left:var(--vk-line) solid var(--vk-groove);
 }
 .vk-stages .st:first-child{border-left:0; padding-left:2px}
-.vk-stages .st b{display:block; font:700 12px/1.2 var(--f-label); letter-spacing:.1em; text-transform:uppercase}
-.vk-stages .st span{display:block; color:var(--ink-3); font-size:12.5px; margin-top:4px}
-.vk-stages .st.by-code b{color:var(--brass)}      /* считает код */
-.vk-stages .st.by-model b{color:var(--code)}      /* объясняет модель */
-.vk-stages .st.waiting b{color:var(--warn)}       /* ждёт человека */
+.vk-stages .st b{display:block; font:700 12px/1.2 var(--vk-f-label); letter-spacing:.1em; text-transform:uppercase}
+.vk-stages .st span{display:block; color:var(--vk-ink-3); font-size:12.5px; margin-top:4px}
+.vk-stages .st.by-code b{color:var(--vk-brass)}      /* считает код */
+.vk-stages .st.by-model b{color:var(--vk-code)}      /* объясняет модель */
+.vk-stages .st.waiting b{color:var(--vk-warn)}       /* ждёт человека */
 .vk-runmeta{
   display:flex; flex-wrap:wrap; gap:22px;
-  border-top:var(--line) dashed var(--groove);
-  padding-top:var(--gap-2); margin-top:var(--gap-2);
+  border-top:var(--vk-line) dashed var(--vk-groove);
+  padding-top:var(--vk-gap-2); margin-top:var(--vk-gap-2);
 }
-.vk-runmeta div{font-size:var(--t-small); color:var(--ink-2)}
-.vk-runmeta b{color:var(--ink); font-family:var(--f-mono); font-weight:600}
+.vk-runmeta div{font-size:var(--vk-t-small); color:var(--vk-ink-2)}
+.vk-runmeta b{color:var(--vk-ink); font-family:var(--vk-f-mono); font-weight:600}
 
 /* ── плитка находки: тяжесть полосой, а не цветом текста ─────────────────────────────────────── */
-.vk-finds{display:grid; grid-template-columns:repeat(auto-fit,minmax(232px,1fr)); gap:var(--gap-2)}
+.vk-finds{display:grid; grid-template-columns:repeat(auto-fit,minmax(232px,1fr)); gap:var(--vk-gap-2)}
 .vk-find{
   position:relative; display:grid; gap:7px;
-  background:var(--bench);
-  border:var(--line) solid var(--groove);
-  border-radius:var(--r-sharp);
+  background:var(--vk-bench);
+  border:var(--vk-line) solid var(--vk-groove);
+  border-radius:var(--vk-r-sharp);
   padding:13px 15px 13px 18px;
 }
-.vk-find::before{content:""; position:absolute; inset:0 auto 0 0; width:4px; background:var(--ink-3)}
-.vk-find.high::before{background:var(--bad)}
-.vk-find.mid::before{background:var(--warn)}
-.vk-find.info::before{background:var(--ok)}
+.vk-find::before{content:""; position:absolute; inset:0 auto 0 0; width:4px; background:var(--vk-ink-3)}
+.vk-find.high::before{background:var(--vk-bad)}
+.vk-find.mid::before{background:var(--vk-warn)}
+.vk-find.info::before{background:var(--vk-ok)}
 .vk-find .top{display:flex; align-items:baseline; gap:8px}
 .vk-find .cls{
-  font:600 var(--t-micro)/1 var(--f-mono); color:var(--ink-3);
-  border:var(--line) solid var(--groove); border-radius:2px; padding:3px 5px;
+  font:600 var(--vk-t-micro)/1 var(--vk-f-mono); color:var(--vk-ink-3);
+  border:var(--vk-line) solid var(--vk-groove); border-radius:2px; padding:3px 5px;
 }
 .vk-find .name{font-weight:600; font-size:14px}
 .vk-find .fig{display:flex; align-items:baseline; gap:10px; margin-top:2px}
-.vk-find .n{font:600 22px/1 var(--f-mono); font-variant-numeric:tabular-nums}
-.vk-find .rub{font-family:var(--f-mono); color:var(--brass); font-size:14px}
-.vk-find .gap{font-size:12px; color:var(--warn)}
-.vk-find .gap.ok{color:var(--ink-3)}
+.vk-find .n{font:600 22px/1 var(--vk-f-mono); font-variant-numeric:tabular-nums}
+.vk-find .rub{font-family:var(--vk-f-mono); color:var(--vk-brass); font-size:14px}
+.vk-find .gap{font-size:12px; color:var(--vk-warn)}
+.vk-find .gap.ok{color:var(--vk-ink-3)}
 
 /* ── кнопки по классам ответственности ───────────────────────────────────────────────────────── */
 .vk button{font-family:inherit; cursor:pointer}
 .vk-acts{display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:14px; align-items:start}
 .vk-act{display:grid; gap:8px}
-.vk-act .why{font-size:12.5px; color:var(--ink-3)}
+.vk-act .why{font-size:12.5px; color:var(--vk-ink-3)}
 
 .b-calc{                                   /* РАСЧЁТ: считает код */
   width:100%; display:flex; align-items:center; gap:10px;
-  background:transparent; color:var(--ink);
-  border:var(--line) solid var(--brass-soft); border-radius:var(--r-sharp);
-  padding:11px 16px; font:600 13.5px/1 var(--f-ui);
-  box-shadow:inset 0 0 0 3px var(--bench), inset 0 0 0 4px var(--brass-soft);
+  background:transparent; color:var(--vk-ink);
+  border:var(--vk-line) solid var(--vk-brass-soft); border-radius:var(--vk-r-sharp);
+  padding:11px 16px; font:600 13.5px/1 var(--vk-f-ui);
+  box-shadow:inset 0 0 0 3px var(--vk-bench), inset 0 0 0 4px var(--vk-brass-soft);
 }
-.b-calc .tag{font:600 10px/1 var(--f-mono); color:var(--brass); letter-spacing:.08em}
-.b-calc:hover{border-color:var(--brass)}
+.b-calc .tag{font:600 10px/1 var(--vk-f-mono); color:var(--vk-brass); letter-spacing:.08em}
+.b-calc:hover{border-color:var(--vk-brass)}
 
 .b-do{                                     /* ВНУТРИ: обратимое */
   width:100%;
-  background:var(--brass); color:var(--desk);
-  border:var(--line) solid var(--brass); border-radius:var(--r-sharp);
-  padding:12px 16px; font:600 14px/1 var(--f-ui);
+  background:var(--vk-brass); color:var(--vk-desk);
+  border:var(--vk-line) solid var(--vk-brass); border-radius:var(--vk-r-sharp);
+  padding:12px 16px; font:600 14px/1 var(--vk-f-ui);
 }
 .b-do:hover{filter:brightness(1.07)}
 
 .b-out{                                    /* НАРУЖУ: адрес виден на кнопке */
   width:100%; display:flex; align-items:center; gap:10px; text-align:left;
-  background:var(--bench-2); color:var(--ink);
-  border:var(--line) solid var(--groove); border-radius:var(--r-sharp);
+  background:var(--vk-bench-2); color:var(--vk-ink);
+  border:var(--vk-line) solid var(--vk-groove); border-radius:var(--vk-r-sharp);
   padding:9px 12px;
 }
-.b-out .ico{width:26px; height:26px; flex:none; border-radius:2px; background:var(--code); opacity:.22}
+.b-out .ico{width:26px; height:26px; flex:none; border-radius:2px; background:var(--vk-code); opacity:.22}
 .b-out .lbl{display:grid; gap:2px}
 .b-out .lbl b{font-size:13.5px}
-.b-out .addr{font:400 var(--t-micro)/1 var(--f-mono); color:var(--code)}
-.b-out:hover{border-color:var(--code)}
+.b-out .addr{font:400 var(--vk-t-micro)/1 var(--vk-f-mono); color:var(--vk-code)}
+.b-out:hover{border-color:var(--vk-code)}
 
 .b-irr{                                    /* НЕОБРАТИМОЕ: с предохранителем */
   width:100%;
-  background:repeating-linear-gradient(135deg,var(--bench-2) 0 7px,transparent 7px 14px);
-  color:var(--ink);
-  border:var(--line) solid var(--bad); border-radius:var(--r-sharp);
-  padding:12px 16px; font:600 14px/1 var(--f-ui);
+  background:repeating-linear-gradient(135deg,var(--vk-bench-2) 0 7px,transparent 7px 14px);
+  color:var(--vk-ink);
+  border:var(--vk-line) solid var(--vk-bad); border-radius:var(--vk-r-sharp);
+  padding:12px 16px; font:600 14px/1 var(--vk-f-ui);
 }
 .b-irr[disabled]{opacity:.5; cursor:not-allowed}
-.vk-guard{display:flex; align-items:center; gap:9px; font-size:12.5px; color:var(--ink-2)}
-.vk-guard input{width:16px; height:16px; accent-color:var(--bad)}
+.vk-guard{display:flex; align-items:center; gap:9px; font-size:12.5px; color:var(--vk-ink-2)}
+.vk-guard input{width:16px; height:16px; accent-color:var(--vk-bad)}
 
 /* ── гейт: место для подписи человека, а не кнопка ───────────────────────────────────────────── */
 .vk-gate{
   grid-column:1/-1;
-  display:flex; align-items:center; gap:var(--gap); flex-wrap:wrap;
-  background:var(--bench);
-  border:var(--line) dashed var(--warn); border-radius:var(--r-sharp);
-  padding:14px var(--pad);
+  display:flex; align-items:center; gap:var(--vk-gap); flex-wrap:wrap;
+  background:var(--vk-bench);
+  border:var(--vk-line) dashed var(--vk-warn); border-radius:var(--vk-r-sharp);
+  padding:14px var(--vk-pad);
 }
 .vk-gate .stamp{
   width:112px; height:52px; flex:none;
   display:grid; place-items:center; text-align:center;
-  border:2px solid var(--warn); border-radius:4px; color:var(--warn);
-  font:700 10px/1.25 var(--f-label); letter-spacing:.1em; opacity:.8;
+  border:2px solid var(--vk-warn); border-radius:4px; color:var(--vk-warn);
+  font:700 10px/1.25 var(--vk-f-label); letter-spacing:.1em; opacity:.8;
 }
 .vk-gate .txt b{display:block; font-size:14px}
-.vk-gate .txt span{font-size:12.5px; color:var(--ink-2)}
-.vk-gate .id{margin-left:auto; font:400 var(--t-micro)/1 var(--f-mono); color:var(--ink-3)}
+.vk-gate .txt span{font-size:12.5px; color:var(--vk-ink-2)}
+.vk-gate .id{margin-left:auto; font:400 var(--vk-t-micro)/1 var(--vk-f-mono); color:var(--vk-ink-3)}
 
 /* ── лист на столе: документ в СВОИХ цветах ──────────────────────────────────────────────────── */
 .vk-sheet{
-  background:var(--paper); color:var(--paper-ink);
-  border-radius:2px; box-shadow:var(--shadow);
+  background:var(--vk-paper); color:var(--vk-paper-ink);
+  border-radius:2px; box-shadow:var(--vk-shadow);
   padding:22px 24px; font-size:13.5px;
 }
-.vk-sheet h3{margin:0; font:700 17px/1.25 var(--f-ui); text-wrap:balance}
-.vk-sheet .sub{color:var(--paper-ink-2); font-size:12px; margin:4px 0 14px}
+.vk-sheet h3{margin:0; font:700 17px/1.25 var(--vk-f-ui); text-wrap:balance}
+.vk-sheet .sub{color:var(--vk-paper-ink-2); font-size:12px; margin:4px 0 14px}
 .vk-sheet .toc{display:grid; gap:5px; margin:0 0 14px; padding:0; list-style:none}
 .vk-sheet .toc li{display:flex; gap:9px; align-items:baseline; font-size:12.5px}
-.vk-sheet .toc i{font-family:var(--f-mono); font-style:normal; color:var(--brass-soft); font-size:11px}
+.vk-sheet .toc i{font-family:var(--vk-f-mono); font-style:normal; color:var(--vk-brass-soft); font-size:11px}
 .vk-sheet table{width:100%; border-collapse:collapse; font-size:12.5px}
 .vk-sheet th{
   text-align:left; padding:6px 8px;
-  background:var(--paper-fill); border-bottom:var(--line) solid var(--paper-line);
-  font:600 var(--t-micro)/1 var(--f-label); letter-spacing:.06em; text-transform:uppercase;
+  background:var(--vk-paper-fill); border-bottom:var(--vk-line) solid var(--vk-paper-line);
+  font:600 var(--vk-t-micro)/1 var(--vk-f-label); letter-spacing:.06em; text-transform:uppercase;
 }
-.vk-sheet td{border-bottom:var(--line) solid var(--paper-line-2); padding:7px 8px; vertical-align:top}
-.vk-sheet td.r{text-align:right; font-family:var(--f-mono); white-space:nowrap; font-variant-numeric:tabular-nums}
+.vk-sheet td{border-bottom:var(--vk-line) solid var(--vk-paper-line-2); padding:7px 8px; vertical-align:top}
+.vk-sheet td.r{text-align:right; font-family:var(--vk-f-mono); white-space:nowrap; font-variant-numeric:tabular-nums}
 .vk-sheet .who{font-weight:600}
 
 /* ── паспорт прогона: границы работы парами ──────────────────────────────────────────────────── */
 .vk-passport dl{margin:0; display:grid; gap:11px}
 .vk-passport dt{
-  font:700 10.5px/1 var(--f-label); letter-spacing:.12em;
-  text-transform:uppercase; color:var(--ink-3);
+  font:700 10.5px/1 var(--vk-f-label); letter-spacing:.12em;
+  text-transform:uppercase; color:var(--vk-ink-3);
 }
 .vk-passport dd{margin:3px 0 0; font-size:13.5px}
-.vk-passport dd.m{font-family:var(--f-mono); font-size:12.5px; color:var(--code); word-break:break-all}
+.vk-passport dd.m{font-family:var(--vk-f-mono); font-size:12.5px; color:var(--vk-code); word-break:break-all}
 .vk-passport .note{
-  margin:var(--gap-2) 0 0; padding-top:var(--gap-2);
-  border-top:var(--line) dashed var(--groove);
-  font-size:12.5px; color:var(--ink-2);
+  margin:var(--vk-gap-2) 0 0; padding-top:var(--vk-gap-2);
+  border-top:var(--vk-line) dashed var(--vk-groove);
+  font-size:12.5px; color:var(--vk-ink-2);
 }
 
 /* ── раскладка стола ─────────────────────────────────────────────────────────────────────────── */
-.vk-desk{display:grid; grid-template-columns:minmax(0,1.45fr) minmax(0,1fr); gap:var(--gap); align-items:start}
+.vk-deskrow{display:grid; grid-template-columns:minmax(0,1.45fr) minmax(0,1fr); gap:var(--vk-gap); align-items:start}
 @media (max-width:860px){
-  .vk-desk{grid-template-columns:1fr}
+  .vk-deskrow{grid-template-columns:1fr}
   .vk-slot{width:100%}
 }
 @media (prefers-reduced-motion:reduce){

@@ -9,15 +9,15 @@
 <link rel="stylesheet" href="blocks.css">
 <style>
   /* Только раскладка страницы-образца. Вид блоков живёт в blocks.css и правится там. */
-  body{margin:0; background:var(--desk); padding-inline:20px; padding-block:28px 56px}
+  body{margin:0; background:var(--vk-desk); padding-inline:20px; padding-block:28px 56px}
   .wrap{max-width:1120px; margin-inline:auto}
-  .head{display:flex; gap:var(--gap); align-items:flex-end; flex-wrap:wrap; margin-bottom:26px}
+  .head{display:flex; gap:var(--vk-gap); align-items:flex-end; flex-wrap:wrap; margin-bottom:26px}
   .mark{display:flex; align-items:baseline; gap:10px}
-  .mark h1{margin:0; font:700 var(--t-h1)/1 var(--f-label); letter-spacing:.02em; color:var(--ink)}
-  .mark .dot{width:9px; height:9px; background:var(--brass); border-radius:50%}
-  .mark p{margin:6px 0 0; color:var(--ink-2); font-size:13.5px; max-width:52ch}
+  .mark h1{margin:0; font:700 var(--vk-t-h1)/1 var(--vk-f-label); letter-spacing:.02em; color:var(--vk-ink)}
+  .mark .dot{width:9px; height:9px; background:var(--vk-brass); border-radius:50%}
+  .mark p{margin:6px 0 0; color:var(--vk-ink-2); font-size:13.5px; max-width:52ch}
   .head .slotbox{margin-left:auto}
-  footer{margin-top:34px; padding-top:14px; border-top:var(--line) solid var(--groove); font-size:12.5px; color:var(--ink-3)}
+  footer{margin-top:34px; padding-top:14px; border-top:var(--vk-line) solid var(--vk-groove); font-size:12.5px; color:var(--vk-ink-3)}
   @media (max-width:860px){ .head .slotbox{margin-left:0; width:100%} }
 </style>
 </head>
@@ -45,7 +45,7 @@
   <div class="vk-acts" id="действия"></div>
 
   <h2 class="vk-section">Лист на столе</h2>
-  <div class="vk-desk" id="стол"></div>
+  <div class="vk-deskrow" id="стол"></div>
 
   <footer>
     Образец на примерных данных: клиент, контрагенты и адрес выдуманы, формы сумм — как в
