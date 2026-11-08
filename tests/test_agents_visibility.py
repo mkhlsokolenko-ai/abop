@@ -50,7 +50,9 @@ def _список(пользователь: dict, версии: list[dict]) -> l
         настоящий = agent_store.list_for
 
         async def подменённый(audit_id=None, limit=100, archived=False):
-            return [v for v in версии if not archived]
+            живые = [v for v in версии if v.get("status") != "retired"]
+            лимб = [v for v in версии if v.get("status") == "retired"]
+            return лимб if archived else живые
 
         agent_store.list_for = подменённый
         try:
@@ -173,10 +175,14 @@ def test_сценарий_ставший_агентом_уходит_из_спи
     """Сценарий — черновик на холсте, агент платформы — то, что исполняется. С одним названием
     они стоят в списке двумя неразличимыми пунктами."""
     i = ШАБЛОН.index("scenarioTabs: Object.keys(this.allScenarios())")
-    блок = ШАБЛОН[i:i + 600]
+    блок = ШАБЛОН[i:i + 1400]
     assert ".filter(" in блок, "список сценариев не отсеивает промежуточные версии"
     assert "k === s.scenario" in блок, "открытый сценарий исчезнет из своей же вкладки"
     assert "agentsList" in блок, "сравнение идёт не с агентами платформы"
+    # Связь по имени одной недостаточно: демо-сценарии названы ключом контракта, и по имени не
+    # совпадают вовсе — сценарий «Расследование от симптома» против агента «Следователь 1С».
+    assert "contract_audit_id" in блок, "сценарий не опознаётся по контракту своего агента"
+    assert "k + '-'" in блок, "совпадение по префиксу контракта не проверяется"
 
 
 def test_однофамильцы_среди_агентов_различимы():
@@ -186,3 +192,45 @@ def test_однофамильцы_среди_агентов_различимы()
     блок = ШАБЛОН[i:i + 900]
     assert "tag:" in блок and "length > 1" in блок, "однофамильцы ничем не отличаются"
     assert "a.tag" in ЛИНЗА, "метка не выводится"
+
+
+def test_в_лимбе_нет_старых_версий_живых_агентов():
+    """Лимб — это агенты, выведенные из эксплуатации, а не история версий.
+
+    Отбор по `status='retired'` их не различал: у агента с пересмотрами прошлые версии так и
+    лежат retired, и он показывался в двух списках сразу под одним именем. На проде 08.11.2026
+    таких было трое — «Финаналитик» v21, «Аудитор 1С» v9, «Следователь 1С» v2.
+    """
+    версии = _версии() + [
+        # прошлая версия ЖИВОГО агента — это откат, а не архив
+        {"id": "audit1c-holding-2026.v9", "contract_audit_id": "audit1c-holding-2026", "version": 9,
+         "name": "Аудитор 1С", "status": "retired", "family": "audit", "source": "contract"},
+        # а этот агент выведен из эксплуатации целиком — ему в Лимбе место
+        {"id": "invest1c-holding-2026.v2", "contract_audit_id": "invest1c-holding-2026", "version": 2,
+         "name": "Следователь 1С", "status": "retired", "family": "audit", "source": "contract"},
+    ]
+    from server import agent_store
+    from server.routes import agents as A
+
+    async def flow():
+        настоящий = agent_store.list_for
+
+        async def подменённый(audit_id=None, limit=100, archived=False):
+            живые = [v for v in версии if v.get("status") != "retired"]
+            лимб = [v for v in версии if v.get("status") == "retired"]
+            return лимб if archived else живые
+
+        agent_store.list_for = подменённый
+        try:
+            return ((await A.agents_list("", True, АДМИН))["agents"],
+                    (await A.agents_list("", False, АДМИН))["agents"])
+        finally:
+            agent_store.list_for = настоящий
+
+    лимб, живые = asyncio.run(flow())
+    имена = {a["contract_audit_id"] for a in лимб}
+    assert "invest1c-holding-2026" in имена, "выведенный из эксплуатации агент исчез из Лимба"
+    assert "audit1c-holding-2026" not in имена, (
+        "прошлая версия живого агента показана как архивный агент — он в двух списках сразу")
+    # И наоборот: живой список от этого не пострадал.
+    assert "audit1c-holding-2026" in {a["contract_audit_id"] for a in живые}

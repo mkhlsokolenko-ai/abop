@@ -84,7 +84,7 @@ def test_заголовок_канвы_называет_открытого_аг�
     assert "canvasAgentName" in блок
     # Выбор демо-сценария снимает открытого агента: заголовок не должен врать в обратную сторону.
     j = ШАБЛОН.index("scenarioTabs: Object.keys(this.allScenarios())")
-    assert "canvasAgentId: null" in ШАБЛОН[j:j + 420]
+    assert "canvasAgentId: null" in ШАБЛОН[j:j + 1600]
 
 
 def test_статус_агента_виден_в_выборе():

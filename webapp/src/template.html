@@ -6257,7 +6257,15 @@ agentTabs: [['work', 'В работе (' + s.agentsList.length + ')'], ['limbo',
       scenarioTabs: Object.keys(this.allScenarios()).filter(k => {
         if (k === s.scenario) return true;
         var имя = String((this.allScenarios()[k] || {}).label || '').trim().toLowerCase();
-        return !(s.agentsList || []).some(a => String(a.name || '').trim().toLowerCase() === имя);
+        // Две связи, по которым сценарий опознаётся как заготовка живого агента. Первая — имя.
+        // Вторая — контракт: демо-сценарии названы ключом контракта («invest1c» → агент контракта
+        // «invest1c-holding-2026»), и по имени они не совпадают вовсе: сценарий «Расследование от
+        // симптома», агент «Следователь 1С». Ключи СВОИХ сценариев — own1, own2… и из названий не
+        // выводятся, поэтому случайно совпасть тут нечему.
+        return !(s.agentsList || []).some(a => {
+          var c = String(a.contract_audit_id || '');
+          return String(a.name || '').trim().toLowerCase() === имя || c === k || c.indexOf(k + '-') === 0;
+        });
       }).map(k => ({
         label: this.allScenarios()[k].label,
         pick: () => { this.setState({ canvasAgentId: null, canvasAgentName: '' });

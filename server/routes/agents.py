@@ -192,6 +192,16 @@ async def agents_list(contract: str = "", archived: bool = False, u: dict = Depe
     """Список AgentVersion. ABAC: пользователь видит только агентов своего отдела (family==department);
     admin/support (область *) — всех. archived=1 → Лимб (retired). §7/§8а."""
     items = await agent_store.list_for(contract or None, archived=archived)
+    if archived:
+        # Лимб — это АГЕНТЫ, выведенные из эксплуатации, а не старые версии живых. Отбор по
+        # `status='retired'` их не различал: у агента с историей пересмотров прошлые версии так и
+        # лежат retired, и он показывался в двух списках сразу под одним именем. На проде таких
+        # было трое («Финаналитик» v21, «Аудитор 1С» v9, «Следователь 1С» v2) — ровно те
+        # неразличимые дубли, из-за которых список перестаёт читаться. Прошлая версия живого
+        # агента принадлежит истории версий и откату (`/rollback`), а не архиву.
+        живые = {(a.get("contract_audit_id") or a.get("id"))
+                 for a in await agent_store.list_for(contract or None, archived=False)}
+        items = [a for a in items if (a.get("contract_audit_id") or a.get("id")) not in живые]
     # Схлопываем до ПОСЛЕДНЕЙ версии на агента (contract_audit_id) — 1 агент = 1 запись, без визуальных
     # дублей версий (#8). У authored теперь стабильный per-agent id, поэтому ключ работает и для них.
     latest: dict = {}
