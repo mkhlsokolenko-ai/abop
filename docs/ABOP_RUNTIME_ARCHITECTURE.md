@@ -211,3 +211,33 @@
 - Ядро/семьи/навыки/DataPlane — `cli/ape.py`, `docs/AGENT_FAMILIES_GUIDE.md`, `ABOP_ARD.md`
 - API-контур (клиент инференса встанет сюда) — `ABOP_API.md`, `server/web_api.py`
 - Продукт/governance/стык LUDA — `ABOP_PRD.md` v1.1, `ABOP_ADR.md`, `ABOP_AOP.md`, `ABOP_TDR.md`
+
+## Рецепт GPU-бокса ABOP-LLM (как поднять заново)
+
+Переносить с прежнего бокса **нечего**: по его же конфигу `backup: []` — модель тянется с
+HuggingFace и воссоздаётся без бэкапа, а SSH к боксу не проброшен (открыт только 8000/tcp).
+Переносится РЕЦЕПТ, и он должен лежать здесь, а не в чьей-то памяти: 08.11.2026 замена бокса
+стоила двух лишних попыток именно потому, что точные аргументы vLLM нигде не были записаны.
+
+| Что | Значение |
+|---|---|
+| образ | `vllm/vllm-openai:latest` |
+| модель | `cyankiwi/Qwen3-30B-A3B-Instruct-2507-AWQ-4bit` |
+| имя в API | `qwen3-30b-a3b` — его ждёт `LOCAL_LLM_MODEL`, менять нельзя |
+| контекст | `--max-model-len 32768` |
+| память | `--gpu-memory-utilization 0.92` |
+| порт | 8000 в контейнере; Vast пробрасывает его на случайный внешний — **хардкодить нельзя**, брать из `ports["8000/tcp"]` |
+| требования к офферу | VRAM ≥ 45 ГБ, диск ≥ 55 ГБ, ≤ $0.60/ч, проверенный хост, не CN/HK |
+
+**`--quantization` НЕ указывать.** Модель объявляет квантование сама (`compressed-tensors`,
+бэкенд MARLIN), и явный `--quantization awq_marlin` валит запуск с
+`ValidationError: Quantization method specified in the model config (compressed-tensors) does not
+match the quantization method specified in the quantization argument`.
+
+**Адрес нового бокса живёт в ДВУХ местах** — поправить оба, иначе прогон пойдёт на мёртвый адрес:
+`.env LOCAL_LLM_BASE_URL` и `llmOverride` в `admin_config` (ручка `/api/admin/llm`). После правки
+`.env` контейнер нужно **пересоздать** (`ops/deploy-webapi.sh`): `docker restart` не перечитывает
+`--env-file`.
+
+**Карту не выбирать по цене.** Самый дешёвый оффер обычно CMP 170HX — майнинговая карта с
+недостоверным объёмом памяти в листинге. Проверенная конфигурация — RTX A6000 48 ГБ.

@@ -10,7 +10,11 @@ ACTION="${1:-}"
 KEY_FILE=/root/.vast_api_key
 API=https://console.vast.ai/api/v1/instances       # листинг (GET) — v1
 API_SET=https://console.vast.ai/api/v0/instances   # смена состояния (PUT state) — v0 (v1 отдаёт Not found)
-QWEN_ID=51396167          # ape-qwen30b — на него завязан ABOP LOCAL_LLM_BASE_URL
+QWEN_ID=59715501          # ape-qwen30b-int4-48-v2 — на него завязан ABOP LOCAL_LLM_BASE_URL
+# История id: 51396167 (L40S, выведен 05.10) → 54301569 (A6000, потерян 08.11: Vast отдал
+# GPU остановленного инстанса другому арендатору) → 59715501 (A6000, Virginia).
+# ID ОБЯЗАН совпадать с /opt/redteam/ops/vast_sched.py: там он для планировщика, здесь для
+# ночной паузы. Разошлись — и скрипт будет дёргать пустоту, молча (так и было с 05.10).
 REDTEAM_ID=49036119       # redteam-judge-ab
 ENV_FILE=/opt/abop/.env
 LOG=/var/log/vast_schedule.log
