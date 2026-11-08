@@ -3009,7 +3009,30 @@ class Component extends DCLogic {
         self.setState({catalogCoverage: by, coverageTotals: cv.totals||null});
       }).catch(function(){});
     }).catch(function(){});
-    this.loadProcessMap(); this.loadLiveness(); this.refreshContracts(); this.loadData(); this.loadConfig(); this.loadBilling(); this.loadRbac(); this.loadUserData(); this.loadFleet(); this.loadFindings(); this.loadRuns(); this.loadSystems();
+    // Первой открывается канва, и ей нужны контракты, правила, палитра и СПИСОК АГЕНТОВ — всё.
+    // Раньше здесь одной строкой запускались все двенадцать загрузчиков: около тридцати запросов
+    // и ~1 МБ JSON на один воркер. Замер на проде 08.11.2026 в сессии владельца: тяжёлые ручки
+    // (findings 260 КБ, skills 707 КБ, runs, fleet, coverage) отдавались по 31–36 секунд, и список
+    // агентов стоял в той же очереди — канва выглядела пустой, хотя агенты были. Данные остальных
+    // экранов подтягиваются по одной после первой отрисовки: каждый экран всё равно обновляет
+    // своё при открытии, и ни один из них не виден в первую секунду.
+    this.refreshContracts(); this.loadConfig(); this.loadUserData(); this.loadData();
+    this._позже(['loadRuns', 'loadFleet', 'loadProcessMap', 'loadSystems',
+                 'loadBilling', 'loadRbac', 'loadFindings', 'loadLiveness']);
+  }
+
+  _позже(имена) {
+    // По одному, с паузой: залп из восьми загрузчиков снова занял бы воркер целиком и отодвинул
+    // то, что человек видит прямо сейчас. Уходим, если экран уже сменился.
+    var self = this, i = 0;
+    var шаг = function () {
+      if (i >= имена.length) return;
+      if (typeof self.isCurrent === 'function' && !self.isCurrent()) return;
+      var им = имена[i++];
+      try { if (typeof self[им] === 'function') self[им](); } catch (e) { /* один загрузчик не роняет остальные */ }
+      setTimeout(шаг, 250);
+    };
+    setTimeout(шаг, 300);
   }
   loadConfig() {
     var self = this;
@@ -3159,7 +3182,7 @@ class Component extends DCLogic {
       }).catch(function(){ self.showToast('ABOP недоступен'); });
   }
 
-  openSkill(id) { var self = this; this.setState({ modal: 'drawer', skillId: id, skillTpl: null }); this.loadEntities(); this.loadSkillTemplate(id); fetch('/api/skills/' + encodeURIComponent(id)).then(function(r){ return r.json(); }).then(function(d){ self.setState({ skillSrcDraft: (d.datasources || []).map(function(x){ return { entity: x.entity, fields: x.fields || [], kind: x.kind, note: x.note }; }) }); }).catch(function(){}); } saveSkillSources() { if(!this._canMutate()){ this.showToast('Только чтение — недостаточно прав'); return; }  var self = this, sid = this.state.skillId; fetch('/api/skills/' + encodeURIComponent(sid) + '/datasources', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ datasources: this.state.skillSrcDraft }) }).then(function(r){ return r.json(); }).then(function(d){ self.setState({ skillSrcDraft: d.datasources || [] }); self.showToast('Источники навыка сохранены'); self.loadBackend(); }).catch(function(){ self.showToast('Не удалось сохранить источники'); }); } reloadAgents() { var self = this; self.setState({ agentsLoading: true }); fetch('/api/agents').then(function(r){return r.json();}).then(function(d){ self.setState({ agentsList: d.agents || [], agentsLoading: false }); }).catch(function(){ self.setState({ agentsLoading: false }); }); fetch('/api/agents?archived=1').then(function(r){return r.json();}).then(function(d){ self.setState({ limboList: d.agents || [] }); }).catch(function(){}); } openAgent(a) { var self = this; this.setState({ agentPass: null, agentPassErr: '', agentPassBusy: false });
+  openSkill(id) { var self = this; this.setState({ modal: 'drawer', skillId: id, skillTpl: null }); this.loadEntities(); this.loadSkillTemplate(id); fetch('/api/skills/' + encodeURIComponent(id)).then(function(r){ return r.json(); }).then(function(d){ self.setState({ skillSrcDraft: (d.datasources || []).map(function(x){ return { entity: x.entity, fields: x.fields || [], kind: x.kind, note: x.note }; }) }); }).catch(function(){}); } saveSkillSources() { if(!this._canMutate()){ this.showToast('Только чтение — недостаточно прав'); return; }  var self = this, sid = this.state.skillId; fetch('/api/skills/' + encodeURIComponent(sid) + '/datasources', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ datasources: this.state.skillSrcDraft }) }).then(function(r){ return r.json(); }).then(function(d){ self.setState({ skillSrcDraft: d.datasources || [] }); self.showToast('Источники навыка сохранены'); self.loadBackend(); }).catch(function(){ self.showToast('Не удалось сохранить источники'); }); } reloadAgents() { var self = this; if (self._agentsReq) { self._agentsAgain = true; return; } self._agentsReq = true; var конец = function () { self._agentsReq = false; if (self._agentsAgain) { self._agentsAgain = false; self.reloadAgents(); } }; self.setState({ agentsLoading: true, agentsError: '' }); fetch('/api/agents').then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }).then(function(d){ self.setState({ agentsList: d.agents || [], agentsLoading: false, agentsError: '' }); конец(); }).catch(function(e){ self.setState({ agentsLoading: false, agentsError: 'список агентов не загрузился: ' + ((e && e.message) || e) }); конец(); }); fetch('/api/agents?archived=1').then(function(r){return r.json();}).then(function(d){ self.setState({ limboList: d.agents || [] }); }).catch(function(){}); } openAgent(a) { var self = this; this.setState({ agentPass: null, agentPassErr: '', agentPassBusy: false });
     /* Клик по ДЕЙСТВУЮЩЕМУ агенту открывает его паспорт, а не роспись семьи. Спека (/api/agents/spec)
        строится из code-ростера AGENT_FAMILIES по паре семья+роль и о самом агенте не знает ничего:
        у кастомной семьи ростера нет (404 → модалка открывалась пустой), а у собранного из чата роль
@@ -3521,7 +3544,7 @@ class Component extends DCLogic {
     this.onResize = () => this._applyNarrow();
     window.addEventListener('resize', this.onResize);
     const fromHash = (window.location.hash || '').replace('#', '');
-    const screens = ['overview','ingress','canvas','data','skills','agents','settings','security','lk']; this.loadBackend(); this.loadMe(); this.loadRuns(); this.reloadAgents(); this.loadOutChannels();   // каналы вывода — с сервера, а не из списка в вёрстке
+    const screens = ['overview','ingress','canvas','data','skills','agents','settings','security','lk']; this.loadBackend(); this.loadMe(); this.reloadAgents(); this.loadOutChannels();   /* loadRuns ушёл в отложенную очередь loadBackend: журнал прогонов не виден в первую секунду */   // каналы вывода — с сервера, а не из списка в вёрстке
     this.sanitize();
 
     const legacyLens = { fleet: 'ops', map: 'ops', runs: 'run', passport: 'envelope' };
@@ -6165,14 +6188,26 @@ agentTabs: [['work', 'В работе (' + s.agentsList.length + ')'], ['limbo',
       // «черновик» и «в проде» это разные вещи, и человек должен видеть, что открывает.
       serverAgents: (s.agentsList || []).map(a => ({
         label: a.name || a.id,
+        // `running` приходит от сервера, когда в проде стоит ДРУГАЯ версия этого же агента:
+        // строка в списке одна (1 агент = 1 запись), и она обязана сказать, что работает не она.
+        // Без этого развёрнутый агент просто исчезал из списка за более новым черновиком.
         hint: (a.contract_audit_id || a.id) + ' · ' + (a.status === 'deployed' ? 'в проде'
-              : (a.status === 'tested' ? 'проверен' : (a.status || 'черновик'))),
+              : (a.status === 'tested' ? 'проверен' : (a.status || 'черновик')))
+              + (a.running ? ' · в проде v' + a.running.version + ': ' + (a.running.name || '') : ''),
         border: s.canvasAgentId === a.id ? 'rgba(52,211,153,.5)' : 'var(--w12)',
         outlineBg: s.canvasAgentId === a.id ? 'rgba(16,185,129,.14)' : 'var(--w4)',
         fg: s.canvasAgentId === a.id ? 'var(--ink)' : 'var(--w55)',
         pick: () => this.openAgentOnCanvas(a)
       })),
       hasServerAgents: !!(s.agentsList || []).length,
+      // Пустое место в списке читается как «агентов нет». Поэтому раздел говорит словами, что с
+      // ним происходит: грузится, отказал или часть агентов лежит в Лимбе и здесь их не будет.
+      serverAgentsNote: s.agentsError ? s.agentsError
+            : (s.agentsLoading && !(s.agentsList || []).length ? 'загружаю список агентов…'
+            : (!(s.agentsList || []).length ? 'агентов на сервере нет — собери первого кнопкой ниже'
+            : ((s.limboList || []).length ? 'ещё ' + (s.limboList || []).length + ' в Лимбе — экран «Агенты»' : ''))),
+      serverAgentsNoteFg: s.agentsError ? 'var(--err-ink)' : 'var(--w42)',
+      openLimbo: () => this.setState({ screen: 'agents', showLimbo: true }),
       scenarioTabs: Object.keys(this.allScenarios()).map(k => ({
         label: this.allScenarios()[k].label,
         pick: () => { this.setState({ canvasAgentId: null, canvasAgentName: '' });

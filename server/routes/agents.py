@@ -195,16 +195,31 @@ async def agents_list(contract: str = "", archived: bool = False, u: dict = Depe
     # Схлопываем до ПОСЛЕДНЕЙ версии на агента (contract_audit_id) — 1 агент = 1 запись, без визуальных
     # дублей версий (#8). У authored теперь стабильный per-agent id, поэтому ключ работает и для них.
     latest: dict = {}
+    # Отдельно помним ту версию, которая РЕАЛЬНО работает. Схлопывание по максимальной версии
+    # само по себе верно (1 агент = 1 запись), но оно молча съедало развёрнутого агента, как
+    # только рядом появлялся более новый черновик: на проде `audit1c-holding-2026` показывал
+    # черновик v11 «Аудитор данных в 1С», а развёрнутый v10 «Аудитор 1С» исчезал из списка —
+    # человек видел, что агент «пропал», хотя тот продолжал работать. Строка остаётся одна,
+    # но она обязана сказать, что в проде стоит другая версия, и дать её открыть.
+    работает: dict = {}
     for a in items:
         cid = a.get("contract_audit_id") or a.get("id")
         if cid not in latest or (a.get("version") or 0) > (latest[cid].get("version") or 0):
             latest[cid] = a
+        if a.get("status") in ("deployed", "paused"):
+            пред = работает.get(cid)
+            if пред is None or (a.get("version") or 0) > (пред.get("version") or 0):
+                работает[cid] = a
     out = []
-    for a in latest.values():
+    for cid, a in latest.items():
         if can_see_family(u, a.get("family")):
             a = dict(a)
             a["edit_scope"] = _edit_scope(a)          # governance-класс: user | methodologist
             a["owner"] = a.get("source") == "authored"  # «мой» агент (создан пользователем) vs общий (#9)
+            раб = работает.get(cid)
+            if раб is not None and раб.get("id") != a.get("id"):
+                a["running"] = {"id": раб.get("id"), "name": раб.get("name"),
+                                "version": раб.get("version"), "status": раб.get("status")}
             out.append(a)
     out.sort(key=lambda x: x.get("created_at") or "", reverse=True)
     return {"agents": out}
