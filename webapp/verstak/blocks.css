@@ -220,3 +220,72 @@
 @media (prefers-reduced-motion:reduce){
   .vk *{transition:none !important; animation:none !important}
 }
+
+/* ── реестр клиентов: первый экран, собранный на Верстаке ─────────────────────────────────────
+   Экран обслуживающей компании: обслуживаемых фирм сотни, и каждая строка — чей-то учёт. Поэтому
+   здесь нет плиток с большими цифрами: читают не «сколько», а «кто и в каких границах». */
+.vk-clients{display:grid; gap:var(--vk-gap-2)}
+.vk-clients .row{
+  display:grid; grid-template-columns:minmax(0,1.6fr) minmax(0,1fr) auto; gap:var(--vk-gap-2);
+  align-items:center;
+  background:var(--vk-bench); border:var(--vk-line) solid var(--vk-groove);
+  border-radius:var(--vk-r-soft); padding:var(--vk-pad);
+}
+.vk-clients .row.off{opacity:.55}
+.vk-clients .who{display:grid; gap:3px; min-width:0}
+.vk-clients .who b{font-size:15px}
+.vk-clients .who .addr{
+  font:400 var(--vk-t-micro)/1.3 var(--vk-f-mono); color:var(--vk-code);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.vk-clients .facts{display:grid; gap:3px; font-size:var(--vk-t-small); color:var(--vk-ink-2)}
+.vk-clients .facts .m{font-family:var(--vk-f-mono); color:var(--vk-ink-3)}
+.vk-clients .acts{display:flex; gap:8px; flex-wrap:wrap}
+.vk-clients .acts .b-do{width:auto; padding:8px 12px; font-size:13px}
+.vk-clients .acts .b-calc{width:auto; padding:7px 12px; font-size:12.5px; box-shadow:none}
+.vk-clients .state{
+  font:600 var(--vk-t-micro)/1 var(--vk-f-mono); letter-spacing:.06em; text-transform:uppercase;
+  color:var(--vk-ok);
+}
+.vk-clients .state.off{color:var(--vk-ink-3)}
+.vk-clients .empty{color:var(--vk-ink-2); font-size:var(--vk-t-small)}
+@media (max-width:860px){ .vk-clients .row{grid-template-columns:1fr} }
+
+/* ── проба связи: что сказала сама база. Организацию здесь ВЫБИРАЮТ, а не набирают ──────────── */
+.vk-probe{display:grid; gap:var(--vk-gap-2)}
+.vk-probe .bad{color:var(--vk-bad); font-size:var(--vk-t-small)}
+.vk-probe .orgs{display:flex; gap:8px; flex-wrap:wrap}
+.vk-probe .org{
+  display:grid; gap:2px; text-align:left;
+  background:var(--vk-bench-2); color:var(--vk-ink);
+  border:var(--vk-line) solid var(--vk-groove); border-radius:var(--vk-r-sharp);
+  padding:9px 12px;
+}
+.vk-probe .org[aria-pressed="true"]{border-color:var(--vk-brass); background:var(--vk-bench)}
+.vk-probe .org b{font-size:13.5px}
+.vk-probe .org .inn{font:400 var(--vk-t-micro)/1 var(--vk-f-mono); color:var(--vk-code)}
+.vk-probe .vol{display:flex; gap:var(--vk-gap); flex-wrap:wrap; font-size:var(--vk-t-small); color:var(--vk-ink-2)}
+.vk-probe .vol b{font-family:var(--vk-f-mono); color:var(--vk-ink)}
+
+/* ── форма клиента: набирают только адрес и пароль ───────────────────────────────────────────── */
+.vk-form{display:grid; gap:var(--vk-gap-2)}
+.vk-form .pair{display:grid; gap:5px}
+.vk-form label{font:600 var(--vk-t-micro)/1 var(--vk-f-label); letter-spacing:.08em;
+  text-transform:uppercase; color:var(--vk-ink-3)}
+.vk-form .two{display:grid; grid-template-columns:1fr 1fr; gap:var(--vk-gap-2)}
+.vk-form input, .vk-form select, .vk-form textarea{
+  width:100%; font:400 var(--vk-t-body)/1.3 var(--vk-f-ui);
+  background:var(--vk-desk); color:var(--vk-ink);
+  border:var(--vk-line) solid var(--vk-groove); border-radius:var(--vk-r-sharp);
+  padding:10px 12px;
+}
+.vk-form input:focus, .vk-form select:focus, .vk-form textarea:focus{
+  border-color:var(--vk-brass); outline:none;
+}
+.vk-form .hint{font-size:12.5px; color:var(--vk-ink-3)}
+.vk-form .acts{display:flex; gap:10px; flex-wrap:wrap; margin-top:4px}
+.vk-form .acts button{width:auto}
+.vk-form .said{font-size:var(--vk-t-small); color:var(--vk-ink-2)}
+.vk-form .said.bad{color:var(--vk-bad)}
+.vk-form .said.ok{color:var(--vk-ok)}
+@media (max-width:620px){ .vk-form .two{grid-template-columns:1fr} }

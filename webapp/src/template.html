@@ -3739,7 +3739,12 @@ class Component extends DCLogic {
 
     const navDefs = [
       ['overview', 'Обзор'], ['ingress', 'Загрузка аудитов'], ['canvas', 'Граф'], ['skills', 'Навыки'],
-      ['data', 'Данные'], ['agents', 'Агенты']
+      ['data', 'Данные'], ['agents', 'Агенты'],
+      // Третий элемент — адрес: пункт ведёт на ОТДЕЛЬНУЮ страницу, а не переключает экран внутри
+      // приложения. «Клиенты» — первый экран, перенесённый на Верстак (docs/STYLE_APP.md:
+      // экраны переносятся по одному, старые живут как есть). Подключение обслуживаемой фирмы
+      // перестаёт требовать доступа к серверу, поэтому пункт нужен в рейле, а не в закладках.
+      ['clients', 'Клиенты', '/verstak/clients.html']
     ];
     // Жёсткие ссылки на наблюдаемость (тот же хост, что ABOP): Grafana/Prometheus/сырые метрики.
     const _obsHost = (window.location.hostname || '5.129.192.63');
@@ -3751,15 +3756,19 @@ class Component extends DCLogic {
     // Бейдж «нарушения» считался от демо-константы REATTEST плюс выдуманная добавка за уровень
     // прав. Считаем по тому, что действительно есть: события аудита с пометкой отказа.
     const secViolations = (s.adminAudit || []).filter(e => e.severity === 'error' || e.severity === 'fail').length;
-    const nav = navDefs.map(([id, label]) => {
+    const nav = navDefs.map(([id, label, href]) => {
       const active = s.screen === id;
-      const glyphs = { overview: '◉', canvas: '⊞', skills: '✦', data: '⛁', agents: '◈', settings: '⚙', security: '⛨' };
+      const glyphs = { overview: '◉', canvas: '⊞', skills: '✦', data: '⛁', agents: '◈', settings: '⚙', security: '⛨',
+                       clients: '⌂' };
       let badge = id === 'runs' ? (!s.startedOnce ? '' : hitlPending ? '1' : (finished ? '' : '•')) : '';
       if (id === 'canvas') badge = hitlPending ? '1' : (s.startedOnce && !finished ? '•' : '');
       // Пункта «security» в рейле нет (экран открывается из меню профиля), поэтому бейдж для
       // него считался в никуда. Оставлен только живой — очередь HITL.
       return {
-        label, go: () => this.go(id), current: active ? 'page' : 'false',
+        // Уход на отдельную страницу проходит через тот же предохранитель, что смена экрана:
+        // несохранённый холст не должен пропадать от клика по рейлу.
+        label, go: () => (href ? this.guardedGo({ kind: 'away', href: href }) : this.go(id)),
+        current: active ? 'page' : 'false',
         glyph: glyphs[id] || '·',
         padX: s.navOpen === false ? 8 : 12,
         bg: active ? 'rgba(99,102,241,.18)' : 'transparent',
@@ -7101,7 +7110,7 @@ agentTabs: [['work', 'В работе (' + s.agentsList.length + ')'], ['limbo',
   }
 
   guardedGo(desc) {
-    const replaces = desc && (desc.kind === 'scenario' || desc.kind === 'graph' || desc.kind === 'newScenario' || desc.kind === 'agent');
+    const replaces = desc && (desc.kind === 'scenario' || desc.kind === 'graph' || desc.kind === 'newScenario' || desc.kind === 'agent' || desc.kind === 'away');
     if (replaces && this.state.canvasDirty) { this.setState({ modal: 'guard', guardTo: desc }); return; }
     if (this.state.canvasDirty) this.saveGraph();
     this.applyGo(desc);
@@ -7113,6 +7122,7 @@ agentTabs: [['work', 'В работе (' + s.agentsList.length + ')'], ['limbo',
     if (desc.kind === 'scenario') { this.loadScenario(desc.key); this.setState({ modal: null, guardTo: null }); }
     if (desc.kind === 'newScenario') { this.setState({ modal: null, guardTo: null }, () => this.createScenario()); }
     if (desc.kind === 'agent') { this.setState({ modal: null, guardTo: null }, () => this.openAgentNow(desc.agent)); }
+    if (desc.kind === 'away') { this.setState({ modal: null, guardTo: null }); window.location.href = desc.href; }
     if (desc.kind === 'screen') { this.setState({ modal: null, guardTo: null }); this.goNow(desc.screen); }
     if (desc.kind === 'graph') {
       this.loadScenario(desc.scenario);

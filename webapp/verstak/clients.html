@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Клиенты — реестр обслуживаемых компаний</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=PT+Sans+Narrow:wght@400;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="blocks.css">
+<style>
+  /* Только раскладка страницы. Вид блоков живёт в blocks.css и правится там. */
+  body{margin:0; background:var(--vk-desk); padding-inline:20px; padding-block:26px 56px}
+  .wrap{max-width:1120px; margin-inline:auto}
+  .head{display:flex; gap:var(--vk-gap); align-items:flex-end; flex-wrap:wrap; margin-bottom:22px}
+  .mark{display:flex; align-items:baseline; gap:10px}
+  .mark h1{margin:0; font:700 var(--vk-t-h1)/1 var(--vk-f-label); letter-spacing:.02em; color:var(--vk-ink)}
+  .mark .dot{width:9px; height:9px; background:var(--vk-brass); border-radius:50%}
+  .mark p{margin:6px 0 0; color:var(--vk-ink-2); font-size:13.5px; max-width:62ch}
+  .head .back{margin-left:auto}
+  .head .back a{color:var(--vk-brass); font-size:13px}
+  footer{margin-top:34px; padding-top:14px; border-top:var(--vk-line) solid var(--vk-groove);
+         font-size:12.5px; color:var(--vk-ink-3)}
+  @media (max-width:860px){ .head .back{margin-left:0} }
+</style>
+</head>
+<body class="vk">
+<div class="wrap">
+  <div class="head">
+    <div class="mark">
+      <span class="dot" aria-hidden="true"></span>
+      <div>
+        <h1>КЛИЕНТЫ</h1>
+        <p>Обслуживаемые компании: где база каждой, в каких границах считаем и по какому
+           устройству учёта. Подключение клиента — запись в реестре, а не работа с сервером.</p>
+      </div>
+    </div>
+    <div class="back"><a href="/">← в ABOP</a></div>
+  </div>
+
+  <section class="vk-panel" id="реестр" aria-label="Реестр клиентов"></section>
+
+  <h2 class="vk-section">Завести клиента</h2>
+  <section class="vk-panel" id="форма" aria-label="Заведение клиента"></section>
+  <section id="проба" aria-label="Что сказала база"></section>
+
+  <footer>
+    Пароль служебного пользователя OData уходит в файл-секрет установки: наружу не возвращается
+    ни значение, ни путь к нему. В учётную базу ABOP не пишет — все запросы только на чтение.
+  </footer>
+</div>
+
+<script src="render.js"></script>
+<script>
+/* ───────────────────────────────────────────────────────────────────────────────────────────────
+   Первый экран, перенесённый на Верстак. Сюда ходят те же ручки, что в основное приложение,
+   поэтому токен берётся из того же места (`localStorage['abop.token']`, тот же origin) и так же
+   обновляется на 401. Повторять весь бандл ради этого не нужно: нужны Bearer, арендатор и одна
+   попытка обновления.
+   ─────────────────────────────────────────────────────────────────────────────────────────────── */
+var СОСТОЯНИЕ = { клиенты: [], схемы: [], проба: null, выбрана: "", занято: "" };
+
+function токен() { try { return localStorage.getItem("abop.token") || ""; } catch (e) { return ""; } }
+
+function обновитьТокен() {
+  var rt = null;
+  try { rt = localStorage.getItem("abop.refresh"); } catch (e) {}
+  if (!rt) { return Promise.resolve(false); }
+  return fetch("/api/auth/refresh", { method: "POST", headers: { "Content-Type": "application/json" },
+                                      body: JSON.stringify({ refresh_token: rt }) })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (j) {
+      if (!j || !j.access_token) { return false; }
+      try {
+        localStorage.setItem("abop.token", j.access_token);
+        if (j.refresh_token) { localStorage.setItem("abop.refresh", j.refresh_token); }
+      } catch (e) {}
+      return true;
+    })
+    .catch(function () { return false; });
+}
+
+function зов(путь, опции, повтор) {
+  опции = опции || {};
+  var заг = { "Content-Type": "application/json" };
+  var т = токен();
+  if (т) { заг.Authorization = "Bearer " + т; }
+  try {
+    var арендатор = localStorage.getItem("abop.tenant");
+    if (арендатор) { заг["X-ABOP-Tenant"] = арендатор; }
+  } catch (e) {}
+  return fetch(путь, { method: опции.method || "GET", headers: заг,
+                       body: опции.body ? JSON.stringify(опции.body) : undefined })
+    .then(function (r) {
+      if (r.status === 401 && !повтор) {
+        return обновитьТокен().then(function (ок) {
+          if (!ок) { throw new Error("нужно войти в ABOP: откройте приложение и повторите"); }
+          return зов(путь, опции, true);
+        });
+      }
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        if (!r.ok) { throw new Error(j.detail || ("сервер ответил " + r.status)); }
+        return j;
+      });
+    });
+}
+
+/* ── раскладка: какой блок и откуда берёт данные ─────────────────────────────────────────────── */
+function нарисовать(реестр) {
+  var данные = {
+    реестр: {
+      строки: (СОСТОЯНИЕ.клиенты || []).map(function (к) {
+        return {
+          клиент: к.название, организация: к.организация || к.название, адрес: к.адрес,
+          схема: к.схема_учёта || "базовая", система: к.система, секрет: к.секрет,
+          состояние: к.состояние,
+          период: (к.период_с || "—") + " — " + (к.период_по || "—"),
+          обновить: function () { обновить(к.id); },
+          переключить: function () {
+            состояние(к.id, String(к.состояние) === "выключен" ? "активен" : "выключен");
+          }
+        };
+      }),
+      почему_пусто: СОСТОЯНИЕ.пусто || "в реестре нет ни одного клиента"
+    },
+    форма: {
+      адрес: "", период_с: новыйГод(), период_по: сегодня(), схемы: СОСТОЯНИЕ.схемы,
+      примечание: "", сказано: СОСТОЯНИЕ.занято || СОСТОЯНИЕ.сказано || "",
+      сказано_вид: СОСТОЯНИЕ.сказано_вид || "",
+      подпись_завести: СОСТОЯНИЕ.выбрана ? ("Завести «" + СОСТОЯНИЕ.выбрана + "»")
+                                         : "Завести клиента",
+      проверить: проверить, завести: завести
+    },
+    проба: СОСТОЯНИЕ.проба
+      ? {
+          организации: СОСТОЯНИЕ.проба.организации || [], объём: СОСТОЯНИЕ.проба.объём || {},
+          система: СОСТОЯНИЕ.проба.система || "", почему: СОСТОЯНИЕ.проба.почему || "",
+          выбрана: СОСТОЯНИЕ.выбрана,
+          выбрать: function (имя) { СОСТОЯНИЕ.выбрана = имя; нарисовать(реестр); }
+        }
+      : { организации: [] }
+  };
+  var раскладка = {
+    "реестр": [{ блок: "список_клиентов", данные: "реестр" }],
+    "форма": [{ блок: "форма_клиента", данные: "форма" }],
+    "проба": [{ блок: "проба_базы", данные: "проба" }]
+  };
+  Object.keys(раскладка).forEach(function (куда) {
+    var узел = document.getElementById(куда);
+    узел.innerHTML = "";
+    Верстак.собрать(реестр, раскладка[куда], данные, узел);
+  });
+}
+
+function сегодня() { return new Date().toISOString().slice(0, 10); }
+function новыйГод() { return new Date().getFullYear() + "-01-01"; }
+function значение(ид) { var э = document.getElementById(ид); return э ? э.value : ""; }
+
+function сказать(текст, вид) {
+  СОСТОЯНИЕ.сказано = текст || "";
+  СОСТОЯНИЕ.сказано_вид = вид || "";
+  СОСТОЯНИЕ.занято = "";
+  нарисовать(РЕЕСТР_БЛОКОВ);
+}
+
+function проверить() {
+  var адрес = значение("vkClAddr"), пароль = значение("vkClPwd");
+  if (!адрес || !пароль) { сказать("нужны адрес базы и пароль служебного пользователя", "bad"); return; }
+  СОСТОЯНИЕ.занято = "читаю базу…";
+  нарисовать(РЕЕСТР_БЛОКОВ);
+  зов("/api/clients/probe", { method: "POST", body: { адрес: адрес, пароль: пароль } })
+    .then(function (о) {
+      СОСТОЯНИЕ.проба = о;
+      // Одна организация в базе — выбирать не из чего, подставляем сразу.
+      СОСТОЯНИЕ.выбрана = (о.организации || []).length === 1 ? о.организации[0].название : "";
+      сказать("связь есть; выберите организацию и заводите", "ok");
+    })
+    .catch(function (e) {
+      СОСТОЯНИЕ.проба = { почему: e.message };
+      сказать(e.message, "bad");
+    });
+}
+
+function завести() {
+  var тело = {
+    адрес: значение("vkClAddr"), пароль: значение("vkClPwd"),
+    организация: СОСТОЯНИЕ.выбрана, период_с: значение("vkClFrom"),
+    период_по: значение("vkClTo"), схема_учёта: значение("vkClScheme"),
+    примечание: значение("vkClNote")
+  };
+  if (!тело.адрес || !тело.пароль) { сказать("нужны адрес базы и пароль", "bad"); return; }
+  СОСТОЯНИЕ.занято = "проверяю связь и записываю карточку…";
+  нарисовать(РЕЕСТР_БЛОКОВ);
+  зов("/api/clients", { method: "POST", body: тело })
+    .then(function (о) {
+      СОСТОЯНИЕ.проба = null; СОСТОЯНИЕ.выбрана = "";
+      return загрузить().then(function () {
+        сказать("клиент заведён: " + (о.дальше || "нажмите «Обновить данные»"), "ok");
+      });
+    })
+    .catch(function (e) { сказать(e.message, "bad"); });
+}
+
+function обновить(ид) {
+  СОСТОЯНИЕ.занято = "читаю базу клиента, это занимает до минуты…";
+  нарисовать(РЕЕСТР_БЛОКОВ);
+  зов("/api/clients/" + encodeURIComponent(ид) + "/refresh", { method: "POST", body: {} })
+    .then(function (о) {
+      var части = Object.keys(о.рецепты || {}).map(function (р) {
+        return р + ": " + (о.рецепты[р].записано || 0);
+      });
+      сказать("данные перечитаны — " + (части.join(", ") || "рецептов не нашлось"), "ok");
+    })
+    .catch(function (e) { сказать(e.message, "bad"); });
+}
+
+function состояние(ид, куда) {
+  зов("/api/clients/" + encodeURIComponent(ид) + "/state",
+      { method: "POST", body: { состояние: куда } })
+    .then(function () { return загрузить(); })
+    .then(function () { сказать("клиент " + куда, "ok"); })
+    .catch(function (e) { сказать(e.message, "bad"); });
+}
+
+function загрузить() {
+  return зов("/api/clients?все=1")
+    .then(function (о) {
+      СОСТОЯНИЕ.клиенты = о.clients || [];
+      СОСТОЯНИЕ.схемы = о.схемы || [];
+      СОСТОЯНИЕ.пусто = (о.контроль || {}).почему_пусто || "";
+      нарисовать(РЕЕСТР_БЛОКОВ);
+    })
+    .catch(function (e) {
+      СОСТОЯНИЕ.пусто = "реестр не загрузился: " + e.message;
+      нарисовать(РЕЕСТР_БЛОКОВ);
+    });
+}
+
+var РЕЕСТР_БЛОКОВ = null;
+fetch("blocks.json")
+  .then(function (о) { return о.json(); })
+  .then(function (реестр) { РЕЕСТР_БЛОКОВ = реестр; return загрузить(); })
+  .catch(function (e) {
+    // Реестр блоков не прочитался — экран обязан сказать это словами, а не остаться пустым.
+    var б = document.createElement("div");
+    б.className = "vk-panel";
+    б.textContent = "Реестр блоков не прочитан: " + e;
+    document.getElementById("реестр").appendChild(б);
+  });
+</script>
+</body>
+</html>
