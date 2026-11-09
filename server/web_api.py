@@ -409,6 +409,13 @@ from .routes import inbox as _routes_inbox  # noqa: E402
 
 app.include_router(_routes_inbox.router)
 
+# Реестр обслуживаемых клиентов: завести клиента из интерфейса, а не засевом по SSH. Карточка
+# задаёт прогон целиком (адрес базы, организация, период, схема учёта), пароль живёт файлом-секретом
+# в томе установки — иначе заведение требовало бы пересоздания контейнера.
+from .routes import clients as _routes_clients  # noqa: E402
+
+app.include_router(_routes_clients.router)
+
 # Конвейер первички: очередь ПОЛЕЙ для человека и качество на корпусе заказчика. Отдельный роутер,
 # потому что это рабочее место оператора, а не действие уровня руководителя (ADR-076).
 from .routes import pervichka as _routes_pervichka  # noqa: E402
