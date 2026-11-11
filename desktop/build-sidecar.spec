@@ -4,8 +4,14 @@
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 datas, binaries, hiddenimports = [], [], []
+# Пакеты, которые сайдкар импортирует ЛЕНИВО (внутри функций), PyInstaller сам не находит:
+# статический анализ видит только импорты верхнего уровня. Поэтому их перечисляют здесь, и
+# расхождение сторожит `tests/test_desktop_sidecar_build.py`. Так ушёл `pypdf`: PDF-вложение
+# падало в СОБРАННОМ приложении (и на Windows, и на macOS) с «No module named pypdf», а docx и
+# xlsx работали — они в списке были. Из исходников при этом всё работало, поэтому ошибка и дожила
+# до пользователя.
 for pkg in ("uvicorn", "fastapi", "starlette", "pydantic", "pydantic_core", "anyio",
-            "docx", "openpyxl", "rapidocr_onnxruntime", "onnxruntime", "PIL", "sidecar"):
+            "pypdf", "docx", "openpyxl", "rapidocr_onnxruntime", "onnxruntime", "PIL", "sidecar"):
     d, b, h = collect_all(pkg)
     datas += d
     binaries += b
