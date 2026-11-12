@@ -164,12 +164,12 @@ jobs:
       #
       # Поэтому: ZIP строго (упал — упал релиз), DMG отдельным шагом и БЕЗ права уронить джоб.
       # Пропущенный DMG виден в сводке джоба и не притворяется успехом.
-      - name: Собрать ZIP — канал авто-обновления (electron-builder + ad-hoc подпись)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"   # Developer ID нет — подписываем ad-hoc в afterPack
-        run: npx electron-builder --mac zip --${{ matrix.arch }} --publish ${{ env.PUBLISH }}
-
+      #
+      # ПОРЯДОК ВАЖЕН: `latest-mac.yml` перезаписывается каждым вызовом electron-builder, и в нём
+      # остаётся только последняя собранная цель. Когда ZIP шёл первым, x64-манифест 1.0.38 стал
+      # ссылаться на DMG — файл, который electron-updater на macOS не берёт, то есть обновление
+      # было объявлено и не работало. Поэтому установщик собирается первым, а ZIP последним:
+      # манифест обязан остаться за тем файлом, по которому идёт обновление.
       - name: Собрать DMG — ручной установщик (падение не роняет релиз)
         id: dmg
         continue-on-error: true
@@ -177,6 +177,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npx electron-builder --mac dmg --${{ matrix.arch }} --publish ${{ env.PUBLISH }}
+
+      - name: Собрать ZIP — канал авто-обновления, собирается ПОСЛЕДНИМ
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"   # Developer ID нет — подписываем ad-hoc в afterPack
+        run: npx electron-builder --mac zip --${{ matrix.arch }} --publish ${{ env.PUBLISH }}
 
       - name: Сказать в сводку, если установщика нет
         if: steps.dmg.outcome == 'failure'
