@@ -586,7 +586,7 @@ export async function mount(root, ctx) {
       const idx = +e.dataset.regen; const m = messages[idx]; const meta = (m && m.meta) || {};
       if (meta._rerun && meta._rerun.pid) { runPipeline(meta._rerun.pid, meta._rerun.task); return; }
       if (meta.pipeline_result && typeof meta.pipeline_result === "object" && meta.pipeline_result.pid) { runPipeline(meta.pipeline_result.pid, meta.pipeline_result.task); return; }
-      if (meta.run_agent) { runAbopAgentDeliver(meta.run_agent.agent_id, meta.run_agent.agent_name || agentName(meta.run_agent.agent_id), meta.run_agent.task || "", meta.run_agent.deliver || "", true); return; }
+      if (meta.run_agent) { runAbopAgentDeliver(meta.run_agent.agent_id, meta.run_agent.agent_name || agentName(meta.run_agent.agent_id), meta.run_agent.task || "", meta.run_agent.deliver || "", true, false, meta.run_agent.scope || {}); return; }
       const p = messages[idx - 1]; if (p && p.role === "user") sendPrompt(p.content);
     });
     $("col").querySelectorAll("[data-edit]").forEach((e) => e.onclick = () => { $("inp").value = messages[+e.dataset.edit].content; $("inp").focus(); });
@@ -704,12 +704,16 @@ export async function mount(root, ctx) {
       m.meta.slot_ask = null; m.meta.slot_picked = picked; m.content = "предмет определён";
       saveRunMeta(m, {});
       render();
-      runAbopAgentDeliver(sl.agent_id, agentName(sl.agent_id), (sl.task || "") + "\n\n" + slotContext(picked), "");
+      runAbopAgentDeliver(sl.agent_id, agentName(sl.agent_id), (sl.task || "") + "\n\n" + slotContext(picked), "", false, true, slotScope(picked));
     });
     $("col").querySelectorAll(".slotSkip").forEach((b) => b.onclick = () => {
       const m = messages[+b.dataset.i]; const sl = m && m.meta && m.meta.slot_ask; if (!sl) return;
-      toast("Запускаю без уточнения: результат будет общим по всем записям", "warn");
-      runAbopAgentDeliver(sl.agent_id, agentName(sl.agent_id), sl.task || "", "", false, true);
+      // «Без уточнения» — не пропуск предмета, а ЯВНОЕ «по всем данным»: платформа
+      // отказывается считать агента с обязательным слотом молча, и звёздочка —
+      // то самое осознанное решение человека.
+      toast("Запускаю по всем данным установки — не по одной записи", "warn");
+      runAbopAgentDeliver(sl.agent_id, agentName(sl.agent_id), sl.task || "", "", false,
+                          true, { [sl.name]: "*" });
     });
     $("col").querySelectorAll(".slotChange").forEach((b) => b.onclick = async () => {
       const m = messages[+b.dataset.i]; const sp = m && m.meta && m.meta.slot_picked; if (!sp) return;
@@ -1588,17 +1592,20 @@ export async function mount(root, ctx) {
       <div class="dcard-acts"><button type="button" class="btn sm slotChange" data-i="${i}">Поменять</button></div></div>`;
   }
 
-  // Собрать предмет до запуска: вернуть строку контекста или null, если человек ушёл в выбор.
+  // Собрать предмет до запуска: вернуть {scope, hint} или null, если человек ушёл в выбор.
+  // scope — граница расчёта, по нему делит данные код платформы. hint — та же запись
+  // словами, её читает модель. Прежде возвращалась ТОЛЬКО проза, и выбор клиента на
+  // расчёт не влиял вообще.
   async function resolveSlots(agentId, task) {
     let slots = [];
     try { const r = await api(A_AG + "/slots/" + encodeURIComponent(agentId)); slots = (r && r.slots) || []; }
-    catch { return ""; }                                  // слотов нет или сервер старый — как раньше
+    catch { return { scope: {}, hint: "" }; }             // слотов нет или сервер старый — как раньше
     const required = slots.filter((s) => s.required);
-    if (!required.length) return "";
+    if (!required.length) return { scope: {}, hint: "" };
     const sl = required[0];                               // не больше одного вопроса за раз
     let res = null;
     try { res = await api(A_AG + "/resolve/" + encodeURIComponent(sl.entity) + "?q=" + encodeURIComponent(task || "") + "&limit=6"); }
-    catch { return ""; }
+    catch { return { scope: {}, hint: "" }; }
     const cands = (res && res.candidates) || [];
     if (res && res.mode === "exact" && cands.length) {
       const r = cands[0].record || {};
@@ -1607,11 +1614,18 @@ export async function mount(root, ctx) {
                        title: r[d.title] || r.name || r.id, sub: [r[d.badge] || r.id, r[d.subtitle], r[d.note] ? "ввод " + r[d.note] : ""].filter(Boolean).join(" · ") };
       await note("предмет определён", { slot_picked: picked });
       render();
-      return slotContext(picked);
+      return { scope: slotScope(picked), hint: slotContext(picked) };
     }
     await note("уточните предмет", { slot_ask: { ...sl, ...(res || {}), candidates: cands, task, agent_id: agentId } });
     render(); scrollDown(true);
     return null;                                          // ждём выбора человека
+  }
+
+  // Предмет работы структурой: {имя_слота: id записи}. Без id не отправляем ничего —
+  // платформа ищет карточку по id или названию, и догадка означала бы чужие данные.
+  function slotScope(p) {
+    const ид = ((p.record || {}).id || "").toString().trim();
+    return ид ? { [p.slot]: ид } : {};
   }
 
   function slotContext(p) {
@@ -1684,22 +1698,23 @@ export async function mount(root, ctx) {
       () => { proceed(); }, "Да, запустить сейчас");
   }
   // единая точка запуска агента (D-H6): карточка решения, подсказки, шторка, «Мои агенты», повтор
-  function runAbopAgentDeliver(agentId, agentNm, task, deliver, isRerun, slotsDone) {
+  function runAbopAgentDeliver(agentId, agentNm, task, deliver, isRerun, slotsDone, scope) {
     if (busy) { toast("Дождитесь завершения текущего ответа", "warn"); return; }
     closeDrawer();
     // Перед запуском выясняем предмет работы, если навык его требует: без конкретного проекта
     // сверка плана и факта возвращает общие слова. Уверенный случай подставляется сам.
     const go = async () => {
       if (!slotsDone && !isRerun) {
-        const ctxAdd = await resolveSlots(agentId, task || "");
-        if (ctxAdd === null) return;                         // ушли в выбор, запустим после него
-        if (ctxAdd) task = (task || "") + "\n\n" + ctxAdd;
+        const found = await resolveSlots(agentId, task || "");
+        if (found === null) return;                           // ушли в выбор, запустим после него
+        if (found.hint) task = (task || "") + "\n\n" + found.hint;
+        scope = { ...(scope || {}), ...(found.scope || {}) };
       }
-      _scheduleGuard(agentId, agentNm, () => _doRunAbopAgent(agentId, agentNm, task, deliver, isRerun));
+      _scheduleGuard(agentId, agentNm, () => _doRunAbopAgent(agentId, agentNm, task, deliver, isRerun, scope));
     };
     go();
   }
-  async function _doRunAbopAgent(agentId, agentNm, task, deliver, isRerun) {
+  async function _doRunAbopAgent(agentId, agentNm, task, deliver, isRerun, scope) {
     await ensureThread(task ? task.slice(0, 50) : `Агент «${agentNm}»`);
     if (isRerun || !messages.some((m) => m.role === "user" && m.content === task)) messages.push({ role: "user", content: `▶ запустить агента «${agentNm}»${task ? ": " + task : ""}${deliver ? " · результат " + (DELIVER_LABEL[deliver] || deliver) : ""}`, meta: {} });
     const run = { role: "assistant", content: "", meta: {} }; messages.push(run); render(); scrollDown(true);
@@ -1711,13 +1726,15 @@ export async function mount(root, ctx) {
     const status = (txt) => { if (el && el.isConnected) el.innerHTML = `<span style="display:inline-flex;gap:12px;align-items:center">${mascot("thinking", 26)}<span style="color:var(--ink-2)">${txt}</span></span>`; };
     const finish = (r) => {
       if (r.ok && r.run) {
-        run.content = "[агент " + agentId + "]"; run.meta = { run_agent: { ...r.run, agent_name: r.run.agent_name || agentNm, task: task || "", deliver: deliver || "" } };
+        // Предмет едет в метаданные: «Повторить» обязано считать того же клиента,
+        // иначе повтор отчёта молча посчитал бы другую компанию.
+        run.content = "[агент " + agentId + "]"; run.meta = { run_agent: { ...r.run, agent_name: r.run.agent_name || agentNm, task: task || "", deliver: deliver || "", scope: scope || {} } };
         const waits = ((r.run || {}).delivery || []).some((d) => d.mode === "awaiting_hitl");
         toast(waits ? "Агент подготовил внешнее действие — подтвердите в карточке" : `Агент «${agentNm}» завершил: находок ${r.run.findings_total ?? 0}`, waits ? "warn" : "ok");
       } else { const msg = humanError(r.error || "не удалось"); run.content = (r.status === "cancelled" ? "Прогон отменён" : "Не удалось выполнить прогон: " + msg); run.meta = { notice: { icon: r.status === "cancelled" ? "⏹" : "⚠" } }; if (r.status !== "cancelled") toast(msg, "danger"); }
     };
     try {
-      const r = await api(M + "/threads/" + cur.id + "/run-agent", { method: "POST", body: JSON.stringify({ agent_id: agentId, context: task || "", deliver: deliver || "", no_cache: !!isRerun }) });
+      const r = await api(M + "/threads/" + cur.id + "/run-agent", { method: "POST", body: JSON.stringify({ agent_id: agentId, context: task || "", deliver: deliver || "", no_cache: !!isRerun, scope: scope || {} }) });
       if (!r.ok) finish(r);
       else if (r.done || r.run || !r.job_id) finish(r);   // старый сайдкар (≤1.0.6) отдаёт результат сразу
       else {

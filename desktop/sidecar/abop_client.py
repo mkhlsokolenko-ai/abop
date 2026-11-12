@@ -248,11 +248,24 @@ def prepare(scenario: str) -> dict:
     return _req("POST", "/api/demo/prepare", {"scenario": scenario}, timeout=60)
 
 
+def _scope(scope: dict | None) -> dict:
+    """Предмет работы для тела запроса: плоский {имя_слота: id записи}.
+
+    Отдельной функцией, потому что это ГРАНИЦА РАСЧЁТА, а не подсказка. Прежде выбранная в
+    десктопе запись уезжала прозой в `context` — её читала только языковая модель, а код по ней
+    не фильтровал: человек выбирал клиента, видел карточку «понял так», и прогон шёл по всем
+    данным установки. Пустые значения выбрасываем: пустой слот должен выглядеть как
+    отсутствующий, иначе платформа примет его за названный предмет.
+    """
+    return {str(k): str(v) for k, v in (scope or {}).items() if str(v or "").strip()}
+
+
 def run(agent_id: str = "", scenario: str = "", context: str = "", no_cache: bool = False,
-        deliver: str = "") -> dict:
+        deliver: str = "", scope: dict | None = None) -> dict:
     """Запуск прогона. Если задан scenario — сначала demo/prepare (идемпотентно). context (выделенный
     текст/файл из host-системы) прокидывается в тело как подсказка. deliver (дерево решений чата):
-    '' — все каналы; 'chat' — только в чат; имя канала — только он."""
+    '' — все каналы; 'chat' — только в чат; имя канала — только он. scope — предмет работы
+    структурой ({слот: id}): по нему платформа делит данные, и прозе это не доверяется."""
     aid = agent_id
     if not aid and scenario:
         prep = prepare(scenario)
@@ -264,12 +277,17 @@ def run(agent_id: str = "", scenario: str = "", context: str = "", no_cache: boo
         body["no_cache"] = True
     if deliver:
         body["deliver"] = deliver
+    пр = _scope(scope)
+    if пр:
+        body["scope"] = пр
     return _req("POST", "/api/runs", body, timeout=300)
 
 
-def run_async(agent_id: str, context: str = "", no_cache: bool = False, deliver: str = "") -> dict:
+def run_async(agent_id: str, context: str = "", no_cache: bool = False, deliver: str = "",
+              scope: dict | None = None) -> dict:
     """Поставить прогон в очередь ABOP (202): {job_id, status, position}. Старый ABOP без очереди
-    отвечает 201 с готовым результатом — возвращаем его как {done:true, run:{…}}."""
+    отвечает 201 с готовым результатом — возвращаем его как {done:true, run:{…}}.
+    scope — предмет работы структурой, см. `_scope`."""
     body: dict = {"agent_id": agent_id, "async": True}
     if context:
         body["context"] = context[:20000]
@@ -277,6 +295,9 @@ def run_async(agent_id: str, context: str = "", no_cache: bool = False, deliver:
         body["no_cache"] = True
     if deliver:
         body["deliver"] = deliver
+    пр = _scope(scope)
+    if пр:
+        body["scope"] = пр
     r = _req("POST", "/api/runs?async=1", body, timeout=60)
     if isinstance(r, dict) and r.get("run_id") and not r.get("job_id"):
         return {"done": True, "run": r}

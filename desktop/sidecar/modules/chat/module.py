@@ -87,6 +87,7 @@ class RunAgentIn(BaseModel):
     context: str = ""           # подсказка из треда (задача / выделенный текст / ссылка)
     no_cache: bool = False
     deliver: str = ""           # дерево решений: '' все каналы | 'chat' только в чат | канал (redmine/email)
+    scope: dict = {}            # предмет работы структурой {слот: id} — ГРАНИЦА РАСЧЁТА, не подсказка
 
 
 class ExportIn(BaseModel):
@@ -389,7 +390,8 @@ def run_agent(thread_id: int, body: RunAgentIn) -> dict:
     пользователя ждёт в очереди, а не конкурирует. Старый ABOP (201 сразу) обрабатывается как раньше."""
     full_ctx = _run_context(thread_id, body)
     try:
-        r = abop.run_async(agent_id=body.agent_id, context=full_ctx, no_cache=body.no_cache, deliver=body.deliver)
+        r = abop.run_async(agent_id=body.agent_id, context=full_ctx, no_cache=body.no_cache,
+                           deliver=body.deliver, scope=body.scope)
     except abop.AbopError as e:
         return {"ok": False, "error": str(e)}
     if isinstance(r, dict) and r.get("done"):

@@ -189,6 +189,48 @@ async def board_from_run(run_id: str, body: dict, u: dict = Depends(user)) -> di
             "note": f"на доску вынесено фактов: {len(put)} · срок {ttl // 86400} дн."}
 
 
+ВСЕ_ДАННЫЕ = "*"      # явное «считать по всем данным установки» — не то же, что пропуск предмета
+
+
+async def _не_назван_предмет(agent_id: str, u: dict, data_scope: dict | None) -> str:
+    """Текст отказа, если обязательный предмет работы не назван. Пусто — всё названо.
+
+    **Почему отказ, а не умолчание.** Прежде пустой предмет означал «считать по всем данным
+    установки»: прогон собирался, в «Границах расчёта» честно писал, что организация не названа, и
+    уходил человеку. На установке с двумя клиентами это 6093 документа вместо 4323 — и отчёт «не
+    того клиента» выглядит ровно так же, как отчёт «того». Молчаливое умолчание здесь дороже
+    отказа, потому что ошибку нельзя увидеть по результату.
+
+    **Отказ стоит на запуске, а не в расчёте.** В `audit1c_сверка` он опоздал бы: к тому моменту
+    документ уже собран, и человеку придётся читать «Границы расчёта», чтобы понять, что считали
+    не то. Здесь же он видит отказ вместо отчёта.
+
+    «По всем данным» остаётся законным сценарием — установка с одним клиентом, вендорская
+    проверка, разведка новых данных, — но он должен быть ЗАПРОШЕН: `scope={"<слот>": "*"}`.
+    """
+    try:
+        слоты = (await agent_slots(agent_id, u)).get("slots") or []
+    except HTTPException:
+        raise
+    except Exception:  # noqa: BLE001 — слоты не собрались: это не повод отказывать в прогоне
+        return ""
+    нет = [с for с in слоты if с.get("required")
+           and not str((data_scope or {}).get(str(с.get("name") or "")) or "").strip()]
+    if not нет:
+        return ""
+    с = нет[0]
+    имя = str(с.get("name") or "предмет")
+    первая = "не назван предмет работы: «%s»" % имя
+    if с.get("label"):
+        первая += " — " + str(с["label"])
+    части = [первая]
+    if с.get("hint"):
+        части.append(str(с["hint"]))
+    части.append('Чтобы посчитать по всем данным установки, передайте scope={"%s": "%s"}.'
+                 % (имя, ВСЕ_ДАННЫЕ))
+    return " ".join(части)
+
+
 _USER_RATE_MAX = max(1, int(os.getenv("ABOP_USER_RATE_MAX", "30")))     # прогонов на юзера за окно
 
 
@@ -327,6 +369,14 @@ async def run_start(body: dict, u: dict = Depends(user),
     _run_limits = {k: v for k, v in _lm.items() if k in runner.LIMIT_FIELDS and v not in (None, "")}
     _ds = (body or {}).get("scope") if isinstance((body or {}).get("scope"), dict) else {}
     _data_scope = {str(k): str(v) for k, v in _ds.items() if str(v or "").strip()} or None
+    _нет_предмета = await _не_назван_предмет(agent_id, u, _data_scope)
+    if _нет_предмета:
+        raise HTTPException(422, _нет_предмета)
+    # «*» дальше в расчёт не едет: это решение человека, а не идентификатор записи. Приди он в
+    # `карточка_клиента`, прогон добавил бы заметку «карточки „*“ нет» — отчёт сказал бы о
+    # поломке там, где человек сделал осознанный выбор.
+    if _data_scope:
+        _data_scope = {k: v for k, v in _data_scope.items() if v != ВСЕ_ДАННЫЕ} or None
     _dv = (body or {}).get("deliver")
     deliver_filter = "" if isinstance(_dv, bool) else str(_dv or "").strip()
     use_cache = not bool((body or {}).get("no_cache"))  # {no_cache:true} → форс свежий прогон
