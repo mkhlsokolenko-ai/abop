@@ -593,9 +593,40 @@ async def _режим_записи() -> str:
     return str(конфиг.get(КЛЮЧ_РЕЖИМА) or "").strip()
 
 
-async def _send_channel(cfg: dict, agent_name: str, html_report: str, real: bool) -> str:
+def имя_отчёта(cfg: dict, result: dict | None = None, run_id: str = "") -> str:
+    """Имя файла отчёта: вид документа + граница расчёта + прогон.
+
+    Раньше имя брали из поля «кому» узла доставки, и оно было ОДНО на все прогоны и всех клиентов:
+    каждый прогон писал `ape_work/sverka.pdf` поверх предыдущего. На одном клиенте это незаметно,
+    на двух — готовый отчёт одной компании затирается отчётом другой, и в письмо может уйти чужой
+    документ. Та же ошибка, что мы уже чинили в границе расчёта, только на уровне файла.
+
+    Границу расчёта берём из самого прогона (`audit_scope.граница_расчёта` — идентификатор системы
+    клиента): она латиницей и уникальна на базу, а название клиента по-русски превратилось бы в
+    подчёркивания (`_t_pdf_render` оставляет только `A-Za-z0-9_.-`).
+    """
+    вид = str((cfg or {}).get("to") or "report").strip() or "report"
+    части = [вид]
+    граница = str(((result or {}).get("audit_scope") or {}).get("граница_расчёта") or "").strip()
+    if граница:
+        части.append(граница)
+    прогон = str(run_id or (result or {}).get("run_id") or "").strip()
+    if прогон:
+        # Хвост идентификатора: полный `run-<агент>-<хэш>` в имени файла нечитаем, а хвост
+        # уникален внутри агента и прямо сопоставляется с карточкой прогона в журнале.
+        части.append(прогон.rsplit("-", 1)[-1])
+    return "-".join(части)[:120]
+
+
+async def _send_channel(cfg: dict, agent_name: str, html_report: str, real: bool,
+                        имя_файла: str = "") -> str:
     """Отправка отчёта в канал OUT-узла (почта/BookStack/YouGile/Яндекс/PDF). real=False → dry_run
-    (превью). Переиспользуется прогоном и подтверждением HITL (approve → real=True)."""
+    (превью). Переиспользуется прогоном и подтверждением HITL (approve → real=True).
+
+    `имя_файла` приходит ГОТОВЫМ и одним на оба вызова: превью при запросе и отправка после
+    подтверждения обязаны дать один и тот же файл. Пересчитывать его в подтверждении нельзя —
+    подтверждают то, что видели.
+    """
     import asyncio
     import re as _re
     channel = cfg.get("channel")
@@ -609,7 +640,8 @@ async def _send_channel(cfg: dict, agent_name: str, html_report: str, real: bool
         if channel in ("email", "yandex"):
             att = ""
             if (cfg.get("format") or "pdf") == "pdf":
-                pr = await loop.run_in_executor(None, ape._t_pdf_render, {"html": html_report, "name": "report"})
+                pr = await loop.run_in_executor(None, ape._t_pdf_render, {
+                    "html": html_report, "name": имя_файла or имя_отчёта(cfg)})
                 m = _re.search(r"PDF готов:\s*(\S+)", pr or "")
                 att = m.group(1) if m else ""
             body_txt = "Отчёт агента ABOP во вложении." if att else _html_to_text(html_report)[:4000]
@@ -629,7 +661,7 @@ async def _send_channel(cfg: dict, agent_name: str, html_report: str, real: bool
                  "project": cfg.get("project") or cfg.get("to") or "", "run": rf})
         if channel in ("pdf", "file"):
             return await loop.run_in_executor(None, ape._t_pdf_render,
-                {"html": html_report, "name": cfg.get("to") or "report"})
+                {"html": html_report, "name": имя_файла or имя_отчёта(cfg)})
         return f"неизвестный канал: {channel}"
     except Exception as ex:  # noqa: BLE001
         return f"ошибка доставки: {type(ex).__name__}: {ex}"
@@ -747,6 +779,9 @@ async def _deliver_out_nodes(agent: dict, result: dict, actor: str, deliver_filt
                 node=n.get("id") or "", title=n.get("title") or channel,
                 channel=channel or "", to_addr=адресат, addressed_to=кому,
                 payload={"cfg": cfg, "html": node_html, "agent_name": agent.get("name"),
+                         # Имя файла считается ЗДЕСЬ и живёт в заявке: подтверждение отправит
+                         # ровно тот файл, который человек видел в превью.
+                         "имя_файла": имя_отчёта(cfg, result, str(run_id)),
                          "job_id": run_queue.CURRENT_JOB.get(),
                          # Класс и уровень — для карточки решения и журнала. Права при решении
                          # считаются заново (`routes/hitl._уровень_заявки`): перечень доменов мог
@@ -775,7 +810,8 @@ async def _deliver_out_nodes(agent: dict, result: dict, actor: str, deliver_filt
                                      severity="info")
             continue
         real = str(cfg.get("run")).lower() == "true"
-        out = await _send_channel(cfg, agent.get("name"), node_html, real)
+        out = await _send_channel(cfg, agent.get("name"), node_html, real,
+                                  имя_отчёта(cfg, result, str(run_id)))
         deliveries.append({"node": n.get("id"), "title": n.get("title"), "channel": channel,
                            "to": cfg.get("to"), "format": cfg.get("format"),
                            "mode": "real" if real else "dry_run", "result": str(out)[:400]})

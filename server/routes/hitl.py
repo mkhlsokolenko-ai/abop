@@ -360,7 +360,10 @@ async def hitl_approve(item_id: str, body: dict = None, u: dict = Depends(user))
                              "command_id": (res.get("command") or {}).get("id"), "resumed_job": resumed})
     # approve → реальная отправка в канал
     cfg = payload.get("cfg") or {}
-    out = await _send_channel(cfg, payload.get("agent_name"), payload.get("html") or "", real=True)
+    # Имя файла — то, что посчитал прогон и положил в заявку: подтверждают то, что видели.
+    # Пересчёт здесь дал бы другой файл, если прогон успели переименовать или данные изменились.
+    out = await _send_channel(cfg, payload.get("agent_name"), payload.get("html") or "", real=True,
+                              имя_файла=str(payload.get("имя_файла") or ""))
     await hitl_store.decide(item_id, "approved", actor, reason)
     await audit_store.record(actor, "hitl.approve", item_id,
                              {"agent_id": item.get("agent_id"), "channel": item.get("channel"),
