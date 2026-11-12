@@ -3229,7 +3229,55 @@ class Component extends DCLogic {
       }).catch(function(){ self.setState({runBusy:false, modal:null}); self.showToast('Сеть недоступна'); });
   }
 
-  runAgentBackend(context) {
+  // Предмет работы перед запуском: у агента с обязательным слотом платформа без него считать
+  // откажется (422), и это правильно — прежде такой прогон шёл по ВСЕМ данным установки, то есть
+  // по документам всех обслуживаемых компаний сразу. Спрашивает тот, кто запускает.
+  askSubjectThenRun(context) {
+    var self = this, c = this.state.contract, mine = this.state.authoredAgent;
+    var aid = (mine && mine.id) ? mine.id : '';
+    if (!aid && c && c.audit_id) {
+      // У контракта может быть несколько версий; ручка слотов адресуется версией агента, поэтому
+      // без неё спросить нечего — пусть решает платформа, её отказ назовёт слот словами.
+      this.runAgentBackend(context); return;
+    }
+    if (!aid) { this.runAgentBackend(context); return; }
+    fetch('/api/agents/' + encodeURIComponent(aid) + '/slots')
+      .then(function(r){ return r.ok ? r.json() : { slots: [] }; })
+      .then(function(j){
+        var req = (j.slots || []).filter(function(s){ return s.required && s.entity; });
+        if (!req.length) { self.runAgentBackend(context); return; }
+        self.openSubject(req[0], context);
+      })
+      .catch(function(){ self.runAgentBackend(context); });   // слоты не прочитались — не держим запуск
+  }
+
+  openSubject(slot, context) {
+    var self = this;
+    var d = slot.display || {};
+    this.setState({ modal: 'subject', subjSlot: slot, subjCtx: (typeof context === 'string' ? context : ''),
+                    subjItems: [], subjBusy: true, subjError: '' });
+    fetch('/api/resolve/' + encodeURIComponent(slot.entity) + '?q=&limit=30')
+      .then(function(r){ return r.json(); })
+      .then(function(j){
+        var items = (j.candidates || []).map(function(cd){
+          var rec = cd.record || {};
+          return { value: String(rec.id || rec['название'] || rec.name || ''),
+                   label: String(rec[d.title] || rec['название'] || rec.name || rec.id || ''),
+                   note: [rec[d.subtitle], rec[d.badge], rec[d.note]].filter(Boolean).join(' · ') };
+        }).filter(function(x){ return x.value; });
+        self.setState({ subjItems: items, subjBusy: false });
+      })
+      .catch(function(e){ self.setState({ subjBusy: false, subjError: 'не удалось получить список предметов: ' + e.message }); });
+  }
+
+  pickSubject(value) {
+    var st = this.state, slot = st.subjSlot || {}, ctx = st.subjCtx || '';
+    var scope = {}; scope[slot.name] = String(value || '');
+    this.setState({ modal: null, subjItems: [], subjSlot: null, subjCtx: '' });
+    this.runAgentBackend(ctx, scope);
+  }
+
+  runAgentBackend(context, scope) {
     // Через очередь ABOP (гейт масштабирования): POST /api/runs?async=1 → 202 job_id → поллинг
     // /api/runs/jobs/{id}. Окно результата показывает место в очереди и время; кнопка «Отменить».
     var self=this, c=this.state.contract, mine=this.state.authoredAgent;
@@ -3245,7 +3293,7 @@ class Component extends DCLogic {
     var failed = function(msg){ self.setState({runBusy:false, runError: msg, runJob:null, runProgress:''}); self.showToast('Прогон не выполнен: '+msg); };
     var _bd = this._budgetBody();
     var _who = (c&&c.audit_id) ? {contract_audit_id:c.audit_id} : {agent_id:mine.id};
-    fetch('/api/runs?async=1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign(_who, {async:true, context: (typeof context === 'string' ? context : '')}, _bd ? {budget:_bd} : {}))})
+    fetch('/api/runs?async=1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign(_who, {async:true, context: (typeof context === 'string' ? context : '')}, _bd ? {budget:_bd} : {}, (scope && Object.keys(scope).length) ? {scope:scope} : {}))})
       .then(function(r){ return r.json().then(function(j){ j = j || {}; if(!r.ok && !j.detail) j.detail = 'HTTP ' + r.status; j.__status = r.status; return j; }); }).then(function(d){
         if(d.run_id && d.__status === 201){ done(d); return; }   // старый сервер без очереди — результат сразу
         if(!d.job_id){ failed(d.detail||'нет агента — сначала «Сохранить»'); return; }
@@ -3427,7 +3475,7 @@ class Component extends DCLogic {
   runInModal() {
     if(!this.state.contract||!this.state.contract.audit_id){ this.buildAndRun(); return; }
     this.setState({ modal:'runresult', runBusy:true });
-    this.runAgentBackend();
+    this.askSubjectThenRun();
   }
 
   closeRunResult() { this.setState({ modal:null }); }
@@ -5769,6 +5817,15 @@ class Component extends DCLogic {
       startFanout: () => this.startFanout(),
       cancelFanGroup: () => this.cancelFanGroup(),
       closeFanout: () => this.setState({ modal: null, fanGroup: null, fanSummary: null }),
+      subjModal: s.modal === 'subject',
+      subjLabel: (s.subjSlot && s.subjSlot.label) || 'Чей предмет считаем?',
+      subjHint: (s.subjSlot && s.subjSlot.hint) || 'Выбор задаёт границу расчёта.',
+      subjBusy: !!s.subjBusy, subjError: s.subjError || '',
+      subjItems: (s.subjItems || []).map(it => ({ label: it.label, note: it.note, pick: () => this.pickSubject(it.value) })),
+      subjEmpty: !s.subjBusy && !(s.subjItems || []).length && !s.subjError,
+      subjEmptyNote: 'Записей этого вида в данных нет. Подключите клиента в приложении на компьютере (раздел «Клиенты») либо посчитайте по всем данным.',
+      subjAll: () => this.pickSubject('*'),
+      closeSubject: () => this.setState({ modal: null, subjItems: [], subjSlot: null, subjCtx: '' }),
       fanRunning: !!s.fanGroup && !s.fanSummary,
       fanProgress: (function(){
         const st = s.fanStatus; if (!st) return s.fanGroup ? ('запущено заданий: ' + (s.fanGroup.count || 0)) : '';
