@@ -159,7 +159,23 @@ jobs:
           echo "--- подпись ---"; codesign -dv "/tmp/abopdmg/ABOP Desktop.app" 2>&1 | head -5
           echo "--- арка исполняемого файла ---"; file "/tmp/abopdmg/ABOP Desktop.app/Contents/MacOS/ABOP Desktop"
           echo "--- арка сайдкара ---"; file "/tmp/abopdmg/ABOP Desktop.app/Contents/Resources/ape-sidecar/ape-sidecar"
-          hdiutil detach /tmp/abopdmg -quiet
+          # Отмонтирование — уборка, а не проверка: к этой строке подпись и арки уже сверены.
+          # На Intel-раннере `hdiutil detach` иногда отдаёт код 16 («resource busy»), и джоб
+          # краснел при полностью годных артефактах — так упал релиз 1.0.36. Пробуем дважды и
+          # не роняем сборку из-за уборки.
+          hdiutil detach /tmp/abopdmg -quiet || (sleep 3; hdiutil detach /tmp/abopdmg -force -quiet) || true
+
+      # Манифест обновления каждой арки — артефактом, чтобы джоб склейки собрал из них один.
+      # Без этого обе сборки пишут `latest-mac.yml` в один и тот же файл релиза, и выигрывает та,
+      # что финишировала позже: авто-обновление видит ТОЛЬКО её арку. На 1.0.36 так осталась
+      # только arm64, на 1.0.37 — только x64, то есть каждый релиз страдала разная половина
+      # пользователей.
+      - name: Выложить манифест обновления (для склейки)
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-manifest-${{ matrix.arch }}
+          path: desktop/dist/latest-mac.yml
+          if-no-files-found: error
 
       - name: Выложить артефакты (когда не публикуем)
         if: env.PUBLISH == 'never'
@@ -168,3 +184,60 @@ jobs:
           name: abop-desktop-mac-${{ matrix.arch }}
           path: desktop/dist/*.dmg
           if-no-files-found: error
+
+  # ── Склейка манифеста обновления macOS ─────────────────────────────────────────────────────
+  # electron-builder кладёт `latest-mac.yml` отдельно в каждой сборке, и в релизе остаётся
+  # последний. Здесь из двух манифестов собирается один со ВСЕМИ файлами: только тогда
+  # electron-updater предложит обновление и на Apple Silicon, и на Intel.
+  mac-manifest:
+    # `always()` обязателен: при падении одной арки обычный `needs` пропустил бы склейку целиком,
+    # и в релизе остался бы манифест уцелевшей сборки — то есть ровно та поломка, которую
+    # джоб и лечит. Из одного манифеста склейка соберёт один, и это честный результат.
+    if: ${{ always() && inputs.mac && inputs.publish }}
+    needs: mac
+    runs-on: ubuntu-latest
+    steps:
+      - name: Скачать манифесты арок
+        uses: actions/download-artifact@v4
+        with:
+          pattern: mac-manifest-*
+          path: manifests
+
+      - name: Склеить в один
+        run: |
+          python -m pip install --quiet pyyaml
+          python - <<'PY'
+          import glob, yaml
+          манифесты = []
+          for путь in sorted(glob.glob("manifests/*/latest-mac.yml")):
+              with open(путь, encoding="utf-8") as ф:
+                  манифесты.append((путь, yaml.safe_load(ф)))
+          if not манифесты:
+              raise SystemExit("манифестов нет — склеивать нечего")
+          print("нашёл манифестов:", [п for п, _ in манифесты])
+          файлы, видели = [], set()
+          for _, м in манифесты:
+              for ф in (м.get("files") or []):
+                  if ф.get("url") not in видели:
+                      видели.add(ф.get("url"))
+                      файлы.append(ф)
+          итог = dict(манифесты[0][1])
+          итог["files"] = файлы
+          # Легаси-поля (`path`/`sha512`) читают только старые клиенты, а они чаще на Intel —
+          # поэтому в них ставим x64-архив, если он есть.
+          x64 = next((ф for ф in файлы if "x64" in str(ф.get("url")) and str(ф.get("url")).endswith(".zip")), None)
+          if x64:
+              итог["path"] = x64["url"]
+              итог["sha512"] = x64["sha512"]
+          with open("latest-mac.yml", "w", encoding="utf-8") as ф:
+              yaml.safe_dump(итог, ф, allow_unicode=True, sort_keys=False)
+          print(open("latest-mac.yml", encoding="utf-8").read())
+          PY
+
+      - name: Заменить манифест в релизе
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          версия=$(python -c "import yaml;print(yaml.safe_load(open('latest-mac.yml'))['version'])")
+          gh release upload "v$версия" latest-mac.yml --clobber --repo "$GITHUB_REPOSITORY"
+          echo "манифест релиза v$версия заменён склеенным"
