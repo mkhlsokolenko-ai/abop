@@ -238,6 +238,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          версия=$(python -c "import yaml;print(yaml.safe_load(open('latest-mac.yml'))['version'])")
-          gh release upload "v$версия" latest-mac.yml --clobber --repo "$GITHUB_REPOSITORY"
-          echo "манифест релиза v$версия заменён склеенным"
+          # Имя переменной — ЛАТИНИЦЕЙ: bash кириллические имена не принимает и отвечает
+          # «версия=1.0.37: command not found» (код 127). Поймано на этом же джобе 12.11.2026,
+          # и это второй раз за день — первый был в sed на прод-сервере.
+          ver=$(python -c "import yaml;print(yaml.safe_load(open('latest-mac.yml'))['version'])")
+          gh release upload "v$ver" latest-mac.yml --clobber --repo "$GITHUB_REPOSITORY"
+          echo "манифест релиза v$ver заменён склеенным"
