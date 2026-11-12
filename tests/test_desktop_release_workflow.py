@@ -108,3 +108,15 @@ def test_в_shell_нет_кириллических_имён_переменны�
                 if m:
                     плохо.append(f"{имя} / {ш.get('name')}: {m.group(1)}")
     assert not плохо, "кириллические имена переменных в shell: " + "; ".join(плохо)
+
+
+def test_spotlight_отключается_до_сборки_dmg():
+    """`hdiutil detach -force` внутри electron-builder падал с кодом 16: Spotlight индексировал
+    смонтированный образ и держал том. Так ушли Intel-сборки 1.0.36 и 1.0.37 — и каждый раз
+    авто-обновление оставалось без половины пользователей."""
+    шаги = ПОТОК["jobs"]["mac"]["steps"]
+    имена = [str(ш.get("name") or "") for ш in шаги]
+    стоп = next((i for i, ш in enumerate(шаги) if "mdutil" in str(ш.get("run") or "")), None)
+    сборка = next((i for i, н in enumerate(имена) if "electron-builder" in н), None)
+    assert стоп is not None, "индексация Spotlight не отключается — DMG будет падать на Intel"
+    assert сборка is not None and стоп < сборка, "отключать надо ДО сборки образа"
