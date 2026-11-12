@@ -120,3 +120,42 @@ def test_spotlight_отключается_до_сборки_dmg():
     сборка = next((i for i, н in enumerate(имена) if "electron-builder" in н), None)
     assert стоп is not None, "индексация Spotlight не отключается — DMG будет падать на Intel"
     assert сборка is not None and стоп < сборка, "отключать надо ДО сборки образа"
+
+
+def test_падение_установщика_не_уносит_авто_обновление():
+    """Авто-обновление на macOS идёт через ZIP: на него ссылается `latest-mac.yml`, его тянет
+    electron-updater. DMG — ручной установщик для первой установки.
+
+    Пока обе цели собирались одной командой (`--mac dmg zip`), падение DMG уносило и ZIP: на
+    Intel-раннере `hdiutil detach -force` внутри electron-builder отдаёт код 16 «resource busy»,
+    и после шести его собственных попыток джоб валился целиком. Intel остался без обновления в
+    1.0.36, 1.0.37 и 1.0.38 — трижды подряд, и каждый раз из-за установщика, а не приложения.
+    """
+    шаги = ПОТОК["jobs"]["mac"]["steps"]
+    zip_ш = [ш for ш in шаги if "--mac zip" in str(ш.get("run") or "")]
+    dmg_ш = [ш for ш in шаги if "--mac dmg" in str(ш.get("run") or "")]
+    assert len(zip_ш) == 1 and len(dmg_ш) == 1, "цели снова собираются одной командой"
+    assert not zip_ш[0].get("continue-on-error"), (
+        "ZIP обязан быть строгим: на нём держится авто-обновление")
+    assert dmg_ш[0].get("continue-on-error") is True, (
+        "падение ручного установщика снова уносит релиз")
+    # Порядок: сначала то, без чего релиз бессмысленен.
+    assert шаги.index(zip_ш[0]) < шаги.index(dmg_ш[0])
+
+
+def test_пропущенный_установщик_не_притворяется_успехом():
+    """Молчаливый пропуск — та же ложь, что «мак собрался, всё хорошо» при пустом канале."""
+    шаги = ПОТОК["jobs"]["mac"]["steps"]
+    сводка = [ш for ш in шаги if "GITHUB_STEP_SUMMARY" in str(ш.get("run") or "")]
+    assert сводка, "пропуск DMG никому не сообщается"
+    весь = "\n".join(str(ш.get("run") or "") for ш in сводка)
+    assert "Авто-обновление НЕ затронуто" in весь, "сводка не говорит, что именно не пострадало"
+    assert "steps.dmg.outcome == 'failure'" in str(сводка[0].get("if") or "")
+
+
+def test_проверка_подписи_не_краснеет_без_образа():
+    """Шаг ищет `dist/*.dmg`: без образа он упал бы на `ls` и объявил провалом годный ZIP."""
+    шаги = ПОТОК["jobs"]["mac"]["steps"]
+    подпись = next(ш for ш in шаги if "codesign --verify --strict" in str(ш.get("run") or ""))
+    assert "steps.dmg.outcome == 'success'" in str(подпись.get("if") or ""), (
+        "проверка подписи выполняется и когда образа нет")

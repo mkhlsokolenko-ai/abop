@@ -151,13 +151,43 @@ jobs:
         # без половины пользователей. На arm64 не воспроизводится, но команда безвредна.
         run: sudo mdutil -a -i off || true
 
-      - name: Собрать DMG и ZIP (electron-builder + ad-hoc подпись из build/afterPack.js)
+      # ZIP и DMG собираются ОТДЕЛЬНО, и это не косметика. Авто-обновление на macOS идёт через
+      # ZIP: манифест `latest-mac.yml` ссылается на него, electron-updater скачивает его. DMG —
+      # ручной установщик, нужный один раз при первой установке.
+      #
+      # Пока обе цели собирались одной командой, падение DMG уносило и ZIP: на Intel-раннере
+      # `hdiutil detach -force` внутри electron-builder отдаёт код 16 «resource busy» (том держит
+      # не Spotlight — его мы выключаем выше, — а что-то ещё из системных служб macOS 15), и после
+      # шести его собственных попыток сборка валилась целиком. Так Intel остался без обновления в
+      # 1.0.36, 1.0.37 и 1.0.38 — трижды подряд, и каждый раз причина была в ручном установщике,
+      # а не в приложении.
+      #
+      # Поэтому: ZIP строго (упал — упал релиз), DMG отдельным шагом и БЕЗ права уронить джоб.
+      # Пропущенный DMG виден в сводке джоба и не притворяется успехом.
+      - name: Собрать ZIP — канал авто-обновления (electron-builder + ad-hoc подпись)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: "false"   # Developer ID нет — подписываем ad-hoc в afterPack
-        run: npx electron-builder --mac dmg zip --${{ matrix.arch }} --publish ${{ env.PUBLISH }}
+        run: npx electron-builder --mac zip --${{ matrix.arch }} --publish ${{ env.PUBLISH }}
+
+      - name: Собрать DMG — ручной установщик (падение не роняет релиз)
+        id: dmg
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npx electron-builder --mac dmg --${{ matrix.arch }} --publish ${{ env.PUBLISH }}
+
+      - name: Сказать в сводку, если установщика нет
+        if: steps.dmg.outcome == 'failure'
+        run: |
+          echo "### DMG для ${{ matrix.arch }} не собрался" >> $GITHUB_STEP_SUMMARY
+          echo "Авто-обновление НЕ затронуто: оно идёт через ZIP, и ZIP собран и опубликован." >> $GITHUB_STEP_SUMMARY
+          echo "Не хватает только ручного установщика для первой установки на эту арку." >> $GITHUB_STEP_SUMMARY
+          echo "Обычная причина — \`hdiutil detach\` внутри electron-builder: том держит системная служба." >> $GITHUB_STEP_SUMMARY
 
       - name: Проверить, что подпись дожила до образа
+        if: steps.dmg.outcome == 'success' 
         # Проверяем не «сборка не упала», а то, ради чего всё: распакованное из DMG приложение
         # должно иметь валидную подпись — иначе на Apple Silicon оно не запустится.
         run: |
