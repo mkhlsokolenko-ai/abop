@@ -96,7 +96,11 @@ jobs:
       fail-fast: false        # Intel и Apple Silicon независимы: падение одного не должно рубить второй
       matrix:
         include:
-          - runner: macos-14   # Apple Silicon
+          # macos-15, а не macos-14: метку macos-14 GitHub перестал обслуживать, и джоб
+          # отменялся МГНОВЕННО — без раннера, с нулевой длительностью и пустым логом (поймано
+          # 12.11.2026 на релизе 1.0.36: Intel собрался, Apple Silicon нет). Это уже вторая такая
+          # история после macos-13, поэтому метка проверяется глазами при каждом релизе мака.
+          - runner: macos-15   # Apple Silicon
             arch: arm64
           - runner: macos-15-intel   # Intel (бывший macos-13 — снят, джоб вис в очереди навсегда)
             arch: x64
