@@ -63,7 +63,7 @@ export async function mount(root, ctx) {
     }
   } catch { апдейтер = null; }
 
-  const [u, me, pol, agents, conns, guides, деньги] = await Promise.all([
+  const [u, me, pol, agents, conns, guides, деньги, адресABOP] = await Promise.all([
     api(C + "/usage").catch(keep),
     api(SEC + "/me").catch(keep),
     api(SEC + "/policy").catch(keep),
@@ -72,6 +72,9 @@ export async function mount(root, ctx) {
     api(C + "/guides").catch(() => ({ guides: [] })),
     // Квота и расход: вопрос «сколько осталось» задают раньше, чем «сколько потрачено».
     api(C + "/billing").catch(() => null),
+    // Адрес установки ABOP и ОТКУДА он взят: переменная среды сильнее настройки, и поле,
+    // значение которого молча перекрыто, выглядит сломанным.
+    api(C + "/abop").catch(() => null),
   ]).then((r) => r.map((x, i) => x === null ? (i === 3 ? [] : {}) : x));
 
   // Ссылки открываем во внешнем браузере: руководство — документ на 90 страниц, ему не место в окне чата.
@@ -166,11 +169,26 @@ export async function mount(root, ctx) {
       <span class="tag ${тон === "ok" ? "ok" : "mid"}">${esc(метка)}</span><span></span></div>`;
     return `<div class="card calm">
       <div class="card-head">${icon("link", "lg")}<span class="t">Связь и данные</span></div>
-      ${строка("Сервер ABOP", String(ctx.base || "—"), ctx.authed ? "есть связь" : "нет входа", ctx.authed ? "ok" : "warn")}
-      ${строка("Организация", String(ctx.tenant || "—"),
-               свой ? "вы в своих данных" : "данные клиента", свой ? "ok" : "warn")}
+      ${строка("Сервер ABOP", String((адресABOP && адресABOP["адрес"]) || (rt && rt.abop_url) || "—"),
+               (rt && rt.abop) ? "есть связь" : "не отвечает", (rt && rt.abop) ? "ok" : "warn")}
       ${строка("Движок приложения", "сайдкар " + String((rt && rt.version) || u.version || "—"),
                ok ? "работает" : "не отвечает", ok ? "ok" : "warn")}
+      ${строка("Организация", String(ctx.tenant || "—"),
+               свой ? "вы в своих данных" : "данные клиента", свой ? "ok" : "warn")}
+      <div style="display:grid;gap:6px;margin-top:4px">
+        <span class="ape-label">адрес ABOP · источник: ${esc((адресABOP && адресABOP["источник"]) || "умолчание")}</span>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <input id="abopAddr" type="url" style="flex:1 1 220px;min-width:200px"
+                 value="${esc((адресABOP && адресABOP["адрес"]) || "")}"
+                 ${(адресABOP && адресABOP["перекрыт_средой"]) ? "disabled" : ""}>
+          <button class="btn sm" id="abopSave"
+                  ${(адресABOP && адресABOP["перекрыт_средой"]) ? "disabled" : ""}>Проверить и сохранить</button>
+        </div>
+        <span id="abopSaid" style="font-size:11.5px;color:var(--ink-3)">${
+          (адресABOP && адресABOP["перекрыт_средой"])
+            ? "Адрес задан переменной среды ABOP_BASE_URL — она сильнее настройки, поэтому поле выключено."
+            : "Сохраняется только после проверки: по адресу должен ответить ABOP. Действует сразу, перезапуск не нужен."}</span>
+      </div>
       <div class="origin">«Вы в своих данных» сказано утвердительно: состояние должно быть видно и когда всё в порядке, а не только когда что-то не так.</div></div>`;
   };
   const карточкаРасхода = () => {
@@ -314,6 +332,29 @@ export async function mount(root, ctx) {
     });
   }
   нарисоватьКанал();
+
+  const кнопкаАдреса = root.querySelector("#abopSave");
+  if (кнопкаАдреса) {
+    кнопкаАдреса.onclick = async () => {
+      const поле = root.querySelector("#abopAddr"), сказал = root.querySelector("#abopSaid");
+      const адрес = (поле && поле.value || "").trim();
+      сказал.style.color = "var(--ink-3)";
+      сказал.textContent = "проверяю " + адрес + "…";
+      кнопкаАдреса.disabled = true;
+      try {
+        const о = await api(C + "/abop", { method: "POST", body: JSON.stringify({ адрес }) });
+        if (о && о.ok === false) throw new Error(о.error || "не сохранено");
+        сказал.style.color = "var(--ok-ink)";
+        сказал.textContent = (о["дальше"] || "адрес сохранён") + " · источник: " + (о["источник"] || "настройка");
+        toast("Адрес ABOP сохранён", "ok");
+      } catch (e) {
+        // Отказ называет АДРЕС: «ABOP недоступен» отправляло чинить сеть там, где опечатка.
+        сказал.style.color = "var(--danger-ink)";
+        сказал.textContent = humanError(e);
+      }
+      кнопкаАдреса.disabled = false;
+    };
+  }
 
   const p = root.querySelector("#persona");
   if (p) {
