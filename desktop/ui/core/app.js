@@ -501,7 +501,11 @@ const LEVELS = ["analyst", "manager", "support", "admin"];
 // Бухгалтеру этот раздел не адресован, и дело не в секретности: лишняя кнопка в рабочем месте
 // дороже отсутствующей.
 const MODULE_MIN_LEVEL = { graphlens: "manager", control: "manager", security: "support",
-                           opslens: "support", verticals: "manager" };
+                           opslens: "support", verticals: "manager",
+                           // Ручки реестра клиентов требуют manager на сервере. Показать экран
+                           // аналитику значило бы дать кнопки, которые ответят 403: отказ после
+                           // нажатия хуже отсутствия пункта.
+                           clients: "manager" };
 function levelAtLeast(min) {
   const have = LEVELS.indexOf(ctx.level || "analyst");
   const need = LEVELS.indexOf(min);
@@ -518,8 +522,8 @@ function visibleModules() { return MODULES.filter((m) => !HIDDEN_MODULES.has(m.i
 // «Решения» стоят вторыми: там ждут человека, и это важнее журнала прогонов. Переключателя
 // режимов нет (DIZAJN, 5.1) — руководитель тоже ставит задачи, и прыгать между двумя
 // приложениями ради одного подтверждения он не должен.
-const RAIL_ORDER = ["chat", "decisions", "control", "runs", "agents", "watch", "graphlens",
-                    "verticals", "cabinet"];
+const RAIL_ORDER = ["chat", "decisions", "control", "runs", "agents", "clients", "watch",
+                    "graphlens", "verticals", "cabinet"];
 const RAIL_TITLE = { agents: "Мои агенты" };
 function railModules() {
   const rank = (id) => { const i = RAIL_ORDER.indexOf(id); return i < 0 ? RAIL_ORDER.length : i; };
