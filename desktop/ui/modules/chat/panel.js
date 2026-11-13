@@ -439,15 +439,16 @@ export async function mount(root, ctx) {
             : (meta.chain_suggest ? chainSuggestHTML(meta.chain_suggest)
             : (meta.clarify ? clarifyHTML(meta.clarify)
             : (meta.decision ? decisionHTML(meta.decision)
+            : (meta.slot_fail ? slotFailHTML(meta.slot_fail)
             : (meta.slot_ask ? slotCardHTML(meta.slot_ask)
             : (meta.slot_picked ? slotPickedHTML(meta.slot_picked)
             : (meta.work_hint ? workHintHTML(meta.work_hint, m.content, idx)
-            : (meta.notice ? noticeHTML(meta.notice, m.content) : md(m.content))))))))))));
+            : (meta.notice ? noticeHTML(meta.notice, m.content) : md(m.content)))))))))))));
     const cost = meta.model ? `<span style="margin-left:4px;font-family:var(--mono);font-size:11px;color:var(--ink-3)">${esc(meta.model)} · ${meta.cost_rub ?? 0} ₽</span>` : "";
-    const isCard = !!(meta.run_agent || meta.pipeline_result || meta.chain_suggest || meta.assemble || meta.decision || meta.clarify || meta.notice || meta.cancelled || meta.work_hint);
+    const isCard = !!(meta.run_agent || meta.pipeline_result || meta.chain_suggest || meta.assemble || meta.decision || meta.clarify || meta.notice || meta.cancelled || meta.work_hint || meta.slot_fail);
     const acts = mine
       ? `<button type="button" data-edit="${idx}" class="msgact">${icon("pencil")} изменить</button>`
-      : `<button type="button" data-copy="${idx}" class="msgact">${icon("copy")} копировать</button>${meta.decision || meta.chain_suggest || meta.assemble || meta.notice || meta.cancelled || meta.work_hint ? "" : `<button type="button" data-regen="${idx}" class="msgact">${icon("refresh")} ещё раз</button>`}${cost}`;
+      : `<button type="button" data-copy="${idx}" class="msgact">${icon("copy")} копировать</button>${meta.decision || meta.chain_suggest || meta.assemble || meta.notice || meta.cancelled || meta.work_hint || meta.slot_fail ? "" : `<button type="button" data-regen="${idx}" class="msgact">${icon("refresh")} ещё раз</button>`}${cost}`;
     return `<div style="display:flex;flex-direction:column;align-items:${mine ? "flex-end" : "flex-start"};gap:7px;animation:ape-in .3s ease-out">
       <div class="bub" style="max-width:${isCard ? "96%" : "88%"};padding:13px 16px;border-radius:${radius};background:${mine ? "var(--user-bubble)" : "var(--panel)"};border:1px solid ${mine ? "var(--user-bubble-line)" : "var(--line)"};backdrop-filter:blur(16px);box-shadow:${mine ? "0 2px 10px rgba(99,102,241,.14)" : "var(--shadow-1)"};white-space:${isCard ? "normal" : "pre-wrap"};font-size:13.5px;line-height:1.6;min-width:0">${inner}</div>
       <div style="display:flex;align-items:center;gap:6px">${acts}</div></div>`;
@@ -714,6 +715,19 @@ export async function mount(root, ctx) {
       toast("Запускаю по всем данным установки — не по одной записи", "warn");
       runAbopAgentDeliver(sl.agent_id, agentName(sl.agent_id), sl.task || "", "", false,
                           true, { [sl.name]: "*" });
+    });
+    $("col").querySelectorAll(".slotRetry").forEach((b) => b.onclick = () => {
+      const m = messages[+b.dataset.i]; const sf = m && m.meta && m.meta.slot_fail; if (!sf) return;
+      m.meta.slot_fail = null; m.content = "повторяю подбор предмета"; saveRunMeta(m, {}); render();
+      runAbopAgentDeliver(sf.agent_id, agentName(sf.agent_id), sf.task || "", "");
+    });
+    $("col").querySelectorAll(".slotAllData").forEach((b) => b.onclick = () => {
+      const m = messages[+b.dataset.i]; const sf = m && m.meta && m.meta.slot_fail; if (!sf) return;
+      // Имя слота известно не всегда (сорваться мог первый же запрос). Когда известно — ставим
+      // звёздочку ему, иначе отдаём общую: сервер назовёт слот сам, если угадали не тот.
+      const всё = sf.слот ? { [sf.слот]: "*" } : { "*": "*" };
+      toast("Запускаю по всем данным установки — не по одной записи", "warn");
+      runAbopAgentDeliver(sf.agent_id, agentName(sf.agent_id), sf.task || "", "", false, true, всё);
     });
     $("col").querySelectorAll(".slotChange").forEach((b) => b.onclick = async () => {
       const m = messages[+b.dataset.i]; const sp = m && m.meta && m.meta.slot_picked; if (!sp) return;
@@ -1583,6 +1597,23 @@ export async function mount(root, ctx) {
       <div class="dcard-acts"><button type="button" class="btn sm slotSkip" data-i="${i}">Запустить без уточнения</button></div></div>`;
   }
 
+  // Спросить предмет не вышло: связь, права или источник данных. Карточка существует, потому что
+  // молчаливый запуск «как раньше» теперь кончается отказом сервера, а отказ сервера написан для
+  // программы: «передайте scope={"клиент": "*"}» бухгалтеру не говорит ничего.
+  function slotFailHTML(sf) {
+    const i = messages.findIndex((m) => m.meta && m.meta.slot_fail === sf);
+    return `<div data-si="${i}" class="dcard">
+      <div class="dcard-top"><span class="dcard-kicker">предмет работы</span>${cardCloseHTML(i, "уточнение предмета")}</div>
+      ${sf.task ? `<div class="dcard-quote">${esc(String(sf.task).slice(0, 200))}</div>` : ""}
+      <div class="dcard-title">Не удалось узнать, по каким данным считать</div>
+      <div class="dcard-note">${esc(sf.причина || "ABOP не ответил")}</div>
+      <div class="dcard-note">Прогон не запускался: без выбора клиента он посчитал бы не те данные, а это не видно по результату.</div>
+      <div class="dcard-acts">
+        <button type="button" class="btn primary sm slotRetry" data-i="${i}">Повторить</button>
+        <button type="button" class="btn sm slotAllData" data-i="${i}">Считать по всем данным</button>
+      </div></div>`;
+  }
+
   function slotPickedHTML(sp) {
     const i = messages.findIndex((m) => m.meta && m.meta.slot_picked === sp);
     return `<div data-si="${i}" class="dcard">
@@ -1599,13 +1630,32 @@ export async function mount(root, ctx) {
   async function resolveSlots(agentId, task) {
     let slots = [];
     try { const r = await api(A_AG + "/slots/" + encodeURIComponent(agentId)); slots = (r && r.slots) || []; }
-    catch { return { scope: {}, hint: "" }; }             // слотов нет или сервер старый — как раньше
+    catch (e) {
+      // Различаем «слотов нет» и «спросить не вышло». Раньше любая ошибка означала пустой предмет,
+      // и прогон всё равно уходил на сервер — а тот с 1.0.38 за пустой обязательный слот
+      // ОТКАЗЫВАЕТ. Человек вместо вопроса «чьи данные считаем?» получал технический отказ про
+      // scope. Частый повод — занятый прод: ABOP отвечает по 18 секунд, запрос слотов отваливается
+      // по таймауту, и выглядит это как поломка агента.
+      if (Number(e && e.status) === 404) return { scope: {}, hint: "" };   // у агента слотов нет
+      await note("не удалось узнать предмет", { slot_fail: { agent_id: agentId, task: task || "",
+                                                             причина: humanError(e) } });
+      render(); scrollDown(true);
+      return null;
+    }
     const required = slots.filter((s) => s.required);
     if (!required.length) return { scope: {}, hint: "" };
     const sl = required[0];                               // не больше одного вопроса за раз
     let res = null;
     try { res = await api(A_AG + "/resolve/" + encodeURIComponent(sl.entity) + "?q=" + encodeURIComponent(task || "") + "&limit=6"); }
-    catch { return { scope: {}, hint: "" }; }
+    catch (e) {
+      // Слот ЕСТЬ и он обязателен, а список записей не пришёл. Запускать в такой ситуации —
+      // гарантированный отказ сервера; спрашивать не о чем — выбирать не из чего. Поэтому
+      // говорим, что случилось, и даём два честных выхода: повторить или считать по всем данным.
+      await note("не удалось узнать предмет", { slot_fail: { agent_id: agentId, task: task || "",
+                                                             слот: sl.name, причина: humanError(e) } });
+      render(); scrollDown(true);
+      return null;
+    }
     const cands = (res && res.candidates) || [];
     if (res && res.mode === "exact" && cands.length) {
       const r = cands[0].record || {};

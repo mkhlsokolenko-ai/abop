@@ -3248,7 +3248,14 @@ class Component extends DCLogic {
         if (!req.length) { self.runAgentBackend(context); return; }
         self.openSubject(req[0], context);
       })
-      .catch(function(){ self.runAgentBackend(context); });   // слоты не прочитались — не держим запуск
+      // Слоты не прочитались — РАНЬШЕ запускали всё равно, «пусть платформа откажет словами».
+      // Платформа и отказывает, но человек получал отказ вместо вопроса и оставался в тупике:
+      // выбрать было негде. Теперь та же модалка, но с причиной и двумя выходами.
+      .catch(function(e){
+        self.setState({ modal: 'subject', subjSlot: null, subjCtx: (typeof context === 'string' ? context : ''),
+                        subjItems: [], subjBusy: false,
+                        subjError: 'не удалось узнать, по каким данным считать: ' + (e && e.message ? e.message : 'ABOP не ответил') });
+      });
   }
 
   openSubject(slot, context) {
@@ -3272,7 +3279,9 @@ class Component extends DCLogic {
 
   pickSubject(value) {
     var st = this.state, slot = st.subjSlot || {}, ctx = st.subjCtx || '';
-    var scope = {}; scope[slot.name] = String(value || '');
+    // Имя слота известно не всегда: запрос слотов мог не дойти. Тогда «по всем данным» едет под
+    // общим ключом — платформа понимает его как то же явное решение человека.
+    var scope = {}; scope[slot.name || '*'] = String(value || '');
     this.setState({ modal: null, subjItems: [], subjSlot: null, subjCtx: '' });
     this.runAgentBackend(ctx, scope);
   }
