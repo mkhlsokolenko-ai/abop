@@ -71,12 +71,18 @@ export async function mount(root, ctx) {
     loading = false; render();
   }
 
-  async function решитьНаходку(id, состояние) {
+  async function решитьНаходку(id, состояние, способ) {
     busy = id; render();
     try {
+      // Какой именно способ принял человек — в журнал решения. Иначе через месяц по записи
+      // «подтверждено» не восстановить, что он собирался делать: у половины кодов способов
+      // несколько, и все законны.
+      const почему = способ ? "принят способ: " + способ : "";
       await api(M + "/findings/" + encodeURIComponent(id) + "/decide",
-                { method: "POST", body: JSON.stringify({ состояние, почему: "" }) });
-      toast(состояние === "подтверждено" ? "Отмечено как проблема" : "Отмечено как норма");
+                { method: "POST", body: JSON.stringify({ состояние, почему }) });
+      toast(состояние === "подтверждено"
+        ? (способ ? "Принято: " + способ : "Отмечено как проблема")
+        : "Отмечено как норма");
       await load();
     } catch (e) { toast(humanError(e), "err"); }
     finally { busy = ""; render(); }
@@ -222,6 +228,37 @@ export async function mount(root, ctx) {
     return т.startsWith("выс") ? " sev" : т.startsWith("сред") ? " mid" : "";
   }
 
+  // Что сделать с находкой: название способа, порядок действий, норма и версия политики.
+  // Когда способов несколько — они перечислены, и выбор остаётся за человеком: оба законны,
+  // приоритет методолог не объявил. Когда способа нет — сказано прямо, а не пустотой.
+  function способБлок(н, исход, способ, как, версия, чья, варианты, почему) {
+    if (!исход) return "";
+    const норма = String(н["основание_способа"] || "");
+    const подпись = [версия ? "версия политики " + версия : "",
+                     чья === "организация" ? "политика этой организации" : ""].filter(Boolean).join(" · ");
+    if (исход === "выбран") {
+      return `<div style="display:flex;flex-direction:column;gap:4px">
+        <span style="${LBL}">что сделать</span>
+        <div style="font-size:13px;font-weight:600;color:var(--ink)">${esc(способ)}</div>
+        ${как ? `<div style="font-size:12.5px;line-height:1.5;color:var(--ink-2)">${esc(как)}</div>` : ""}
+        ${норма ? `<div style="font-size:11.5px;color:var(--ink-3)">основание: ${esc(норма)}</div>` : ""}
+        ${подпись ? `<div style="font-size:11px;color:var(--ink-3)">${esc(подпись)}</div>` : ""}
+      </div>`;
+    }
+    if (исход === "несколько вариантов" && варианты.length) {
+      return `<div style="display:flex;flex-direction:column;gap:4px">
+        <span style="${LBL}">способы — оба законны, выбирает человек</span>
+        <ul style="margin:0;padding-left:18px;font-size:12.5px;line-height:1.6;color:var(--ink-2)">
+          ${варианты.map((в) => `<li>${esc(в)}</li>`).join("")}</ul>
+        ${подпись ? `<div style="font-size:11px;color:var(--ink-3)">${esc(подпись)}</div>` : ""}
+      </div>`;
+    }
+    return `<div style="display:flex;flex-direction:column;gap:4px">
+      <span style="${LBL}">способ устранения — ${esc(исход)}</span>
+      <div style="font-size:12.5px;line-height:1.5;color:var(--ink-2)">${esc(почему || "методолог способ не объявил")}</div>
+    </div>`;
+  }
+
   function находкаКарточка(н, верхняя) {
     const ждёт = busy === н.id;
     // Доказательство — главное на карточке: «работа заблокирована» без цитаты это мнение, а
@@ -233,10 +270,15 @@ export async function mount(root, ctx) {
     const исход = String(н["исход_способа"] || "");
     const способ = String(н["способ"] || "");
     const версия = String(н["версия_политики"] || "");
-    const способСтрокой = !исход ? ""
-      : исход === "выбран"
-        ? `способ: ${способ}${версия ? ` (версия политики ${версия})` : ""}`
-        : `способ устранения — ${исход}${способ ? `: ${способ}` : ""}; выбирает человек`;
+    // Способ — это ДЕЙСТВИЕ, а не строка описания. До 13.11.2026 он ехал припиской к сути
+    // («способ: Провести документ»), и человек видел название без порядка действий и без нормы:
+    // по такой карточке решение принимать не на чем. Теперь блок говорит, что сделать, как и на
+    // каком основании, а кнопка называет выбранный способ словами — он же попадает в журнал.
+    const как = String(н["как_устранить"] || "");
+    const вариантыСп = (н["варианты_способов"] || []).map((в) => String(в));
+    const почемуСп = String(н["почему_способ"] || "");
+    const чья = String(н["чья_политика"] || "");
+    const способСтрокой = "";
     // Сменилась версия учётной политики — прошлый вывод мог измениться. Молчать об этом нельзя:
     // решение по находке принимают, глядя на норму, которая действует сейчас.
     const пересмотр = String(н["к_пересмотру"] || "") === "да"
@@ -262,8 +304,11 @@ export async function mount(root, ctx) {
       "доказательство": доказательство,
       "происхождение": [н["основание"] ? "основание: " + н["основание"] : "", пересмотр,
                         (н["чего_не_хватило"] || []).join(" · ")].filter(Boolean).join(" · "),
+      "что_сделать": способБлок(н, исход, способ, как, версия, чья, вариантыСп, почемуСп),
       "действия": [
-        `<button data-fy="${esc(н.id)}" class="btn ok sm" ${ждёт ? "disabled" : ""}>${icon("check")}Это проблема</button>`,
+        исход === "выбран" && способ
+          ? `<button data-fy="${esc(н.id)}" data-fsp="${esc(способ)}" class="btn ok sm" ${ждёт ? "disabled" : ""}>${icon("check")}Принять: ${esc(способ)}</button>`
+          : `<button data-fy="${esc(н.id)}" class="btn ok sm" ${ждёт ? "disabled" : ""}>${icon("check")}Это проблема</button>`,
         `<button data-fn="${esc(н.id)}" class="btn ghost sm" ${ждёт ? "disabled" : ""}>Так и должно быть</button>`,
         `<button data-fp="${esc(н.id)}" class="btn ghost sm" ${ждёт ? "disabled" : ""}>${icon("clock")}Отложить</button>`,
       ],
@@ -526,7 +571,7 @@ export async function mount(root, ctx) {
     root.querySelectorAll("[data-open]").forEach((b) => b.onclick = () => раскрыть(b.dataset.open));
     root.querySelectorAll("[data-go]").forEach((b) => b.onclick = () => решить(b.dataset.go, "approve"));
     root.querySelectorAll("[data-no]").forEach((b) => b.onclick = () => решить(b.dataset.no, "reject"));
-    root.querySelectorAll("[data-fy]").forEach((b) => b.onclick = () => решитьНаходку(b.dataset.fy, "подтверждено"));
+    root.querySelectorAll("[data-fy]").forEach((b) => b.onclick = () => решитьНаходку(b.dataset.fy, "подтверждено", b.dataset.fsp || ""));
     root.querySelectorAll("[data-fp]").forEach((b) => b.onclick = () => отложить([b.dataset.fp]));
     root.querySelectorAll("[data-gy]").forEach((b) => b.onclick = () => решитьПакетом(идыГруппы(b.dataset.gy), "подтверждено"));
     root.querySelectorAll("[data-gn]").forEach((b) => b.onclick = () => решитьПакетом(идыГруппы(b.dataset.gn), "отклонено"));
