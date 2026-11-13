@@ -483,12 +483,21 @@ export async function mount(root, ctx) {
     const note = rep
       ? "Отчёт собирает сервер из последнего прогона этого разговора — в переписке я его не соберу и путь к файлу выдумывать не буду."
       : "Это работа для агента — в переписке я отвечаю только текстом. Нажмите, и ABOP подберёт исполнителя или соберёт его из навыков по этой же задаче.";
+    // Текст модели ПОД свёрткой, а не первым абзацем. 13.11.2026 владелец показал карточку, где
+    // сверху стоял разбор двух актов с «Вывод: расхождений нет», а внизу мелким — «это работа для
+    // агента». Читается это как результат сверки: человек видит заключение, подпись под ним
+    // пропускает. Расчёта там не было — ни правил, ни проверки источников, ни документа.
+    // Поэтому порядок обратный: сначала что это и кнопка, и только потом, по желанию, реплика.
     return `<div class="dcard">
       <div class="dcard-top"><span class="dcard-kicker">${rep ? "нужен отчёт прогона" : "нужен исполнитель"}</span>${cardCloseHTML(i, rep ? "сборка отчёта" : "подбор исполнителя")}</div>
-      ${body ? `<div style="font-size:13.5px;line-height:1.6">${md(body)}</div>` : ""}
       <div class="dcard-note">${note}</div>
       ${!rep && wh.task ? `<div class="dcard-quote">${esc(String(wh.task).slice(0, 220))}</div>` : ""}
-      <button type="button" class="btn primary whRun" data-i="${i}">${rep ? icon("doc") + " Собрать отчёт прогона" : icon("play") + " Подобрать исполнителя"}</button></div>`;
+      <button type="button" class="btn primary whRun" data-i="${i}">${rep ? icon("doc") + " Собрать отчёт прогона" : icon("play") + " Подобрать исполнителя"}</button>
+      ${body ? `<details style="margin-top:10px">
+        <summary style="cursor:pointer;font-size:12px;color:var(--ink-3);list-style:none">Что ответила модель в переписке — это не расчёт</summary>
+        <div class="dcard-note" style="margin:6px 0 2px">Без правил, без проверки источников и без документа. Числа и выводы отсюда в работу не берут.</div>
+        <div style="font-size:13.5px;line-height:1.6;opacity:.85">${md(body)}</div>
+      </details>` : ""}</div>`;
   }
   // Крестик на карточке предложения: отказаться было нечем — оставался только уход со страницы.
   function cardCloseHTML(i, label) {
