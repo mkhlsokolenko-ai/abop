@@ -10,6 +10,8 @@
 """
 from __future__ import annotations
 
+import time as _time
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from cli import ape
@@ -69,6 +71,17 @@ async def orchestrate(body: dict, u: dict = Depends(user)) -> dict:
     max_steps = max(1, min(6, int((body or {}).get("max_steps") or 4)))
     slots_given = {str(k) for k, v in ((body or {}).get("slots") or {}).items() if str(v or "").strip()}
 
+    # Сколько заняло КАЖДОЕ слагаемое. Замер прода 13.11.2026: ручка держит соединение по 88 с в
+    # медиане и до 218 с в худшем — человек в чате ждёт три минуты и считает, что связь пропала.
+    # По одной итоговой цифре чинить нечего: внутри и подбор агентов, и план по контрактам (а в
+    # нём эмбеддинги и голос модели со своим сроком). Пишем этапы в журнал, иначе следующий разбор
+    # снова начнётся с гадания.
+    _t0 = _time.monotonic()
+    _вехи: dict[str, int] = {}
+
+    def _веха(имя: str) -> None:
+        _вехи[имя] = int((_time.monotonic() - _t0) * 1000) - sum(_вехи.values())
+
     # Факты собираем здесь, решение принимает чистая функция: тогда его можно проверить тестом.
     matches = []
     try:
@@ -83,17 +96,20 @@ async def orchestrate(body: dict, u: dict = Depends(user)) -> dict:
                             "skills": sk})
     except Exception:  # noqa: BLE001 — без подбора агентов решение всё равно принимается
         matches = []
+    _веха("подбор_агентов")
     # План для РЕШЕНИЯ считаем без подсказок от похожих агентов. Иначе получается круг: агент
     # «ADR» похож на задачу → его навык adr-writer получает прибавку → он возглавляет план →
     # агент «покрывает план» → запускаем ADR на разбор идеи сервиса. Подсказка подтверждала сама
     # себя, и никакая правка подбора этого не перебивала. Проверено на проде 05.10.
     plan = await plan_auto({"task": task, "slots": (body or {}).get("slots") or {},
                             "max_steps": max_steps, "hints": False}, u)
+    _веха("план")
     _sids = [str(s.get("skill") or "") for s in (plan.get("steps") or []) if s.get("skill")]
     cached = False
     if len(_sids) >= orchestrator.EDITOR_FROM:
         _cid = report_compose.cache_id(_sids)
         cached = bool(_cid and (await report_store.get(_cid) or {}).get("layout"))
+    _веха("форма")
 
     d = orchestrator.decide(task, catalog={}, entities=set(plan.get("entities_ready") or []),
                             slots=slots_given, matches=matches, plan=plan, cached_layout=cached,
@@ -107,8 +123,10 @@ async def orchestrate(body: dict, u: dict = Depends(user)) -> dict:
                              {"kind": d.kind, "task": task[:200], "skills": d.skills,
                               "editor": d.editor, "form": d.form, "facts": d.facts,
                               "why": d.why[:8]})
+    _веха("решение")
     obs.log_event("info", "orchestrator.decide", kind=d.kind, skills=len(d.skills),
-                  editor=d.editor or "-", score=d.facts.get("подбор_агента"))
+                  editor=d.editor or "-", score=d.facts.get("подбор_агента"),
+                  ms_total=int((_time.monotonic() - _t0) * 1000), **{"ms_" + k: v for k, v in _вехи.items()})
     return out
 
 
