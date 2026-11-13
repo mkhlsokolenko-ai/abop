@@ -244,6 +244,7 @@ curl -s -XPOST 'http://127.0.0.1:8091/api/runs?async=1' -H "Authorization: Beare
 | Прогон | `ABOP_RUN_LLM_CONCURRENCY` (8 на своём боксе; 2–3 на RouteAI), `ABOP_RUN_MAX_TOKENS` (1600, нарратив), `ABOP_RUN_MAX_TOKENS_TEMPLATE` (3200 — навыки с подробной схемой без своего `max_tokens`), `ABOP_RUN_MAX_TOKENS_FREE`, `ABOP_RUN_STRUCTURED` (1), `ABOP_RUN_LLM_RETRIES/BACKOFF/TRUNCATE`, `ABOP_RUN_CACHE`, `ABOP_TOOL_STEPS` (2 — шагов tool-calling на навык) | |
 | Очередь | `ABOP_RUN_WORKERS` (4 на проде, код-дефолт 2; **0 — процесс не исполняет прогоны**), `ABOP_USER_CONCURRENT` (1), `ABOP_RUN_TIMEOUT` (600), `ABOP_RUN_STALE_SEC` (90 — переклад зависших раз в минуту), `ABOP_RUN_MEM_SOFT_MB` (бэкпрешер по RSS) | |
 | Роль процесса | `ABOP_ROLE`: `all` (умолчание — и отвечает, и считает), `api` (только отвечает), `worker` (только считает) | см. «Роль процесса» ниже |
+| Эмбеддер | `EMBED_BACKEND`: `routeai` (умолчание — облако) \| `local`; `EMBED_BASE_URL` (`http://127.0.0.1:8085/v1`), `EMBED_MODEL_LOCAL` (`intfloat/multilingual-e5-base`), `EMBED_TIMEOUT` (60) | см. «Свой эмбеддер» ниже |
 | Шина | `ABOP_BUS` (`kafka` \| `pg`), `ABOP_KAFKA_BROKERS` (`201.51.5.24:9092`), `ABOP_KAFKA_SASL_USER`, `ABOP_KAFKA_SASL_PASSWORD`, `ABOP_KAFKA_TOPIC_REQUESTS/RESULTS/DLQ`, `ABOP_KAFKA_GROUP` (`abop-run-workers`), `ABOP_KAFKA_EVENTS_GROUP` (`abop-triggers`), `ABOP_KAFKA_PARTITIONS` (3) | Брокер недоступен → откат на PgBus, задания не теряются |
 | Rate-limit | `ABOP_USER_RATE_MAX` (30), `ABOP_USER_RATE_WINDOW` (300 с) | 429 при превышении |
 | Планировщик | `ABOP_SCHEDULER` (0=выкл), `ABOP_SCHEDULER_TICK`, `ABOP_SCHEDULER_MIN_INTERVAL`, `ABOP_SCHEDULER_MAX_FIRES` | leader-election через advisory lock |
@@ -345,6 +346,47 @@ API отвечает медленно. Замер 13.11.2026 с машины в�
 **Чего это не чинит.** Дорогие ручки остаются дорогими: `/api/skills` 707 КБ и `/api/findings`
 260 КБ считаются заново на каждый запрос (1,1–1,6 с). Разведение ролей убирает конкуренцию с
 прогонами, а не стоимость самих ручек — кэш и пагинация остаются отдельной работой.
+
+## 7г. Свой эмбеддер вместо облачного (`EMBED_BACKEND`)
+
+**Зачем.** `clients.embed` зовётся при каждом подборе исполнителя — то есть внешний сервис стоит в
+горячем пути чата: его задержка становится нашей, а его недоступность — нашей. До 13.11.2026
+функция была прибита к RouteAI жёстко (`ROUTEAI_EMBED_MODEL=google/gemini-embedding-2`), хотя у
+реранкера выбор бэкенда есть с самого начала.
+
+**Чего рядом нет.** sLAVA эмбеддинги наружу не отдаёт: у неё только RAG-ручки (`/api/v1/query`,
+`/ingest`, `/collections`). Внутри она считает `intfloat/multilingual-e5-large`, но эндпоинта нет —
+переиспользовать её как эмбеддер-сервис нельзя, нужен свой.
+
+**Поднять сервис** (любой OpenAI-совместимый; TEI легче прочих, порт — только на loopback, наружу
+открывать нечего):
+
+```bash
+docker run -d --name abop-embed --restart unless-stopped \
+  -p 127.0.0.1:8085:80 -v /opt/abop-embed/data:/data --memory=2g \
+  ghcr.io/huggingface/text-embeddings-inference:cpu-1.8 \
+  --model-id intfloat/multilingual-e5-base --auto-truncate
+```
+
+Проверка: `curl -s http://127.0.0.1:8085/v1/embeddings -H 'Content-Type: application/json' -d '{"model":"intfloat/multilingual-e5-base","input":["проверка"]}' | head -c 120`.
+
+**Переключить ABOP:** `EMBED_BACKEND=local` в `.env` + рестарт `abop-webapi`. Откат — вернуть
+`routeai`, он остаётся рабочим.
+
+**Прежде чем переключать — измерить, а не поверить.** Набор для этого есть: `ops/planner_sim.json`
+(63 навыка × 2 формулировки = 126 запросов) и `ops/planner_model.py`. Смена эмбеддера меняет
+качество подбора, и это ровно то, что видно числом, а не ощущением.
+
+**Что чинить после смены.** Векторы разных моделей несопоставимы. Кэши в памяти (`_SKILL_EMB_CACHE`,
+`_AGENT_EMB_CACHE`) пересчитаются сами при рестарте, а сохранённые в базе — нет:
+
+| где | что делать |
+|---|---|
+| `reglament.embedding` (JSONB) | пересчитать: векторы от прежней модели сравнивать с новыми нельзя |
+
+С 13.11 `vectors.cosine` на паре разной длины возвращает **0.0** («сравнивать нечем»), а не
+правдоподобное число: раньше `zip` молча обрезал длинный вектор до короткого, и подмена модели
+дала бы похожесть, посчитанную по обрубку, — без ошибки и без следа в журнале.
 
 ## 7б. Резервное копирование и восстановление
 

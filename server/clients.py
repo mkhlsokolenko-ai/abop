@@ -246,13 +246,25 @@ async def chat_stream(
 # ─────────────────────────── Embeddings ───────────────────────────
 
 async def embed(texts: list[str]) -> list[list[float]]:
-    """BGE-M3 через RouteAI (OpenAI-совместимый /embeddings)."""
-    async with httpx.AsyncClient(timeout=60) as cli:
-        r = await cli.post(
-            f"{settings.routeai_base_url}/embeddings",
-            headers={"Authorization": f"Bearer {settings.routeai_api_key}"},
-            json={"model": settings.embed_model, "input": texts},
-        )
+    """Векторы для смыслового подбора. Бэкенд — настройкой, как у реранкера.
+
+    `routeai` (по умолчанию) — облако: так было с самого начала. `local` — свой OpenAI-совместимый
+    сервис (TEI, Infinity) по `EMBED_BASE_URL`. Подбор исполнителя зовёт эту функцию на каждом
+    запросе чата, то есть внешний сервис стоит в горячем пути: его задержка становится нашей, а
+    его недоступность — нашей недоступностью.
+
+    Ответ в обоих случаях OpenAI-совместимый, поэтому разбор общий.
+    """
+    if (settings.embed_backend or "").strip().lower() == "local":
+        url = f"{(settings.embed_base_url or '').rstrip('/')}/embeddings"
+        headers: dict[str, str] = {}
+        payload = {"model": settings.embed_model_local, "input": texts}
+    else:
+        url = f"{settings.routeai_base_url}/embeddings"
+        headers = {"Authorization": f"Bearer {settings.routeai_api_key}"}
+        payload = {"model": settings.embed_model, "input": texts}
+    async with httpx.AsyncClient(timeout=settings.embed_timeout) as cli:
+        r = await cli.post(url, headers=headers, json=payload)
         r.raise_for_status()
         data = r.json()
     return [item["embedding"] for item in data["data"]]

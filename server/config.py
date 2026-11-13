@@ -55,6 +55,20 @@ class Settings:
     )
     embed_model: str = os.getenv("ROUTEAI_EMBED_MODEL", "baai/bge-m3")  # RouteAI id — с префиксом baai/ (иначе 400)
 
+    # Чем считать векторы для смыслового подбора. `routeai` — облако (как было), `local` — свой
+    # OpenAI-совместимый сервис (TEI/Infinity) по адресу ниже. Подбор исполнителя — горячий путь
+    # чата: держать его на внешнем сервисе значит платить его задержкой на каждом запросе и
+    # зависеть от чужой доступности. Поэтому бэкенд выбирается настройкой, как у реранкера.
+    #
+    # ВАЖНО при смене: векторы разных моделей несопоставимы (разная размерность и пространство).
+    # Кэши в памяти переживут рестарт сами, а сохранённые в базе (`reglament.embedding`) надо
+    # пересчитать — иначе сверка с регламентом будет сравнивать несравнимое. `vectors.cosine`
+    # такую пару теперь отдаёт нулём, а не правдоподобным числом.
+    embed_backend: str = os.getenv("EMBED_BACKEND", "routeai")          # routeai | local
+    embed_base_url: str = os.getenv("EMBED_BASE_URL", "http://127.0.0.1:8085/v1")
+    embed_model_local: str = os.getenv("EMBED_MODEL_LOCAL", "intfloat/multilingual-e5-base")
+    embed_timeout: int = int(os.getenv("EMBED_TIMEOUT", "60"))
+
     def cascade_for(self, profile: str) -> list[str]:
         """Каскад моделей под профиль задачи. code->Qwen, research->DeepSeek."""
         return {
