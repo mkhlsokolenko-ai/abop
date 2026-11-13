@@ -787,6 +787,7 @@ async function показатьПроверку() {
   try { с = await window.ape.updater.state(); } catch { с = null; }
   if (!с) return;
   if (!с["поддержано"]) { v.title = "Авто-обновление выключено в этой сборке — обновлять вручную"; return; }
+  const ручной = с["канал"] === "ручной";
   const когда = с["проверено"] ? Math.round((Date.now() - с["проверено"]) / 60000) : null;
   const давность = когда == null ? "проверки ещё не было"
     : когда < 1 ? "проверено только что"
@@ -795,10 +796,15 @@ async function показатьПроверку() {
   v.title = с["ошибка"]
     ? `Обновления: проверка не удалась (${с["ошибка"]}). Повторю сама, можно и вручную: «Проверить обновления».`
     : с.state === "ready" ? `Обновление v${с.version} скачано — перезапустите, чтобы поставить`
-      : с.state === "available" ? `Найдено обновление v${с.version} — скачиваю`
-        : `Установлена последняя версия · ${давность}`;
-  // Сорвавшуюся проверку человек должен видеть, а не узнавать из подсказки под курсором.
+      : с.state === "manual" ? `Вышла версия v${с.version} — на macOS её ставят вручную, нажмите «Скачать»`
+        : с.state === "available" ? `Найдено обновление v${с.version} — скачиваю`
+          : ручной ? `Установлена последняя версия · ${давность} · на macOS обновление ставится вручную`
+            : `Установлена последняя версия · ${давность}`;
+  // Сорвавшуюся проверку человек должен видеть, а не узнавать из подсказки под курсором. То же
+  // и с вышедшей версией на маке: окно перезагружают (своей же полосой «интерфейс обновился»),
+  // а событие апдейтера приходит раз в шесть часов — без этого баннер пропадал бы до вечера.
   if (с["ошибка"]) renderUpdate({ state: "error", message: с["ошибка"] });
+  else if (с.state === "manual") renderUpdate({ state: "manual", version: с.version });
 }
 
 function renderUpdate(s) {
@@ -819,6 +825,13 @@ function renderUpdate(s) {
   else if (s.state === "ready") {
     show(`<span style="flex:1;display:flex;align-items:center;gap:8px">${icon("check")} Обновление <b>v${esc(s.version)}</b> готово к установке</span><button class="btn primary sm" id="updNow">Перезапустить и обновить</button>`, true);
     const b = $("updNow"); if (b) b.onclick = () => window.ape.updater.install();
+  } else if (s.state === "manual") {
+    // macOS: установить обновление приложение не может (сборка подписана ad-hoc, Squirrel.Mac
+    // такую не принимает), но молчать о вышедшей версии — хуже: на маке об этом узнавали
+    // только со слов. Поэтому баннер говорит прямо и ведёт к файлу.
+    show(`<span style="flex:1;display:flex;align-items:center;gap:8px">${icon("download")} Вышла версия <b>v${esc(s.version)}</b> — на macOS её ставят вручную</span>`
+         + `<button class="btn primary sm" id="updGet">Скачать</button>`, true);
+    const b = $("updGet"); if (b) b.onclick = () => window.ape.updater.download();
   } else if (s.state === "error") show(`<span class="faint">Апдейтер: ${esc((s.message || "").slice(0, 120))}</span>`);
   else bar.style.display = "none";
 }

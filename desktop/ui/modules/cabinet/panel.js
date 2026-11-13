@@ -134,28 +134,39 @@ export async function mount(root, ctx) {
     const состояние = String(апдейтер.state || "");
     const готово = состояние === "ready";
     const ошибка = String(апдейтер["ошибка"] || "");
+    // macOS: проверяем сами, ставит человек. Прежде карточка на маке писала «установлена
+    // последняя версия» всегда — проверок там не было вовсе, и экран врал ровно тем, ради чего
+    // его и смотрят.
+    const ручной = апдейтер["канал"] === "ручной";
+    const ждётРук = состояние === "manual";
     // Тон карточки — класс темы: «скачано» спокойное, сбой проверки жёлтый. Подбирать цвета
     // в панели значит заводить ещё одно определение тех же состояний.
-    const тонКласс = ошибка ? " warn" : готово ? "" : " calm";
+    const тонКласс = ошибка ? " warn" : готово || ждётРук ? "" : " calm";
     const подпись = готово ? `Обновление v${esc(String(апдейтер.version || ""))} скачано`
-      : ошибка ? "Проверка обновлений не удалась"
-        : состояние === "available" ? `Найдено обновление v${esc(String(апдейтер.version || ""))} — скачиваю`
-          : `Установлена последняя версия · v${esc(String(апдейтер["версия"] || ""))}`;
+      : ждётРук ? `Вышла версия v${esc(String(апдейтер.version || ""))} — поставить вручную`
+        : ошибка ? "Проверка обновлений не удалась"
+          : состояние === "available" ? `Найдено обновление v${esc(String(апдейтер.version || ""))} — скачиваю`
+            : `Установлена последняя версия · v${esc(String(апдейтер["версия"] || ""))}`;
     const пояснение = ошибка
       ? esc(ошибка) + " · повторю сама, можно и вручную"
-      : готово
-        ? "Приложение обновится при перезапуске."
-        : "Проверка идёт при запуске, каждые 6 часов и после пробуждения машины — ждать запуска больше не нужно.";
+      : ждётРук
+        ? "Скачайте образ и перетащите приложение в «Программы» поверх старого. Сама себя сборка под macOS обновить не может: у неё нет подписи Developer ID, и установщик обновлений её не принимает."
+        : готово
+          ? "Приложение обновится при перезапуске."
+          : ручной
+            ? "Проверка идёт при запуске, каждые 6 часов и после пробуждения машины. Ставить новую версию на macOS придётся вручную — сборка без подписи Developer ID."
+            : "Проверка идёт при запуске, каждые 6 часов и после пробуждения машины — ждать запуска больше не нужно.";
     return `<div class="card${тонКласс}"${готово ? ' style="border-color:var(--ok-line)"' : ""}>
       <div class="card-head">
-        <span style="color:${готово ? "var(--ok-ink)" : ошибка ? "var(--warn-ink)" : "var(--ink-2)"};display:flex">${
-          icon(готово ? "download" : ошибка ? "alert" : "check", "xl")}</span>
+        <span style="color:${готово || ждётРук ? "var(--ok-ink)" : ошибка ? "var(--warn-ink)" : "var(--ink-2)"};display:flex">${
+          icon(готово || ждётРук ? "download" : ошибка ? "alert" : "check", "xl")}</span>
         <span class="t">${подпись}</span>
         <span class="tag ${ошибка ? "mid" : "ok"} right">${esc(давность(апдейтер["проверено"]))}</span>
       </div>
       <div class="why">${пояснение}</div>
       <div class="acts">
         ${готово ? `<button class="btn ok" id="cabUpdNow">${icon("refresh")}Перезапустить и обновить</button>` : ""}
+        ${ждётРук ? `<button class="btn ok" id="cabUpdGet">${icon("download")}Скачать установщик</button>` : ""}
         <button class="btn ghost sm" id="cabUpdCheck">${icon("download")}Проверить обновления</button>
       </div></div>`;
   };
@@ -368,6 +379,8 @@ export async function mount(root, ctx) {
   // Обновление ставит тот же путь, что и баннер в шапке: один способ установки на приложение.
   const upNow = root.querySelector("#cabUpdNow");
   if (upNow) upNow.onclick = () => { if (window.ape && window.ape.updater) window.ape.updater.install(); };
+  const upGet = document.getElementById("cabUpdGet");
+  if (upGet) upGet.onclick = () => { if (window.ape && window.ape.updater) window.ape.updater.download(); };
   const upChk = root.querySelector("#cabUpdCheck");
   if (upChk) upChk.onclick = async () => {
     if (!(window.ape && window.ape.updater)) return;

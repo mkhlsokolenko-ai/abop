@@ -10,6 +10,9 @@ contextBridge.exposeInMainWorld("ape", {
     // версия», даже когда проверка просто не доходит.
     state: () => ipcRenderer.invoke("updater:state"),
     install: () => ipcRenderer.invoke("updater:install"),
+    // macOS: ставить обновление приложение не вправе (ad-hoc подпись), поэтому вместо установки
+    // открываем ссылку на .dmg в браузере — дальше человек.
+    download: () => ipcRenderer.invoke("updater:download"),
   },
   exportPdf: (html, filename) => ipcRenderer.invoke("export:pdf", { html, filename }),
   openFile: (path) => ipcRenderer.invoke("file:open", path),
