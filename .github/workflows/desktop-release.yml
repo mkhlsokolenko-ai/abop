@@ -210,6 +210,36 @@ jobs:
           # не роняем сборку из-за уборки.
           hdiutil detach /tmp/abopdmg -quiet || (sleep 3; hdiutil detach /tmp/abopdmg -force -quiet) || true
 
+      # Манифест обновления обязан описывать файл, который РЕАЛЬНО лежит в релизе, и код возврата
+      # electron-builder этого не значит. На 1.0.38 разошлось именно здесь: релиз создал теговый
+      # прогон днём, маки пересобрали ручным прогоном ночью — и публикатор отказался дополнять
+      # релиз старше двух часов («existing release published more than 2 hours ago»), молча
+      # ПРОПУСТИВ загрузку архивов. Сборка осталась зелёной, склейка отработала, и канал
+      # обновления стал ссылаться на архив, которого в релизе нет: размеры и sha512 не сходились.
+      # Поэтому спрашиваем сам релиз, а не сборку. Шаг стоит ДО выкладки манифеста: манифест,
+      # описывающий ненайденный файл, в склейку попасть не должен.
+      - name: Проверить, что архив лёг в релиз
+        if: env.PUBLISH == 'always'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          # Имена переменных ЛАТИНИЦЕЙ: bash кириллические не принимает (поймано 12.11 дважды).
+          zip=$(ls dist/*-mac-${{ matrix.arch }}.zip | head -1)
+          name=$(basename "$zip")
+          local_size=$(stat -f%z "$zip")
+          ver=$(node -p "require('./package.json').version")
+          remote_size=$(gh release view "v$ver" --repo "$GITHUB_REPOSITORY" --json assets                         -q ".assets[] | select(.name==\"$name\") | .size")
+          if [ -z "$remote_size" ]; then
+            echo "::error::$name в релизе v$ver НЕТ: публикатор пропустил загрузку. Обычная причина — релиз старше двух часов, дополнить его electron-builder уже не даст. Нужно поднять версию и собрать релиз заново."
+            exit 1
+          fi
+          if [ "$remote_size" != "$local_size" ]; then
+            echo "::error::$name в релизе весит $remote_size, а собран $local_size — это РАЗНЫЕ сборки, и манифест обновления сослался бы на файл, которого в релизе нет."
+            exit 1
+          fi
+          echo "$name доехал до релиза v$ver целиком ($local_size байт)"
+
       # Манифест обновления каждой арки — артефактом, чтобы джоб склейки собрал из них один.
       # Без этого обе сборки пишут `latest-mac.yml` в один и тот же файл релиза, и выигрывает та,
       # что финишировала позже: авто-обновление видит ТОЛЬКО её арку. На 1.0.36 так осталась
@@ -277,6 +307,39 @@ jobs:
           with open("latest-mac.yml", "w", encoding="utf-8") as ф:
               yaml.safe_dump(итог, ф, allow_unicode=True, sort_keys=False)
           print(open("latest-mac.yml", encoding="utf-8").read())
+          PY
+
+      # Последний рубеж и единственное место, где манифест попадает в релиз. Проверка та же, но
+      # по итоговому — склеенному — файлу: каждая строка `files` обязана совпасть с ассетом релиза
+      # по имени и размеру. Не сошлось — манифест НЕ заменяется: старый, пусть и неполный, честнее
+      # нового, обещающего несуществующую сборку. Авто-обновление падает на проверке целостности
+      # молча, уже у пользователя, и разбор стоит дороже красного джоба.
+      - name: Сверить манифест с тем, что лежит в релизе
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          ver=$(python -c "import yaml;print(yaml.safe_load(open('latest-mac.yml'))['version'])")
+          gh release view "v$ver" --repo "$GITHUB_REPOSITORY" --json assets > assets.json
+          python - <<'PY'
+          import json, sys, yaml
+          манифест = yaml.safe_load(open("latest-mac.yml", encoding="utf-8"))
+          активы = {а["name"]: а["size"]
+                    for а in json.load(open("assets.json", encoding="utf-8"))["assets"]}
+          беда = []
+          for ф in (манифест.get("files") or []):
+              имя, размер = ф.get("url"), ф.get("size")
+              if имя not in активы:
+                  беда.append(f"{имя}: в релизе такого файла НЕТ")
+              elif активы[имя] != размер:
+                  беда.append(f"{имя}: в релизе {активы[имя]} байт, манифест обещает {размер}")
+          if беда:
+              print("::error::манифест обновления описывает не то, что лежит в релизе — не заменяю:")
+              for строка in беда:
+                  print("::error::  " + строка)
+              sys.exit(1)
+          print("манифест сходится с релизом:",
+                ", ".join(ф["url"] for ф in манифест["files"]))
           PY
 
       - name: Заменить манифест в релизе

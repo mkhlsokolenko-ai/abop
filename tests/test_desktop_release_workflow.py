@@ -179,3 +179,122 @@ def test_манифест_остаётся_за_тем_файлом_по_кот�
     последняя = шаги[сборки[-1]]
     assert "--mac zip" in str(последняя.get("run")), (
         "последней собирается не ZIP: манифест обновления уйдёт на другую цель")
+
+
+# ── Защита от «манифест обещает то, чего в релизе нет» ─────────────────────────────────────────
+# Поймано на 1.0.38, и ни один тест выше этого не ловил: все они смотрят на СБОРКУ, а поломка
+# была в ПУБЛИКАЦИИ. Релиз создал теговый прогон днём, маки пересобрали ручным прогоном ночью —
+# electron-builder отказался дополнять релиз старше двух часов («existing release published more
+# than 2 hours ago») и молча пропустил загрузку архивов, вернув нулевой код. Джоб склейки
+# отработал как ни в чём не бывало и заменил `latest-mac.yml` манифестом ночной сборки. В релизе
+# остались дневные ZIP и ночной манифест: arm64 весил 208159470, а манифест обещал 208156897.
+# Обновление на маке объявилось бы и упало у пользователя на проверке целостности.
+
+def _среда_utf8():
+    """Дочернему Python — UTF-8 на выходе.
+
+    Код шага печатает отказ по-русски, а на Windows дочерний процесс пишет stdout в кодировке
+    консоли (cp1251): прочитанный как UTF-8, он превращается в мусор, и проверка сообщения
+    молча перестаёт что-либо проверять. На ubuntu в CI так не ломалось — тем хуже: тест был бы
+    зелёным там и красным у владельца.
+    """
+    import os
+    среда = dict(os.environ)
+    среда["PYTHONIOENCODING"] = "utf-8"
+    return среда
+
+
+def извлечь_питон(джоб: str, имя_шага: str) -> str:
+    """Код внутри `python - <<'PY'` у шага — чтобы проверять поведение, а не наличие строк."""
+    import textwrap
+    шаг = next(ш for ш in ПОТОК["jobs"][джоб]["steps"] if ш.get("name") == имя_шага)
+    строки = шаг["run"].splitlines()
+    начало = next(i for i, с in enumerate(строки) if с.strip().endswith("<<'PY'")) + 1
+    конец = next(i for i, с in enumerate(строки) if с == "PY")
+    return textwrap.dedent("\n".join(строки[начало:конец]))
+
+
+def test_архив_проверяется_по_релизу_а_не_по_коду_возврата():
+    """Нулевой код electron-builder НЕ значит, что файл лёг в релиз: пропуск загрузки успешен."""
+    шаги = ПОТОК["jobs"]["mac"]["steps"]
+    проверка = next((i for i, ш in enumerate(шаги)
+                     if "gh release view" in str(ш.get("run") or "")
+                     and "remote_size" in str(ш.get("run") or "")), None)
+    assert проверка is not None, "никто не спрашивает релиз, доехал ли архив"
+    выкладка = next(i for i, ш in enumerate(шаги)
+                    if "latest-mac.yml" in str((ш.get("with") or {}).get("path", "")))
+    assert проверка < выкладка, (
+        "манифест, описывающий ненайденный файл, не должен попадать в склейку")
+    assert "env.PUBLISH == 'always'" in str(шаги[проверка].get("if") or ""), (
+        "без публикации в релизе нечего искать — шаг покраснеет на каждом пробном прогоне")
+
+
+def test_склейка_не_заменяет_манифест_разошедшийся_с_релизом(tmp_path):
+    """Последний рубеж: воспроизводим ровно 1.0.38 и ждём отказа.
+
+    Проверяется ПОВЕДЕНИЕ кода из workflow, а не наличие в нём подстроки: шаг перепишут, и
+    проверка-на-подстроку останется зелёной, ничего не проверяя.
+    """
+    import json
+    import subprocess
+    import sys
+
+    код = извлечь_питон("mac-manifest", "Сверить манифест с тем, что лежит в релизе")
+
+    def прогнать(размер_в_манифесте: int, размер_в_релизе: int):
+        (tmp_path / "latest-mac.yml").write_text(yaml.safe_dump({
+            "version": "1.0.38",
+            "files": [{"url": "ABOP-Desktop-1.0.38-mac-arm64.zip",
+                       "sha512": "неважно", "size": размер_в_манифесте}],
+        }), encoding="utf-8")
+        (tmp_path / "assets.json").write_text(json.dumps({
+            "assets": [{"name": "ABOP-Desktop-1.0.38-mac-arm64.zip", "size": размер_в_релизе}],
+        }), encoding="utf-8")
+        (tmp_path / "сверка.py").write_text(код, encoding="utf-8")
+        return subprocess.run([sys.executable, "сверка.py"], cwd=tmp_path,
+                              capture_output=True, text=True, encoding="utf-8",
+                              env=_среда_utf8())
+
+    # Настоящие числа релиза 1.0.38: манифест ночной сборки, архив дневной.
+    плохо = прогнать(208156897, 208159470)
+    assert плохо.returncode != 0, "манифест 1.0.38 прошёл бы проверку — защиты нет"
+    assert "::error::" in плохо.stdout, "отказ не виден в логе GitHub"
+    assert "208159470" in плохо.stdout and "208156897" in плохо.stdout, (
+        "в отказе нет обоих чисел — по такому сообщению причину не найти")
+
+    хорошо = прогнать(209764930, 209764930)
+    assert хорошо.returncode == 0, хорошо.stdout + хорошо.stderr
+
+
+def test_склейка_падает_если_файла_в_релизе_нет_вовсе():
+    """Пропущенная загрузка — не «размер разошёлся», а «ассета нет»: отдельная ветка."""
+    import json
+    import subprocess
+    import sys
+    import tempfile
+    from pathlib import Path
+
+    код = извлечь_питон("mac-manifest", "Сверить манифест с тем, что лежит в релизе")
+    with tempfile.TemporaryDirectory() as кат:
+        п = Path(кат)
+        (п / "latest-mac.yml").write_text(yaml.safe_dump({
+            "version": "1.0.39",
+            "files": [{"url": "ABOP-Desktop-1.0.39-mac-x64.zip", "sha512": "х", "size": 1}],
+        }), encoding="utf-8")
+        (п / "assets.json").write_text(json.dumps({"assets": []}), encoding="utf-8")
+        (п / "сверка.py").write_text(код, encoding="utf-8")
+        r = subprocess.run([sys.executable, "сверка.py"], cwd=п,
+                           capture_output=True, text=True, encoding="utf-8",
+                           env=_среда_utf8())
+    assert r.returncode != 0, "манифест на несуществующий файл был бы опубликован"
+    assert "НЕТ" in r.stdout
+
+
+def test_сверка_идёт_перед_заменой_манифеста():
+    """Порядок — вся суть: проверка после заливки ничего не защищает."""
+    шаги = ПОТОК["jobs"]["mac-manifest"]["steps"]
+    сверка = next(i for i, ш in enumerate(шаги)
+                  if ш.get("name") == "Сверить манифест с тем, что лежит в релизе")
+    замена = next(i for i, ш in enumerate(шаги)
+                  if "gh release upload" in str(ш.get("run") or ""))
+    assert сверка < замена, "манифест заливается до сверки — защита бесполезна"
