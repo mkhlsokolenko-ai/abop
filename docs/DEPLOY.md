@@ -11,7 +11,7 @@
 | Что | Где | Порт | Персистентность |
 |---|---|---|---|
 | **ABOP Web API** (`abop-webapi`) | docker, `--network host`, `--memory=1536m` | 8091 | код в образе; данные — в томе `abop_ape` + Postgres |
-| Воркеры очереди прогонов | внутри процесса API (`ABOP_RUN_WORKERS=4`) | — | очередь `run_jobs` в Postgres |
+| Воркеры очереди прогонов | внутри процесса API (`ABOP_RUN_WORKERS=4`) — **можно вынести, см. «Роль процесса»** | — | очередь `run_jobs` в Postgres |
 | Postgres | server-1 | 5433 | том `ape_pg` (agents/contracts/runs/run_jobs/skills/schema_templates/report_templates/рецепты/…) |
 | Keycloak | server-1 | 8811 | realm `abop` (JWT); **аутентификация на проде включена**, API без токена → 401 |
 | Prometheus | docker (`ops/`) | 9091 | том `abop_prom_data`; цели: abop-webapi, redpanda, abop-connector |
@@ -242,7 +242,8 @@ curl -s -XPOST 'http://127.0.0.1:8091/api/runs?async=1' -H "Authorization: Beare
 | База / auth | `POSTGRES_DSN`, `KEYCLOAK_ISSUER`, `KEYCLOAK_JWKS_URI`, `KEYCLOAK_JWKS_INTERNAL`, `KEYCLOAK_AUDIENCE`, `ABOP_EXTRA_JWKS` | Без `KEYCLOAK_JWKS_URI` API **fail-closed** (401). `ABOP_DEV_AUTH=1` — аноним = admin, **только локальная разработка/CI**, на проде не задавать. `ABOP_EXTRA_JWKS` — доп. issuer для десктопа |
 | LLM | `LOCAL_LLM_BASE_URL`, `LOCAL_LLM_MODEL`, `LOCAL_LLM_API_KEY` (`EMPTY`), `ROUTEAI_BASE_URL`, `ROUTEAI_API_KEY`, `ROUTEAI_STANDARD_CASCADE` (`local/qwen3-30b-a3b,…` — local первым, RouteAI fallback), `ROUTEAI_RESEARCH_CASCADE`, `ROUTEAI_CODE_CASCADE`, `ABOP_LOCAL_LLM_TIMEOUT` (300 — свой бокс, длинные схемы), `ABOP_LLM_TIMEOUT` (120 — облако), `ABOP_LLM_MAX_INFLIGHT` (12) | Override адреса бокса — §6в |
 | Прогон | `ABOP_RUN_LLM_CONCURRENCY` (8 на своём боксе; 2–3 на RouteAI), `ABOP_RUN_MAX_TOKENS` (1600, нарратив), `ABOP_RUN_MAX_TOKENS_TEMPLATE` (3200 — навыки с подробной схемой без своего `max_tokens`), `ABOP_RUN_MAX_TOKENS_FREE`, `ABOP_RUN_STRUCTURED` (1), `ABOP_RUN_LLM_RETRIES/BACKOFF/TRUNCATE`, `ABOP_RUN_CACHE`, `ABOP_TOOL_STEPS` (2 — шагов tool-calling на навык) | |
-| Очередь | `ABOP_RUN_WORKERS` (4 на проде, код-дефолт 2), `ABOP_USER_CONCURRENT` (1), `ABOP_RUN_TIMEOUT` (600), `ABOP_RUN_STALE_SEC` (90 — переклад зависших раз в минуту), `ABOP_RUN_MEM_SOFT_MB` (бэкпрешер по RSS) | |
+| Очередь | `ABOP_RUN_WORKERS` (4 на проде, код-дефолт 2; **0 — процесс не исполняет прогоны**), `ABOP_USER_CONCURRENT` (1), `ABOP_RUN_TIMEOUT` (600), `ABOP_RUN_STALE_SEC` (90 — переклад зависших раз в минуту), `ABOP_RUN_MEM_SOFT_MB` (бэкпрешер по RSS) | |
+| Роль процесса | `ABOP_ROLE`: `all` (умолчание — и отвечает, и считает), `api` (только отвечает), `worker` (только считает) | см. «Роль процесса» ниже |
 | Шина | `ABOP_BUS` (`kafka` \| `pg`), `ABOP_KAFKA_BROKERS` (`201.51.5.24:9092`), `ABOP_KAFKA_SASL_USER`, `ABOP_KAFKA_SASL_PASSWORD`, `ABOP_KAFKA_TOPIC_REQUESTS/RESULTS/DLQ`, `ABOP_KAFKA_GROUP` (`abop-run-workers`), `ABOP_KAFKA_EVENTS_GROUP` (`abop-triggers`), `ABOP_KAFKA_PARTITIONS` (3) | Брокер недоступен → откат на PgBus, задания не теряются |
 | Rate-limit | `ABOP_USER_RATE_MAX` (30), `ABOP_USER_RATE_WINDOW` (300 с) | 429 при превышении |
 | Планировщик | `ABOP_SCHEDULER` (0=выкл), `ABOP_SCHEDULER_TICK`, `ABOP_SCHEDULER_MIN_INTERVAL`, `ABOP_SCHEDULER_MAX_FIRES` | leader-election через advisory lock |
@@ -309,6 +310,41 @@ curl -s -XPOST 'http://127.0.0.1:8091/api/runs?async=1' -H "Authorization: Beare
 - **Per-user rate-limit** и **идемпотентность прогонов** (двойной клик → 1 реальный + 1 cached). NB: rate-limit и idempotency-lock — per-replica (в памяти).
 - **Что уже общее (PG):** agents/contracts/runs/run_jobs/skills/шаблоны/рецепты/admin/RBAC/память/HITL и **канонические записи Data Plane** (`dp_records`, с 08.10 — `server/dataplane_records.py`). Том `abop_ape` остаётся нужен для памяти прогонов и архива доски, но Data Plane им больше не ограничен: реплика на другом хосте видит те же сущности.
 - **Вторая реплика — НЕ поднята**: на server-1 свободно ~370 МБ; реплике на server-2 нужен доступ к Postgres server-1 (туннель/TLS или перенос PG) + свой порт и LB/Caddy upstream.
+
+## 7в. Роль процесса: развести ответы и счёт (`ABOP_ROLE`)
+
+**Зачем.** Прод держит один процесс `uvicorn server.web_api:app` без `--workers`, и в нём же
+крутятся воркеры прогонов. Тяжёлые шаги движок уносит в поток, но GIL остаётся: пока идёт прогон,
+API отвечает медленно. Замер 13.11.2026 с машины владельца — первый `/api/health` **18 секунд**,
+следующие три по 0,23 с. Для десктопа это «Нет связи с ABOP»: подбор предмета работы отваливается
+по таймауту, и человек видит поломку агента вместо занятого сервера.
+
+**Что умеет код (с 13.11.2026).**
+
+| `ABOP_ROLE` | HTTP | воркеры прогонов | одиночные циклы (метрики очереди, уборка черновиков, сроки решений) |
+|---|---|---|---|
+| `all` (умолчание) | да | `ABOP_RUN_WORKERS` | да |
+| `api` | да | **нет** | да |
+| `worker` | да (не используется) | `ABOP_RUN_WORKERS` | **нет** |
+
+`ABOP_RUN_WORKERS=0` тоже отключает исполнение (раньше `max(1, …)` этого не позволял).
+Планировщик триггеров под роль НЕ загнан: у него своя защита от раздвоения — leader-election
+через advisory lock, и в роли `worker` расписания просто перестали бы срабатывать.
+
+**Как развести на проде.** Очередь к этому готова: задания захватываются `FOR UPDATE SKIP LOCKED`,
+то есть второй процесс безопасно берёт свои. Порядок:
+
+1. в `.env` API-контейнера — `ABOP_ROLE=api` (воркеры уходят), рестарт `abop-webapi`;
+2. поднять второй контейнер из **того же образа** с `ABOP_ROLE=worker`, `ABOP_RUN_WORKERS=4`,
+   тем же `.env` и `--network host` (брокер и Postgres адресуются как `127.0.0.1`), без публикации
+   порта 8091 — HTTP там не нужен;
+3. проверить журналы: у обоих `run_queue.started` с полем `role`, у API `workers=0`;
+4. мерить тем же способом, что и прежде: `docker logs abop-webapi | grep http.request` и сложить
+   по `route`/`ms` (начало запроса = `ts - ms/1000`).
+
+**Чего это не чинит.** Дорогие ручки остаются дорогими: `/api/skills` 707 КБ и `/api/findings`
+260 КБ считаются заново на каждый запрос (1,1–1,6 с). Разведение ролей убирает конкуренцию с
+прогонами, а не стоимость самих ручек — кэш и пагинация остаются отдельной работой.
 
 ## 7б. Резервное копирование и восстановление
 

@@ -568,16 +568,44 @@ async def _startup() -> None:
             _asyncio.create_task(_b.events_loop(_bus_event_handler))
     except Exception as _ex:  # noqa: BLE001
         obs.log_event("warning", "bus.systems.init_failed", error=str(_ex)[:200])
-    for _wi in range(run_queue.WORKERS):
-        _asyncio.create_task(run_bus.worker_loop(f"{os.getenv('HOSTNAME', 'api')}-w{_wi}", _handle_job))
-    _asyncio.create_task(run_queue.gauges_loop())   # глубина очереди/RSS/ожидание → Prometheus/Grafana
-    # Неотправленные черновики живут 30 дней и убираются сами (PRD, решение 2): иначе «Результаты»
-    # зарастают тем, по чему решение так и не приняли, и полка перестаёт быть полезной.
-    _asyncio.create_task(hitl_store.уборка_loop())
-    # Срок решения: по истечении — запись в журнал и расцепление цепочки, но НЕ отправка.
-    # Молчание не согласие на необратимое; смертью цепочки оно тоже не бывает (ADR-062).
-    _asyncio.create_task(decisions.сроки_loop())
-    obs.log_event("info", "run_queue.started", workers=run_queue.WORKERS, bus=run_bus.describe().get("bus"))
+    # ── Роль процесса: кто отвечает на запросы, а кто исполняет прогоны ───────────────────────
+    #
+    # Прод держит ОДИН процесс: `uvicorn server.web_api:app` без `--workers`, и в нём же живут
+    # воркеры прогонов. Тяжёлые шаги движок уносит в поток, но GIL остаётся, и во время прогона
+    # API отвечает медленнее. 13.11.2026 это измерено с машины владельца: первый `/api/health`
+    # ответил за 18 секунд, следующие три — за 0,23 с. Десктоп в такие минуты пишет «Нет связи с
+    # ABOP», подбор предмета работы отваливается по таймауту, и человек видит это как поломку
+    # агента, а не как занятый сервер.
+    #
+    # Поэтому у процесса появляется роль:
+    #   all    — как было: и отвечает, и считает (значение по умолчанию, ничего не ломает);
+    #   api    — только отвечает: воркеры прогонов не поднимаются;
+    #   worker — только считает: не берёт на себя одиночные фоновые циклы.
+    #
+    # Очередь уже рассчитана на несколько процессов — задания захватываются `FOR UPDATE SKIP
+    # LOCKED`, — поэтому развести API и прогоны по контейнерам можно без правок логики. А вот
+    # одиночные циклы (метрики очереди, уборка черновиков, сроки решений) во втором процессе
+    # дублировать нельзя: уборка и сроки пишут в журнал и расцепляют цепочки.
+    РОЛЬ = (os.getenv("ABOP_ROLE") or "all").strip().lower()
+    if РОЛЬ not in ("all", "api", "worker"):
+        obs.log_event("warning", "role.unknown", role=РОЛЬ, fallback="all")
+        РОЛЬ = "all"
+    _исполняем = РОЛЬ in ("all", "worker") and run_queue.WORKERS > 0
+    _одиночные = РОЛЬ in ("all", "api")
+    if _исполняем:
+        for _wi in range(run_queue.WORKERS):
+            _asyncio.create_task(run_bus.worker_loop(f"{os.getenv('HOSTNAME', 'api')}-w{_wi}", _handle_job))
+    if _одиночные:
+        _asyncio.create_task(run_queue.gauges_loop())   # глубина очереди/RSS/ожидание → Prometheus/Grafana
+        # Неотправленные черновики живут 30 дней и убираются сами (PRD, решение 2): иначе «Результаты»
+        # зарастают тем, по чему решение так и не приняли, и полка перестаёт быть полезной.
+        _asyncio.create_task(hitl_store.уборка_loop())
+        # Срок решения: по истечении — запись в журнал и расцепление цепочки, но НЕ отправка.
+        # Молчание не согласие на необратимое; смертью цепочки оно тоже не бывает (ADR-062).
+        _asyncio.create_task(decisions.сроки_loop())
+    obs.log_event("info", "run_queue.started", role=РОЛЬ,
+                  workers=run_queue.WORKERS if _исполняем else 0,
+                  bus=run_bus.describe().get("bus"))
     await _refresh_skill_ds_cache()  # инжект data-need оверрайдов из PG в ape
     await dataplane_store.init()
     await chat_store.init()   # история чатов пользователя: в БД, а не на машине

@@ -59,7 +59,11 @@ ALTER TABLE run_jobs ADD COLUMN IF NOT EXISTS group_id TEXT;
 CREATE INDEX IF NOT EXISTS idx_run_jobs_group ON run_jobs(group_id);
 """
 
-WORKERS = max(1, int(os.getenv("ABOP_RUN_WORKERS", "2")))
+# Ноль — законное значение: «этот процесс прогоны не исполняет». Нужно, чтобы развести API и
+# счёт по разным процессам (см. ABOP_ROLE в web_api): на одном процессе прогон отнимает у API
+# время, и человек видит «Нет связи с ABOP» там, где сервер просто занят. Раньше здесь стоял
+# max(1, …), и выключить исполнение было нечем — даже ABOP_RUN_WORKERS=0 давал одного воркера.
+WORKERS = max(0, int(os.getenv("ABOP_RUN_WORKERS", "2")))
 USER_CONCURRENT = max(1, int(os.getenv("ABOP_USER_CONCURRENT", "1")))
 RUN_TIMEOUT = max(30, int(os.getenv("ABOP_RUN_TIMEOUT", "600")))
 MEM_SOFT_MB = max(0, int(os.getenv("ABOP_RUN_MEM_SOFT_MB", "1500")))
