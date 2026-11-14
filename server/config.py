@@ -96,6 +96,10 @@ class Settings:
     # Postgres
     pg_dsn: str = os.getenv("POSTGRES_DSN", "")
 
+    # эфемерные docker-тулы отделов (department_tools): выключение — осознанное решение среды,
+    # а не флаг ради флага: тул при вызове честно скажет «выключено настройкой», не молча
+    docker_tools_disabled: str = os.getenv("ABOP_DOCKER_TOOLS", "")
+
     # квоты: 5M/сессия × 5 сессий = 25M токенов/неделю
     per_session_token_limit: int = int(os.getenv("PER_SESSION_TOKEN_LIMIT", "5000000"))
     sessions_per_week: int = int(os.getenv("SESSIONS_PER_WEEK", "5"))

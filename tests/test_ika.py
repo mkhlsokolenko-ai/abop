@@ -61,7 +61,7 @@ def _мир(monkeypatch):
     async def _jobs(actor=None, limit=50):
         return задания
 
-    async def _query(*a, **kw):
+    def _query(*a, **kw):   # настоящий dr.query синхронный
         raise RuntimeError("сущности нет")
 
     monkeypatch.setattr(agent_store, "list_for", _list_for)
@@ -108,7 +108,8 @@ def test_веса_приходят_данными_вертикали(monkeypatch
     from server import dataplane_records as dr
     _мир(monkeypatch)
 
-    async def _query(*a, **kw):
+    def _query(*a, **kw):   # настоящий dr.query СИНХРОННЫЙ — мок обязан им быть,
+        # иначе await-баг (TypeError в except) не ловится тестом никогда
         return [{"фактор": "принятие", "вес": "5"}, {"фактор": "доведение", "вес": "2,5"},
                 {"фактор": "опечатка", "вес": "9"},   # чужой фактор игнорируется
                 {"фактор": "ftfr", "вес": "не число"}]  # неразобранный вес игнорируется

@@ -59,7 +59,8 @@ async def веса() -> tuple[dict, str]:
     источник = "умолчания"
     try:
         from . import dataplane_records as dr
-        строки = await dr.query(ВЕС_СУЩНОСТЬ, None, None, 200)
+        строки = dr.query(ВЕС_СУЩНОСТЬ, None, None, 200)   # dr.query СИНХРОННАЯ — await здесь
+        # ловил бы TypeError, перехватывался except-ом, и веса из данных никогда не применялись
     except Exception:  # noqa: BLE001 — нет сущности это нормально
         return out, источник
     for с in строки or []:
