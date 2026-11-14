@@ -1074,5 +1074,17 @@
  [
   "POST",
   "/api/methodology/agent"
+ ],
+ [
+  "POST",
+  "/api/audit/{fid}/run"
+ ],
+ [
+  "GET",
+  "/api/audit/{fid}/ncr"
+ ],
+ [
+  "POST",
+  "/api/audit/ncr/{ncr_id}/close"
  ]
 ]

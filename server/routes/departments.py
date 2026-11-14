@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from .. import audit_store, dept_tasks, matrix_store, methodology, supervisor
+from .. import audit_store, dept_tasks, matrix_store, methodology, ncr_store, quality_audit, supervisor
 from ..deps import can_see_family, require_level, user
 
 router = APIRouter()
@@ -186,3 +186,36 @@ async def methodology_agent_seed(u: dict = Depends(user)) -> dict:
     агент = await methodology.методолог_агент(u.get("name") or u.get("sub") or "dev")
     return {"агент": {"id": агент["id"], "name": агент.get("name"), "family": агент.get("family"),
                       "role": агент.get("role"), "status": агент.get("status")}}
+
+
+@router.post("/api/audit/{fid}/run")
+async def audit_run(fid: str, u: dict = Depends(user)) -> dict:
+    """Прогон аудита качества по отделу (шаг 7, §8 плана): формат, полнота, свежесть,
+    доказательства — машинные проверки, NCR с цитатой источника. Ничего не чинит. manager+, ABAC."""
+    require_level(u, "manager")
+    if not can_see_family(u, fid):
+        raise HTTPException(403, "отдел другого отдела")
+    return await quality_audit.прогон_отдела(fid, u.get("name") or u.get("sub") or "dev")
+
+
+@router.get("/api/audit/{fid}/ncr")
+async def ncr_list(fid: str, статус: str = "открыто", u: dict = Depends(user)) -> dict:
+    """NCR отдела: открытые по умолчанию; закрытые — по запросу (история разборов)."""
+    if not can_see_family(u, fid):
+        raise HTTPException(403, "отдел другого отдела")
+    rows = await ncr_store.список(fid, статус or "")
+    return {"отдел": fid, "ncr": rows, "открытых": sum(1 for x in rows if x["статус"] == "открыто")}
+
+
+@router.post("/api/audit/ncr/{ncr_id}/close")
+async def ncr_close(ncr_id: str, body: dict, u: dict = Depends(user)) -> dict:
+    """Закрыть NCR: человек решает, что несоответствие устранено или принято. Аудитор не спорит:
+    закрытый NCR не переоткрывается, пока провал снова не появится в новом артефакте. manager+."""
+    require_level(u, "manager")
+    итог = await ncr_store.закрыть(ncr_id, u.get("name") or u.get("sub") or "dev",
+                                   str((body or {}).get("причина") or ""))
+    if not итог:
+        raise HTTPException(404, "открытого NCR с таким id нет")
+    await audit_store.record(u.get("name") or u.get("sub") or "dev", "audit.ncr.close", ncr_id,
+                             {"причина": str((body or {}).get("причина") or "")})
+    return {"ok": True, "ncr": итог}

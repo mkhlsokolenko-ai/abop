@@ -30,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "cli"))
 import ape  # noqa: E402
 
-from . import access, admin_store, agent_store, arbiter, assembly, audit_store, backlog_store, blackboard, planner, cachebus, channel_tokens, charts, clients, compute, contract_store, cost_estimate, dataplane_store, decisions, delivery as delivery_mod, dlq_store, families_store, lexicon, matrix_store, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, bpmn_import, dataplane_records, mcp_server, personal_kb, pipeline_store, process_deploy, process_store, rbac_map, reglament_store, chat_store, orchestrator, report_compose, report_store, choice_store, doclink, rules_store, run_cache_store, run_parts_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
+from . import access, admin_store, agent_store, arbiter, assembly, audit_store, backlog_store, blackboard, planner, cachebus, channel_tokens, charts, clients, compute, contract_store, cost_estimate, dataplane_store, decisions, delivery as delivery_mod, dlq_store, families_store, lexicon, matrix_store, ncr_store, nlu, finding_store, findings, hitl_store, identity_store, ingress, langfuse_trace, layout_store, observability as obs, bpmn_import, dataplane_records, mcp_server, personal_kb, pipeline_store, process_deploy, process_store, rbac_map, reglament_store, chat_store, orchestrator, report_compose, report_store, choice_store, doclink, rules_store, run_cache_store, run_parts_store, run_store, runner, safety, pipeline_graph, schema_store, skill_contract, skill_store, skill_templates, skill_tools, slava, systems_store, trigger_store, triggers, run_bus, run_queue, userdata_store  # noqa: E402
 from .config import settings  # noqa: E402
 from .vectors import cosine as _cosine  # noqa: E402
 from .nlu import nlu_config  # noqa: E402  (пороги подбора переехали к разбору фразы)
@@ -519,6 +519,7 @@ async def _startup() -> None:
     await identity_store.seed_if_empty()  # сквозной ID: связка мастер-UID → аккаунты в системах (демо)
     await families_store.init()
     await matrix_store.init()
+    await ncr_store.init()
     # Посев догоняет состав из кода: навык, добавленный в семью позже, иначе не попадёт в
     # конструктор агентов никогда — его просто не предложат выбрать.
     _fam_sync = await families_store.seed_from_code(ape.AGENT_FAMILIES, BIZ_FAMILIES)
