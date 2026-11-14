@@ -109,6 +109,10 @@
  ],
  [
   "GET",
+  "/api/agents/assignment-audit"
+ ],
+ [
+  "GET",
   "/api/agents/spec"
  ],
  [

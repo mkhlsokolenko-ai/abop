@@ -23,7 +23,7 @@ from fastapi.responses import JSONResponse
 
 from cli import ape
 
-from .. import assembly, audit_store, clients, contract_store, families_store, hitl_store
+from .. import assembly, assignment_audit, audit_store, clients, contract_store, families_store, hitl_store
 from .. import cost_estimate, dataplane_records, pipeline_store, process_store, trigger_store
 from .. import ingress, lexicon, nlu
 from .. import observability as obs
@@ -147,6 +147,20 @@ async def agent_save(body: dict, u: dict = Depends(user)) -> JSONResponse:
     intake = cs.get("intake") or {}
     fam = intake.get("family") or ""
     role = _resolve_role(fam, intake)
+    # Аудитор назначения (шаг 1 «Отделов агентов»): граф против ростера семьи. Сохранению не
+    # мешает — пересмотр роли легитимен; развёртывание такого агента остановят врата статуса.
+    asg = await assignment_audit.проверка(graph, fam, role)
+    if asg["серьёзность"] != "ok":
+        check["warnings"].append(assignment_audit.текст(asg))
+    # Смена роли ВНУТРИ контракта — второй сигнал того же класса: контракт пересобрали вместе
+    # с агентом, и граф соответствует новой роли (crit не будет), а назначение контракта тихо
+    # сменилось. Так «Аудитор данных в 1С» стал следователем, сохранив имя.
+    prev = await agent_store.latest(audit_id)
+    if prev and (prev.get("family") or "") == fam and (prev.get("role") or "") \
+            and role and prev.get("role") != role:
+        check["warnings"].append(f"контракт {audit_id}: роль сменилась "
+                                 f"{prev.get('role')} → {role} — пересмотр назначения; проверьте, "
+                                 "что контракт по-прежнему про то, чем назван")
     # ADR-024: обычное сохранение/автосейв ПЕРЕЗАПИСЫВАЕТ draft (не плодит версии).
     # Новая версия — только при осознанном Пересмотре (revise=true) поверх НЕ-draft.
     revise = bool((body or {}).get("revise"))
@@ -168,6 +182,7 @@ async def agent_save(body: dict, u: dict = Depends(user)) -> JSONResponse:
                               "hitl": check["hitl_count"]})
     return JSONResponse({"saved": True, "id": saved["id"], "version": version, "status": "draft",
                          "family": fam, "role": role,
+                         "assignment": asg,
                          "autonomy_max": check["autonomy_max"], "hitl_count": check["hitl_count"],
                          "warnings": check["warnings"]}, status_code=201)
 
@@ -251,6 +266,22 @@ def _dep_status_ru(agent: dict, trig_rows: list[dict]) -> str:
     return "черновик"
 
 
+def _assignment_alerts(asg_by_id: dict, deployments: list[dict]) -> list[dict]:
+    """Алерты «агент не делает того, чем назван» — только по активным (шаг 1 «Отделов агентов»).
+    Черновики и Лимб не тревожим: они не считают, значит и не молчат о находках."""
+    out = []
+    for d in deployments:
+        v = asg_by_id.get(d["id"])
+        if not v or d.get("assignment") != "crit" or d["status"] != "актив":
+            continue
+        out.append({"level": "crit", "kind": "assignment", "agent_id": d["id"],
+                    "title": d["agent"] + " " + d["version"] + ": агент не делает того, чем назван",
+                    "note": (assignment_audit.текст(v) + ". Прогоны при этом зелёные — именно так "
+                             "неделю никто не замечал audit1c-holding-2026.v11."),
+                    "action": "пересмотр"})
+    return out
+
+
 def _version_diff(cur: dict | None, prev: dict | None) -> list[dict]:
     """Честная разница версий по узлам графа (что уйдёт, что вернётся при откате)."""
     ct, pt = set(_graph_titles(cur)), set(_graph_titles(prev))
@@ -285,6 +316,20 @@ async def agent_set_status(agent_id: str, body: dict, u: dict = Depends(user)) -
         raise HTTPException(404, "нет такого агента")
     if not can_see_family(u, a.get("family")):
         raise HTTPException(403, "агент другого отдела")
+    # Врата назначения (шаг 1 «Отделов агентов»): на развёртывание не пускаем агента, который
+    # не делает того, чем назван — зелёный прогон не доказывает, что проверки в графе есть.
+    if st == "deployed":
+        блок = await assignment_audit.проверка(a.get("graph"), a.get("family") or "", a.get("role") or "")
+        if блок["серьёзность"] == "crit" and not (body or {}).get("force_assignment"):
+            return JSONResponse({"saved": False, "assignment": блок,
+                                 "errors": [assignment_audit.текст(блок)],
+                                 "подсказка": ("пересмотрите графа на «Строю» или разверните с "
+                                               "force_assignment=true — override попадёт в журнал аудита")},
+                                status_code=422)
+        if блок["серьёзность"] == "crit":
+            await audit_store.record(u.get("name") or u.get("sub") or "dev",
+                                     "agent.assignment.override", agent_id,
+                                     {"причина": блок["причина"], "to": st})
     await agent_store.set_status(agent_id, st)
     await audit_store.record(u.get("name") or u.get("sub") or "dev", "agent.status", agent_id,
                              {"from": a.get("status"), "to": st})
@@ -316,6 +361,14 @@ async def agent_rollback(agent_id: str, u: dict = Depends(user)) -> dict:
     prev = await _prev_version_of(a)
     if not prev:
         raise HTTPException(409, "предыдущей версии нет — откатывать некуда")
+    # Откат тоже развёртывание: версия, возвращаемая в прод, проходит те же врата назначения.
+    # (Ростер семьи мог измениться с тех пор, как версия была развёрнута в прошлый раз.)
+    prev_full = await agent_store.get(prev["id"])
+    блок = await assignment_audit.проверка((prev_full or {}).get("graph"),
+                                           (prev_full or {}).get("family") or "",
+                                           (prev_full or {}).get("role") or "")
+    if блок["серьёзность"] == "crit":
+        raise HTTPException(422, "откат запрещён аудитом назначения: " + assignment_audit.текст(блок))
     await agent_store.set_status(prev["id"], "deployed")
     await agent_store.set_status(agent_id, "retired")
     await audit_store.record(u.get("name") or u.get("sub") or "dev", "agent.rollback", agent_id,
@@ -347,6 +400,16 @@ async def fleet(u: dict = Depends(user)) -> dict:
         if cid not in latest or (a.get("version") or 0) > (latest[cid].get("version") or 0):
             latest[cid] = a
     latest_ids = {a["id"] for a in latest.values()}
+    # аудит назначения (шаг 1 «Отделов агентов»): графы последних версий против ростера семей.
+    # Лимб осматривать не нужно — он уже не считает, уведать его промахи можно в паспорте.
+    asg_by_id: dict = {}
+    for aid in latest_ids:
+        full = await agent_store.get(aid)
+        v = await assignment_audit.проверка((full or {}).get("graph"),
+                                            (full or {}).get("family") or "",
+                                            (full or {}).get("role") or "")
+        if v["серьёзность"] != "ok":
+            asg_by_id[aid] = v
     retired_latest = {}
     for a in limbo:
         cid = a.get("contract_audit_id") or a.get("id")
@@ -385,7 +448,8 @@ async def fleet(u: dict = Depends(user)) -> dict:
                 "last_fire": max([t.get("last_fire") or "" for t in rows] or [""]) or None,
                 "status": _dep_status_ru(a, rows), "raw_status": a.get("status"),
                 "owner": a.get("created_by") or "—", "autonomy": str(a.get("autonomy_max") or "A1"),
-                "since": (a.get("created_at") or "")[:10], "verify": verify}
+                "since": (a.get("created_at") or "")[:10], "verify": verify,
+                "assignment": (asg_by_id.get(a["id"]) or {}).get("серьёзность") or "ok"}
     deployments = [_dep(a) for a in latest.values()] + [_dep(a) for a in retired_latest.values()]
     deployments.sort(key=lambda d: ({"актив": 0, "пауза": 1, "черновик": 2, "отозван": 3}.get(d["status"], 9), d["agent"]))
 
@@ -532,6 +596,7 @@ async def fleet(u: dict = Depends(user)) -> dict:
         if d["trigger_enabled"] and d["status"] == "актив" and d.get("last_fire") and _secs(d["last_fire"]) > 2 * 86400 and "расписание" in d["trigger"]:
             alerts.append({"level": "soft", "kind": "trigger", "agent_id": d["id"], "title": d["agent"] + ": расписание не срабатывало 2 дня",
                            "note": "Последний запуск " + str(d["last_fire"])[:16].replace("T", " ") + ". Проверьте cron и статус агента.", "action": "развёртывания"})
+    alerts.extend(_assignment_alerts(asg_by_id, deployments))
     qstats = await run_queue.stats()
     if qstats.get("memory_pressure"):
         alerts.append({"level": "crit", "kind": "memory", "title": "Память процесса выше мягкого лимита",
@@ -541,6 +606,28 @@ async def fleet(u: dict = Depends(user)) -> dict:
             "queue": {"by_status": qstats.get("by_status") or {}, "workers": qstats.get("workers"),
                       "rss_mb": qstats.get("rss_mb"), "memory_pressure": bool(qstats.get("memory_pressure"))},
             "hitl_pending": len(pending), "generated_at": now.isoformat(timespec="seconds")}
+
+
+@router.get("/api/agents/assignment-audit")
+async def assignment_audit_report(u: dict = Depends(user)) -> dict:
+    """Аудит назначения по всем актуальным версиям (шаг 1 «Отделов агентов»): делает ли каждый
+    агент то, чем назван — граф против ростера семьи. Критичные — те, которых врата деплоя
+    больше не пустят и которых флот помечает; сюда попадают и черновики, флот их не тревожит.
+    Ок-агенты не перечисляются — отчёт только о расхождениях, по ним и принимают решения."""
+    active = [a for a in await agent_store.list_for(None, limit=500) if can_see_family(u, a.get("family"))]
+    rows: list[dict] = []
+    crit = 0
+    for a in active:
+        full = await agent_store.get(a["id"])
+        v = await assignment_audit.проверка((full or {}).get("graph"), a.get("family") or "", a.get("role") or "")
+        if v["серьёзность"] == "ok":
+            continue
+        crit += v["серьёзность"] == "crit"
+        rows.append({"id": a["id"], "name": a.get("name"), "version": a.get("version"),
+                     "status": a.get("status"), "family": a.get("family"), "role": a.get("role"), **v})
+    rows.sort(key=lambda r: {"crit": 0, "warn": 1}.get(r["серьёзность"], 9))
+    obs.inc("abop_http_assignment_audit_total")
+    return {"агентов": len(active), "провалов": crit, "строки": rows}
 
 
 @router.post("/api/agents/{agent_id}/retire")

@@ -4458,6 +4458,7 @@ class Component extends DCLogic {
           go: () => {
             const _ag = a.agent_id ? (s.agentsList || []).find(x => x.id === a.agent_id) : null;
             if (a.kind === 'envelope' && _ag) { this.openAgent(_ag); return; }
+            if (a.kind === 'assignment' && _ag) { this.openAgent(_ag); return; }
             if (a.kind === 'trigger') { this.setState({ screen: 'canvas', lens: 'ops', mapDrawer: 'reg' }); this.route('canvas'); return; }
             if (a.kind === 'memory') { this.setState({ screen: 'canvas', lens: 'ops', mapDrawer: 'live' }); this.route('canvas'); return; }
             this.setState({ screen: 'canvas', lens: 'run' }); this.route('canvas'); this.loadRuns();
