@@ -104,7 +104,7 @@ def test_оболочка_ссылается_на_существующую_ро�
     # раздел, которого нет (на этом уже обжигались в «Потоке»).
     for р in об["разделы"]:
         assert __import__("re").fullmatch(r"[a-z][a-z0-9-]*", р), р
-    assert ape.AGENT_FAMILIES["audit"]["members"][об["роль_семьи"]][1].count("sverka-report") == 1
+    assert ape.AGENT_FAMILIES["finance"]["members"][об["роль_семьи"]][1].count("sverka-report") == 1
 
 
 def test_навык_документа_свой_а_не_аудиторский(манифест):
