@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from .. import audit_store, dept_tasks, supervisor
+from .. import audit_store, dept_tasks, matrix_store, methodology, supervisor
 from ..deps import can_see_family, require_level, user
 
 router = APIRouter()
@@ -102,3 +102,57 @@ async def subtask_retry(fid: str, tid: str, sid: str, u: dict = Depends(user)) -
     await audit_store.record(u.get("name") or u.get("sub") or "dev", "dept.subtask.retry", sid,
                              {"статус": итог.get("статус")})
     return итог
+
+
+@router.get("/api/methodology/{fid}/sverka")
+async def methodology_sverka(fid: str, u: dict = Depends(user)) -> dict:
+    """Сверка методологии (шаг 6, ADR-084): регламент × матрица × конфигурация. Только расхождения
+    с цитатами пунктов и непокрытые пункты — работа методолога по наращиванию матрицы."""
+    require_level(u, "manager")
+    if not can_see_family(u, fid):
+        raise HTTPException(403, "отдел другого отдела")
+    итог = await methodology.сверка_отдела(fid)
+    await audit_store.record(u.get("name") or u.get("sub") or "dev", "methodology.sverka", fid,
+                             {"расхождений": len(итог["расхождения"]),
+                              "непокрытых": len(итог["непокрытые_пункты"])})
+    return итог
+
+
+@router.get("/api/methodology/{fid}/matrix")
+async def matrix_list(fid: str, u: dict = Depends(user)) -> dict:
+    """Матрица методологии отдела: какие пункты регламента на какие параметры влияют."""
+    if not can_see_family(u, fid):
+        raise HTTPException(403, "отдел другого отдела")
+    return {"отдел": fid, "строки": await matrix_store.записи(fid)}
+
+
+@router.post("/api/methodology/{fid}/matrix")
+async def matrix_save(fid: str, body: dict, u: dict = Depends(user)) -> dict:
+    """Объявить/править строку матрицы: пункт регламента → параметр конфигурации.
+    Это СТРУКТУРА методологии, а не её применение — применение всегда заявкой через человека."""
+    require_level(u, "manager")
+    if not can_see_family(u, fid):
+        raise HTTPException(403, "отдел другого отдела")
+    b = body or {}
+    try:
+        row = await matrix_store.сохранить(fid, str(b.get("ключ_нси") or ""), str(b.get("параметр") or ""),
+                                           str(b.get("цель") or ""), str(b.get("значение") or ""),
+                                           u.get("name") or u.get("sub") or "dev")
+    except ValueError as ex:
+        raise HTTPException(422, str(ex))
+    await audit_store.record(u.get("name") or u.get("sub") or "dev", "methodology.matrix", row["id"],
+                             {"отдел": fid, "пункт": row["ключ_нси"], "параметр": row["параметр"],
+                              "цель": row["цель"], "значение": row["значение"]})
+    return {"ok": True, "строка": row}
+
+
+@router.delete("/api/methodology/{fid}/matrix/{rid}")
+async def matrix_drop(fid: str, rid: str, u: dict = Depends(user)) -> dict:
+    require_level(u, "manager")
+    if not can_see_family(u, fid):
+        raise HTTPException(403, "отдел другого отдела")
+    ок = await matrix_store.удалить(fid, rid)
+    if ок:
+        await audit_store.record(u.get("name") or u.get("sub") or "dev", "methodology.matrix.drop",
+                                 rid, {"отдел": fid})
+    return {"ok": ок}

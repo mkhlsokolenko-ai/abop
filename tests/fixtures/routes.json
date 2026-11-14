@@ -1050,5 +1050,21 @@
  [
   "POST",
   "/api/departments/{fid}/tasks/{tid}/subtasks/{sid}/retry"
+ ],
+ [
+  "GET",
+  "/api/methodology/{fid}/sverka"
+ ],
+ [
+  "GET",
+  "/api/methodology/{fid}/matrix"
+ ],
+ [
+  "POST",
+  "/api/methodology/{fid}/matrix"
+ ],
+ [
+  "DELETE",
+  "/api/methodology/{fid}/matrix/{rid}"
  ]
 ]
