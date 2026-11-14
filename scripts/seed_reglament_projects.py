@@ -13,6 +13,7 @@ reglament_store и строки матрицы в matrix_store от имени �
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 
 ПРОЦЕСС = "Управление проектами"
@@ -56,6 +57,11 @@ import sys
 
 async def main() -> int:
     from server import matrix_store, reglament_store, tenancy
+
+    # сверка тянет cli/ape (ростер) — в контейнерном процессе cli не на пути: проложить самим
+    import sys as _sys
+    if "/app/cli" not in _sys.path and os.path.isdir("/app/cli"):
+        _sys.path.insert(0, "/app/cli")
     tenant = tenancy.текущий()
     засеяно = 0
     for ключ, подпроцесс, операция, текст in ПУНКТЫ:

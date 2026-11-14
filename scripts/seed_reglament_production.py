@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 
 ПРОЦЕСС = "Производственный процесс"
@@ -79,6 +80,11 @@ import sys
 
 async def main() -> int:
     from server import matrix_store, reglament_store, tenancy
+
+    # сверка тянет cli/ape (ростер) — в контейнерном процессе cli не на пути: проложить самим
+    import sys as _sys
+    if "/app/cli" not in _sys.path and os.path.isdir("/app/cli"):
+        _sys.path.insert(0, "/app/cli")
     tenant = tenancy.текущий()
     засеяно = 0
     for ключ, подпроцесс, текст in СТАДИИ:   # стадия и её условия — один чанк: операция не выделяется
