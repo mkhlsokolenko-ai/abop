@@ -413,8 +413,10 @@ app.include_router(_routes_inbox.router)
 # задаёт прогон целиком (адрес базы, организация, период, схема учёта), пароль живёт файлом-секретом
 # в томе установки — иначе заведение требовало бы пересоздания контейнера.
 from .routes import clients as _routes_clients  # noqa: E402
+from .routes import departments as _routes_departments  # noqa: E402
 
 app.include_router(_routes_clients.router)
+app.include_router(_routes_departments.router)
 
 # Конвейер первички: очередь ПОЛЕЙ для человека и качество на корпусе заказчика. Отдельный роутер,
 # потому что это рабочее место оператора, а не действие уровня руководителя (ADR-076).

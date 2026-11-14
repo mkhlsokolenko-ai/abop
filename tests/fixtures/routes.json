@@ -1034,5 +1034,21 @@
  [
   "GET",
   "/api/board/reuse"
+ ],
+ [
+  "POST",
+  "/api/departments/{fid}/tasks"
+ ],
+ [
+  "GET",
+  "/api/departments/{fid}/tasks"
+ ],
+ [
+  "GET",
+  "/api/departments/{fid}/tasks/{tid}"
+ ],
+ [
+  "POST",
+  "/api/departments/{fid}/tasks/{tid}/subtasks/{sid}/retry"
  ]
 ]

@@ -1152,6 +1152,10 @@ AGENT_FAMILIES = {
             "data-analyst": ("Дата-аналитик", ["dashboard-builder", "eval-generator", "researcher"]),
             "business-analyst": ("Бизнес-аналитик", ["jtbd-formulator", "market-research", "idea-scorer", "one-three-one", "report-editor"]),
             "process-analyst": ("Аналитик бизнес-процессов", ["process-map", "spec-reviewer", "meeting-action-items"]),
+        # супервайзер отдела (шаг 5 «Отделов агентов», ADR-083): сеется системой, живёт как любой
+        # агент — версии, Пересмотр, паспорт, аудит назначения. Декомпозиция v1 — детерминированная
+        # (planner по контрактам), навыки роли — методика проверки и разбор задачи.
+        "supervisor": ("Супервайзер отдела", ["spec-reviewer", "one-three-one"]),
         },
     },
     "finance": {
@@ -1163,6 +1167,10 @@ AGENT_FAMILIES = {
             "controller": ("Контроллер / отчётность", ["finance-report", "dashboard-builder", "cost-estimator"]),
             # бухучёт/закрытие периода — покрытие вертикали LUDA finance_analyst (1С-закрытие)
             "accounting": ("Бухгалтерия / закрытие", ["ledger_reconciliation", "period_close_orchestration", "variance_explanation", "oddc-build"]),
+        # супервайзер отдела (шаг 5 «Отделов агентов», ADR-083): сеется системой, живёт как любой
+        # агент — версии, Пересмотр, паспорт, аудит назначения. Декомпозиция v1 — детерминированная
+        # (planner по контрактам), навыки роли — методика проверки и разбор задачи.
+        "supervisor": ("Супервайзер отдела", ["spec-reviewer", "one-three-one"]),
         },
     },
     "credit": {
@@ -1172,6 +1180,10 @@ AGENT_FAMILIES = {
             # покрытие вертикали LUDA credit_decision_analyst (потребкредит)
             "underwriting": ("Андеррайтинг заявок", ["application_intake_validation", "limit_policy_enforcement"]),
             "disbursement": ("Выдача средств", ["disbursement_orchestration"]),
+        # супервайзер отдела (шаг 5 «Отделов агентов», ADR-083): сеется системой, живёт как любой
+        # агент — версии, Пересмотр, паспорт, аудит назначения. Декомпозиция v1 — детерминированная
+        # (planner по контрактам), навыки роли — методика проверки и разбор задачи.
+        "supervisor": ("Супервайзер отдела", ["spec-reviewer", "one-three-one"]),
         },
     },
     "audit": {
@@ -1193,6 +1205,10 @@ AGENT_FAMILIES = {
             # демо-сценарий №2 «расследование от симптома»: extract→graph→trace(цепочка)→verdict
             "investigator-1c": ("Следователь 1С", ["audit1c-extract", "audit1c-graph-build",
                                                     "invest1c-trace", "invest1c-verdict"]),
+        # супервайзер отдела (шаг 5 «Отделов агентов», ADR-083): сеется системой, живёт как любой
+        # агент — версии, Пересмотр, паспорт, аудит назначения. Декомпозиция v1 — детерминированная
+        # (planner по контрактам), навыки роли — методика проверки и разбор задачи.
+        "supervisor": ("Супервайзер отдела", ["spec-reviewer", "one-three-one"]),
         },
     },
     "architecture": {
@@ -1202,6 +1218,10 @@ AGENT_FAMILIES = {
             "solution-architect": ("Архитектор решения", ["architecture-chooser", "agent-design-writer", "adr-writer"]),
             "systems-architect": ("Системный архитектор", ["c4-diagram", "api-design", "mlsdd-writer"]),
             "data-architect": ("Дата-архитектор", ["rag-architect", "memory-architect", "c4-diagram"]),
+        # супервайзер отдела (шаг 5 «Отделов агентов», ADR-083): сеется системой, живёт как любой
+        # агент — версии, Пересмотр, паспорт, аудит назначения. Декомпозиция v1 — детерминированная
+        # (planner по контрактам), навыки роли — методика проверки и разбор задачи.
+        "supervisor": ("Супервайзер отдела", ["spec-reviewer", "one-three-one"]),
         },
     },
     "management": {
@@ -1228,6 +1248,10 @@ AGENT_FAMILIES = {
             "project-controller": ("Контролёр проекта", ["roadmap-fact", "to-tickets"]),
             # приёмка заказчика: та же дорожная карта глазами принимающей стороны
             "acceptance-officer": ("Приёмка заказчика", ["acceptance-check", "to-tickets"]),
+        # супервайзер отдела (шаг 5 «Отделов агентов», ADR-083): сеется системой, живёт как любой
+        # агент — версии, Пересмотр, паспорт, аудит назначения. Декомпозиция v1 — детерминированная
+        # (planner по контрактам), навыки роли — методика проверки и разбор задачи.
+        "supervisor": ("Супервайзер отдела", ["spec-reviewer", "one-three-one"]),
         },
     },
     # ═══ Ресёрч и инженерные семьи (структурированы по ролям, как бизнес) ═══
@@ -1237,6 +1261,10 @@ AGENT_FAMILIES = {
         "members": {
             "web-scout": ("Веб-ресёрчер", ["researcher", "market-research"]),
             "discovery": ("Дискавери (клиент/спрос)", ["icp-interviewer", "jtbd-formulator", "idea-scorer", "idea-selector"]),
+        # супервайзер отдела (шаг 5 «Отделов агентов», ADR-083): сеется системой, живёт как любой
+        # агент — версии, Пересмотр, паспорт, аудит назначения. Декомпозиция v1 — детерминированная
+        # (planner по контрактам), навыки роли — методика проверки и разбор задачи.
+        "supervisor": ("Супервайзер отдела", ["spec-reviewer", "one-three-one"]),
         },
     },
     "engineering": {
@@ -1246,6 +1274,10 @@ AGENT_FAMILIES = {
             "backend": ("Бэкенд-инженер", ["fastapi-patterns", "test-writer", "conventional-commits"]),
             "platform": ("Платформенный инженер", ["docker-patterns"]),
             "agent-builder": ("Инженер агентов", ["architecture-chooser", "agent-design-writer", "rag-architect", "memory-architect", "mlsdd-writer"]),
+        # супервайзер отдела (шаг 5 «Отделов агентов», ADR-083): сеется системой, живёт как любой
+        # агент — версии, Пересмотр, паспорт, аудит назначения. Декомпозиция v1 — детерминированная
+        # (planner по контрактам), навыки роли — методика проверки и разбор задачи.
+        "supervisor": ("Супервайзер отдела", ["spec-reviewer", "one-three-one"]),
         },
     },
     "critic": {
