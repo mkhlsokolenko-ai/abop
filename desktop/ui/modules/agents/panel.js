@@ -5,7 +5,7 @@
 // UX-аудит 25.09: D-H6 — «▶ Запустить» открывает чат и запускает агента там (одна поверхность
 // результата, HITL и «сделать регулярной» в карточке чата); D-C1 — 401 показывается как «войдите»,
 // а не как «у вас нет агентов»; D-H9 — удаление через модалку подтверждения; D-H14 — токены цветов.
-import { CARD, head, S_TAG } from "../../core/cards.js";
+import { CARD, head, card } from "../../core/cards.js";
 import { icon } from "../../core/icons.js";
 // Стили — из ядра: шесть разных карточек и пять разных подписей в панелях были
 // расхождением, а не выбором (DIZAJN, раздел 2).
@@ -17,6 +17,30 @@ export async function mount(root, ctx) {
   let agents = [], families = [], mode = "catalog", tab = "mine", loadErr = null;
   let archived = [];   // Лимб: выведенные из работы агенты, вкладка «Архив»
   let bFamily = "", bSkills = new Set(), bName = "", editingId = null, bOutput = "";
+
+  // ── рабочее место отдела (мокап v5, перенесён 15.11.2026) ────────────────────────────────
+  // Рейл отделов с ИКА-светофором слева; в главном — полоса здоровья, прогрессивная очередь
+  // (горячая находка раскрыта целиком, остальные — компактные строки) и фирмы справа.
+  // Решения по находкам идут теми же эндпоинтами «Решений»: две поверхности — один журнал,
+  // поэтому ни своих статусов, ни своей записи решения здесь не заводим. Правки разбора v5:
+  // пустое состояние очереди, компактные фирмы с раскрытием, выбор фирмы режет очередь,
+  // иконки отделов в рейле, в полосе только главные числа (расход и веса — в карточке).
+  let deptSel = "", deptГотово = false, старыйСайдкар = false;
+  let ика_карты = {}, ncrКарты = {}, клиентыРеестр = [];
+  let очередь = [], разрезыОч = {}, сводкаОч = {}, ошибкаОчереди = "", очередиГрузят = false;
+  let фирма = "", раскрыта = "", busyН = "", сканИдёт = "";
+  const МОЙ_ОТДЕЛ = String(((ctx.user || {}).department) || "");
+  // Иконки отделов (разбор v5, #5): сканирование рейла без чтения. Иконка — из спрайта ядра,
+  // не символ шрифта; незнакомая семья получает нейтральный значок, а не случайный.
+  const ИКОНКИ_ОТДЕЛОВ = { finance: "doc", audit: "search", management: "board", production: "chain" };
+  const иконкаОтдела = (f) => icon(ИКОНКИ_ОТДЕЛОВ[f.id] || "agents");
+  // Светофор ИКА — те же границы, что у динамической автономии (ADR-085): ≥ 90 зелёный,
+  // 70–90 жёлтый, ниже красный. Не покрытый индекс — «—», а не ноль: ноль значил бы «отдел плох».
+  const светофорКласс = (и) => (и == null ? "" : и >= 90 ? " ok" : и >= 70 ? " mid" : " sev");
+  const серьёзностьКлассН = (с) => {
+    const т = String(с || "").toLowerCase();
+    return т.startsWith("выс") ? "sev" : т.startsWith("сред") ? "mid" : "";
+  };
 
   async function reconfig(id) {
     if (!families.length) await loadFamilies();
@@ -177,23 +201,461 @@ export async function mount(root, ctx) {
     ctx.modal(f.title || f.id, html, null, "Закрыть", { kicker: "карточка отдела", width: "640px" });
   }
 
-  function renderОтделы() {
-    const по_семье = {};
-    agents.forEach((a) => { по_семье[a.family] = (по_семье[a.family] || 0) + 1; });
-    return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">
-      ${families.length ? families.map((f) => `<div class="lift" style="${CARD}cursor:pointer" data-dept="${esc(f.id)}" role="button" tabindex="0">
-          <div class="ape-label">${f.kind === "business" ? "отдел" : "инженерная семья"}</div>
-          <div style="font-size:15px;font-weight:700;color:var(--ink)">${esc(f.title || f.id)}</div>
-          ${f.mission ? `<div style="font-size:12px;line-height:1.45;color:var(--ink-2);margin-top:4px">${esc(f.mission)}</div>` : ""}
-          <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:8px">
-            <span class="tag">${по_семье[f.id] || 0} агентов</span>
-            <span class="tag">${(f.members || []).length} ролей</span>
-            <span class="tag ai">карточка: ИКА · аудит · расход</span>
-          </div>
-        </div>`).join("")
-        : `<div class="faint" style="padding:20px;grid-column:1/-1">Ростер семей не загрузился — обновите список.</div>`}
+  // ── данные рабочей области ─────────────────────────────────────────────────────────────────
+  // ИКА по всем семьям сразу: светофор в рейле нужен ДО входа в отдел, иначе человек открывал
+  // бы каждый отдел, чтобы узнать его состояние. Отказ ручки (старый сайдкар) не ломает
+  // очередь и фирмы — он убирает только числа, которых старая версия не умеет считать.
+  async function загрузитьИКА(fid) {
+    try { ика_карты[fid] = await api(A + "/families/ika?family=" + encodeURIComponent(fid) + "&дней=30"); }
+    catch (e) {
+      if (e && e.status === 404) старыйСайдкар = true;
+      ика_карты[fid] = null;
+    }
+  }
+  const загрузитьИКАвсех = () => Promise.allSettled(families.map((f) => загрузитьИКА(f.id)));
+
+  async function загрузитьNCR() {
+    if (!deptSel) return;
+    try { ncrКарты[deptSel] = await api(A + "/ncr?family=" + encodeURIComponent(deptSel)); }
+    catch (e) { ncrКарты[deptSel] = null; }   // старый сайдкар — элемент полосы просто не рисуем
+  }
+
+  async function загрузитьОчередь() {
+    if (!deptSel) return;
+    очередиГрузят = true;
+    const фильтр = ["отдел=" + encodeURIComponent(deptSel)];
+    if (фирма) фильтр.push("organisation=" + encodeURIComponent(фирма));
+    try {
+      const р = await api("/api/modules/decisions/findings?" + фильтр.join("&"));
+      очередь = р.findings || []; разрезыОч = р["разрезы"] || {}; сводкаОч = р["сводка"] || {};
+      ошибкаОчереди = "";
+    } catch (e) { очередь = []; ошибкаОчереди = humanError(e); }
+    // Прогрессивная очередь: раскрыта одна находка — по умолчанию первая (сервер отдал её
+    // как самую важную). Решённая ушла из списка — выбор чиним, а не оставляем дыру.
+    if (!очередь.some((н) => н.id === раскрыта)) раскрыта = (очередь[0] || {}).id || "";
+    очередиГрузят = false;
+  }
+
+  // Фирмы — из реестра «Клиентов» (одна поверхность правды: там же правки и состояния),
+  // счётчики «ждёт» — из разрезов очереди, которые сервер считает по всему реестру находок.
+  async function загрузитьКлиентов() {
+    try { const о = await api("/api/modules/clients/registry?все=1"); клиентыРеестр = о.clients || []; }
+    catch (e) { клиентыРеестр = []; }   // колонка фирм необязательна — очередь не должна от неё зависеть
+  }
+
+  async function initDept() {
+    deptГотово = true;
+    if (!deptSel) {
+      let сохран = ""; try { сохран = localStorage.getItem("ape_dept_sel") || ""; } catch { /* приватное окно */ }
+      // Свой отдел — по умолчанию (шаг 3): расчётчик открывает рабочее место и сразу видит
+      // свою очередь. Владелец (отдел «*») получает последний выбор или первый отдел.
+      deptSel = (МОЙ_ОТДЕЛ && МОЙ_ОТДЕЛ !== "*" && families.some((f) => f.id === МОЙ_ОТДЕЛ)) ? МОЙ_ОТДЕЛ
+        : (families.some((f) => f.id === сохран) ? сохран : ((families[0] || {}).id || ""));
+    }
+    render();
+    await Promise.all([загрузитьИКАвсех(), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов()]);
+    render();
+  }
+
+  async function выбратьОтдел(id) {
+    deptSel = id; фирма = ""; раскрыта = "";
+    try { localStorage.setItem("ape_dept_sel", id); } catch { /* приватное окно */ }
+    render();
+    await Promise.all([загрузитьОчередь(), загрузитьNCR()]);
+    render();
+  }
+
+  async function выбратьФирму(id) {
+    const к = клиентыРеестр.find((x) => x.id === id);
+    фирма = id && к ? (к["организация"] || к["название"] || к.id) : "";
+    раскрыта = "";
+    await загрузитьОчередь();
+    render();
+  }
+
+  // ── решения: те же эндпоинты, что в «Решениях» ────────────────────────────────────────────
+  async function решитьНаходку(id, состояние, способ) {
+    busyН = id; render();
+    try {
+      // Какой именно способ принял человек — в журнал решения: у половины кодов способов
+      // несколько, и все законны; «подтверждено» без способа через месяц не восстановить.
+      const почему = способ ? "принят способ: " + способ : "";
+      await api("/api/modules/decisions/findings/" + encodeURIComponent(id) + "/decide",
+                { method: "POST", body: JSON.stringify({ состояние, почему }) });
+      toast(состояние === "подтверждено" ? (способ ? "Принято: " + способ : "Отмечено как проблема") : "Отмечено как норма", "ok");
+    } catch (e) { toast(humanError(e), "danger"); }
+    busyН = "";
+    // ИКА пересчитывается сразу после слова человека: «вечером вижу, сколько я исправил»
+    // должно работать и в 14:32, без ожидания следующего окна.
+    await Promise.all([загрузитьИКА(deptSel), загрузитьОчередь(), загрузитьNCR()]);
+    render();
+  }
+
+  // Отсрочка — законный исход, но только с датой: «отложить навсегда» это не решение, а способ
+  // не решать. Пакетная ручка берётся одна находка: у неё есть поле «до», у одиночной — нет.
+  async function отложитьНаходку(id) {
+    const через = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+    let дата = "";
+    await new Promise((готово) => {
+      ctx.modal("Отложить до даты",
+        `<div style="display:flex;flex-direction:column;gap:8px">
+           <div style="font-size:12.5px;color:var(--ink-2)">Находка вернётся в очередь в этот день; до тех пор она видна в сводке как отложенная.</div>
+           <input id="dDo" type="date" value="${через}" style="padding:7px 10px;border-radius:9px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-size:12.5px"/></div>`,
+        (b) => { дата = (b.querySelector("#dDo") || {}).value || ""; готово(); },
+        "Отложить", { cancelLabel: "Отмена", onClose: () => готово() });
+    });
+    if (!дата) return;
+    busyН = id; render();
+    try {
+      await api("/api/modules/decisions/findings/decide-batch",
+                { method: "POST", body: JSON.stringify({ ids: [id], состояние: "отложено", почему: "", до: дата }) });
+      toast("Отложено до " + дата, "ok");
+    } catch (e) {
+      toast(e && e.status === 404
+        ? "Отложенная дата появилась в версии 1.0.32 — обновите приложение (Кабинет → Обновление)"
+        : humanError(e), "danger");
+    }
+    busyН = "";
+    await загрузитьОчередь();
+    render();
+  }
+
+  // ── NCR: несоответствия аудитора качества ─────────────────────────────────────────────────
+  function показатьNCR(f) {
+    const р = ncrКарты[f.id];
+    if (!р) return;
+    const строки = (р.ncr || []).map((n) => `<div style="display:flex;flex-direction:column;gap:4px;padding:10px 12px;border-radius:10px;background:var(--field);border:1px solid var(--line)">
+        <div style="display:flex;gap:7px;align-items:center;min-width:0">
+          <span class="tag${String(n["тяжесть"] || "").toLowerCase().startsWith("выс") ? " sev" : " mid"}">${esc(n["тип"] || "NCR")}</span>
+          <b style="font-size:12.5px;color:var(--ink);flex:1;min-width:0">${esc(n["предмет"] || "")}</b>
+        </div>
+        ${n["что_нарушено"] ? `<div style="font-size:12px;color:var(--ink-2);line-height:1.45">${esc(n["что_нарушено"])}</div>` : ""}
+        ${n["источник"] ? `<div style="font-family:var(--mono,monospace);font-size:10.5px;color:var(--ink-3)">${esc(n["источник"])}</div>` : ""}
+        ${n["статус"] === "открыто" ? `<div><button type="button" class="btn sm ncrClose" data-id="${esc(n.id)}" title="Закрыть: несоответствие устранено или принято осознанно; менеджер отдела">Закрыть</button></div>` : ""}
+      </div>`).join("");
+    const ov = ctx.modal("Несоответствия отдела",
+      строки || `<div style="font-size:12.5px;color:var(--ok-ink)">Открытых несоответствий нет — аудитор качества молчит, пока факты чистые.</div>`,
+      null, "Закрыть", { kicker: (f.title || f.id) + " · NCR", width: "560px" });
+    ov.querySelectorAll(".ncrClose").forEach((b) => (b.onclick = async () => {
+      b.disabled = true;
+      try {
+        await api(A + "/ncr/" + encodeURIComponent(b.dataset.id) + "/close", { method: "POST" });
+        toast("NCR закрыт", "ok");
+        ov.close(true);
+        await загрузитьNCR(); render();
+      } catch (e) { b.disabled = false; toast(humanError(e), "danger"); }
+    }));
+  }
+
+  // ── скан фирмы с рабочего места отдела ────────────────────────────────────────────────────
+  // Та же цепочка, что в «Клиентах» (вычитка → тред → прогон сверщика → карточка в чате), но
+  // без панели прогресса: результат приходит в чат, и отдел не ждёт у экрана. Полный
+  // интерактив (выбор организации, поллинг с состоянием) остаётся в «Клиентах».
+  async function пересчитать(к) {
+    if (!к) return;
+    if (сканИдёт) { toast("Скан уже идёт: «" + сканИдёт + "»", "warn"); return; }
+    const живые = agents.filter((a) => String(a.role || "") === "sverщик" && String(a.status || "") === "deployed")
+      .sort((x, y) => (y.version || 0) - (x.version || 0));
+    if (!живые.length) {
+      toast("Нет развёрнутого агента роли «Сверщик расхождений» — разверните его в этом отделе", "danger");
+      return;
+    }
+    const имя = к["организация"] || к["название"] || к.id;
+    сканИдёт = имя; render();
+    toast("Вычитаю базу «" + имя + "» его же рецептами…");
+    try {
+      await api("/api/modules/clients/refresh/" + encodeURIComponent(к.id), { method: "POST" });
+      const тред = await api("/api/modules/chat/threads", { method: "POST", body: JSON.stringify({ title: "Скан: " + имя }) });
+      const tid = (тред || {}).id;
+      if (!tid) throw new Error("тред чата не создался");
+      const запуск = await api("/api/modules/chat/threads/" + tid + "/run-agent", { method: "POST",
+        body: JSON.stringify({ agent_id: живые[0].id, scope: { "клиент": к.id }, deliver: "chat" }) });
+      if (!запуск || запуск.ok === false) throw new Error((запуск || {}).error || "прогон не встал в очередь");
+      if (!запуск.job_id) { сканИдёт = ""; toast("Скан «" + имя + "» готов — разбор в чате", "ok"); render(); return; }
+      toast("Скан «" + имя + "» в очереди — результат появится в чате «Скан: " + имя + "»", "ok");
+      // Поллинг за карточкой: run-job на стороне сайдкара кэширует и пишет карточку в тред по done.
+      // Финал — тостом: рабочий стол отдела в это время остаётся рабочим столом.
+      const jobId = запуск.job_id, агент = живые[0].id;
+      (async () => {
+        for (let i = 0; i < 120; i++) {
+          await new Promise((r) => setTimeout(r, 5000));
+          if (сканИдёт !== имя) return;   // другой скан занял флаг — этот уже не наш
+          let ст = null;
+          try { ст = await api("/api/modules/chat/threads/" + tid + "/run-job/" + encodeURIComponent(jobId) + "?agent_id=" + encodeURIComponent(агент)); } catch (e) { continue; }
+          if (ст && ст.done) {
+            сканИдёт = "";
+            toast(ст.ok === false ? "Скан «" + имя + "» не выполнился: " + (ст.error || "—") : "Скан «" + имя + "» готов — разбор в чате", ст.ok === false ? "danger" : "ok");
+            render();
+            return;
+          }
+        }
+        сканИдёт = "";
+        toast("Скан «" + имя + "» ещё не завершился за 10 минут — продолжение в чате «Скан: " + имя + "»", "warn");
+        render();
+      })();
+    } catch (e) { сканИдёт = ""; toast(humanError(e), "danger"); render(); }
+  }
+
+  // ── разметка рабочей области ──────────────────────────────────────────────────────────────
+  function рейлОтделов() {
+    const бейдж = (f) => {
+      if (старыйСайдкар) return "";
+      const и = (ика_карты[f.id] || {})["ика"];
+      return `<span class="tag${светофорКласс(и)}" title="ИКА отдела · окно 30 дней${и == null ? " · не покрыто: нет прогонов или решений" : ""}">${и == null ? "—" : esc(String(и))}</span>`;
+    };
+    return `<div class="dept-rail">
+      <span class="ape-label">отделы</span>
+      ${families.map((f) => `<button type="button" class="btn sm dnav${f.id === deptSel ? " primary" : ""}" data-ds="${esc(f.id)}"
+           style="justify-content:flex-start;width:100%;text-align:left;gap:9px" aria-pressed="${f.id === deptSel}">
+          <span style="width:18px;display:inline-grid;place-items:center;flex-shrink:0">${иконкаОтдела(f)}</span>
+          <b style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px">${esc(f.title || f.id)}</b>
+          ${бейдж(f)}
+        </button>`).join("")}
+      <span style="font-size:10.5px;color:var(--ink-3);padding:4px 2px;line-height:1.5">светофор — ИКА отдела: ≥ 90 зелёный, ниже 70 красный, «—» не покрыто</span>
     </div>`;
   }
+
+  // Полоса здоровья: ИКА большим числом (светофор красит), слагаемые — барами. Расход, веса и
+  // прогонов — в карточке отдела по кнопке: разбор v5 (#3) — в ежедневном поле зрения только
+  // главные числа.
+  function полосаЗдоровья(f) {
+    const и = ика_карты[f.id];
+    if (старыйСайдкар)
+      return `<div class="card" style="padding:12px 14px;font-size:12.5px;color:var(--ink-2);line-height:1.5">ИКА и аудит назначения приедут с релизом 1.0.41 — сайдкар установленного приложения ещё не знает этих ручек. Обновление: Кабинет → Обновление. Очередь и фирмы ниже работают.</div>`;
+    if (!и)
+      return `<div class="card" style="padding:12px 14px;display:flex;gap:10px;align-items:center">
+        <span style="font-size:12.5px;color:var(--ink-2)">ИКА отдела не посчитался — обычно это мгновенный сбой связи.</span>
+        <button type="button" class="btn sm" id="deptIkaRetry">Повторить</button></div>`;
+    const сл = и["слагаемые"] || {};
+    const ключи = Object.keys(сл);
+    const бары = ключи.map((k) => {
+      const з = (сл[k] || {})["значение"];
+      const ширина = з == null ? 0 : Math.round(з * 100);
+      const не_покрыто = (и["не_покрыто"] || []).includes(k);
+      const подпись = не_покрыто || з == null ? "не покрыто" : ширина + " %";
+      return `<div style="min-width:0">
+        <div style="font-size:10px;color:var(--ink-3);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(k)}</div>
+        <div style="height:5px;border-radius:3px;background:var(--line);overflow:hidden"><i style="display:block;height:100%;border-radius:3px;width:${ширина}%;background:${ширина >= 90 ? "var(--ok-ink)" : "var(--accent)"}"></i></div>
+        <div style="font-family:var(--mono,monospace);font-size:9.5px;color:${не_покрыто || з == null ? "var(--ink-3)" : "var(--ink-2)"};margin-top:3px">${esc(подпись)}</div>
+      </div>`;
+    }).join("");
+    const ика = и["ика"];
+    const n = ncrКарты[f.id];
+    const ncrЧисло = n ? Number(n["открытых"] || 0) : null;
+    return `<div class="card" style="padding:13px 16px;display:grid;grid-template-columns:auto 1fr auto;gap:18px;align-items:center">
+      <div>
+        <span style="font-family:var(--mono,monospace);font-size:32px;font-weight:600;font-variant-numeric:tabular-nums;color:${ика == null ? "var(--ink-3)" : ика >= 90 ? "var(--ok-ink)" : ика >= 70 ? "var(--warn-ink)" : "var(--danger-ink)"}">${ика == null ? "—" : esc(String(ика))}</span>
+        <div style="font-size:10px;color:var(--ink-3);margin-top:3px">ИКА · окно ${esc(String(и["окно_дней"] || 30))} дн.</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(${Math.max(ключи.length, 1)},1fr);gap:6px 14px;min-width:0">${бары}</div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        ${ncrЧисло == null ? "" : `<button type="button" class="btn sm${ncrЧисло ? " danger" : " ghost"}" id="ncrBtn" title="Несоответствия аудитора качества — список по клику">${ncrЧисло ? "NCR " + ncrЧисло : "NCR чисто"}</button>`}
+        <button type="button" class="btn sm ghost" id="deptCard" title="Карточка отдела: аудит назначения, расход, состав ролей">карточка</button>
+      </div>
+    </div>`;
+  }
+
+  // Карточка находки — тот же примитив card() и те же поля, что в «Решениях»: способ, порядок
+  // действий, норма. Кнопка называет способ словами — он же попадает в журнал.
+  function карточкаНаходки(н, горячая) {
+    const ждёт = busyН === н.id;
+    const исход = String(н["исход_способа"] || "");
+    const способ = String(н["способ"] || "");
+    const что_сделать = исход === "выбран" && способ
+      ? `<div style="display:flex;flex-direction:column;gap:4px">
+           <span class="ape-label">что сделать</span>
+           <div style="font-size:13px;font-weight:600;color:var(--ink)">${esc(способ)}</div>
+           ${н["как_устранить"] ? `<div style="font-size:12.5px;line-height:1.5;color:var(--ink-2)">${esc(String(н["как_устранить"]))}</div>` : ""}
+           ${н["основание_способа"] ? `<div style="font-size:11.5px;color:var(--ink-3)">основание: ${esc(String(н["основание_способа"]))}</div>` : ""}
+         </div>`
+      : исход
+        ? `<div style="display:flex;flex-direction:column;gap:4px">
+             <span class="ape-label">способ устранения — ${esc(исход)}</span>
+             <div style="font-size:12.5px;line-height:1.5;color:var(--ink-2)">${esc(String(н["почему_способ"] || "") || "методолог способ не объявил")}</div>
+           </div>`
+        : "";
+    return card({
+      "тон": горячая ? "важное" : "",
+      "что": н["код"] || "находка",
+      "класс": н["серьёзность"] || "",
+      "класс_тон": серьёзностьКлассН(н["серьёзность"]),
+      "состояние": н["величина"] || "",
+      "справа": [н["организация"], н["процесс"]].filter(Boolean).join(" · "),
+      "суть": [н["название"], н["предмет"] ? "предмет: " + н["предмет"] : ""].filter(Boolean).join(" — "),
+      "почему_лид": горячая ? "Почему это первым:" : "Почему это здесь:",
+      "почему": (н["почему_наверху"] || []).join(" · "),
+      "доказательство": н["доказательство"] || "",
+      "происхождение": [н["основание"] ? "основание: " + н["основание"] : "",
+                        (н["чего_не_хватило"] || []).join(" · ")].filter(Boolean).join(" · "),
+      "что_сделать": что_сделать,
+      "действия": [
+        исход === "выбран" && способ
+          ? `<button data-fy="${esc(н.id)}" data-fsp="${esc(способ)}" class="btn ok sm" ${ждёт ? "disabled" : ""}>${icon("check")}Принять: ${esc(способ)}</button>`
+          : `<button data-fy="${esc(н.id)}" class="btn ok sm" ${ждёт ? "disabled" : ""}>${icon("check")}Это проблема</button>`,
+        `<button data-fn="${esc(н.id)}" class="btn ghost sm" ${ждёт ? "disabled" : ""}>Так и должно быть</button>`,
+        `<button data-fp="${esc(н.id)}" class="btn ghost sm" ${ждёт ? "disabled" : ""}>${icon("clock")}Отложить</button>`,
+      ],
+    });
+  }
+
+  // Прогрессивная очередь (мокап v5): один взгляд — одна находка. Горячая раскрыта целиком,
+  // остальные — компактные строки; клик раскрывает. Строка — div, а не button: внутри раскрытой
+  // карточки свои кнопки, а кнопка в кнопке — невалидная разметка.
+  function находкаСтрокой(н, горячая) {
+    if (раскрыта === н.id) return карточкаНаходки(н, горячая);
+    return `<div class="card lift" data-fx="${esc(н.id)}" role="button" tabindex="0"
+        style="display:flex;gap:10px;align-items:center;padding:10px 13px;cursor:pointer">
+        <span class="tag${серьёзностьКлассН(н["серьёзность"])}">${esc(н["код"] || "—")}</span>
+        <span style="flex:1;min-width:0">
+          <b style="display:block;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)">${esc(н["название"] || "без названия")}</b>
+          <span style="font-size:10.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block">${esc([н["организация"], н["процесс"], н["предмет"]].filter(Boolean).join(" · "))}</span>
+        </span>
+        ${н["величина"] ? `<span style="font-family:var(--mono,monospace);font-size:12px;font-variant-numeric:tabular-nums;flex-shrink:0;color:var(--ink-2)">${esc(н["величина"])}</span>` : ""}
+      </div>`;
+  }
+
+  function очередьБлок() {
+    const заголовок = `требует вашего слова · ${фирма ? фирма : "все фирмы"} · ${очередь.length}`;
+    let тело;
+    if (очередиГрузят) тело = `<div class="faint" style="padding:14px;font-size:12.5px">собираю очередь отдела…</div>`;
+    else if (ошибкаОчереди) тело = `<div class="card" style="padding:12px 14px;font-size:12.5px;color:var(--danger-ink)">${esc(ошибкаОчереди)}</div>`;
+    else if (!очередь.length) {
+      // Пустое состояние (разбор v5, #1): пустота — тоже контент. Что уже разобрано и куда
+      // идти за историей — иначе «пусто» читается как «сломалось».
+      const признано = Number(сводкаОч["подтверждено"] || 0), норм = Number(сводкаОч["отклонено"] || 0);
+      const скл = (ч, од, дв, мн) => {
+        const о = Math.abs(ч) % 100, е = о % 10;
+        if (о > 10 && о < 20) return мн;
+        if (е > 1 && е < 5) return дв;
+        return е === 1 ? од : мн;
+      };
+      тело = `<div class="card" style="padding:16px;display:flex;flex-direction:column;gap:10px;align-items:flex-start">
+        <div style="font-size:13px;font-weight:600;color:var(--ok-ink)">Очередь пуста — все находки разобраны.</div>
+        <div style="font-size:12px;color:var(--ink-2)">За всё время отдел признавал проблемой ${признано} ${скл(признано, "находку", "находки", "находок")} · отмечал нормой ${норм}.</div>
+        <button type="button" class="btn sm" id="histBtn">История решений — в «Решениях»</button>
+      </div>`;
+    } else {
+      тело = очередь.map((н, i) => находкаСтрокой(н, i === 0)).join(`<div style="height:8px"></div>`);
+    }
+    return `<div style="display:flex;flex-direction:column;gap:8px;min-width:0">
+      <span class="ape-label">${esc(заголовок)}</span>
+      ${тело}
+    </div>`;
+  }
+
+  // Фирмы (разбор v5, #2 и #4): компактная карточка в две строки; клик выбирает фирму —
+  // разрез очереди — и раскрывает карточку. Выбор — и раскрытие одним действием: два разных
+  // клика по одной строке человек бы не различил.
+  function фирмаКарта(к) {
+    const имя = к["организация"] || к["название"] || к.id;
+    const счёт = {};
+    (разрезыОч["организации"] || []).forEach((о) => { счёт[о["имя"]] = Number(о["открытых"] || 0); });
+    const ждёт = счёт[имя] || 0;
+    const выбрана = фирма === имя;
+    const выключен = String(к["состояние"] || "") === "выключен";
+    if (!выбрана) {
+      return `<div class="card lift" data-firm="${esc(к.id)}" role="button" tabindex="0"
+          style="display:flex;flex-direction:column;gap:4px;padding:10px 12px;cursor:pointer;${выключен ? "opacity:.55" : ""}">
+          <div style="display:flex;gap:8px;align-items:center;min-width:0">
+            <b style="flex:1;min-width:0;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)">${esc(имя)}</b>
+            ${ждёт ? `<span class="tag mid">ждёт ${ждёт}</span>` : `<span class="tag">тихо</span>`}
+          </div>
+          <div style="font-size:10.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">схема ${esc(к["схема_учёта"] || "базовая")} · ${esc((к["период_с"] || "—") + " → " + (к["период_по"] || "—"))}</div>
+        </div>`;
+    }
+    return `<div class="card" style="display:flex;flex-direction:column;gap:7px;padding:12px 13px;border-color:var(--accent);${выключен ? "opacity:.55" : ""}">
+        <div style="display:flex;gap:8px;align-items:center;min-width:0">
+          <b style="flex:1;min-width:0;font-size:13px;color:var(--ink)">${esc(имя)}</b>
+          <span class="tag${выключен ? "" : " ok"}">${выключен ? "выключен" : "активен"}</span>
+        </div>
+        <div style="font-size:11.5px;color:var(--ink-2)">схема учёта ${esc(к["схема_учёта"] || "базовая")} · период ${esc((к["период_с"] || "—") + " → " + (к["период_по"] || "—"))}</div>
+        <div style="font-family:var(--mono,monospace);font-size:10.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">граница ${esc(к["система"] || "—")}</div>
+        <div style="font-size:11px;color:var(--ink-3)">доступ: ${esc(к["секрет"] || "не задан")}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button type="button" class="btn sm" data-rescan="${esc(к.id)}" ${сканИдёт ? "disabled" : ""} title="Вычитать базу и поставить прогон сверщика — результат в чате">Пересчитать</button>
+          <button type="button" class="btn sm ghost" data-refreshonly="${esc(к.id)}" ${сканИдёт ? "disabled" : ""} title="Только перечитать базу, без прогона">Только вычитать</button>
+        </div>
+      </div>`;
+  }
+
+  function фирмыБлок() {
+    const счёт = {};
+    (разрезыОч["организации"] || []).forEach((о) => { счёт[о["имя"]] = Number(о["открытых"] || 0); });
+    const активных = клиентыРеестр.filter((к) => String(к["состояние"] || "") !== "выключен");
+    const список = клиентыРеестр.filter((к) => фирма === (к["организация"] || к["название"] || к.id))
+      .concat(активных.filter((к) => фирма !== (к["организация"] || к["название"] || к.id)));
+    return `<div style="display:flex;flex-direction:column;gap:8px;min-width:0">
+      <span class="ape-label">фирмы · ${активных.length}</span>
+      <div class="card lift" data-firm="" role="button" tabindex="0"
+        style="padding:9px 12px;cursor:pointer;display:flex;gap:8px;align-items:center;${!фирма ? "border-color:var(--accent);background:var(--accent-bg)" : ""}">
+        <b style="font-size:12px;color:${!фирма ? "var(--accent-ink)" : "var(--ink-2)"}">все фирмы</b>
+        <span style="flex:1"></span>
+        <span class="tag${разрезыОч["открытых_всего"] ? " mid" : ""}">всего ${разрезыОч["открытых_всего"] || 0}</span>
+      </div>
+      ${список.map(фирмаКарта).join("")}
+      <div class="card" style="padding:10px 12px;display:flex;gap:8px;align-items:center">
+        <span style="font-size:11px;color:var(--ink-3);flex:1;min-width:0">подключение — редкое действие: форма целиком в разделе «Клиенты»</span>
+        <button type="button" class="btn sm" id="goClients">Подключить</button>
+      </div>
+    </div>`;
+  }
+
+  function renderОтделы() {
+    if (!families.length) return `<div class="faint" style="padding:20px">Ростер семей не загрузился — обновите список.</div>`;
+    const f = families.find((x) => x.id === deptSel) || families[0];
+    return `<div class="dept-wrap">
+      ${рейлОтделов()}
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:14px">
+        ${полосаЗдоровья(f)}
+        <div class="dept-cols">
+          ${очередьБлок()}
+          ${фирмыБлок()}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // Привязки рабочей области: вызываются из render(), когда открыта вкладка «Отделы».
+  function привязатьОтделы() {
+    const f = families.find((x) => x.id === deptSel) || families[0] || {};
+    root.querySelectorAll(".dnav").forEach((b) => (b.onclick = async () => {
+      if (b.dataset.ds !== deptSel) await выбратьОтдел(b.dataset.ds);
+    }));
+    root.querySelectorAll("[data-fx]").forEach((b) => {
+      const откр = () => { раскрыта = b.dataset.fx; render(); };
+      b.onclick = откр;
+      b.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); откр(); } };
+    });
+    root.querySelectorAll("[data-fy]").forEach((b) => (b.onclick = () => решитьНаходку(b.dataset.fy, "подтверждено", b.dataset.fsp || "")));
+    root.querySelectorAll("[data-fn]").forEach((b) => (b.onclick = () => решитьНаходку(b.dataset.fn, "норма")));
+    root.querySelectorAll("[data-fp]").forEach((b) => (b.onclick = () => отложитьНаходку(b.dataset.fp)));
+    root.querySelectorAll("[data-firm]").forEach((b) => {
+      const выбор = () => { const id = b.dataset.firm; if ((id || "") !== фирмаИд()) выбратьФирму(id); };
+      b.onclick = выбор;
+      b.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); выбор(); } };
+    });
+    root.querySelectorAll("[data-rescan]").forEach((b) => (b.onclick = () => пересчитать(клиентыРеестр.find((к) => к.id === b.dataset.rescan))));
+    root.querySelectorAll("[data-refreshonly]").forEach((b) => (b.onclick = async () => {
+      const к = клиентыРеестр.find((x) => x.id === b.dataset.refreshonly);
+      if (!к) return;
+      b.disabled = true;
+      try {
+        await api("/api/modules/clients/refresh/" + encodeURIComponent(к.id), { method: "POST" });
+        toast("База «" + (к["организация"] || к.id) + "» вычитана — данные свежие", "ok");
+      } catch (e) { toast(humanError(e), "danger"); }
+      b.disabled = false;
+    }));
+    const nb = root.querySelector("#ncrBtn"); if (nb) nb.onclick = () => показатьNCR(f);
+    const dc = root.querySelector("#deptCard"); if (dc) dc.onclick = () => openDeptCard(f);
+    const hb = root.querySelector("#histBtn"); if (hb) hb.onclick = () => ctx.open("decisions");
+    const ir = root.querySelector("#deptIkaRetry");
+    if (ir) ir.onclick = async () => { await загрузитьИКА(deptSel); render(); };
+    const gc = root.querySelector("#goClients"); if (gc) gc.onclick = () => ctx.open("clients");
+  }
+  const фирмаИд = () => {
+    const к = клиентыРеестр.find((x) => (x["организация"] || x["название"] || x.id) === фирма);
+    return к ? к.id : "";
+  };
 
   function errorBlock() {
     if (!loadErr) return "";
@@ -239,14 +701,16 @@ export async function mount(root, ctx) {
     const tabBtn = (id, label, n) =>
       `<button type="button" class="tabBtn btn sm${tab === id ? " primary" : ""}" data-tab="${id}" aria-pressed="${tab === id}">${esc(label)} · ${n}</button>`;
     root.innerHTML = `<div style="flex:1;min-width:0;overflow-y:auto">
-      <div style="display:flex;flex-direction:column;gap:18px;padding:22px 26px;max-width:960px;margin:0 auto;animation:ape-in .35s ease-out">
+      <div style="display:flex;flex-direction:column;gap:18px;padding:22px 26px;max-width:${tab === "dept" ? "1120px" : "960px"};margin:0 auto;animation:ape-in .35s ease-out">
         ${head({
           "глаз": "рантайм ABOP",
-          "что": "Мои агенты",
-          "подпись": "Запуск идёт в чате: там результат, подтверждение внешних действий и «сделать регулярной».",
+          "что": tab === "dept" ? "Отделы" : "Мои агенты",
+          "подпись": tab === "dept"
+            ? "Рабочее место отдела: полоса здоровья, очередь находок и фирмы. Запуск — в чате, там результат и «сделать регулярной»."
+            : "Запуск идёт в чате: там результат, подтверждение внешних действий и «сделать регулярной».",
           "действия": [
             tab === "mine" ? `<button id="build" class="btn primary">${icon("plus")} Собрать агента</button>` : "",
-            `<button id="refresh" class="ico" title="Обновить список агентов" aria-label="Обновить список агентов">${icon("refresh")}</button>`,
+            `<button id="refresh" class="ico" title="Обновить" aria-label="Обновить данные раздела">${icon("refresh")}</button>`,
           ],
         })}
         ${errorBlock()}
@@ -271,13 +735,17 @@ export async function mount(root, ctx) {
           </div>`).join("") : (loadErr ? "" : `<div class="faint" style="padding:20px;grid-column:1/-1">${tab === "mine" ? "У вас пока нет своих агентов — нажмите «Собрать агента» в шапке." : (tab === "arch" ? "Архив пуст: выведенных из работы агентов нет." : "Нет общих агентов, доступных вашей роли.")}</div>`)}
         </div>`}
       </div></div>`;
-    root.querySelectorAll(".tabBtn").forEach((b) => (b.onclick = () => { tab = b.dataset.tab; render(); }));
-    root.querySelectorAll("[data-dept]").forEach((b) => {
-      const откр = () => { const f = families.find((x) => x.id === b.dataset.dept); if (f) openDeptCard(f); };
-      b.onclick = откр;
-      b.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); откр(); } };
-    });
-    root.querySelector("#refresh").onclick = async () => { await loadAgents(); render(); };
+    root.querySelectorAll(".tabBtn").forEach((b) => (b.onclick = () => {
+      tab = b.dataset.tab;
+      if (tab === "dept" && !deptГотово) { initDept(); return; }   // отрисует и перевяжет после загрузки
+      render();
+    }));
+    if (tab === "dept") привязатьОтделы();
+    root.querySelector("#refresh").onclick = async () => {
+      await loadAgents();
+      if (tab === "dept") await Promise.all([загрузитьИКАвсех(), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов()]);
+      render();
+    };
     const bb = root.querySelector("#build"); if (bb) bb.onclick = async () => { if (!families.length) await loadFamilies(); bFamily = ""; bSkills = new Set(); bName = ""; editingId = null; bOutput = ""; mode = "builder"; render(); };
     root.querySelectorAll(".pass").forEach((b) => (b.onclick = () => showPassport(b.dataset.id, b.dataset.name)));
     root.querySelectorAll(".run").forEach((b) => (b.onclick = () => ctx.open("chat", { runAgent: { id: b.dataset.id, name: b.dataset.name } })));

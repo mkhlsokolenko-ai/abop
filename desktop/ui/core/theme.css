@@ -769,3 +769,20 @@ button:disabled { cursor: default; }
    именах классов конкретного отчёта: имена у каждого агента свои, промежуток нужен всем. */
 .gate-prev i{font-style:normal;color:var(--ink-3)}
 .gate-prev span:has(> i){display:inline-flex;align-items:baseline;gap:7px;margin-right:18px}
+
+/* ── Рабочее место отдела (мокап v5, 15.11.2026): рейл отделов + очередь + фирмы ────────────
+   Классы в ядре, а не инлайны в панели: на узком окне колонки складываются — очередь важнее
+   соседства с фирмами, а рейл отделов важнее очереди. Окно приложения шириной 900 px — не
+   гипотеза, а минимум main.js, поэтому складывание здесь правило, а не полировка. */
+.dept-wrap { display: flex; gap: 14px; align-items: flex-start; min-width: 0; }
+.dept-rail { width: 212px; flex-shrink: 0; display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.dept-cols { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 14px; align-items: start; min-width: 0; }
+@media (max-width: 1180px) {
+  .dept-cols { grid-template-columns: minmax(0, 1fr); }
+  .dept-rail { width: 168px; }
+}
+@media (max-width: 860px) {
+  .dept-wrap { flex-direction: column; }
+  .dept-rail { width: 100%; flex-direction: row; flex-wrap: wrap; align-items: center; }
+  .dept-rail .dnav { width: auto; }
+}

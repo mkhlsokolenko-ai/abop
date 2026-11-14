@@ -230,6 +230,17 @@ def assignment_audit() -> dict:
     return _req("GET", "/api/agents/assignment-audit", timeout=30) or {}
 
 
+def ncr_open(fid: str) -> dict:
+    """Открытые NCR отдела (аудитор качества, шаг 7): несоответствия с цитатой-источником."""
+    return _req("GET", "/api/audit/" + urllib.request.quote(str(fid)) + "/ncr", timeout=30) or {}
+
+
+def ncr_close(ncr_id: str, причина: str = "") -> dict:
+    """Закрыть NCR: решение человека и его причина попадают в журнал аудита."""
+    return _req("POST", "/api/audit/ncr/" + urllib.request.quote(str(ncr_id)) + "/close",
+                body={"причина": причина}, timeout=30) or {}
+
+
 def recipes() -> list:
     """Рецепты Data Plane (источник→entity) — какие данные доступны агенту."""
     r = _req("GET", "/api/data/recipes", timeout=30)

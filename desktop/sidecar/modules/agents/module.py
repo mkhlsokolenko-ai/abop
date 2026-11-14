@@ -142,6 +142,24 @@ def assignment_audit():
         return _err(e)
 
 
+@router.get("/ncr")
+def ncr_list(family: str = ""):
+    """Открытые NCR отдела: полоса здоровья показывает их число, клик — список карточек."""
+    try:
+        return abop.ncr_open(family)
+    except abop.AbopError as e:
+        return _err(e)
+
+
+@router.post("/ncr/{ncr_id}/close")
+def ncr_close(ncr_id: str):
+    """Закрыть NCR — manager+; причина уходит в журнал аудита на сервере."""
+    try:
+        return abop.ncr_close(ncr_id)
+    except abop.AbopError as e:
+        return _err(e)
+
+
 @router.get("/recipes")
 def recipes():
     """Рецепты Data Plane — какие данные (entity) доступны агенту."""
