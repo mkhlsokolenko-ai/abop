@@ -149,6 +149,7 @@ export async function mount(root, ctx) {
       api(A + "/families/ika?family=" + encodeURIComponent(f.id) + "&дней=30").catch(() => null),
       api(A + "/assignment-audit").catch(() => null),
     ]);
+    const старыйСайдкар = !ика && !аудит;   // обе ручки незнакомы установленной версии сайдкара
     const р = ика || {};
     const факты = р["факты"] || {};
     const сл = р["слагаемые"] || {};
@@ -158,19 +159,20 @@ export async function mount(root, ctx) {
       (m.skills || []).length + " навыков")).join("");
     const html = `<div style="font-size:12.5px;line-height:1.55;color:var(--ink-2)">
       ${f.mission ? `<p style="margin:0 0 12px">${esc(f.mission)}</p>` : ""}
-      <div style="display:flex;gap:14px;align-items:baseline;padding:12px 14px;border-radius:11px;background:var(--field);border:1px solid var(--line)">
+      ${старыйСайдкар ? `<div style="padding:10px 12px;border-radius:10px;background:var(--warn-bg, var(--field));border:1px solid var(--line);margin-bottom:12px;font-size:12px;color:var(--ink-2)">ИКА и аудит назначения приедут с релизом 1.0.41 — сайдкар установленного приложения ещё не знает этих ручек. Обновление: Кабинет → Обновление.</div>` : ""}
+      ${ика ? `<div style="display:flex;gap:14px;align-items:baseline;padding:12px 14px;border-radius:11px;background:var(--field);border:1px solid var(--line)">
         <span style="font-size:30px;font-weight:800;color:var(--ink)">${р["ика"] == null ? "—" : esc(String(р["ика"]))}</span>
         <div style="display:flex;flex-direction:column">
           <span class="ape-label">ИКА отдела · окно ${esc(String(р["окно_дней"] || 30))} дн.</span>
           <span style="font-size:11.5px;color:var(--ink-3)">веса: ${esc((р["веса"] || {})["источник"] || "—")} · прогонов ${esc(String(факты["прогонов"] || 0))} · в среднем ${факты["средняя_стоимость_руб"] != null ? факты["средняя_стоимость_руб"] + " ₽" : "—"} и ${факты["средние_секунды"] != null ? факты["средние_секунды"] + " с" : "—"} за прогон</span>
         </div>
-      </div>
+      </div>` : ""}
       ${р["почему_пусто"] ? `<div style="margin-top:9px;font-size:12px;color:var(--warn-ink)">${esc(р["почему_пусто"])}</div>` : ""}
-      ${блок("слагаемые индекса" + (р["не_покрыто"] && р["не_покрыто"].length ? " · не покрыто: " + р["не_покрыто"].join(", ") : ""),
-             Object.keys(сл).map((k) => слагаемоеСтрокой(k, сл[k])).join(""))}
-      ${блок("аудит назначения", провалыHTML(rows))}
+      ${ика ? блок("слагаемые индекса" + (р["не_покрыто"] && р["не_покрыто"].length ? " · не покрыто: " + р["не_покрыто"].join(", ") : ""),
+             Object.keys(сл).map((k) => слагаемоеСтрокой(k, сл[k])).join("")) : ""}
+      ${аудит ? блок("аудит назначения", провалыHTML(rows)) : ""}
       ${блок("состав ролей", состав || `<div class="faint" style="font-size:12px">Ростер пуст: роли не объявлены.</div>`)}
-      <div style="margin-top:12px;font-size:11.5px;color:var(--ink-3)">ИКА считает система в роли аудитора; агент на свою оценку повлиять не может. Слагаемое без данных — не ноль, а «не покрыто»: ноль означал бы «отдел плох».</div>
+      ${ика ? `<div style="margin-top:12px;font-size:11.5px;color:var(--ink-3)">ИКА считает система в роли аудитора; агент на свою оценку повлиять не может. Слагаемое без данных — не ноль, а «не покрыто»: ноль означал бы «отдел плох».</div>` : ""}
     </div>`;
     ctx.modal(f.title || f.id, html, null, "Закрыть", { kicker: "карточка отдела", width: "640px" });
   }
