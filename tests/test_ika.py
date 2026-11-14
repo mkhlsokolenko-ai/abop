@@ -38,10 +38,11 @@ def _мир(monkeypatch):
                                      {"skill": "b", "structured": None},
                                      {"skill": "c", "structured": []}]},
             "r2": {"skill_outputs": [{"skill": "a", "structured": {"y": 2}}]}}
-    задания = [{"agent_id": "fin.v1", "attempts": 0, "created_at": ТЕПЕРЬ},
-               {"agent_id": "fin.v2", "attempts": 1, "created_at": ТЕПЕРЬ},
-               {"agent_id": "fin.v1", "attempts": 0, "created_at": ТЕПЕРЬ},
-               {"agent_id": "другой.v1", "attempts": 0, "created_at": ТЕПЕРЬ}]
+    задания = [{"agent_id": "fin.v1", "attempts": 1, "created_at": ТЕПЕРЬ},
+               {"agent_id": "fin.v2", "attempts": 2, "created_at": ТЕПЕРЬ},
+               {"agent_id": "fin.v1", "attempts": 1, "created_at": ТЕПЕРЬ},
+               {"agent_id": "fin.v1", "attempts": 0, "created_at": ТЕПЕРЬ},   # ещё не брали — не считается
+               {"agent_id": "другой.v1", "attempts": 1, "created_at": ТЕПЕРЬ}]
     находки = [{"прогон": "r1", "состояние": "подтверждено"},
                {"прогон": "r1", "состояние": "исправлено"},
                {"прогон": "r1", "состояние": "отклонено"},
