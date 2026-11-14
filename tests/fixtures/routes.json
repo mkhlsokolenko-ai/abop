@@ -1086,5 +1086,13 @@
  [
   "POST",
   "/api/audit/ncr/{ncr_id}/close"
+ ],
+ [
+  "GET",
+  "/api/departments/{fid}/autonomy"
+ ],
+ [
+  "POST",
+  "/api/departments/{fid}/autonomy"
  ]
 ]

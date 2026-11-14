@@ -2332,6 +2332,13 @@ async def execute_agent_run(agent: dict, contract: dict, started_by: str, *, sta
     if job_id:
         run_queue.CURRENT_JOB.set(job_id)
     fam_key = access.scope_key(family=agent.get("family"))
+    # Динамическая автономия (шаг 8, ADR-085): подстроить hitl-флаги узлов под ИКА отдела.
+    # Работает на runtime-копии графа — оригинал в реестре не трогается.
+    from . import autonomy as _autonomy
+    _граф_подстр, _авт_мета = await _autonomy.подстроить_граф(
+        agent.get("family") or "", agent.get("graph") or {}, started_by)
+    if _авт_мета.get("подстройка") != "выключена":
+        agent = dict(agent, graph=_граф_подстр)
     # Прогресс прогона для UI (фаза + навыки) — через очередь, если прогон идёт заданием
     import datetime as _pdt
     _skill_nodes = [n.get("skill") or n.get("id") for n in ((agent.get("graph") or {}).get("nodes") or []) if n.get("kind") == "skill"]

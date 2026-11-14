@@ -26,13 +26,14 @@ CREATE TABLE IF NOT EXISTS families (
     kind        TEXT DEFAULT 'custom',
     members     JSONB NOT NULL DEFAULT '{}'::jsonb,
     builtin     BOOLEAN NOT NULL DEFAULT false,
+    динамическая_автономия BOOLEAN NOT NULL DEFAULT false,
     editor      TEXT,
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 """
 
 _MEM: dict[str, dict] = {}
-_COLS = "id,title,mission,profile,kind,members,builtin,editor,updated_at"
+_COLS = "id,title,mission,profile,kind,members,builtin,editor,updated_at,динамическая_автономия"
 
 
 def _has_pg() -> bool:
@@ -42,6 +43,7 @@ def _has_pg() -> bool:
 def _row(r) -> dict:
     return {"id": r[0], "title": r[1], "mission": r[2], "profile": r[3], "kind": r[4],
             "members": r[5] or {}, "builtin": bool(r[6]), "editor": r[7],
+            "динамическая_автономия": bool(r[9]) if len(r) > 9 else False,
             "updated_at": r[8].isoformat() if r[8] else None}
 
 
@@ -51,6 +53,7 @@ async def init() -> None:
     from .db import _conn
     async with _conn() as conn:
         await conn.execute(SCHEMA)
+    await conn.execute("ALTER TABLE families ADD COLUMN IF NOT EXISTS динамическая_автономия BOOLEAN NOT NULL DEFAULT false")
 
 
 async def all() -> list[dict]:
@@ -80,7 +83,8 @@ async def save(fid: str, spec: dict, editor: str = "dev", builtin: bool = False)
     spec = spec or {}
     card = {"id": fid, "title": spec.get("title") or fid, "mission": spec.get("mission") or "",
             "profile": spec.get("profile") or "research", "kind": spec.get("kind") or "custom",
-            "members": spec.get("members") or {}, "builtin": builtin}
+            "members": spec.get("members") or {}, "builtin": builtin,
+            "динамическая_автономия": bool(spec.get("динамическая_автономия"))}
     if not _has_pg():
         card["editor"] = editor
         _MEM[fid] = card
@@ -88,13 +92,13 @@ async def save(fid: str, spec: dict, editor: str = "dev", builtin: bool = False)
     from .db import _conn
     async with _conn() as conn:
         await conn.execute(
-            "INSERT INTO families (id,title,mission,profile,kind,members,builtin,editor,updated_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,now()) "
+            "INSERT INTO families (id,title,mission,profile,kind,members,builtin,editor,updated_at,динамическая_автономия) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,now(),%s) "
             "ON CONFLICT (id) DO UPDATE SET title=EXCLUDED.title, mission=EXCLUDED.mission, "
             "profile=EXCLUDED.profile, kind=EXCLUDED.kind, members=EXCLUDED.members, editor=EXCLUDED.editor, "
-            "updated_at=now()",
+            "динамическая_автономия=EXCLUDED.динамическая_автономия, updated_at=now()",
             (fid, card["title"], card["mission"], card["profile"], card["kind"],
-             json.dumps(card["members"]), builtin, editor))
+             json.dumps(card["members"]), builtin, editor, card["динамическая_автономия"]))
     return await get(fid)
 
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from .. import audit_store, dept_tasks, matrix_store, methodology, ncr_store, quality_audit, supervisor
+from .. import audit_store, autonomy, dept_tasks, ika, matrix_store, methodology, ncr_store, quality_audit, supervisor
 from ..deps import can_see_family, require_level, user
 
 router = APIRouter()
@@ -219,3 +219,40 @@ async def ncr_close(ncr_id: str, body: dict, u: dict = Depends(user)) -> dict:
     await audit_store.record(u.get("name") or u.get("sub") or "dev", "audit.ncr.close", ncr_id,
                              {"причина": str((body or {}).get("причина") or "")})
     return {"ok": True, "ncr": итог}
+
+
+@router.get("/api/departments/{fid}/autonomy")
+async def autonomy_status(fid: str, u: dict = Depends(user)) -> dict:
+    """Статус динамической автономии отдела (шаг 8): включена ли, текущий ИКА, эффективный уровень.
+    Чтение по ABAC семьи."""
+    if not can_see_family(u, fid):
+        raise HTTPException(403, "семья другого отдела")
+    вкл = await autonomy.включена(fid)
+    rep = await ika.ика(fid, дней=30)
+    ика = rep.get("ика")
+    if ика is None:
+        уровень = "не определён (ИКА не покрыт)"
+    elif ика >= 90:
+        уровень = "повышенная"
+    elif ика >= 70:
+        уровень = "базовая"
+    else:
+        уровень = "суженная"
+    return {"отдел": fid, "динамическая_автономия": вкл, "ика": ика, "уровень": уровень,
+            "покрыто": rep.get("покрыто"), "не_покрыто": rep.get("не_покрыто")}
+
+
+@router.post("/api/departments/{fid}/autonomy")
+async def autonomy_toggle(fid: str, body: dict, u: dict = Depends(user)) -> dict:
+    """Включить или выключить динамическую автономию отдела (шаг 8, ADR-085).
+    Включение — ОДИН РАЗ явно человеком (manager+); дальше ИКА двигает подтверждения
+    в рамках контракта. Необратимое — всегда HITL. manager+, ABAC."""
+    require_level(u, "manager")
+    if not can_see_family(u, fid):
+        raise HTTPException(403, "семья другого отдела")
+    вкл = bool((body or {}).get("включить"))
+    actor = u.get("name") or u.get("sub") or "dev"
+    итог = await autonomy.включить(fid, вкл, actor)
+    await audit_store.record(actor, "autonomy.toggle", fid,
+                             {"динамическая_автономия": вкл})
+    return {"ok": True, "отдел": fid, "динамическая_автономия": вкл}
