@@ -1026,5 +1026,13 @@
  [
   "PUT",
   "/api/data/rules/{rid}"
+ ],
+ [
+  "POST",
+  "/api/board/facts/{key}/publish"
+ ],
+ [
+  "GET",
+  "/api/board/reuse"
  ]
 ]

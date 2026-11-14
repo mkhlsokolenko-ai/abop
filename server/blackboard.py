@@ -48,10 +48,22 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_board_unique ON board_entries (scope, key,
 SCHEMA_LONG = """
 ALTER TABLE board_entries ADD COLUMN IF NOT EXISTS ttl_sec INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE board_entries ADD COLUMN IF NOT EXISTS run_id TEXT;
+ALTER TABLE board_entries ADD COLUMN IF NOT EXISTS слой TEXT NOT NULL DEFAULT 'working';
 """
 
 USER_PREFIX = "usr-"        # личная доска: видит только владелец
 FAMILY_PREFIX = "fam-"      # доска отдела: видят те, кому открыта эта семья (ABAC)
+
+# Слои доски — шаг 4 плана «Отделов агентов» (docs/OTDELY_AGENTOV.md §5). Это ПОЛЕ на той же
+# таблице, не вторая доска: две доски означали бы два провенанса на одну истину.
+#   working   — черновики исполнителей отдела; часы–дни;
+#   validated — проверено супервайзером по критериям; недели; годно к переиспользованию;
+#   cross     — опубликовано другим отделам; версионируется;
+#   user      — то, что показано человеку; по политике хранения.
+# Правило записи: working пишут исполнители (агенты); продвижение в validated/cross — решение
+# супервайзера, а пока роль супервайзера не собрана (шаг 5) — человека с уровнем manager+.
+# Переиспользование расчётов берёт ТОЛЬКО validated/cross: черновик чужого отдела — не истина.
+СЛОИ = ("working", "validated", "cross", "user")
 # Сколько факт считается свежим, если срок не указан. Месяц — компромисс: решения по проектам живут
 # дольше, но факт без пересмотра месяц спустя уже требует проверки.
 DEFAULT_TTL_SEC = 30 * 24 * 3600
@@ -458,16 +470,22 @@ async def save(scope: str, entries: list[dict]) -> int:
 
 
 async def put_fact(scope: str, key: str, value, *, author: str, note: str = "",
-                   ttl_sec: int = DEFAULT_TTL_SEC, run_id: str = "", kind: str = "fact") -> dict:
-    """Положить факт в долгую область: с автором, сроком жизни и ссылкой на прогон.
+                   ttl_sec: int = DEFAULT_TTL_SEC, run_id: str = "", kind: str = "fact",
+                   слой: str = "working") -> dict:
+    """Положить факт в долгую область: с автором, сроком жизни, ссылкой на прогон и слоем.
 
     Факт без происхождения проверить нечем, поэтому `run_id` и `author` идут вместе со значением.
     Срок жизни обязателен по смыслу: факты портятся, и месячный факт, выданный за текущий, хуже
     отсутствия факта. Один автор под одним ключом держит одну запись — повтор уточняет её.
+    `слой` — ступень доверия (working/validated/cross/user); чужой слой — не запрет, а опечатка:
+    молча положить в «validated» нельзя, это обязанность супервайзера.
     """
+    слой = str(слой or "working")
+    if слой not in СЛОИ:
+        raise ValueError("слой «%s» не из %s" % (слой, ", ".join(СЛОИ)))
     row = {"key": str(key or ""), "author": str(author or "—"), "kind": kind, "note": str(note or ""),
            "value": _trim(value), "ttl_sec": max(0, int(ttl_sec or 0)), "run_id": str(run_id or ""),
-           "at": _now()}
+           "слой": слой, "at": _now()}
     if not scope or not row["key"]:
         return {}
     if not _has_pg():
@@ -479,12 +497,13 @@ async def put_fact(scope: str, key: str, value, *, author: str, note: str = "",
     from .db import _conn
     async with _conn() as conn:
         await conn.execute(
-            "INSERT INTO board_entries(scope,key,author,kind,note,value,ttl_sec,run_id) "
-            "VALUES(%s,%s,%s,%s,%s,%s,%s,%s) "
+            "INSERT INTO board_entries(scope,key,author,kind,note,value,ttl_sec,run_id,слой) "
+            "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s) "
             "ON CONFLICT (scope,key,author) DO UPDATE SET kind=EXCLUDED.kind, note=EXCLUDED.note, "
-            "value=EXCLUDED.value, ttl_sec=EXCLUDED.ttl_sec, run_id=EXCLUDED.run_id, created_at=now()",
+            "value=EXCLUDED.value, ttl_sec=EXCLUDED.ttl_sec, run_id=EXCLUDED.run_id, "
+            "слой=EXCLUDED.слой, created_at=now()",
             (scope, row["key"], row["author"], row["kind"], row["note"],
-             json.dumps(row["value"], ensure_ascii=False), row["ttl_sec"], row["run_id"]))
+             json.dumps(row["value"], ensure_ascii=False), row["ttl_sec"], row["run_id"], row["слой"]))
     return row
 
 
@@ -520,23 +539,29 @@ def _stale(row: dict) -> bool:
     return (time.time() - made) > ttl
 
 
-async def load(scope: str, *, include_stale: bool = False) -> list[dict]:
+async def load(scope: str, *, include_stale: bool = False, слой: str = "") -> list[dict]:
     """Прочитать общую область: что уже выложили другие ветви.
 
     Просроченные факты по умолчанию НЕ отдаём: показать месячный факт как текущий хуже, чем не
     показать ничего. `include_stale` нужен разбору («что было и когда истекло»), а не работе.
+    `слой` — фильтр по ступени доверия (working/validated/cross/user); без него отдаём всё.
     """
     scope = str(scope or "")
     if not scope:
         return []
     if not _has_pg():
         rows = [dict(e) for e in _MEM.get(scope, [])]
+        rows = [r for r in rows if not слой or r.get("слой", "working") == слой]
         return rows if include_stale else [r for r in rows if not _stale(r)]
     from .db import _conn
+    conds, args = ["scope=%s"], [scope]
+    if слой:
+        conds.append("слой=%s")
+        args.append(слой)
     async with _conn() as conn:
         cur = await conn.execute(
-            "SELECT key,author,kind,note,value,created_at,ttl_sec,run_id FROM board_entries "
-            "WHERE scope=%s ORDER BY id", (scope,))
+            "SELECT key,author,kind,note,value,created_at,ttl_sec,run_id,слой FROM board_entries "
+            "WHERE " + " AND ".join(conds) + " ORDER BY id", tuple(args))
         rows = await cur.fetchall()
     out = []
     for r in rows:
@@ -547,7 +572,8 @@ async def load(scope: str, *, include_stale: bool = False) -> list[dict]:
             except Exception:  # noqa: BLE001 — значение могло лечь строкой, это не повод терять запись
                 pass
         row = {"key": r[0], "author": r[1], "kind": r[2], "note": r[3], "value": val,
-               "at": str(r[5])[:19], "ttl_sec": int(r[6] or 0), "run_id": r[7] or ""}
+               "at": str(r[5])[:19], "ttl_sec": int(r[6] or 0), "run_id": r[7] or "",
+               "слой": r[8] or "working"}
         if include_stale or not _stale(row):
             out.append(row)
     return out
@@ -555,6 +581,67 @@ async def load(scope: str, *, include_stale: bool = False) -> list[dict]:
 
 async def board_of(scope: str) -> Board:
     return Board(scope, await load(scope))
+
+
+async def опубликовать(scope: str, key: str, слой_новый: str, *, кем: str) -> dict:
+    """Продвинуть запись по слоям: working → validated → cross (→ user показан человеку).
+
+    Запись меняет ступень доверия, но НЕ автора и НЕ значение: продвижение — это вердикт
+    супервайзера над чужой работой, а не новая правда. Кто продвигает, решает маршрут; здесь
+    только честная запись и валидность слоя.
+    """
+    слой_новый = str(слой_новый or "")
+    if слой_новый not in СЛОИ:
+        raise ValueError("слой «%s» не из %s" % (слой_новый, ", ".join(СЛОИ)))
+    rows = await load(scope)
+    своя = [r for r in rows if r.get("key") == str(key or "")]
+    if not своя:
+        return {}
+    свежая = своя[-1]   # последняя по id — продвигаем актуальную редакцию ключа
+    row = dict(свежая, слой=слой_новый)
+    if not _has_pg():
+        cur = _MEM.setdefault(scope, [])
+        for i, x in enumerate(cur):
+            if x.get("key") == row["key"] and x.get("author") == row["author"]:
+                cur[i] = dict(x, слой=слой_новый)
+                break
+        return dict(row)
+    from .db import _conn
+    async with _conn() as conn:
+        await conn.execute(
+            "UPDATE board_entries SET слой=%s WHERE scope=%s AND key=%s AND author=%s",
+            (слой_новый, scope, row["key"], row["author"]))
+    return row
+
+
+def ключ_расчёта(организация: str, период: str, правило: str, версия: str) -> str:
+    """Точный ключ переиспользования расчёта: организация+период+правило+версия политики.
+
+    Никаких эмбеддингов: замер 13.11 дал 83 % попадания в первое место — каждый шестой
+    «похожий» ответ был бы чужим расчётом. Ключ обязана называть правку правилом.
+    """
+    чист = lambda s: str(s or "").strip().lower()  # noqa: E731
+    return "артефакт:%s:%s:%s:%s" % (чист(организация), чист(период), чист(правило), чист(версия))
+
+
+async def переиспользование(ключ: str, семьи: list) -> dict:
+    """Готовый артефакт по точному ключу из слоёв validated/cross досок отделов.
+
+    Черновики (working) НЕ переиспользуются: это ещё не истина. Протухшие не отдаются — переиспользуем
+    свежее. Ищем по семьям в порядке перечисления; первая свежая запись и есть ответ, с провенансом.
+    """
+    ключ = str(ключ or "")
+    if not ключ or not семьи:
+        return {}
+    for fam in семьи:
+        rows = await load(str(FAMILY_PREFIX + str(fam)))
+        годные = [r for r in rows
+                  if r.get("key") == ключ and r.get("слой") in ("validated", "cross")]
+        if годные:
+            r = dict(годные[-1])
+            r["семья"] = str(fam)
+            return r
+    return {}
 
 
 # ── мелочь ──
