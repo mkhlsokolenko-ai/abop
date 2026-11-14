@@ -219,6 +219,17 @@ def families() -> list:
     return (r or {}).get("families", []) if isinstance(r, dict) else (r or [])
 
 
+def family_ika(fid: str, дней: int = 30) -> dict:
+    """ИКА отдела (шаг 2 «Отделов агентов»): индекс качества агентов из машинных фактов."""
+    return _req("GET", "/api/families/" + urllib.request.quote(str(fid)) + f"/ika?дней={int(дней)}",
+                timeout=30) or {}
+
+
+def assignment_audit() -> dict:
+    """Аудит назначения (ADR-079): какие агенты не делают того, чем назван. Только расхождения."""
+    return _req("GET", "/api/agents/assignment-audit", timeout=30) or {}
+
+
 def recipes() -> list:
     """Рецепты Data Plane (источник→entity) — какие данные доступны агенту."""
     r = _req("GET", "/api/data/recipes", timeout=30)
@@ -564,12 +575,16 @@ def vertical_activate(vid: str) -> dict:
     return _req("POST", "/api/verticals/" + имя + "/activate", {}, timeout=30) or {}
 
 
-def findings_open(project: str = "", process: str = "", organisation: str = "") -> dict:
+def findings_open(project: str = "", process: str = "", organisation: str = "",
+                  отдел: str = "") -> dict:
     """Находки реестра без решения: что нашёл расчёт и ждёт слова человека.
 
     Отдельно от очереди подтверждений: заявка требует «отправить или нет», находка — «это
     проблема или норма». Сводка пользы (найдено → подтверждено → исправлено) приходит тем же
     ответом, чтобы раздел не считал её сам.
+
+    `отдел` — принадлежность (шаг 3 «Отделов»): бухгалтер видит очередь СВОЕГО отдела, чужие
+    находки уходят из его экрана по принадлежности, а не удалением данных.
     """
     запрос = []
     if str(project or "").strip():
@@ -578,6 +593,8 @@ def findings_open(project: str = "", process: str = "", organisation: str = "") 
         запрос.append("process=" + urllib.parse.quote(str(process)))
     if str(organisation or "").strip():
         запрос.append("organisation=" + urllib.parse.quote(str(organisation)))
+    if str(отдел or "").strip():
+        запрос.append("отдел=" + urllib.parse.quote(str(отдел)))
     # Спрашиваем нерешённые: подтверждённые и отложенные находки — уже работа, а не вопрос к
     # человеку. Группы по причине приходят тем же ответом и считаются по ВСЕМ открытым.
     запрос.append("state=найдено")

@@ -73,3 +73,38 @@ def test_health_caches_ping(sidecar):
     sc._ABOP_PING.update({"at": 0.0})
     assert c.get("/api/health").json()["abop"] is True
     assert calls["n"] == 2
+
+
+def test_sidecar_proxies_departments_endpoints(sidecar):
+    """Шаг 3 «Отделов»: карточка отдела (ИКА + аудит назначения) и срез «Решений» по отделу
+    проходят через сайдкар тем же тонким прокси. Панель чисел не считает — только показывает."""
+    sc, abop_client = sidecar
+    from fastapi.testclient import TestClient
+
+    sent = {}
+
+    def _ика(fid, дней=30):
+        sent["ika"] = (fid, дней)
+        return {"семья": fid, "ика": 74.4}
+
+    def _аудит():
+        sent["audit"] = True
+        return {"строки": [{"id": "x.v1", "family": "audit", "серьёзность": "crit"}]}
+
+    def _находки(project="", process="", organisation="", отдел=""):
+        sent["findings"] = отдел
+        return {"findings": [], "сводка": {"всего": 0}}
+
+    abop_client.family_ika = _ика
+    abop_client.assignment_audit = _аудит
+    abop_client.findings_open = _находки
+
+    # Модули монтируются на startup-событии: без контекст-менеджера ручки модулей отсутствуют.
+    with TestClient(sc.app) as c:
+        р1 = c.get("/api/modules/agents/families/ika?family=finance&дней=30").json()
+        assert р1["ика"] == 74.4 and sent["ika"] == ("finance", 30)
+        р2 = c.get("/api/modules/agents/assignment-audit").json()
+        assert р2["строки"][0]["серьёзность"] == "crit"
+        р3 = c.get("/api/modules/decisions/findings?отдел=finance").json()
+        assert sent["findings"] == "finance"
+        assert "findings" in р3

@@ -39,6 +39,12 @@ export async function mount(root, ctx) {
   // Выбор живёт в разметке раздела, как и в «Сверке»: раздел не владеет маршрутом.
   let организация = root.dataset.org || "", процесс = root.dataset.proc || "";
   let разрезы = {};
+  // Отдел как контекст (шаг 3 «Отделов агентов»): бухгалтер по умолчанию видит очередь СВОЕГО
+  // отдела — находки «Управляющего графиком» и «Потока» не требуют его слова по принадлежности,
+  // а не потому, что их удалили. Владелец (отдел «*») видит всё, чип ему ни к чему.
+  const мой_отдел = String(((ctx.user || {}).department) || "");
+  const чипОтдела = мой_отдел && мой_отдел !== "*";
+  let отдел = чипОтдела ? мой_отдел : "";
 
   async function load() {
     loading = true; render();
@@ -53,6 +59,7 @@ export async function mount(root, ctx) {
       const фильтр = [];
       if (организация) фильтр.push("organisation=" + encodeURIComponent(организация));
       if (процесс) фильтр.push("process=" + encodeURIComponent(процесс));
+      if (отдел) фильтр.push("отдел=" + encodeURIComponent(отдел));
       const р = await api(M + "/findings" + (фильтр.length ? "?" + фильтр.join("&") : ""));
       находки = р.findings || []; сводка = р["сводка"] || {}; ошибкаНаходок = "";
       разрезы = р["разрезы"] || {};
@@ -145,13 +152,19 @@ export async function mount(root, ctx) {
   function разрезыHTML() {
     const орг = разрезы["организации"] || [];
     const проц = разрезы["процессы"] || [];
-    if (орг.length < 2 && проц.length < 2) return "";
     const чип = (имя, подпись, число, активен, поле) =>
       `<button type="button" class="chip${активен ? " on" : ""}" data-cut="${esc(поле)}" data-val="${esc(имя)}">${
         esc(подпись)}${число == null ? "" : " · " + число}</button>`;
+    // Чип отдела — первым и всегда, когда у человека есть отдел: очередь по принадлежности —
+    // это контекст, а не один из разрезов. Выключить можно одним нажатием (увидеть всё).
+    const отделЧип = чипОтдела
+      ? чип("", отдел ? "мой отдел · включён" : "мой отдел · выключен", null, !!отдел, "dept")
+      : "";
+    if (!отделЧип && орг.length < 2 && проц.length < 2) return "";
     const всего = Number(разрезы["открытых_всего"] || 0);
     const безОрг = Number(разрезы["без_организации"] || 0);
     return `<div class="filters">
+      ${отделЧип}
       ${орг.length >= 2 ? чип("", "все фирмы", всего, !организация, "org") : ""}
       ${орг.map((о) => чип(о["имя"], о["имя"], о["открытых"], организация === о["имя"], "org")).join("")}
       ${проц.length >= 2 ? `<span style="width:10px"></span>` + проц.map((п) =>
@@ -562,7 +575,8 @@ export async function mount(root, ctx) {
       };
     });
     root.querySelectorAll("[data-cut]").forEach((b) => b.onclick = () => {
-      if (b.dataset.cut === "org") { организация = b.dataset.val || ""; root.dataset.org = организация; }
+      if (b.dataset.cut === "dept") { отдел = отдел ? "" : мой_отдел; }
+      else if (b.dataset.cut === "org") { организация = b.dataset.val || ""; root.dataset.org = организация; }
       else { процесс = b.dataset.val || ""; root.dataset.proc = процесс; }
       всеНаходки = false; раскрытаГруппа = "";
       load();

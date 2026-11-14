@@ -109,14 +109,19 @@ def quality(organisation: str = "") -> dict:
 
 
 @router.get("/findings")
-def findings(project: str = "", process: str = "", organisation: str = "") -> dict:
+def findings(project: str = "", process: str = "", organisation: str = "",
+             отдел: str = "") -> dict:
     """Находки реестра, ждущие решения: «это проблема» или «так и должно быть».
 
     Раньше находка жила внутри прогона: чтобы её найти, надо было помнить, какой прогон её родил.
     Здесь она лежит рядом с доказательством, и решение по ней — одно движение.
+
+    `отдел` — чья это работа (шаг 3 «Отделов агентов»): бухгалтер видит очередь СВОЕГО отдела,
+    находки других отделов не попадают в его экран по принадлежности. Сервер фильтрует и список,
+    и все счётчики ответа.
     """
     try:
-        return abop.findings_open(project, process, organisation)
+        return abop.findings_open(project, process, organisation, отдел)
     except Exception as ex:  # noqa: BLE001
         raise _ошибка(ex) from ex
 

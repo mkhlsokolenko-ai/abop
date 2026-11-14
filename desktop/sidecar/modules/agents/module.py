@@ -121,6 +121,27 @@ def families():
         return _err(e)
 
 
+@router.get("/families/ika")
+def family_ika(family: str = "", дней: int = 30):
+    """ИКА отдела (шаг 2 «Отделов агентов»): индекс качества + покрытие слагаемых.
+
+    Отдельная ручка рядом с /families, а не расширение той: конструктору ростер нужен всегда,
+    карточке отдела — только по открытию, и его отсутствие не должно ломать палитру."""
+    try:
+        return abop.family_ika(family, дней)
+    except abop.AbopError as e:
+        return _err(e)
+
+
+@router.get("/assignment-audit")
+def assignment_audit():
+    """Аудит назначения (ADR-079): только расхождения — агент не делает того, чем назван."""
+    try:
+        return abop.assignment_audit()
+    except abop.AbopError as e:
+        return _err(e)
+
+
 @router.get("/recipes")
 def recipes():
     """Рецепты Data Plane — какие данные (entity) доступны агенту."""

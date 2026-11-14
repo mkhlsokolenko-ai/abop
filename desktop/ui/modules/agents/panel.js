@@ -120,6 +120,79 @@ export async function mount(root, ctx) {
   }
   async function loadFamilies() { try { families = await api(A + "/families"); if (!Array.isArray(families)) families = []; } catch (e) { families = []; toast(humanError(e), "danger"); } }
 
+  // ── ОТДЕЛЫ (шаг 3 «Отделов агентов»): отдел — контекст, а не меню ──
+  // Карточка отдела собирается из существующих ручек: ИКА (шаг 2) + аудит назначения (шаг 1) +
+  // состав из ростера. Ничего не считаем на клиенте: числа без происхождения на этом экране
+  // означали бы, что мы показываем оценку, не объяснив, из чего она сложилась.
+  function провалыHTML(rows) {
+    if (!rows.length) return `<div style="font-size:12.5px;color:var(--ok-ink)">Назначение всех агентов отдела подтверждено аудитом — каждый делает то, чем назван.</div>`;
+    return rows.map((r) => `<div style="padding:8px 11px;border-radius:9px;background:var(--field);border:1px solid var(--line);display:flex;flex-direction:column;gap:3px">
+        <div style="display:flex;gap:7px;align-items:center">
+          <span class="tag${r["серьёзность"] === "crit" ? " sev" : " mid"}">${r["серьёзность"] === "crit" ? "не то, чем назван" : "не хватает навыков"}</span>
+          <b style="font-size:12.5px;color:var(--ink)">${esc(r.name || r.id)} · v${esc(String(r.version || 1))}</b>
+        </div>
+        <div style="font-size:12px;color:var(--ink-2);line-height:1.45">${esc(r["причина"] || "")}</div>
+      </div>`).join("");
+  }
+
+  function слагаемоеСтрокой(k, v) {
+    const з = v["значение"];
+    const число = з == null ? "—" : String(Math.round(з * 100)) + " %";
+    const откуда = v["источник"] || v["почему"] || "";
+    return строка(`${esc(k)} · <span style="color:var(--ink-3)">${esc(откуда)}</span>`,
+                  число + (з != null ? ` · данных: ${v["данных"]}` : ""),
+                  з == null ? "var(--ink-3)" : "var(--ink)");
+  }
+
+  async function openDeptCard(f) {
+    const [ика, аудит] = await Promise.all([
+      api(A + "/families/ika?family=" + encodeURIComponent(f.id) + "&дней=30").catch(() => null),
+      api(A + "/assignment-audit").catch(() => null),
+    ]);
+    const р = ика || {};
+    const факты = р["факты"] || {};
+    const сл = р["слагаемые"] || {};
+    const rows = (((аудит || {})["строки"] || [])).filter((r) => r.family === f.id);
+    const состав = (f.members || []).map((m) => строка(
+      `<b style="color:var(--ink)">${esc(m.title || m.key)}</b>`,
+      (m.skills || []).length + " навыков")).join("");
+    const html = `<div style="font-size:12.5px;line-height:1.55;color:var(--ink-2)">
+      ${f.mission ? `<p style="margin:0 0 12px">${esc(f.mission)}</p>` : ""}
+      <div style="display:flex;gap:14px;align-items:baseline;padding:12px 14px;border-radius:11px;background:var(--field);border:1px solid var(--line)">
+        <span style="font-size:30px;font-weight:800;color:var(--ink)">${р["ика"] == null ? "—" : esc(String(р["ика"]))}</span>
+        <div style="display:flex;flex-direction:column">
+          <span class="ape-label">ИКА отдела · окно ${esc(String(р["окно_дней"] || 30))} дн.</span>
+          <span style="font-size:11.5px;color:var(--ink-3)">веса: ${esc((р["веса"] || {})["источник"] || "—")} · прогонов ${esc(String(факты["прогонов"] || 0))} · в среднем ${факты["средняя_стоимость_руб"] != null ? факты["средняя_стоимость_руб"] + " ₽" : "—"} и ${факты["средние_секунды"] != null ? факты["средние_секунды"] + " с" : "—"} за прогон</span>
+        </div>
+      </div>
+      ${р["почему_пусто"] ? `<div style="margin-top:9px;font-size:12px;color:var(--warn-ink)">${esc(р["почему_пусто"])}</div>` : ""}
+      ${блок("слагаемые индекса" + (р["не_покрыто"] && р["не_покрыто"].length ? " · не покрыто: " + р["не_покрыто"].join(", ") : ""),
+             Object.keys(сл).map((k) => слагаемоеСтрокой(k, сл[k])).join(""))}
+      ${блок("аудит назначения", провалыHTML(rows))}
+      ${блок("состав ролей", состав || `<div class="faint" style="font-size:12px">Ростер пуст: роли не объявлены.</div>`)}
+      <div style="margin-top:12px;font-size:11.5px;color:var(--ink-3)">ИКА считает система в роли аудитора; агент на свою оценку повлиять не может. Слагаемое без данных — не ноль, а «не покрыто»: ноль означал бы «отдел плох».</div>
+    </div>`;
+    ctx.modal(f.title || f.id, html, null, "Закрыть", { kicker: "карточка отдела", width: "640px" });
+  }
+
+  function renderОтделы() {
+    const по_семье = {};
+    agents.forEach((a) => { по_семье[a.family] = (по_семье[a.family] || 0) + 1; });
+    return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">
+      ${families.length ? families.map((f) => `<div class="lift" style="${CARD}cursor:pointer" data-dept="${esc(f.id)}" role="button" tabindex="0">
+          <div class="ape-label">${f.kind === "business" ? "отдел" : "инженерная семья"}</div>
+          <div style="font-size:15px;font-weight:700;color:var(--ink)">${esc(f.title || f.id)}</div>
+          ${f.mission ? `<div style="font-size:12px;line-height:1.45;color:var(--ink-2);margin-top:4px">${esc(f.mission)}</div>` : ""}
+          <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:8px">
+            <span class="tag">${по_семье[f.id] || 0} агентов</span>
+            <span class="tag">${(f.members || []).length} ролей</span>
+            <span class="tag ai">карточка: ИКА · аудит · расход</span>
+          </div>
+        </div>`).join("")
+        : `<div class="faint" style="padding:20px;grid-column:1/-1">Ростер семей не загрузился — обновите список.</div>`}
+    </div>`;
+  }
+
   function errorBlock() {
     if (!loadErr) return "";
     const st = loadErr.status;
@@ -131,7 +204,7 @@ export async function mount(root, ctx) {
   function render() {
     if (mode === "builder") return renderBuilder();
     const mine = agents.filter((a) => a.owner), common = agents.filter((a) => !a.owner);
-    const shown = tab === "mine" ? mine : (tab === "arch" ? archived : common);
+    const shown = tab === "mine" ? mine : (tab === "arch" ? archived : (tab === "dept" ? "" : common));
     // Действия знаками, без подписей: три подписанные кнопки не влезали в карточку 280 px и
     // переносились — отсюда и съехавшая вёрстка. Подпись у действия осталась в title и aria-label,
     // то есть и в подсказке, и для чтения с экрана.
@@ -175,8 +248,8 @@ export async function mount(root, ctx) {
           ],
         })}
         ${errorBlock()}
-        <div style="display:flex;gap:8px">${tabBtn("mine", "Мои агенты", mine.length)}${tabBtn("common", "Общие агенты", common.length)}${tabBtn("arch", "Архив", archived.length)}</div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">
+        <div style="display:flex;gap:8px">${tabBtn("mine", "Мои агенты", mine.length)}${tabBtn("common", "Общие агенты", common.length)}${tabBtn("dept", "Отделы", families.length)}${tabBtn("arch", "Архив", archived.length)}</div>
+        ${tab === "dept" ? renderОтделы() : `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">
           ${shown.length ? shown.map((a) => `<div class="lift" style="${CARD}">
             <div style="min-width:0">
               <div style="min-width:0"><div class="ape-label">${esc(a.family || "—")}${a.role ? " · " + esc(a.role) : ""}</div>
@@ -194,9 +267,14 @@ export async function mount(root, ctx) {
             </div>
             ${tab === "arch" ? archActions(a) : actions(a)}
           </div>`).join("") : (loadErr ? "" : `<div class="faint" style="padding:20px;grid-column:1/-1">${tab === "mine" ? "У вас пока нет своих агентов — нажмите «Собрать агента» в шапке." : (tab === "arch" ? "Архив пуст: выведенных из работы агентов нет." : "Нет общих агентов, доступных вашей роли.")}</div>`)}
-        </div>
+        </div>`}
       </div></div>`;
     root.querySelectorAll(".tabBtn").forEach((b) => (b.onclick = () => { tab = b.dataset.tab; render(); }));
+    root.querySelectorAll("[data-dept]").forEach((b) => {
+      const откр = () => { const f = families.find((x) => x.id === b.dataset.dept); if (f) openDeptCard(f); };
+      b.onclick = откр;
+      b.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); откр(); } };
+    });
     root.querySelector("#refresh").onclick = async () => { await loadAgents(); render(); };
     const bb = root.querySelector("#build"); if (bb) bb.onclick = async () => { if (!families.length) await loadFamilies(); bFamily = ""; bSkills = new Set(); bName = ""; editingId = null; bOutput = ""; mode = "builder"; render(); };
     root.querySelectorAll(".pass").forEach((b) => (b.onclick = () => showPassport(b.dataset.id, b.dataset.name)));
@@ -342,5 +420,8 @@ export async function mount(root, ctx) {
     };
   }
 
+  // Ростер грузим ТИХО: вкладка «Отделы» считает агентов по семьям, а отказ ростера не должен
+  // пугать тостом того, кто открыл каталог агентов.
+  try { families = await api(A + "/families"); if (!Array.isArray(families)) families = []; } catch (e) { families = []; }
   await loadAgents(); render();
 }
