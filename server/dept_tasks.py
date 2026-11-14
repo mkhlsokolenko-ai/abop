@@ -52,6 +52,16 @@ def _has_pg() -> bool:
     return bool(settings.pg_dsn)
 
 
+async def init() -> None:
+    """Создать таблицы задач. Без вызова из стартовой цепочки web_api таблицы на проде
+    не существуют — живой цикл поймал это первым же INSERT (UndefinedTable)."""
+    if not _has_pg():
+        return
+    from .db import _conn
+    async with _conn() as conn:
+        await conn.execute(SCHEMA)
+
+
 def _row(r, cols) -> dict:
     out = {}
     for i, c in enumerate(cols):
