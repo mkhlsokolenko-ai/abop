@@ -1146,10 +1146,11 @@ AGENT_FAMILIES = {
         "title": "Аналитика", "profile": "research",
         "mission": "Превращай сырьё в решение: измеряй, находи закономерности и узкие места, доводи до рекомендации с обоснованием.",
         "members": {
-            "financial-analyst": ("Финансовый аналитик", ["dcf-valuation", "three-statement-model", "unit-economics-checker", "finance-report"]),
+            # report-editor — сквозной редактор отчёта: обе аналитические роли собирают разделы в документ
+            "financial-analyst": ("Финансовый аналитик", ["dcf-valuation", "three-statement-model", "unit-economics-checker", "finance-report", "report-editor"]),
             "systems-analyst": ("Системный аналитик", ["spec-reviewer", "agent-design-writer", "architecture-chooser", "api-design"]),
             "data-analyst": ("Дата-аналитик", ["dashboard-builder", "eval-generator", "researcher"]),
-            "business-analyst": ("Бизнес-аналитик", ["jtbd-formulator", "market-research", "idea-scorer", "one-three-one"]),
+            "business-analyst": ("Бизнес-аналитик", ["jtbd-formulator", "market-research", "idea-scorer", "one-three-one", "report-editor"]),
             "process-analyst": ("Аналитик бизнес-процессов", ["process-map", "spec-reviewer", "meeting-action-items"]),
         },
     },
@@ -1182,6 +1183,11 @@ AGENT_FAMILIES = {
                                            "audit1c-checks", "audit1c-root-cause", "audit1c-rank", "audit1c-explain",
                                            # вертикаль «Финансы»: тот же расчёт, другой документ и другой читатель
                                            "sverka-report"]),
+            # продукт пилота «Статский Советник»: сверка расхождений для бухгалтерского аутсорсинга.
+            # Состав точно по живому агенту finance-sverka-2026 (14.11.2026): расчёт делает
+            # audit1c-checks, объяснение сводит к причине, ранжирует и собирает акт сверки.
+            "sverщик": ("Сверщик расхождений", ["audit1c-checks", "audit1c-root-cause", "audit1c-rank",
+                                                "sverka-report"]),
             # кейс открытой e-com-платформы: карточка участника на чужой витрине
             "showcase-controller": ("Контролёр витрины", ["feed-checks", "feed-fix", "feed-scorecard"]),
             # демо-сценарий №2 «расследование от симптома»: extract→graph→trace(цепочка)→verdict
