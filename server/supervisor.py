@@ -63,11 +63,22 @@ async def супервайзер_отдела(отдел: str, actor: str = "с�
 
 
 async def _агенты_исполнители(отдел: str) -> list[dict]:
-    """Развёрнутые агенты отдела БЕЗ супервайзера: он не считает сам (§3 плана)."""
+    """Развёрнутые агенты отдела БЕЗ супервайзера: он не считает сам (§3 плана).
+
+    list_for отдаёт КРАТКИЕ записи без графа — а декомпозиция и выбор исполнителя смотрят в
+    навыки графа. Загружаем полные записи: краткая здесь — пустой каталог и ложная эскалация
+    (живой цикл 15.11: «исполнителя под такую задачу в каталоге нет» при живых сверщиках).
+    """
     живые = await agent_store.list_for(None, limit=500)
-    return [a for a in живые
-            if a.get("family") == отдел and a.get("role") != "supervisor"
-            and a.get("status") == "deployed"]
+    ид = [a["id"] for a in живые
+          if a.get("family") == отдел and a.get("role") != "supervisor"
+          and a.get("status") == "deployed"]
+    полные = []
+    for i in ид:
+        полный = await agent_store.get(i)
+        if полный and полный.get("status") == "deployed":
+            полные.append(полный)
+    return полные
 
 
 def _навыки_агента(a: dict) -> set[str]:

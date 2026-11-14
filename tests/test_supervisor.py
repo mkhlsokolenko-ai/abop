@@ -92,9 +92,13 @@ def test_исполнитель_не_бывает_супервайзером(mon
     ]
 
     async def _list_for(audit_id=None, limit=100, archived=False):
-        return агенты
+        return [{k: v for k, v in a.items() if k != "graph"} for a in агенты]
+
+    async def _get(aid):
+        return next(a for a in агенты if a["id"] == aid)
 
     monkeypatch.setattr(agent_store, "list_for", _list_for)
+    monkeypatch.setattr(agent_store, "get", _get)
     исп = asyncio.run(supervisor._исполнитель_для("finance", "mail-triage"))
     assert исп["id"] == "исп.v2", "супервайзер не считает сам; чужой отдел и черновики — мимо"
 
