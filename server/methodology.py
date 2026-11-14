@@ -11,6 +11,8 @@
 """
 from __future__ import annotations
 
+from . import audit_store
+
 
 def процесс_ключа(ключ: str) -> str:
     """Первый сегмент ключа НСИ: «4[01][001]» → «4». Это номер процесса в иерархии."""
@@ -76,3 +78,79 @@ async def сверка_отдела(отдел: str) -> dict:
     роли = {rid: "да" for rid in (fam.get("members") or {})}
     конфигурация = {"правило_активно": наборы, "роль_в_отделе": роли}
     return сверка(чанки, матрица, конфигурация)
+
+
+async def применить(отдел: str, расхождение: dict, кем: str) -> dict:
+    """Применить применимое расхождение; неприменимое — отказ с тем, что делать руками.
+
+    Применимо только «роль_в_отделе»: добавить/убрать роль в составе отдела. Правило_активно
+    машиной не включается — несуществующий набор не создать из воздуха, это ручной шаг
+    методолога в «Правилах» (сверка после этого позеленеет сама). Применение роли переводит
+    семью в ручной режим: сид кода её больше не догоняет — цена названа в ответе.
+    """
+    from . import families_store
+    тип = str(расхождение.get("тип") or "")
+    пункт = str(расхождение.get("пункт") or "")
+    цель = str(расхождение.get("цель") or "")
+    значение = str(расхождение.get("матрица") or расхождение.get("значение") or "")
+    from cli import ape
+    if расхождение.get("параметр") == "правило_активно":
+        # правило_активно машиной не меняется при ЛЮБОМ типе: несуществующий набор не создаётся
+        # из воздуха, существующий не выключается молча — это ручной шаг методолога в «Правилах»
+        if значение == "да":
+            return {"применено": False, "почему": "набор правил «%s» не существует — заведи его в "
+                     "«Правилах» (методологический ручной шаг), сверка после этого позеленеет" % цель}
+        return {"применено": False, "почему": "выключение набора правил делается в «Правилах» "
+                "(удалить интерфейсный / вернуть версию пакета) — машиной не выключаю"}
+    if тип != "не_соответствует":
+        return {"применено": False, "почему": "применяется только «не соответствует»; остальные "
+                 "расхождения читает человек"}
+    if расхождение.get("параметр") != "роль_в_отделе":
+        return {"применено": False, "почему": "неизвестный параметр"}
+    fam = await families_store.get(отдел)
+    if not fam:
+        return {"применено": False, "почему": "семьи отдела нет"}
+    members = dict(fam.get("members") or {})
+    кодовая = (ape.AGENT_FAMILIES.get(отдел) or {}).get("members", {}).get(цель)
+    if значение == "да":
+        if цель in members:
+            return {"применено": False, "почему": "роль уже в составе отдела"}
+        if not кодовая:
+            return {"применено": False, "почему": ("роль «%s» не объявлена в ростере кода — "
+                     "сначала объяви её там с навыками" % цель)}
+        members[цель] = [кодовая[0], list(кодовая[1])]
+    else:
+        if цель not in members:
+            return {"применено": False, "почему": "роль и так не в составе отдела"}
+        members.pop(цель, None)
+    сохранить = {k: [v[0] if isinstance(v, (list, tuple)) else v, (v[1] if isinstance(v, (list, tuple)) else [])]
+                 for k, v in members.items()}
+    await families_store.save(отдел, {"title": fam.get("title"), "mission": fam.get("mission"),
+                                      "profile": fam.get("profile"), "kind": fam.get("kind"),
+                                      "members": сохранить}, editor="методолог: " + кем)
+    return {"применено": True, "роль": цель, "значение": значение,
+            "цена": "семья перешла в ручной режим: сид кода её состав больше не догоняет — "
+                    "дальше состав отдела правится заявками методолога"}
+
+
+async def методолог_агент(actor: str = "система") -> dict:
+    """Методолог установки (ADR-084): агент семьи «methodology», рождённый системой,
+    живущий как любой агент. Один на установку — он общий, не в отделе (§3 плана)."""
+    from . import agent_store
+    живые = await agent_store.list_for(None, limit=500)
+    for a in живые:
+        if a.get("family") == "methodology" and a.get("role") == "methodologist" and a.get("status") == "deployed":
+            return a
+    from cli import ape
+    spec = ape.build_agent_spec("methodology", "methodologist")
+    навыки = [s["id"] for s in spec["skills"]]
+    граф = {"nodes": [{"id": "n-" + s, "kind": "skill", "skill": s} for s in навыки], "edges": []}
+    новая = await agent_store.save(
+        name="Методолог установки", audit_id="methodologist", version=await agent_store.next_version("methodologist"),
+        graph=граф, autonomy_max="A1", created_by=actor,
+        family="methodology", role="methodologist", source="authored",
+        verification={"verified": True, "mode": "system-seed",
+                      "почему": "рождён системой; работает заявками на конфигурацию через человека"})
+    await agent_store.set_status(новая["id"], "deployed")
+    await audit_store.record(actor, "methodologist.seed", новая["id"], {})
+    return await agent_store.get(новая["id"]) or новая

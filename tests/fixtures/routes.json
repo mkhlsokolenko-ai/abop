@@ -1066,5 +1066,13 @@
  [
   "DELETE",
   "/api/methodology/{fid}/matrix/{rid}"
+ ],
+ [
+  "POST",
+  "/api/methodology/{fid}/apply"
+ ],
+ [
+  "POST",
+  "/api/methodology/agent"
  ]
 ]

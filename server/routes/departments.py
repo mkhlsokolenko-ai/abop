@@ -156,3 +156,33 @@ async def matrix_drop(fid: str, rid: str, u: dict = Depends(user)) -> dict:
         await audit_store.record(u.get("name") or u.get("sub") or "dev", "methodology.matrix.drop",
                                  rid, {"отдел": fid})
     return {"ok": ок}
+
+
+@router.post("/api/methodology/{fid}/apply")
+async def methodology_apply(fid: str, body: dict, u: dict = Depends(user)) -> dict:
+    """Применить применимое расхождение сверки: только «роль_в_отделе» из ростера кода.
+    Правило_активно машиной не включается (несуществующий набор не создаётся из воздуха) —
+    отказ называет ручной шаг. Применение роли переводит семью в ручной режим — цена названа
+    в ответе, иначе сид кода и ручные правки спорили бы молча. manager+, ABAC, в журнал."""
+    require_level(u, "manager")
+    if not can_see_family(u, fid):
+        raise HTTPException(403, "отдел другого отдела")
+    расх = (body or {}).get("расхождение") or {}
+    if not isinstance(расх, dict) or not расх:
+        raise HTTPException(422, "нужно расхождение из сверки")
+    actor = u.get("name") or u.get("sub") or "dev"
+    итог = await methodology.применить(fid, расх, actor)
+    await audit_store.record(actor, "methodology.apply", fid,
+                             {"тип": расх.get("тип"), "пункт": расх.get("пункт"), "цель": расх.get("цель"),
+                              "применено": итог.get("применено"), "почему": итог.get("почему", "")})
+    return итог
+
+
+@router.post("/api/methodology/agent")
+async def methodology_agent_seed(u: dict = Depends(user)) -> dict:
+    """Сеять методолога установки (ADR-084): агент семьи «methodology», общий на установку.
+    Рождается системой, живёт как любой агент. manager+."""
+    require_level(u, "manager")
+    агент = await methodology.методолог_агент(u.get("name") or u.get("sub") or "dev")
+    return {"агент": {"id": агент["id"], "name": агент.get("name"), "family": агент.get("family"),
+                      "role": агент.get("role"), "status": агент.get("status")}}
