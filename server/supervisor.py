@@ -142,7 +142,12 @@ async def запустить_подзадачу(отдел: str, task_id: str, �
         return {"статус": "эскалация", "почему": "нет исполнителя с навыком"}
     job = await run_queue.enqueue(agent_id=исп["id"], actor=actor,
                                  payload={"contract_audit_id": исп.get("contract_audit_id") or "",
-                                          "use_cache": True, "user_context": "", "deliver_filter": "",
+                                          # кэш ОТКЛЮЧЁН осознанно: подзадача с DoD считается заново —
+                                          # кэш-хит старого поколения отдаёт неструктурированное
+                                          # (живой цикл 15.11) и валит DoD. Переиспользование
+                                          # артефактов — слои доски по точному ключу (шаг 4),
+                                          # а не кэш прогонов.
+                                          "use_cache": False, "user_context": "", "deliver_filter": "",
                                           "data_scope": {str(k): str(v) for k, v in (предмет or {}).items()} or None,
                                           "budget": None, "limits": None,
                                           "actor_sub": actor, "channel": "",

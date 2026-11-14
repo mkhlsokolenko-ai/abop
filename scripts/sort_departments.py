@@ -56,7 +56,7 @@ def решения(агенты: dict, ростер: dict) -> tuple[list, list]:
             отклонены.append(dict(р, отказ="агента в реестре нет"))
             continue
         роль_навыки = (((ростер.get(р["семья"]) or {}).get("members") or {}).get(р["роль"]) or (None, []))[1]
-        verdict = assignment_audit.проверка_по_ростеру(a.get("graph") or {}, р["роль"],
+        verdict = assignment_audit.проверка_по_ростеру(a.get("graph") or {}, р["семья"], р["роль"],
                                                        {р["роль"]: (р["роль"], роль_навыки)})
         if verdict["серьёзность"] == "crit":
             отклонены.append(dict(р, отказ="с новой ролью аудит назначения дал бы крит: " + verdict["причина"]))

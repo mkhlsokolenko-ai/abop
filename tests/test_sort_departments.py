@@ -32,7 +32,7 @@ def _граф(*skills: str) -> dict:
     "plan-prj2451.v1": ("management", "", ["plan-shift"]),
     "oddc-2026q3.v1": ("finance", "", ["oddc-build"]),
     "finance-sverka-2026.v2": ("audit", "auditor-1c", ["audit1c-checks", "audit1c-rank",
-                                                       "audit1c-root-cause", "sverka-report"]),
+                                                       "audit1c-root-cause", "sverka-report"]),  # ДО сортировки: была в audit
 }
 
 
@@ -42,12 +42,16 @@ def _агенты():
             for aid, (fam, role, sk) in ПРОД.items()}
 
 
-def test_роль_сверщика_есть_в_ростере_кода():
+def test_роль_сверщика_есть_в_семье_финансов():
+    """ADR-085: сверка — работа БУХГАЛТЕРИИ (семья finance), а не отдела «Аудит»:
+    иначе сверщики невидимы расчётчику (ABAC department=finance не видит audit)."""
     from cli import ape
-    members = ape.AGENT_FAMILIES["audit"]["members"]
-    assert "sverщик" in members
-    title, sk = members["sverщик"]
-    assert set(sk) == {"audit1c-checks", "audit1c-root-cause", "audit1c-rank", "sverka-report"}
+    members = ape.AGENT_FAMILIES["finance"]["members"]
+    assert "sverщик" in members and "auditor-1c" in members
+    assert "sverщик" not in ape.AGENT_FAMILIES["audit"]["members"]
+    assert "auditor-1c" not in ape.AGENT_FAMILIES["audit"]["members"]
+    assert set(members["sverщик"][1]) == {"audit1c-checks", "audit1c-root-cause", "audit1c-rank",
+                                          "sverka-report"}
 
 
 def test_сирот_навыков_нет():
@@ -81,5 +85,5 @@ def test_после_сортировки_аудитор_не_даёт_крита
     fams = {fid: {"members": fam["members"]} for fid, fam in ape.AGENT_FAMILIES.items()}
     for aid, a in агенты.items():
         members = (fams.get(a["family"]) or {}).get("members") or {}
-        v = проверка_по_ростеру(a["graph"], a["role"], members)
+        v = проверка_по_ростеру(a["graph"], a["family"], a["role"], members)
         assert v["серьёзность"] != "crit", f"{aid}: крит после сортировки — {v['причина']}"
