@@ -81,8 +81,8 @@ async def main() -> int:
     from server import matrix_store, reglament_store, tenancy
     tenant = tenancy.текущий()
     засеяно = 0
-    for ключ, подпроцесс, операция, текст in СТАДИИ:
-        await reglament_store.save_chunk(tenant, ключ, ПРОЦЕСС, подпроцесс, операция, текст,
+    for ключ, подпроцесс, текст in СТАДИИ:   # стадия и её условия — один чанк: операция не выделяется
+        await reglament_store.save_chunk(tenant, ключ, ПРОЦЕСС, подпроцесс, "стадия", текст,
                                          embedding=None, editor="сид методологии")
         засеяно += 1
     for ключ, имя, текст in ПРАВИЛА:
