@@ -17,8 +17,8 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from cli import ape
 
-from .. import access, audit_store, families_store, slava
-from ..deps import require_level, user
+from .. import access, audit_store, families_store, ika, slava
+from ..deps import can_see_family, require_level, user
 
 router = APIRouter()
 
@@ -196,6 +196,18 @@ async def families(u: dict = Depends(user)) -> dict:
                     "mission": f.get("mission") or "", "kind": f.get("kind") or "custom",
                     "builtin": bool(f.get("builtin")), "members": members})
     return {"families": out}
+
+
+@router.get("/api/families/{fid}/ika")
+async def family_ika(fid: str, дней: int = 30, u: dict = Depends(user)) -> dict:
+    """ИКА отдела (шаг 2 «Отделов агентов», docs/OTDELY_AGENTOV.md §7): индекс качества агентов
+    из машинных фактов, которые уже пишутся — принятие человеком и доведение (реестр находок),
+    first-time-right (очередь), формат (структуры навыков). Слагаемое без данных не ноль, а
+    «не покрыто, почему»; веса — данные вертикали (`ika_weight`) или умолчания, и источник
+    назван. Читается по ABAC семьи: чужой отдел не считается."""
+    if not can_see_family(u, fid):
+        raise HTTPException(403, "семья другого отдела")
+    return await ika.ика(fid, дней=max(1, min(дней, 365)))
 
 
 @router.post("/api/families")

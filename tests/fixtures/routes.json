@@ -257,6 +257,10 @@
  ],
  [
   "GET",
+  "/api/families/{fid}/ika"
+ ],
+ [
+  "GET",
   "/api/family/collections"
  ],
  [
