@@ -70,6 +70,12 @@ def решения(агенты: dict, ростер: dict) -> tuple[list, list]:
 
 async def main(argv: list) -> int:
     применять = "--apply" in argv
+    # Скрипт идёт внутрь контейнера через stdin (`docker exec -i python -`): sys.path свежего
+    # процесса не знает /app/cli, где живёт ростер. Локально путь не существует — и не мешает.
+    import os
+    for p in ("/app/cli",):
+        if os.path.isdir(p) and p not in sys.path:
+            sys.path.insert(0, p)
     from server import agent_store, assignment_audit, audit_store, families_store
     from cli import ape
     from server.config import settings
