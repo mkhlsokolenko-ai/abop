@@ -354,7 +354,7 @@ export async function mount(root, ctx) {
   async function пересчитать(к) {
     if (!к) return;
     if (сканИдёт) { toast("Скан уже идёт: «" + сканИдёт + "»", "warn"); return; }
-    const живые = agents.filter((a) => String(a.role || "") === "sverщик" && String(a.status || "") === "deployed")
+    const живые = agents.filter((a) => String(a.role || "") === "svershik" && String(a.status || "") === "deployed")
       .sort((x, y) => (y.version || 0) - (x.version || 0));
     if (!живые.length) {
       toast("Нет развёрнутого агента роли «Сверщик расхождений» — разверните его в этом отделе", "danger");

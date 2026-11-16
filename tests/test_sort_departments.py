@@ -57,10 +57,10 @@ def test_роль_сверщика_есть_в_семье_финансов():
     иначе сверщики невидимы расчётчику (ABAC department=finance не видит audit)."""
     from cli import ape
     members = ape.AGENT_FAMILIES["finance"]["members"]
-    assert "sverщик" in members and "auditor-1c" in members
-    assert "sverщик" not in ape.AGENT_FAMILIES["audit"]["members"]
+    assert "svershik" in members and "auditor-1c" in members
+    assert "svershik" not in ape.AGENT_FAMILIES["audit"]["members"]
     assert "auditor-1c" not in ape.AGENT_FAMILIES["audit"]["members"]
-    assert set(members["sverщик"][1]) == {"audit1c-checks", "audit1c-root-cause", "audit1c-rank",
+    assert set(members["svershik"][1]) == {"audit1c-checks", "audit1c-root-cause", "audit1c-rank",
                                           "sverka-report"}
 
 

@@ -1173,7 +1173,7 @@ AGENT_FAMILIES = {
             "auditor-1c": ("Аудитор данных в 1С", ["audit1c-extract", "audit1c-graph-build", "audit1c-match-weak",
                                                    "audit1c-checks", "audit1c-root-cause", "audit1c-rank",
                                                    "audit1c-explain", "sverka-report"]),
-            "sverщик": ("Сверщик расхождений", ["audit1c-checks", "audit1c-root-cause", "audit1c-rank",
+            "svershik": ("Сверщик расхождений", ["audit1c-checks", "audit1c-root-cause", "audit1c-rank",
                                                 "sverka-report"]),
         # супервайзер отдела (шаг 5 «Отделов агентов», ADR-083): сеется системой, живёт как любой
         # агент — версии, Пересмотр, паспорт, аудит назначения. Декомпозиция v1 — детерминированная
