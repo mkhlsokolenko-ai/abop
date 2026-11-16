@@ -33,6 +33,16 @@ def _граф(*skills: str) -> dict:
     "oddc-2026q3.v1": ("finance", "", ["oddc-build"]),
     "finance-sverka-2026.v2": ("audit", "auditor-1c", ["audit1c-checks", "audit1c-rank",
                                                        "audit1c-root-cause", "sverka-report"]),  # ДО сортировки: была в audit
+    # Слепки 16.11.2026 (решение владельца 15.11, ADR-085): вычитка клиента — работа Бухгалтерии,
+    # на проде строки агентов всё ещё audit — карта должна довести их до finance/auditor-1c.
+    "audit1c-holding-2026.v10": ("audit", "auditor-1c", ["audit1c-extract", "audit1c-graph-build",
+                                                          "audit1c-match-weak", "audit1c-checks",
+                                                          "audit1c-root-cause", "audit1c-rank",
+                                                          "audit1c-explain"]),
+    "audit1c-holding-2026.v12": ("audit", "auditor-1c", ["audit1c-extract", "audit1c-graph-build",
+                                                          "audit1c-match-weak", "audit1c-checks",
+                                                          "audit1c-root-cause", "audit1c-rank",
+                                                          "audit1c-explain"]),
 }
 
 
