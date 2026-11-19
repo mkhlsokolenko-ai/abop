@@ -668,6 +668,7 @@ function renderNav() {
   nav.innerHTML = railОтделыHTML() + railModules().map((m) => railBtn(m, m.id === active)).join("");
   nav.querySelectorAll("[data-id]").forEach((b) => { b.onclick = () => loadModule(b.dataset.id); });
   nav.querySelectorAll("[data-dept]").forEach((b) => { b.onclick = () => открытьОтдел(b.dataset.dept); });
+  nav.querySelectorAll("[data-deptfold]").forEach((b) => { b.onclick = toggleОтделы; });
 }
 
 // ── Отделы в рейле (оболочка v5): отделы — навигация первого класса, не вкладка внутри агентов ──
@@ -675,7 +676,8 @@ function renderNav() {
 // на старом сайдкаре бейджи честно «—», навигация не ломается.
 const ИКОНКА_ОТДЕЛА = { finance: "doc", audit: "search", management: "board", production: "chain" };
 let ОТДЕЛЫ = [];          // [{id, title, mission, ика}]
-let активный_отдел = "";  // подсветка рейла: кем открыт отдел (интент из оболочки)
+let активный_отдел = "";
+const мой_отдел_рейл = () => String(((ctx.user || {}) && (ctx.user.department || "")) || "");  // подсветка рейла: кем открыт отдел (интент из оболочки)
 async function loadОтделы() {
   try {
     const fams = await api("/api/modules/agents/families");
@@ -691,8 +693,28 @@ async function loadОтделы() {
   } catch { ОТДЕЛЫ = []; }
   renderNav();
 }
+const LS_СВОРН = "ape_dept_rail_fold";
+function отделыСвернуты() { try { return localStorage.getItem(LS_СВОРН) === "1"; } catch { return false; } }
+function toggleОтделы() {
+  try { localStorage.setItem(LS_СВОРН, отделыСвернуты() ? "0" : "1"); } catch { /* приватное окно */ }
+  renderNav();
+}
 function railОтделыHTML() {
   if (!ОТДЕЛЫ.length) return "";
+  // Сворачивание (20.11): отделы в рейле много места занимают у того, чей отдел один. Шапка —
+  // кнопка: клик складывает/разворачивает, выбор переживает перезапуск. В свернутом виде —
+  // только шапка со счётчиком; клик по отделу всегда возвращает полный вид.
+  const сверн = отделыСвернуты();
+  if (сверн) {
+    const м = мой_отдел_рейл();
+    const мой = (м && м !== "*" && ОТДЕЛЫ.some((о) => о.id === м)) ? м : "";
+    const з = мой ? ((ОТДЕЛЫ.find((о) => о.id === мой) || {}).ика) : null;
+    const кл = з == null ? "" : з >= 90 ? " bdg-ok" : з >= 70 ? " bdg-mid" : " bdg-sev";
+    return `<button type="button" class="navitem" data-deptfold="1" title="Отделы (${ОТДЕЛЫ.length}) — развернуть"
+        aria-expanded="false" style="justify-content:flex-start;gap:9px">
+      <span class="glyph" aria-hidden="true">${icon("right", "lg")}</span><span class="lbl">Отделы · ${ОТДЕЛЫ.length}</span>
+      ${мой ? `<span class="bdg${кл}" title="ИКА моего отдела">${з == null ? "—" : з}</span>` : `<span class="bdg">${ОТДЕЛЫ.length}</span>`}</button>`;
+  }
   const кнопки = ОТДЕЛЫ.map((о) => {
     const on = active === "agents" && активный_отдел === о.id;
     const з = о.ика;
@@ -701,7 +723,10 @@ function railОтделыHTML() {
     return `<button class="navitem${on ? " on" : ""}" data-dept="${esc(о.id)}" title="${подпись}" aria-label="Отдел: ${подпись}" aria-current="${on ? "page" : "false"}">
       <span class="glyph" aria-hidden="true">${icon(ИКОНКА_ОТДЕЛА[о.id] || "agents")}</span><span class="lbl">${esc(о.title)}</span><span class="bdg${кл}">${з == null ? "—" : з}</span></button>`;
   }).join("");
-  return `<div class="cap">Отделы</div>` + кнопки + `<div class="cap" style="margin-top:9px">Инструменты</div>`;
+  return `<button type="button" class="navitem" data-deptfold="1" title="Отделы — свернуть"
+      aria-expanded="true" style="justify-content:flex-start;gap:9px;margin-bottom:2px">
+    <span class="glyph" aria-hidden="true">${icon("down", "lg")}</span><span class="lbl">Отделы · ${ОТДЕЛЫ.length}</span></button>`
+    + кнопки + `<div class="cap" style="margin-top:9px">Инструменты</div>`;
 }
 function открытьОтдел(id) {
   активный_отдел = id;
