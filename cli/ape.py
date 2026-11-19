@@ -1173,8 +1173,12 @@ AGENT_FAMILIES = {
             "auditor-1c": ("Аудитор данных в 1С", ["audit1c-extract", "audit1c-graph-build", "audit1c-match-weak",
                                                    "audit1c-checks", "audit1c-root-cause", "audit1c-rank",
                                                    "audit1c-explain", "sverka-report"]),
-            "svershik": ("Сверщик расхождений", ["audit1c-checks", "audit1c-root-cause", "audit1c-rank",
+            "svershik": ("Сверщик расхождений", ["audit1c-extract", "audit1c-graph-build",
+                                                "audit1c-checks", "audit1c-root-cause", "audit1c-rank",
                                                 "sverka-report"]),
+            # заявка методолога 19.11: extract+graph-build возвращены роли — их вход (doc1c,
+            # audit1c_live_docs) живой вычиткой клиентов производится (4323 записи Жигулёвой),
+            # а без graph-build навык checks скипался по необеспеченному входу «граф».
         # супервайзер отдела (шаг 5 «Отделов агентов», ADR-083): сеется системой, живёт как любой
         # агент — версии, Пересмотр, паспорт, аудит назначения. Декомпозиция v1 — детерминированная
         # (planner по контрактам), навыки роли — методика проверки и разбор задачи.

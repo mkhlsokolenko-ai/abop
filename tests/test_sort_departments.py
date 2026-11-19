@@ -60,8 +60,8 @@ def test_роль_сверщика_есть_в_семье_финансов():
     assert "svershik" in members and "auditor-1c" in members
     assert "svershik" not in ape.AGENT_FAMILIES["audit"]["members"]
     assert "auditor-1c" not in ape.AGENT_FAMILIES["audit"]["members"]
-    assert set(members["svershik"][1]) == {"audit1c-checks", "audit1c-root-cause", "audit1c-rank",
-                                          "sverka-report"}
+    assert set(members["svershik"][1]) == {"audit1c-extract", "audit1c-graph-build", "audit1c-checks",
+                                          "audit1c-root-cause", "audit1c-rank", "sverka-report"}
 
 
 def test_сирот_навыков_нет():
