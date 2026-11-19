@@ -1042,4 +1042,16 @@ export async function mount(root, ctx) {
   // пугать тостом того, кто открыл каталог агентов.
   try { families = await api(A + "/families"); if (!Array.isArray(families)) families = []; } catch (e) { families = []; }
   await loadAgents(); render();
+  // Интенты оболочки: клик по отделу в рейле (первое открытие — через takeIntent, повторное —
+  // событием ape:intent на уже смонтированном разделе).
+  const открытьИнтент = async (инт) => {
+    if (!инт || !инт.dept) return;
+    tab = "dept"; deptSel = инт.dept; deptГотово = true;
+    render();
+    await Promise.all([загрузитьИКАвсех(), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов(), загрузитьЗадачи()]);
+    render();
+  };
+  const инт0 = (typeof ctx.takeIntent === "function" ? ctx.takeIntent() : null) || (root.intent || null);
+  root.addEventListener("ape:intent", (e) => { открытьИнтент((e || {}).detail); });
+  if (инт0 && инт0.dept) await открытьИнтент(инт0);
 }

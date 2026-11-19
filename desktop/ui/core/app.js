@@ -665,8 +665,48 @@ function railBtn(m, on) {
 }
 function renderNav() {
   const nav = $("railNav"); if (!nav) return;
-  nav.innerHTML = railModules().map((m) => railBtn(m, m.id === active)).join("");
+  nav.innerHTML = railОтделыHTML() + railModules().map((m) => railBtn(m, m.id === active)).join("");
   nav.querySelectorAll("[data-id]").forEach((b) => { b.onclick = () => loadModule(b.dataset.id); });
+  nav.querySelectorAll("[data-dept]").forEach((b) => { b.onclick = () => открытьОтдел(b.dataset.dept); });
+}
+
+// ── Отделы в рейле (оболочка v5): отделы — навигация первого класса, не вкладка внутри агентов ──
+// Светофор ИКА — те же границы, что у автономии (ADR-085). Ручка ИКА приезжала с релизом 1.0.41:
+// на старом сайдкаре бейджи честно «—», навигация не ломается.
+const ИКОНКА_ОТДЕЛА = { finance: "doc", audit: "search", management: "board", production: "chain" };
+let ОТДЕЛЫ = [];          // [{id, title, mission, ика}]
+let активный_отдел = "";  // подсветка рейла: кем открыт отдел (интент из оболочки)
+async function loadОтделы() {
+  try {
+    const fams = await api("/api/modules/agents/families");
+    const список = (Array.isArray(fams) ? fams : [])
+      .map((f) => ({ id: f.id, title: f.title || f.id, mission: f.mission || "", ика: null }));
+    await Promise.all(список.map(async (о) => {
+      try {
+        const и = await api("/api/modules/agents/families/ika?family=" + encodeURIComponent(о.id) + "&дней=30");
+        о.ика = (и || {})["ика"] ?? null;
+      } catch { /* бейдж «—»: число без данных лучше сломанной навигации */ }
+    }));
+    ОТДЕЛЫ = список;
+  } catch { ОТДЕЛЫ = []; }
+  renderNav();
+}
+function railОтделыHTML() {
+  if (!ОТДЕЛЫ.length) return "";
+  const кнопки = ОТДЕЛЫ.map((о) => {
+    const on = active === "agents" && активный_отдел === о.id;
+    const з = о.ика;
+    const кл = з == null ? "" : з >= 90 ? " bdg-ok" : з >= 70 ? " bdg-mid" : " bdg-sev";
+    const подпись = `${esc(о.title)}${з == null ? "" : " — ИКА " + з}`;
+    return `<button class="navitem${on ? " on" : ""}" data-dept="${esc(о.id)}" title="${подпись}" aria-label="Отдел: ${подпись}" aria-current="${on ? "page" : "false"}">
+      <span class="glyph" aria-hidden="true">${icon(ИКОНКА_ОТДЕЛА[о.id] || "agents")}</span><span class="lbl">${esc(о.title)}</span><span class="bdg${кл}">${з == null ? "—" : з}</span></button>`;
+  }).join("");
+  return `<div class="cap">Отделы</div>` + кнопки + `<div class="cap" style="margin-top:9px">Инструменты</div>`;
+}
+function открытьОтдел(id) {
+  активный_отдел = id;
+  try { localStorage.setItem("ape_dept_sel", id); } catch { /* приватное окно */ }
+  loadModule("agents", { dept: id });
 }
 
 // Свёрнутый рейл: место под работу на небольшом экране. Выбор человека переживает перезапуск —
@@ -1140,11 +1180,25 @@ async function boot() {
   try { ПРОФИЛЬ = await api("/api/vertical") || ПРОФИЛЬ; } catch { /* офлайн: оболочка полная */ }
   renderNav(); renderQuick(); renderVertical();
   $("panel").innerHTML = "";
+  // Первый экран v5: свой отдел — сразу к делу. Загрузка отделов ДО выбора экрана: рейл рисуется
+  // полным, человек не видит схлопывающуюся навигацию (тот же принцип, что с профилем вертикали).
+  await loadОтделы();
   const старт = (вертикаль() || {})["начальный_экран"] || "";
   const доступен = (id) => railModules().some((m) => m.id === id);
-  if (MODULES.length && старт && доступен(старт)) loadModule(старт);
-  else if (MODULES.length) loadModule(MODULES.find((m) => m.id === "chat") ? "chat" : MODULES[0].id);
-  else $("panel").innerHTML = `<div style="padding:24px;display:flex;flex-direction:column;gap:10px"><div style="font-weight:700">Модули не найдены</div><div class="faint" style="font-size:12.5px">Движок запущен, но не отдал список разделов. Перезапустите приложение.</div></div>`;
+  let открыт = false;
+  if (ОТДЕЛЫ.length && доступен("agents")) {
+    const мой = String(((ctx.user || {}) && (ctx.user.department || "")) || "");
+    let цель = "";
+    if (мой && мой !== "*") цель = мой;
+    else { try { цель = localStorage.getItem("ape_dept_sel") || ""; } catch { /* приватное окно */ } }
+    if (!цель || !ОТДЕЛЫ.some((о) => о.id === цель)) цель = ОТДЕЛЫ[0].id;
+    активный_отдел = цель;
+    loadModule("agents", { dept: цель });
+    открыт = true;
+  }
+  if (!открыт && MODULES.length && старт && доступен(старт)) loadModule(старт);
+  else if (!открыт && MODULES.length) loadModule(MODULES.find((m) => m.id === "chat") ? "chat" : MODULES[0].id);
+  else if (!MODULES.length) $("panel").innerHTML = `<div style="padding:24px;display:flex;flex-direction:column;gap:10px"><div style="font-weight:700">Модули не найдены</div><div class="faint" style="font-size:12.5px">Движок запущен, но не отдал список разделов. Перезапустите приложение.</div></div>`;
   // Строка живой работы: видна из любого раздела, опрашивается с растущей паузой. Ставим ПОСЛЕ
   // ветки if/else — первая попытка воткнула вызов между `if` и `else`, и модуль перестал
   // разбираться вовсе. Поймал тест на разбор ES-модуля (`node --check`).
