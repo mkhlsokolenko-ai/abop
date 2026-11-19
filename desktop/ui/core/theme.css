@@ -792,3 +792,15 @@ button:disabled { cursor: default; }
   .dept-rail { width: 100%; flex-direction: row; flex-wrap: wrap; align-items: center; }
   .dept-rail .dnav { width: auto; }
 }
+
+/* ── Пульт отдела (мокап 20.11): общий словарь значимости для всех разделов ─────────────────
+   Полоса значимости слева и тон серьёзности — ОДИН словарь на находку везде: на карточке
+   отдела, в «Решениях», в «Сверке». Цвета из токенов темы (не литералы) — светлая/тёмная
+   темы держатся сами. */
+.sevbar { width: 4px; border-radius: 2px; flex-shrink: 0; align-self: stretch; }
+.sevbar.h { background: var(--danger-ink); }
+.sevbar.m { background: var(--warn-ink); }
+.sevbar.l { background: var(--line-2); }
+.sevtext.h { color: var(--danger-ink); font-weight: 700; }
+.sevtext.m { color: var(--warn-ink); font-weight: 600; }
+.agent-chip { color: #fff; background-image: var(--grad); border-color: transparent; font-weight: 700; }

@@ -232,7 +232,10 @@ export async function mount(root, ctx) {
       Number(г["отложено"] || 0) ? `отложено: ${г["отложено"]}` : "",
     ].filter(Boolean).join(" · ");
     const свои = находки.filter((н) => String(н["код"] || "") === г["код"]);
-    return `<div class="card">
+    const т = String(г["серьёзность"] || "").toLowerCase();
+    const бордер = т.startsWith("выс") ? "border-left:3px solid var(--danger-ink);" : (
+      т.startsWith("сред") ? "border-left:3px solid var(--warn-ink);" : "");
+    return `<div class="card" style="${бордер}">
       <div class="card-head">
         <span class="tag${серьёзностьКласс(г["серьёзность"])}">${esc(г["серьёзность"] || "")}</span>
         <span class="t">${esc(г["код"])}${г["название"] ? " · " + esc(г["название"]) : ""}</span>

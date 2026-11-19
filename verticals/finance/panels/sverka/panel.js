@@ -415,7 +415,7 @@ export async function mount(root, ctx) {
       <td class="mono">${esc(знач(н["код"]))}</td>
       <td style="font-size:12px">${esc(String(н["название"] || ""))}</td>
       <td class="mono" style="font-size:11.5px;color:var(--ink-3)">${esc(знач(н["предмет"]))}</td>
-      <td>${esc(String(н["серьёзность"] || ""))}</td>
+      <td><span class="${String(н["серьёзность"] || "").toLowerCase().startsWith("выс") ? "sevtext h" : (String(н["серьёзность"] || "").toLowerCase().startsWith("сред") ? "sevtext m" : "")}">${esc(String(н["серьёзность"] || ""))}</span></td>
       <td style="font-size:12px">${esc(String(н["способ"] || "—"))}</td>
       <td style="font-size:11.5px;color:var(--ink-2)">${esc(String(н["основание_способа"] || н["основание"] || ""))}</td>
       <td class="mono" style="font-size:11.5px">${esc(знач(н["версия_политики"]))}</td>
