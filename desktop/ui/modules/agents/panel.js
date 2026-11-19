@@ -5,7 +5,7 @@
 // UX-аудит 25.09: D-H6 — «▶ Запустить» открывает чат и запускает агента там (одна поверхность
 // результата, HITL и «сделать регулярной» в карточке чата); D-C1 — 401 показывается как «войдите»,
 // а не как «у вас нет агентов»; D-H9 — удаление через модалку подтверждения; D-H14 — токены цветов.
-import { CARD, head, card } from "../../core/cards.js";
+import { CARD, head, card, kpis } from "../../core/cards.js";
 import { icon } from "../../core/icons.js";
 // Стили — из ядра: шесть разных карточек и пять разных подписей в панелях были
 // расхождением, а не выбором (DIZAJN, раздел 2).
@@ -328,7 +328,7 @@ export async function mount(root, ctx) {
         : (families.some((f) => f.id === сохран) ? сохран : ((families[0] || {}).id || ""));
     }
     render();
-    await Promise.all([загрузитьИКАвсех(), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов(), загрузитьЗадачи(), загрузитьПринятые()]);
+    await Promise.all([загрузитьИКАвсех(), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов(), загрузитьЗадачи(), загрузитьПринятые(), загрузитьПоля()]);
     render();
   }
 
@@ -336,7 +336,7 @@ export async function mount(root, ctx) {
     deptSel = id; фирма = ""; раскрыта = ""; раскрыта_задача = "";
     try { localStorage.setItem("ape_dept_sel", id); } catch { /* приватное окно */ }
     render();
-    await Promise.all([загрузитьОчередь(), загрузитьNCR(), загрузитьЗадачи(), загрузитьПринятые()]);
+    await Promise.all([загрузитьОчередь(), загрузитьNCR(), загрузитьЗадачи(), загрузитьПринятые(), загрузитьПоля()]);
     render();
   }
 
@@ -472,24 +472,6 @@ export async function mount(root, ctx) {
   }
 
   // ── разметка рабочей области ──────────────────────────────────────────────────────────────
-  function рейлОтделов() {
-    const бейдж = (f) => {
-      if (старыйСайдкар) return "";
-      const и = (ика_карты[f.id] || {})["ика"];
-      return `<span class="tag${светофорКласс(и)}" title="ИКА отдела · окно 30 дней${и == null ? " · не покрыто: нет прогонов или решений" : ""}">${и == null ? "—" : esc(String(и))}</span>`;
-    };
-    return `<div class="dept-rail">
-      <span class="ape-label">отделы</span>
-      ${families.map((f) => `<button type="button" class="btn sm dnav${f.id === deptSel ? " primary" : ""}" data-ds="${esc(f.id)}"
-           style="justify-content:flex-start;width:100%;text-align:left;gap:9px" aria-pressed="${f.id === deptSel}">
-          <span style="width:18px;display:inline-grid;place-items:center;flex-shrink:0">${иконкаОтдела(f)}</span>
-          <b style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px">${esc(f.title || f.id)}</b>
-          ${бейдж(f)}
-        </button>`).join("")}
-      <span style="font-size:10.5px;color:var(--ink-3);padding:4px 2px;line-height:1.5">светофор — ИКА отдела: ≥ 90 зелёный, ниже 70 красный, «—» не покрыто</span>
-    </div>`;
-  }
-
   // Полоса здоровья: ИКА большим числом (светофор красит), слагаемые — барами. Расход, веса и
   // прогонов — в карточке отдела по кнопке: разбор v5 (#3) — в ежедневном поле зрения только
   // главные числа.
@@ -525,6 +507,7 @@ export async function mount(root, ctx) {
       <div style="display:grid;grid-template-columns:repeat(${Math.max(ключи.length, 1)},1fr);gap:6px 14px;min-width:0">${бары}</div>
       <div style="display:flex;flex-direction:column;gap:6px">
         ${ncrЧисло == null ? "" : `<button type="button" class="btn sm${ncrЧисло ? " danger" : " ghost"}" id="ncrBtn" title="Несоответствия аудитора качества — список по клику">${ncrЧисло ? "NCR " + ncrЧисло : "NCR чисто"}</button>`}
+        ${поляСчёт ? `<button type="button" class="btn sm mid" id="fieldsBtn" title="Поля первички ниже порога — ждут вашего ввода в «Решениях»">первичка: ${поляСчёт} докум.</button>` : ""}
         <button type="button" class="btn sm ghost" id="deptCard" title="Карточка отдела: аудит назначения, расход, состав ролей">карточка</button>
       </div>
     </div>`;
@@ -691,6 +674,17 @@ export async function mount(root, ctx) {
     </div>`;
   }
 
+  // Поля первички ниже порога — то, что размазано по «Решениям», но ждёт именно этот отдел.
+  let поляСчёт = null;
+  async function загрузитьПоля() {
+    if (!deptSel) return;
+    try {
+      const ф = String(((клиентыРеестр.find((x) => (x["организация"] || x["название"] || x.id) === фирма) || {})["организация"]) || "");
+      const р = await api("/api/modules/decisions/fields" + (ф ? "?organisation=" + encodeURIComponent(ф) : ""));
+      поляСчёт = Number(((р["контроль"] || {})["документов"]) ?? 0);
+    } catch (e) { поляСчёт = null; }
+  }
+
   // ── петля доведения: принятые находки и точечная проверка ─────────────────────────────────
   async function загрузитьПринятые() {
     if (!deptSel) return;
@@ -815,19 +809,37 @@ export async function mount(root, ctx) {
     </div>`;
   }
 
+  // Польза отдела (сводка реестра — та же, что в «Решениях», считает сервер): два числа
+  // дохода человека и два честных процента. Здесь её место — на карточке отдела, а не размазанной
+  // по разделам.
+  function пользаБлок() {
+    const в = сводкаОч || {};
+    if (!в["всего"]) return "";
+    const числа = [
+      [String(в["всего"] || 0), "найдено всего", "реестр отдела, все прогоны"],
+      [String(в["подтверждено"] || 0), "признано", "решениями человека по правилам"],
+      [String(в["исправлено"] || 0), "исправлено", "не воспроизводится после правки в 1С"],
+      [в["доля_подтверждения"] === "" || в["доля_подтверждения"] == null ? "—"
+        : String(в["доля_подтверждения"]) + " %", "доля признания", "признано / решённых"],
+    ];
+    return `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">${kpis(числа.map(([ч, п, о]) => ({
+      "число": ч, "подпись": п, "откуда": о,
+      "тон": п === "исправлено" && Number(ч || 0) > 0 ? "good" : ""})))}</div>`;
+  }
+
   function renderОтделы() {
     if (!families.length) return `<div class="faint" style="padding:20px">Ростер семей не загрузился — обновите список.</div>`;
     const f = families.find((x) => x.id === deptSel) || families[0];
-    return `<div class="dept-wrap">
-      ${рейлОтделов()}
-      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:14px">
-        ${полосаЗдоровья(f)}
-        <div class="dept-cols">
-          ${очередьБлок()}
-          ${фирмыБлок()}
-        </div>
-        ${задачаБлок()}
+    // Отделы живут в рейле оболочки (слева) — дубль на карточке удалён (19.11): место ушло
+    // данным, которые были размазаны по «Решениям» (польза) и первичке.
+    return `<div style="min-width:0;display:flex;flex-direction:column;gap:14px">
+      ${полосаЗдоровья(f)}
+      ${пользаБлок()}
+      <div class="dept-cols">
+        ${очередьБлок()}
+        ${фирмыБлок()}
       </div>
+      ${задачаБлок()}
     </div>`;
   }
 
@@ -862,6 +874,7 @@ export async function mount(root, ctx) {
       b.disabled = false;
     }));
     const nb = root.querySelector("#ncrBtn"); if (nb) nb.onclick = () => показатьNCR(f);
+    const fb = root.querySelector("#fieldsBtn"); if (fb) fb.onclick = () => ctx.open("decisions");
     const dc = root.querySelector("#deptCard"); if (dc) dc.onclick = () => openDeptCard(f);
     const hb = root.querySelector("#histBtn"); if (hb) hb.onclick = () => ctx.open("decisions");
     const ir = root.querySelector("#deptIkaRetry");
@@ -981,7 +994,7 @@ export async function mount(root, ctx) {
     if (tab === "dept") привязатьОтделы();
     root.querySelector("#refresh").onclick = async () => {
       await loadAgents();
-      if (tab === "dept") await Promise.all([загрузитьИКАвсех(), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов(), загрузитьЗадачи(), загрузитьПринятые()]);
+      if (tab === "dept") await Promise.all([загрузитьИКАвсех(), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов(), загрузитьЗадачи(), загрузитьПринятые(), загрузитьПоля()]);
       render();
     };
     const bb = root.querySelector("#build"); if (bb) bb.onclick = async () => { if (!families.length) await loadFamilies(); bFamily = ""; bSkills = new Set(); bName = ""; editingId = null; bOutput = ""; mode = "builder"; render(); };
@@ -1138,7 +1151,7 @@ export async function mount(root, ctx) {
     if (!инт || !инт.dept) return;
     tab = "dept"; deptSel = инт.dept; deptГотово = true;
     render();
-    await Promise.all([загрузитьИКАвсех(), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов(), загрузитьЗадачи(), загрузитьПринятые()]);
+    await Promise.all([загрузитьИКАвсех(), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов(), загрузитьЗадачи(), загрузитьПринятые(), загрузитьПоля()]);
     render();
   };
   const инт0 = (typeof ctx.takeIntent === "function" ? ctx.takeIntent() : null) || (root.intent || null);
