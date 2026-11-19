@@ -266,6 +266,12 @@ def dept_subtask_retry(fid: str, tid: str, sid: str) -> dict:
                 + "/retry", body={}, timeout=60) or {}
 
 
+def findings_verify(finding_id: str) -> dict:
+    """Точечная проверка исправления: вычитка клиента → сверка → воспроизводимость находки."""
+    return _req("POST", "/api/registry/findings/" + urllib.request.quote(str(finding_id))
+                + "/verify", body={}, timeout=240) or {}
+
+
 def recipes() -> list:
     """Рецепты Data Plane (источник→entity) — какие данные доступны агенту."""
     r = _req("GET", "/api/data/recipes", timeout=30)
@@ -612,7 +618,7 @@ def vertical_activate(vid: str) -> dict:
 
 
 def findings_open(project: str = "", process: str = "", organisation: str = "",
-                  отдел: str = "") -> dict:
+                  отдел: str = "", состояние: str = "найдено") -> dict:
     """Находки реестра без решения: что нашёл расчёт и ждёт слова человека.
 
     Отдельно от очереди подтверждений: заявка требует «отправить или нет», находка — «это
@@ -633,7 +639,7 @@ def findings_open(project: str = "", process: str = "", organisation: str = "",
         запрос.append("отдел=" + urllib.parse.quote(str(отдел)))
     # Спрашиваем нерешённые: подтверждённые и отложенные находки — уже работа, а не вопрос к
     # человеку. Группы по причине приходят тем же ответом и считаются по ВСЕМ открытым.
-    запрос.append("state=найдено")
+    запрос.append("state=" + urllib.parse.quote(str(состояние) or "найдено"))
     r = _req("GET", "/api/registry/findings?" + "&".join(запрос), timeout=25)
     return r if isinstance(r, dict) else {"findings": r or [], "сводка": {}}
 

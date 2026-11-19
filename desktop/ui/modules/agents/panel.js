@@ -32,6 +32,9 @@ export async function mount(root, ctx) {
   // Задачи отдела (шаг 5): дверь супервайзера в десктопе. Сайдкар 1.0.43+ — с ручками задач;
   // на старом секция честно говорит про релиз, а не делает вид.
   let задачи = [], задачаТекст = "", раскрыта_задача = "", задачи_умеет = null, busyЗ = "";
+  // Петля доведения (№5): принятые находки, которых человек исправил в 1С, ждут точечной
+  // проверки — вычитка + сверка + воспроизводимость конкретной находки. Сайдкар 1.0.44+.
+  let принятые = [], busyП = "";
   const МОЙ_ОТДЕЛ = String(((ctx.user || {}).department) || "");
   // Иконки отделов (разбор v5, #5): сканирование рейла без чтения. Иконка — из спрайта ядра,
   // не символ шрифта; незнакомая семья получает нейтральный значок, а не случайный.
@@ -325,7 +328,7 @@ export async function mount(root, ctx) {
         : (families.some((f) => f.id === сохран) ? сохран : ((families[0] || {}).id || ""));
     }
     render();
-    await Promise.all([загрузитьИКАвсех(), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов(), загрузитьЗадачи()]);
+    await Promise.all([загрузитьИКАвсех(), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов(), загрузитьЗадачи(), загрузитьПринятые()]);
     render();
   }
 
@@ -333,7 +336,7 @@ export async function mount(root, ctx) {
     deptSel = id; фирма = ""; раскрыта = ""; раскрыта_задача = "";
     try { localStorage.setItem("ape_dept_sel", id); } catch { /* приватное окно */ }
     render();
-    await Promise.all([загрузитьОчередь(), загрузитьNCR(), загрузитьЗадачи()]);
+    await Promise.all([загрузитьОчередь(), загрузитьNCR(), загрузитьЗадачи(), загрузитьПринятые()]);
     render();
   }
 
@@ -359,7 +362,7 @@ export async function mount(root, ctx) {
     busyН = "";
     // ИКА пересчитывается сразу после слова человека: «вечером вижу, сколько я исправил»
     // должно работать и в 14:32, без ожидания следующего окна.
-    await Promise.all([загрузитьИКА(deptSel), загрузитьОчередь(), загрузитьNCR()]);
+    await Promise.all([загрузитьИКА(deptSel), загрузитьОчередь(), загрузитьNCR(), загрузитьПринятые()]);
     render();
   }
 
@@ -609,9 +612,24 @@ export async function mount(root, ctx) {
     } else {
       тело = очередь.map((н, i) => находкаСтрокой(н, i === 0)).join(`<div style="height:8px"></div>`);
     }
+    // Петля доведения: принятые находки с кнопкой точечной проверки. Только когда есть что
+    // проверять — пустой раздел не шумит на ежедневном (принцип «редкое не шумит»).
+    let петля = "";
+    if (принятые.length) {
+      const строки = принятые.map((н) => `<div style="display:flex;gap:8px;align-items:center;padding:8px 11px">
+          <span class="tag${серьёзностьКлассН(н["серьёзность"])}">${esc(н["код"] || "—")}</span>
+          <span style="flex:1;min-width:0;font-size:12px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(н["название"] || "")} · ${esc(н["организация"] || "")}</span>
+          <button type="button" class="btn sm verify" data-vf="${esc(н.id)}" ${busyП === н.id ? "disabled" : ""} title="Вычитать базу, пересчитать сверку и проверить: воспроизводится ли находка">${busyП === н.id ? "проверяю…" : "Исправлено — проверить"}</button>
+        </div>`).join("");
+      петля = `<div class="card" style="padding:10px 13px;display:flex;flex-direction:column;gap:4px">
+        <span class="ape-label">принято — проверка исправления (вычитка + сверка, до минуты)</span>
+        ${строки}
+      </div>`;
+    }
     return `<div style="display:flex;flex-direction:column;gap:8px;min-width:0">
       <span class="ape-label">${esc(заголовок)}</span>
       ${тело}
+      ${петля}
     </div>`;
   }
 
@@ -670,6 +688,34 @@ export async function mount(root, ctx) {
         <button type="button" class="btn sm" id="goClients">Подключить</button>
       </div>
     </div>`;
+  }
+
+  // ── петля доведения: принятые находки и точечная проверка ─────────────────────────────────
+  async function загрузитьПринятые() {
+    if (!deptSel) return;
+    try {
+      const фильтр = ["отдел=" + encodeURIComponent(deptSel), "состояние=подтверждено"];
+      const р = await api("/api/modules/decisions/findings?" + фильтр.join("&"));
+      принятые = (р.findings || []).filter((н) => String(н["состояние"] || "") === "подтверждено").slice(0, 10);
+    } catch (e) { принятые = []; }
+  }
+
+  async function проверитьИсправление(id) {
+    busyП = id; render();
+    try {
+      const р = await api("/api/modules/decisions/findings/" + encodeURIComponent(id) + "/verify",
+        { method: "POST", body: "{}" });
+      if (р["вердикт"] === "исправлено") {
+        toast("Исправлено — доведение отдела учтено при следующем подсчёте ИКА", "ok");
+      } else {
+        toast("Ещё воспроизводится: " + (р["дальше"] || "способ актуален"), "warn");
+      }
+    } catch (e) {
+      toast(e && e.status === 404 ? "Проверка исправления появится в релизе 1.0.44 — обновите приложение" : humanError(e), "danger");
+    }
+    busyП = "";
+    await Promise.all([загрузитьПринятые(), загрузитьОчередь(), загрузитьИКА(deptSel)]);
+    render();
   }
 
   // ── разметка задач отдела ──────────────────────────────────────────────────────────────────
@@ -794,6 +840,7 @@ export async function mount(root, ctx) {
       b.onclick = откр;
       b.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); откр(); } };
     });
+    root.querySelectorAll(".verify").forEach((b) => (b.onclick = () => проверитьИсправление(b.dataset.vf)));
     root.querySelectorAll(".subretry").forEach((b) => (b.onclick = (e) => {
       e.stopPropagation();   // клик по «Повторить» не должен сворачивать карточку задачи
       вернутьПодзадачу(b.dataset.tid, b.dataset.sid);
@@ -891,7 +938,7 @@ export async function mount(root, ctx) {
     if (tab === "dept") привязатьОтделы();
     root.querySelector("#refresh").onclick = async () => {
       await loadAgents();
-      if (tab === "dept") await Promise.all([загрузитьИКАвсех(), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов(), загрузитьЗадачи()]);
+      if (tab === "dept") await Promise.all([загрузитьИКАвсех(), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов(), загрузитьЗадачи(), загрузитьПринятые()]);
       render();
     };
     const bb = root.querySelector("#build"); if (bb) bb.onclick = async () => { if (!families.length) await loadFamilies(); bFamily = ""; bSkills = new Set(); bName = ""; editingId = null; bOutput = ""; mode = "builder"; render(); };
@@ -1048,7 +1095,7 @@ export async function mount(root, ctx) {
     if (!инт || !инт.dept) return;
     tab = "dept"; deptSel = инт.dept; deptГотово = true;
     render();
-    await Promise.all([загрузитьИКАвсех(), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов(), загрузитьЗадачи()]);
+    await Promise.all([загрузитьИКАвсех(), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов(), загрузитьЗадачи(), загрузитьПринятые()]);
     render();
   };
   const инт0 = (typeof ctx.takeIntent === "function" ? ctx.takeIntent() : null) || (root.intent || null);

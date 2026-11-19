@@ -110,7 +110,7 @@ def quality(organisation: str = "") -> dict:
 
 @router.get("/findings")
 def findings(project: str = "", process: str = "", organisation: str = "",
-             отдел: str = "") -> dict:
+             отдел: str = "", состояние: str = "найдено") -> dict:
     """Находки реестра, ждущие решения: «это проблема» или «так и должно быть».
 
     Раньше находка жила внутри прогона: чтобы её найти, надо было помнить, какой прогон её родил.
@@ -121,7 +121,7 @@ def findings(project: str = "", process: str = "", organisation: str = "",
     и все счётчики ответа.
     """
     try:
-        return abop.findings_open(project, process, organisation, отдел)
+        return abop.findings_open(project, process, organisation, отдел, состояние)
     except Exception as ex:  # noqa: BLE001
         raise _ошибка(ex) from ex
 
@@ -147,6 +147,15 @@ def finding_decide(finding_id: str, body: НаходкаIn) -> dict:
                                                           body.почему, body.до)}
     except Exception as ex:  # noqa: BLE001
         raise _ошибка(ex) from ex
+
+
+@router.post("/findings/{finding_id}/verify")
+def findings_verify(finding_id: str):
+    """Точечная проверка исправления: вычитка → сверка → вердикт (до 3 мин: вычитка до минуты)."""
+    try:
+        return abop.findings_verify(finding_id)
+    except abop.AbopError as e:
+        return _err(e)
 
 
 @router.post("/findings/decide-batch")

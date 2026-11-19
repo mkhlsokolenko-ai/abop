@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import time
+import asyncio as _asyncio
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -169,6 +170,54 @@ async def findings_decide(finding_id: str, body: dict | None = None,
         raise HTTPException(404, "находки с таким id в реестре нет")
     return {"ok": True, "finding": итог, "сводка": реестр.сводка(
         str(итог.get("проект") or ""), str(итог.get("процесс") or ""))}
+
+
+@router.post("/api/registry/findings/{finding_id}/verify")
+async def findings_verify(finding_id: str, u: dict = Depends(user)) -> dict:
+    """Точечная проверка исправления (петля доведения, №5 спринта 1): вычитка клиента →
+    детерминированная сверка → воспроизводится ли ИМЕННО эта находка.
+
+    Без LLM и без полного прогона: правила считает код (истина), нарратив тут не нужен.
+    Не воспроизводится → находка становится «исправлено» и доведение отдела растёт;
+    воспроизводится → состояние остаётся, факт проверки уходит в журнал решения."""
+    require_level(u, "manager")
+    строки = реестр.список()
+    н = next((s for s in строки if str(s.get("id")) == finding_id), None)
+    if not н:
+        raise HTTPException(404, "находки с таким id в реестре нет")
+    if str(н.get("состояние") or "") != "подтверждено":
+        raise HTTPException(422, "проверяется подтверждённая находка — сначала признать")
+    организация = str(н.get("проект") or н.get("организация") or "").strip()
+    клиенты = await _asyncio.to_thread(ape.клиенты, False)
+    карточка = next((к for к in клиенты
+                     if организация and организация in str(к.get("организация") or к.get("название") or "")), None)
+    if not карточка:
+        raise HTTPException(404, "в реестре клиентов нет «%s» — проверка идёт по вычитке клиента" % организация)
+    # 1) свежая вычитка: проверка по вчерашним данным — не проверка
+    await _asyncio.to_thread(ape.обновить_данные_клиента, карточка.get("id"), (), False)
+    # 2) детерминированная сверка (как в прогоне, без LLM)
+    g = await _asyncio.to_thread(ape.audit1c_build_graph)
+    сверка = await _asyncio.to_thread(ape.audit1c_сверка, g, "", "", "",
+                                      str(карточка.get("id") or ""))
+    ключ, предмет = str(н.get("код") or ""), str(н.get("предмет") or "")
+    воспроизводится = any(
+        str(нв.get("правило") or нв.get("класс") or "") == ключ
+        and str((нв.get("документ") or {}).get("uuid") if isinstance(нв.get("документ"), dict)
+                else нв.get("id") or "") == предмет
+        for нв in (сверка.get("находки") or []))
+    кем = str(u.get("name") or u.get("sub") or "—")
+    если_сегодня = time.strftime("%Y-%m-%d %H:%M")
+    if воспроизводится:
+        реестр.решение(finding_id, состояние="подтверждено", кем=кем,
+                       почему="точечная проверка " + если_сегодня + ": ещё воспроизводится")
+        return {"ok": True, "вердикт": "воспроизводится",
+                "находок_сверки": len(сверка.get("находки") or []),
+                "дальше": "способ ещё актуален — проверьте документ в 1С"}
+    итог = реестр.решение(finding_id, состояние="исправлено", кем=кем,
+                          почему="точечная проверка " + если_сегодня + ": не воспроизводится после вычитки")
+    return {"ok": True, "вердикт": "исправлено", "finding": итог,
+            "находок_сверки": len(сверка.get("находки") or []),
+            "дальше": "доведение отдела учтено при следующем подсчёте ИКА"}
 
 
 @router.get("/api/registry/groups")

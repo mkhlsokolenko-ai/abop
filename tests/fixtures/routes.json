@@ -49,6 +49,10 @@
  ],
  [
   "DELETE",
+  "/api/methodology/{fid}/matrix/{rid}"
+ ],
+ [
+  "DELETE",
   "/api/pipelines/{pid}"
  ],
  [
@@ -137,6 +141,10 @@
  ],
  [
   "GET",
+  "/api/audit/{fid}/ncr"
+ ],
+ [
+  "GET",
   "/api/audit1c/norms/{name}"
  ],
  [
@@ -154,6 +162,10 @@
  [
   "GET",
   "/api/board"
+ ],
+ [
+  "GET",
+  "/api/board/reuse"
  ],
  [
   "GET",
@@ -253,6 +265,18 @@
  ],
  [
   "GET",
+  "/api/departments/{fid}/autonomy"
+ ],
+ [
+  "GET",
+  "/api/departments/{fid}/tasks"
+ ],
+ [
+  "GET",
+  "/api/departments/{fid}/tasks/{tid}"
+ ],
+ [
+  "GET",
   "/api/families"
  ],
  [
@@ -326,6 +350,14 @@
  [
   "GET",
   "/api/memory/{scope}"
+ ],
+ [
+  "GET",
+  "/api/methodology/{fid}/matrix"
+ ],
+ [
+  "GET",
+  "/api/methodology/{fid}/sverka"
  ],
  [
   "GET",
@@ -685,6 +717,14 @@
  ],
  [
   "POST",
+  "/api/audit/ncr/{ncr_id}/close"
+ ],
+ [
+  "POST",
+  "/api/audit/{fid}/run"
+ ],
+ [
+  "POST",
   "/api/auth/login"
  ],
  [
@@ -698,6 +738,10 @@
  [
   "POST",
   "/api/board/facts"
+ ],
+ [
+  "POST",
+  "/api/board/facts/{key}/publish"
  ],
  [
   "POST",
@@ -801,6 +845,18 @@
  ],
  [
   "POST",
+  "/api/departments/{fid}/autonomy"
+ ],
+ [
+  "POST",
+  "/api/departments/{fid}/tasks"
+ ],
+ [
+  "POST",
+  "/api/departments/{fid}/tasks/{tid}/subtasks/{sid}/retry"
+ ],
+ [
+  "POST",
   "/api/families"
  ],
  [
@@ -842,6 +898,18 @@
  [
   "POST",
   "/api/memory/{scope}"
+ ],
+ [
+  "POST",
+  "/api/methodology/agent"
+ ],
+ [
+  "POST",
+  "/api/methodology/{fid}/apply"
+ ],
+ [
+  "POST",
+  "/api/methodology/{fid}/matrix"
  ],
  [
   "POST",
@@ -930,6 +998,10 @@
  [
   "POST",
   "/api/registry/findings/{finding_id}/decide"
+ ],
+ [
+  "POST",
+  "/api/registry/findings/{finding_id}/verify"
  ],
  [
   "POST",
@@ -1026,73 +1098,5 @@
  [
   "PUT",
   "/api/data/rules/{rid}"
- ],
- [
-  "POST",
-  "/api/board/facts/{key}/publish"
- ],
- [
-  "GET",
-  "/api/board/reuse"
- ],
- [
-  "POST",
-  "/api/departments/{fid}/tasks"
- ],
- [
-  "GET",
-  "/api/departments/{fid}/tasks"
- ],
- [
-  "GET",
-  "/api/departments/{fid}/tasks/{tid}"
- ],
- [
-  "POST",
-  "/api/departments/{fid}/tasks/{tid}/subtasks/{sid}/retry"
- ],
- [
-  "GET",
-  "/api/methodology/{fid}/sverka"
- ],
- [
-  "GET",
-  "/api/methodology/{fid}/matrix"
- ],
- [
-  "POST",
-  "/api/methodology/{fid}/matrix"
- ],
- [
-  "DELETE",
-  "/api/methodology/{fid}/matrix/{rid}"
- ],
- [
-  "POST",
-  "/api/methodology/{fid}/apply"
- ],
- [
-  "POST",
-  "/api/methodology/agent"
- ],
- [
-  "POST",
-  "/api/audit/{fid}/run"
- ],
- [
-  "GET",
-  "/api/audit/{fid}/ncr"
- ],
- [
-  "POST",
-  "/api/audit/ncr/{ncr_id}/close"
- ],
- [
-  "GET",
-  "/api/departments/{fid}/autonomy"
- ],
- [
-  "POST",
-  "/api/departments/{fid}/autonomy"
  ]
 ]

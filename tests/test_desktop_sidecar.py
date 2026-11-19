@@ -91,8 +91,9 @@ def test_sidecar_proxies_departments_endpoints(sidecar):
         sent["audit"] = True
         return {"строки": [{"id": "x.v1", "family": "audit", "серьёзность": "crit"}]}
 
-    def _находки(project="", process="", organisation="", отдел=""):
+    def _находки(project="", process="", organisation="", отдел="", состояние="найдено"):
         sent["findings"] = отдел
+        sent["состояние"] = состояние   # 1.0.44: список принятых для петли доведения
         return {"findings": [], "сводка": {"всего": 0}}
 
     abop_client.family_ika = _ика
