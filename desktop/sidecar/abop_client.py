@@ -266,6 +266,12 @@ def dept_subtask_retry(fid: str, tid: str, sid: str) -> dict:
                 + "/retry", body={}, timeout=60) or {}
 
 
+def post_document(client_id: str, finding_id: str, uuid: str) -> dict:
+    """Провести документ в 1С клиента — HITL: решение человека уже в находке, транспорт пробрасывает."""
+    return _req("POST", "/api/1c/" + urllib.request.quote(str(client_id)) + "/post-document",
+                body={"finding_id": finding_id, "uuid": uuid}, timeout=180) or {}
+
+
 def findings_verify(finding_id: str) -> dict:
     """Точечная проверка исправления: вычитка клиента → сверка → воспроизводимость находки."""
     return _req("POST", "/api/registry/findings/" + urllib.request.quote(str(finding_id))

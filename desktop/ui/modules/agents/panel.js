@@ -619,6 +619,7 @@ export async function mount(root, ctx) {
       const строки = принятые.map((н) => `<div style="display:flex;gap:8px;align-items:center;padding:8px 11px">
           <span class="tag${серьёзностьКлассН(н["серьёзность"])}">${esc(н["код"] || "—")}</span>
           <span style="flex:1;min-width:0;font-size:12px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(н["название"] || "")} · ${esc(н["организация"] || "")}</span>
+          ${(String(н["способ"] || "").toLowerCase().includes("провести")) ? `<button type="button" class="btn sm post1c" data-vf="${esc(н.id)}" ${busyП === н.id ? "disabled" : ""} title="Провести документ в 1С — с подтверждением «что уйдёт»">Провести в 1С</button>` : ""}
           <button type="button" class="btn sm verify" data-vf="${esc(н.id)}" ${busyП === н.id ? "disabled" : ""} title="Вычитать базу, пересчитать сверку и проверить: воспроизводится ли находка">${busyП === н.id ? "проверяю…" : "Исправлено — проверить"}</button>
         </div>`).join("");
       петля = `<div class="card" style="padding:10px 13px;display:flex;flex-direction:column;gap:4px">
@@ -698,6 +699,44 @@ export async function mount(root, ctx) {
       const р = await api("/api/modules/decisions/findings?" + фильтр.join("&"));
       принятые = (р.findings || []).filter((н) => String(н["состояние"] || "") === "подтверждено").slice(0, 10);
     } catch (e) { принятые = []; }
+  }
+
+  async function провестиВ1С(н) {
+    const к = клиентыРеестр.find((x) => (x["организация"] || x["название"] || x.id) === н["организация"]);
+    if (!к) { toast("Фирмы «" + (н["организация"] || "") + "» нет в реестре клиентов", "danger"); return; }
+    const строка = (текст) => `<div style="display:flex;gap:9px;padding:4px 0;font-size:12.5px"><span style="width:110px;color:var(--ink-3);flex-shrink:0">${текст[0]}</span><span style="color:var(--ink)">${текст[1]}</span></div>`;
+    ctx.modal("Провести документ в 1С",
+      `<div style="display:flex;flex-direction:column;gap:4px">
+         <div style="font-size:12px;color:var(--warn-ink);margin-bottom:6px">Необратимое действие: документ будет проведён в базе клиента. Что уйдёт — целиком:</div>` +
+      [["Организация", н["организация"] || "—"],
+       ["Документ", (н["код"] || "") + " · " + (н["название"] || "")],
+       ["Предмет (uuid)", String(н["предмет"] || "—")],
+       ["Действие", "PATCH Posted = true (провести)"],
+       ["Система", к["система"] || "—"],
+       ["Способ", н["способ"] || "—"]].map(строка).join("") +
+       `<div style="font-size:11px;color:var(--ink-3);margin-top:6px">Каждый вызов пишется в журнал аудита: кто, что, когда и чем кончилось.</div>
+      </div>`,
+      async (b) => {
+        busyП = н.id; render();
+        try {
+          const р = await api("/api/modules/decisions/findings/" + encodeURIComponent(н.id) + "/post-document",
+            { method: "POST", body: JSON.stringify({ client_id: к.id, uuid: String(н["предмет"] || "") }) });
+          if (р["результат"] === "проведён") {
+            toast("Проведён в 1С: " + ((р["документ"] || {})["номер"] || "") + ". Теперь — «Исправлено — проверить»", "ok");
+          } else if (р["результат"] === "уже проведён") {
+            toast("Документ уже проведён в 1С", "ok");
+          } else {
+            toast("Отказ 1С: " + (р["ошибка"] || "—").slice(0, 120), "danger");
+          }
+        } catch (e) {
+          toast(humanError(e), "danger");
+        }
+        busyП = "";
+        await Promise.all([загрузитьПринятые(), загрузитьИКА(deptSel)]);
+        render();
+        return false;   // не закрывать модал по кнопке — он закрывается сам выше
+      },
+      "Провести", { okKind: "primary", cancelLabel: "Отмена", width: "560px" });
   }
 
   async function проверитьИсправление(id) {
@@ -841,6 +880,10 @@ export async function mount(root, ctx) {
       b.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); откр(); } };
     });
     root.querySelectorAll(".verify").forEach((b) => (b.onclick = () => проверитьИсправление(b.dataset.vf)));
+    root.querySelectorAll(".post1c").forEach((b) => (b.onclick = () => {
+      const н = принятые.find((x) => x.id === b.dataset.vf);
+      if (н) провестиВ1С(н);
+    }));
     root.querySelectorAll(".subretry").forEach((b) => (b.onclick = (e) => {
       e.stopPropagation();   // клик по «Повторить» не должен сворачивать карточку задачи
       вернутьПодзадачу(b.dataset.tid, b.dataset.sid);

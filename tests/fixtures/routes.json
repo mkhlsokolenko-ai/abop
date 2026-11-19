@@ -645,6 +645,10 @@
  ],
  [
   "POST",
+  "/api/1c/{client_id}/post-document"
+ ],
+ [
+  "POST",
   "/api/access/check"
  ],
  [

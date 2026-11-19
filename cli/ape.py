@@ -4658,6 +4658,38 @@ def _odata1c_ответ(src: dict, сущность: str, **параметры) 
         return json.loads(r.read().decode("utf-8", "replace"))
 
 
+def _odata1c_патч(src: dict, сущность: str, guid: str, тело: dict) -> dict:
+    """PATCH документа в OData 1С (единственное записательное действие платформы: проведение).
+
+    Необратимое внешнее действие — вызывается ТОЛЬКО из ручки с HITL-подтверждением человека
+    и журналом аудита; здесь только транспорт: Basic-авторизация тем же служебным пользователем.
+    Право записи у этого пользователя — вопрос настройки базы клиента: если его нет, 1С ответит
+    отказом, и отказ доедет до интерфейса как есть (не прячем).
+    """
+    база = str(src.get("base") or "").rstrip("/")
+    if not база:
+        raise ValueError("odata1c: нужен base — адрес публикации клиента")
+    логин = str(src.get("user") or "odata.user")
+    пароль = _ключ_источника(src)
+    if not пароль:
+        raise ValueError("odata1c: нет пароля служебного пользователя (токен_файл / токен_env)")
+    адрес = (_guard_url(база) + "/odata/standard.odata/" + urllib.parse.quote(сущность)
+             + "(" + urllib.parse.quote(str(guid)) + ")")
+    ключ = base64.b64encode(("%s:%s" % (логин, пароль)).encode()).decode()
+    req = urllib.request.Request(адрес, data=json.dumps(тело).encode("utf-8"),
+                                 headers={"Authorization": "Basic " + ключ,
+                                          "Content-Type": "application/json",
+                                          "Accept": "application/json"},
+                                 method="PATCH")
+    try:
+        with urllib.request.urlopen(req, timeout=int(src.get("timeout") or 120)) as r:
+            сыр = r.read().decode("utf-8", "replace")
+            return {"код": r.status, "тело": json.loads(сыр) if сыр else {}}
+    except urllib.error.HTTPError as e:
+        подробно = e.read().decode("utf-8", "replace")[:300]
+        return {"код": e.code, "ошибка": подробно}
+
+
 def _odata1c_запрос(src: dict, сущность: str, **параметры) -> list:
     """Строки одного запроса. Счётчик платформы читается отдельно — см. `_odata1c_счёт`."""
     return _odata1c_ответ(src, сущность, **параметры).get("value") or []

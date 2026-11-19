@@ -149,6 +149,16 @@ def finding_decide(finding_id: str, body: НаходкаIn) -> dict:
         raise _ошибка(ex) from ex
 
 
+@router.post("/findings/{finding_id}/post-document")
+def findings_post(finding_id: str, body: dict):
+    """Провести документ в 1С клиента: HITL-действие петли доведения (спринт 2)."""
+    try:
+        return abop.post_document(str(body.get("client_id") or ""), finding_id,
+                                  str(body.get("uuid") or ""))
+    except abop.AbopError as e:
+        return _err(e)
+
+
 @router.post("/findings/{finding_id}/verify")
 def findings_verify(finding_id: str):
     """Точечная проверка исправления: вычитка → сверка → вердикт (до 3 мин: вычитка до минуты)."""
