@@ -29,6 +29,9 @@ export async function mount(root, ctx) {
   let ика_карты = {}, ncrКарты = {}, клиентыРеестр = [];
   let очередь = [], разрезыОч = {}, сводкаОч = {}, ошибкаОчереди = "", очередиГрузят = false;
   let фирма = "", раскрыта = "", busyН = "", сканИдёт = "";
+  // Задачи отдела (шаг 5): дверь супервайзера в десктопе. Сайдкар 1.0.43+ — с ручками задач;
+  // на старом секция честно говорит про релиз, а не делает вид.
+  let задачи = [], задачаТекст = "", раскрыта_задача = "", задачи_умеет = null, busyЗ = "";
   const МОЙ_ОТДЕЛ = String(((ctx.user || {}).department) || "");
   // Иконки отделов (разбор v5, #5): сканирование рейла без чтения. Иконка — из спрайта ядра,
   // не символ шрифта; незнакомая семья получает нейтральный значок, а не случайный.
@@ -243,6 +246,75 @@ export async function mount(root, ctx) {
     catch (e) { клиентыРеестр = []; }   // колонка фирм необязательна — очередь не должна от неё зависеть
   }
 
+  // ── задачи отдела (шаг 5): дверь супервайзера ─────────────────────────────────────────────
+  async function загрузитьЗадачи() {
+    if (!deptSel) return;
+    try {
+      const о = await api(A + "/departments/" + encodeURIComponent(deptSel) + "/tasks");
+      задачи = о["задачи"] || [];
+      задачи_умеет = true;
+    } catch (e) {
+      if (e && e.status === 404) { задачи_умеет = false; задачи = []; }
+      // другой отказ (сеть и т.п.) — задачи_умеет не переворачиваем: ручка умеется, просто сбой
+    }
+  }
+
+  async function отдатьЗадачу() {
+    const текст = (задачаТекст || "").trim();
+    if (!текст) { toast("Опишите задачу отделу — супервайзер сам разложит на подзадачи", "warn"); return; }
+    const предмет = {};
+    if (фирма) {
+      const к = клиентыРеестр.find((x) => (x["организация"] || x["название"] || x.id) === фирма);
+      if (к) предмет["клиент"] = к.id;
+    }
+    busyЗ = "create"; render();
+    try {
+      const р = await api(A + "/departments/" + encodeURIComponent(deptSel) + "/tasks",
+        { method: "POST", body: JSON.stringify({ текст, предмет }) });
+      задачаТекст = "";
+      if (р["почему_пусто"]) {
+        toast("Супервайзер не разложил: " + р["почему_пусто"], "warn");
+      } else {
+        toast("Задача отделу: подзадач — " + ((р["подзадачи"] || []).length || 0), "ok");
+        if (р["задача"] && р["задача"].id) раскрыта_задача = р["задача"].id;
+      }
+      await загрузитьЗадачи();
+    } catch (e) {
+      toast(humanError(e), "danger");
+    }
+    busyЗ = ""; render();
+  }
+
+  async function развернутьЗадачу(id) {
+    if (раскрыта_задача === id) { раскрыта_задача = ""; render(); return; }
+    раскрыта_задача = id;
+    render();
+    try {
+      const р = await api(A + "/departments/" + encodeURIComponent(deptSel) + "/tasks/" + encodeURIComponent(id));
+      const т = задачи.find((з) => з.id === id);
+      if (т) т["карточка"] = р;
+    } catch (e) { /* карточка доедет при следующем раскрытии */ }
+    render();
+  }
+
+  async function вернутьПодзадачу(tid, sid) {
+    busyЗ = sid; render();
+    try {
+      const р = await api(A + "/departments/" + encodeURIComponent(deptSel) + "/tasks/"
+        + encodeURIComponent(tid) + "/subtasks/" + encodeURIComponent(sid) + "/retry",
+        { method: "POST", body: "{}" });
+      toast(р["статус"] === "в очереди" ? "Возвращено в очередь" : "Статус: " + (р["статус"] || "—"), "ok");
+      await загрузитьЗадачи();
+      const т = задачи.find((з) => з.id === tid);
+      if (т && раскрыта_задача === tid) {
+        try { т["карточка"] = await api(A + "/departments/" + encodeURIComponent(deptSel) + "/tasks/" + encodeURIComponent(tid)); } catch (e) { /* доедет */ }
+      }
+    } catch (e) {
+      toast(humanError(e), "danger");
+    }
+    busyЗ = ""; render();
+  }
+
   async function initDept() {
     deptГотово = true;
     if (!deptSel) {
@@ -253,15 +325,15 @@ export async function mount(root, ctx) {
         : (families.some((f) => f.id === сохран) ? сохран : ((families[0] || {}).id || ""));
     }
     render();
-    await Promise.all([загрузитьИКАвсех(), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов()]);
+    await Promise.all([загрузитьИКАвсех(), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов(), загрузитьЗадачи()]);
     render();
   }
 
   async function выбратьОтдел(id) {
-    deptSel = id; фирма = ""; раскрыта = "";
+    deptSel = id; фирма = ""; раскрыта = ""; раскрыта_задача = "";
     try { localStorage.setItem("ape_dept_sel", id); } catch { /* приватное окно */ }
     render();
-    await Promise.all([загрузитьОчередь(), загрузитьNCR()]);
+    await Promise.all([загрузитьОчередь(), загрузитьNCR(), загрузитьЗадачи()]);
     render();
   }
 
@@ -600,6 +672,64 @@ export async function mount(root, ctx) {
     </div>`;
   }
 
+  // ── разметка задач отдела ──────────────────────────────────────────────────────────────────
+  const СТАТУС_КЛАСС = { "выполнено": " ok", "возврат": " mid", "эскалация": " sev", "в очереди": " mid" };
+
+  function задачаБлок() {
+    if (задачи_умеет === false)
+      return `<div style="display:flex;flex-direction:column;gap:8px">
+        <span class="ape-label">задачи отдела</span>
+        <div class="card" style="padding:12px 14px;font-size:12.5px;color:var(--ink-2)">Задачи отдела приедут с релизом 1.0.43 — сайдкар установленного приложения ещё не знает этих ручек. Обновление: Кабинет → Обновление.</div>
+      </div>`;
+    const строки = задачи.map((з) => {
+      const стат = Object.entries(з["по_статусу"] || {}).map(([с, n]) =>
+        `<span class="tag${СТАТУС_КЛАСС[с] || ""}">${esc(с)}: ${n}</span>`).join(" ");
+      const открыт = раскрыта_задача === з.id;
+      let карточка = "";
+      if (открыт) {
+        const к = з["карточка"];
+        if (!к) карточка = `<div class="faint" style="font-size:12px;padding:8px 2px">открываю подзадачи…</div>`;
+        else {
+          const поды = (к["подзадачи"] || []).map((п) => {
+            const крит = Array.isArray(п["критерии"]) ? п["критерии"] : [];
+            return `<div style="display:flex;flex-direction:column;gap:3px;padding:9px 11px;border-radius:9px;background:var(--field);border:1px solid var(--line)">
+              <div style="display:flex;gap:7px;align-items:center;min-width:0">
+                <span class="tag${СТАТУС_КЛАСС[п["статус"]] || ""}">${esc(п["статус"] || "—")}</span>
+                <b style="font-size:12.5px;color:var(--ink);flex:1;min-width:0">${esc(п["вид"] || "")}</b>
+                ${п["попытка"] != null ? `<span style="font-size:10.5px;color:var(--ink-3)">попытка: ${esc(String(п["попытка"]))}</span>` : ""}
+              </div>
+              ${крит.length ? `<div style="font-size:11px;color:var(--ink-2);line-height:1.5">DoD: ${крит.map((кр) => esc(String(кр))).join(" · ")}</div>` : ""}
+              ${(п["причины"] || []).length ? `<div style="font-size:11px;color:var(--ink-3)">${esc((п["причины"] || []).join(" · "))}</div>` : ""}
+              ${["возврат", "эскалация"].includes(String(п["статус"])) ? `<div><button type="button" class="btn sm subretry" data-tid="${esc(з.id)}" data-sid="${esc(п.id)}" ${busyЗ === п.id ? "disabled" : ""} title="Вернуть в очередь — если попытки остались; иначе эскалация остаётся честной">Повторить</button></div>` : ""}
+            </div>`;
+          }).join("");
+          карточка = `<div style="display:flex;flex-direction:column;gap:6px;padding:4px 0">${поды || `<span class="faint" style="font-size:12px">подзадач нет — уточните предметы задачи</span>`}</div>`;
+        }
+      }
+      return `<div class="card lift" role="button" tabindex="0" data-tx="${esc(з.id)}"
+          style="display:flex;flex-direction:column;gap:6px;padding:10px 13px;cursor:pointer">
+          <div style="display:flex;gap:8px;align-items:center;min-width:0">
+            <b style="flex:1;min-width:0;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)">${esc(з["текст"] || "")}</b>
+            <span class="tag">${esc(String(з["подзадач"] || 0))} подзадач</span>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${стат || `<span class="faint" style="font-size:10.5px">подзадачи не разложены</span>`}
+            <span style="flex:1"></span>
+            <span style="font-size:10.5px;color:var(--ink-3)">${esc(String(з["создал"] || ""))} ${esc(String(з["created_at"] || "").slice(0, 10))}</span>
+          </div>
+          ${карточка}
+        </div>`;
+    }).join(`<div style="height:8px"></div>`);
+    return `<div style="display:flex;flex-direction:column;gap:8px;min-width:0">
+      <span class="ape-label">задачи отдела — супервайзер разложит и поставит исполнителям</span>
+      <div class="card" style="padding:10px 12px;display:flex;gap:8px;align-items:center">
+        <input id="taskText" value="${esc(задачаТекст)}" placeholder="Например: разобрать группу E1 по Жигулёвой — подтвердить и провести"
+               style="flex:1;min-width:0;padding:7px 10px;border-radius:9px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-size:12.5px"/>
+        <button type="button" class="btn sm primary" id="taskGo" ${busyЗ === "create" ? "disabled" : ""}>Отдать отделу</button>
+      </div>
+      ${строки || `<div class="faint" style="font-size:12px;padding:4px 2px">Задач отделу ещё не было. Опишите работу — супервайзер разложит на подзадачи-результаты с DoD и раздаст исполнителям.</div>`}
+    </div>`;
+  }
+
   function renderОтделы() {
     if (!families.length) return `<div class="faint" style="padding:20px">Ростер семей не загрузился — обновите список.</div>`;
     const f = families.find((x) => x.id === deptSel) || families[0];
@@ -611,6 +741,7 @@ export async function mount(root, ctx) {
           ${очередьБлок()}
           ${фирмыБлок()}
         </div>
+        ${задачаБлок()}
       </div>
     </div>`;
   }
@@ -651,6 +782,22 @@ export async function mount(root, ctx) {
     const ir = root.querySelector("#deptIkaRetry");
     if (ir) ir.onclick = async () => { await загрузитьИКА(deptSel); render(); };
     const gc = root.querySelector("#goClients"); if (gc) gc.onclick = () => ctx.open("clients");
+    // задачи отдела
+    const tt = root.querySelector("#taskText");
+    if (tt) {
+      tt.oninput = (e) => { задачаТекст = e.target.value; };
+      tt.onkeydown = (e) => { if (e.key === "Enter") отдатьЗадачу(); };
+    }
+    const tg = root.querySelector("#taskGo"); if (tg) tg.onclick = отдатьЗадачу;
+    root.querySelectorAll("[data-tx]").forEach((b) => {
+      const откр = () => развернутьЗадачу(b.dataset.tx);
+      b.onclick = откр;
+      b.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); откр(); } };
+    });
+    root.querySelectorAll(".subretry").forEach((b) => (b.onclick = (e) => {
+      e.stopPropagation();   // клик по «Повторить» не должен сворачивать карточку задачи
+      вернутьПодзадачу(b.dataset.tid, b.dataset.sid);
+    }));
   }
   const фирмаИд = () => {
     const к = клиентыРеестр.find((x) => (x["организация"] || x["название"] || x.id) === фирма);
@@ -744,7 +891,7 @@ export async function mount(root, ctx) {
     if (tab === "dept") привязатьОтделы();
     root.querySelector("#refresh").onclick = async () => {
       await loadAgents();
-      if (tab === "dept") await Promise.all([загрузитьИКАвсех(), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов()]);
+      if (tab === "dept") await Promise.all([загрузитьИКАвсех(), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов(), загрузитьЗадачи()]);
       render();
     };
     const bb = root.querySelector("#build"); if (bb) bb.onclick = async () => { if (!families.length) await loadFamilies(); bFamily = ""; bSkills = new Set(); bName = ""; editingId = null; bOutput = ""; mode = "builder"; render(); };

@@ -160,6 +160,40 @@ def ncr_close(ncr_id: str):
         return _err(e)
 
 
+@router.post("/departments/{fid}/tasks")
+def dept_task_create(fid: str, body: dict):
+    """Отдать задачу отделу: супервайзер декомпозирует и поставит подзадачи в очередь.
+    Форма задачи живёт на сервере (ADR-083: системное рождение, пользовательская жизнь)."""
+    try:
+        return abop.dept_task_create(fid, str(body.get("текст") or ""), body.get("предмет") or {})
+    except abop.AbopError as e:
+        return _err(e)
+
+
+@router.get("/departments/{fid}/tasks")
+def dept_tasks(fid: str):
+    try:
+        return abop.dept_tasks(fid)
+    except abop.AbopError as e:
+        return _err(e)
+
+
+@router.get("/departments/{fid}/tasks/{tid}")
+def dept_task(fid: str, tid: str):
+    try:
+        return abop.dept_task(fid, tid)
+    except abop.AbopError as e:
+        return _err(e)
+
+
+@router.post("/departments/{fid}/tasks/{tid}/subtasks/{sid}/retry")
+def dept_subtask_retry(fid: str, tid: str, sid: str):
+    try:
+        return abop.dept_subtask_retry(fid, tid, sid)
+    except abop.AbopError as e:
+        return _err(e)
+
+
 @router.get("/recipes")
 def recipes():
     """Рецепты Data Plane — какие данные (entity) доступны агенту."""

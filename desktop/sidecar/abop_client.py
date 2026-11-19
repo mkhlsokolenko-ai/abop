@@ -241,6 +241,31 @@ def ncr_close(ncr_id: str, причина: str = "") -> dict:
                 body={"причина": причина}, timeout=30) or {}
 
 
+def dept_task_create(fid: str, текст: str, предмет: dict | None = None) -> dict:
+    """Отдать задачу отделу: супервайзер декомпозирует и поставит подзадачи в очередь."""
+    return _req("POST", "/api/departments/" + urllib.request.quote(str(fid)) + "/tasks",
+                body={"текст": текст, "предмет": предмет or {}}, timeout=120) or {}
+
+
+def dept_tasks(fid: str) -> dict:
+    """Задачи отдела: последняя сверху, с числом подзадач по статусам."""
+    return _req("GET", "/api/departments/" + urllib.request.quote(str(fid)) + "/tasks",
+                timeout=30) or {}
+
+
+def dept_task(fid: str, tid: str) -> dict:
+    """Карточка задачи с подзадачами; чтение лениво проверяет DoD по прогонам."""
+    return _req("GET", "/api/departments/" + urllib.request.quote(str(fid)) + "/tasks/"
+                + urllib.request.quote(str(tid)), timeout=60) or {}
+
+
+def dept_subtask_retry(fid: str, tid: str, sid: str) -> dict:
+    """Возврат/эскалацию подзадачи — заново в очередь, если попытки остались."""
+    return _req("POST", "/api/departments/" + urllib.request.quote(str(fid)) + "/tasks/"
+                + urllib.request.quote(str(tid)) + "/subtasks/" + urllib.request.quote(str(sid))
+                + "/retry", body={}, timeout=60) or {}
+
+
 def recipes() -> list:
     """Рецепты Data Plane (источник→entity) — какие данные доступны агенту."""
     r = _req("GET", "/api/data/recipes", timeout=30)
