@@ -827,7 +827,7 @@ export async function mount(root, ctx) {
       table{border-collapse:collapse;width:100%;font-size:12.5px}th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#777;padding:6px 8px;border-bottom:2px solid #ddd}
       .kpi{display:flex;gap:12px;margin:14px 0}.kpi div{border:1px solid #e2e2e2;border-radius:10px;padding:10px 16px;flex:1}
       .kpi b{font-size:22px;font-family:ui-monospace,monospace}.kpi span{display:block;font-size:10.5px;color:#777;margin-top:2px}
-      .head{color:#777;font-size:11.5px;margin-bottom:18px}.fx{margin-top:30px;color:#999;font-size:11px}</style></head><body>
+      .head{color:#777;font-size:11.5px;margin-bottom:18px}</style></head><body>
       <h1>Отчёт по учёту: ${esc(имя)}</h1>
       <div class="head">Период ${esc(период)} · схема ${esc(к["схема_учёта"] || "базовая")} · подготовлено ${esc(день)} · ABOP</div>
       <h2>Итог периода</h2>
@@ -844,7 +844,7 @@ export async function mount(root, ctx) {
       <div style="font-size:12.5px">Индекс качества агентов (ИКА): <b>${esc(String(ика ?? "—"))}</b> из 100.
       Каждая находка имеет цитату документа, способ устранения и норму; решения человека записаны
       в журнале с указанием, кто и по какой версии правил признал.</div>
-      <div class="fx">Документ сформирован ABOP автоматически из реестра расхождений. Суммы — по документам, цитаты доступны в карточках находок.</div>
+      <div style="margin-top:30px;color:#999;font-size:11px">Документ сформирован ABOP автоматически из реестра расхождений. Суммы — по документам, цитаты доступны в карточках находок.</div>
       </body></html>`;
     const окно = window.open("", "_blank");
     окно.document.write(html);
