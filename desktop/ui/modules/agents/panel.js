@@ -698,6 +698,7 @@ export async function mount(root, ctx) {
         <div style="font-family:var(--mono,monospace);font-size:10.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">граница ${esc(к["система"] || "—")}</div>
         <div style="font-size:11px;color:var(--ink-3)">доступ: ${esc(к["секрет"] || "не задан")}</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button type="button" class="btn sm rep" data-rep="${esc(к.id)}" title="Отчёт клиенту: итоги, причины, суммы — печатный документ">Отчёт</button>
           <button type="button" class="btn sm" data-rescan="${esc(к.id)}" ${сканИдёт ? "disabled" : ""} title="Вычитать базу и поставить прогон сверщика — результат в чате">Пересчитать</button>
           <button type="button" class="btn sm ghost" data-refreshonly="${esc(к.id)}" ${сканИдёт ? "disabled" : ""} title="Только перечитать базу, без прогона">Только вычитать</button>
         </div>
@@ -800,6 +801,55 @@ export async function mount(root, ctx) {
       const р = await api("/api/modules/decisions/findings?" + фильтр.join("&"));
       принятые = (р.findings || []).filter((н) => String(н["состояние"] || "") === "подтверждено").slice(0, 10);
     } catch (e) { принятые = []; }
+  }
+
+  // Отчёт клиенту (№2): собирается из данных пульта (сводка реестра, группы с суммами,
+  // ИКА) и открывается печатным документом — сохранить PDF через печать. Данные срезаны
+  // по выбранной фирме; поэтому кнопка живёт на карточке фирмы.
+  function отчётКлиента(к) {
+    const имя = к["организация"] || к["название"] || к.id;
+    if (фирма && фирма !== имя) { toast("Выберите фирму в карточке — отчёт строится по её данным", "warn"); return; }
+    const в = сводкаОч || {};
+    const группы = сортировка_пульта((группыПульт || []).slice());
+    const ика = (ика_карты[deptSel] || {})["ика"];
+    const день = new Date().toLocaleDateString("ru-RU");
+    const период = `${к["период_с"] || "—"} — ${к["период_по"] || "—"}`;
+    const строкиГрупп = группы.map((г) => `<tr>
+        <td style="padding:6px 8px;border-bottom:1px solid #eee;font-weight:600">${esc(г["код"] || "")}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #eee">${esc(г["название"] || "")}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center">${esc(String(г["находок"] || 0))}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right">${esc(Number(г["сумма"] || 0) ? деньгиП(Number(г["сумма"])) : "—")}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #eee">${esc(String(г["способ"] || "способ уточняется"))}</td>
+      </tr>`).join("");
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Отчёт: ${esc(имя)} — ${день}</title>
+      <style>body{font:400 13px/1.55 Manrope,system-ui,sans-serif;color:#111;margin:36px;max-width:900px}
+      h1{font-size:21px;margin:0 0 2px}h2{font-size:15px;margin:26px 0 8px;border-bottom:2px solid #eee;padding-bottom:4px}
+      table{border-collapse:collapse;width:100%;font-size:12.5px}th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#777;padding:6px 8px;border-bottom:2px solid #ddd}
+      .kpi{display:flex;gap:12px;margin:14px 0}.kpi div{border:1px solid #e2e2e2;border-radius:10px;padding:10px 16px;flex:1}
+      .kpi b{font-size:22px;font-family:ui-monospace,monospace}.kpi span{display:block;font-size:10.5px;color:#777;margin-top:2px}
+      .head{color:#777;font-size:11.5px;margin-bottom:18px}.fx{margin-top:30px;color:#999;font-size:11px}</style></head><body>
+      <h1>Отчёт по учёту: ${esc(имя)}</h1>
+      <div class="head">Период ${esc(период)} · схема ${esc(к["схема_учёта"] || "базовая")} · подготовлено ${esc(день)} · ABOP</div>
+      <h2>Итог периода</h2>
+      <div class="kpi">
+        <div><b>${esc(String(в["всего"] || 0))}</b><span>находок в реестре</span></div>
+        <div><b>${esc(String(в["подтверждено"] || 0))}</b><span>признано нарушением</span></div>
+        <div><b>${esc(String(в["исправлено"] || 0))}</b><span>исправлено (проверено сверкой)</span></div>
+        <div><b>${esc(String(в["доля_подтверждения"] ?? "—"))}${в["доля_подтверждения"] ? "%" : ""}</b><span>доля признания</span></div>
+      </div>
+      <h2>Нарушения по причинам</h2>
+      <table><thead><tr><th>Код</th><th>Причина</th><th>Документов</th><th style="text-align:right">Сумма</th><th>Что делать</th></tr></thead>
+      <tbody>${строкиГрупп || `<tr><td colspan="5" style="padding:10px;color:#777">Нерешённых нарушений нет.</td></tr>`}</tbody></table>
+      <h2>Качество работы отдела</h2>
+      <div style="font-size:12.5px">Индекс качества агентов (ИКА): <b>${esc(String(ика ?? "—"))}</b> из 100.
+      Каждая находка имеет цитату документа, способ устранения и норму; решения человека записаны
+      в журнале с указанием, кто и по какой версии правил признал.</div>
+      <div class="fx">Документ сформирован ABOP автоматически из реестра расхождений. Суммы — по документам, цитаты доступны в карточках находок.</div>
+      </body></html>`;
+    const окно = window.open("", "_blank");
+    окно.document.write(html);
+    окно.document.close();
+    setTimeout(() => { try { окно.print(); } catch { /* печать по Ctrl+P */ } }, 400);
   }
 
   async function провестиВ1С(н) {
@@ -1053,6 +1103,10 @@ export async function mount(root, ctx) {
       b.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); откр(); } };
     });
     root.querySelectorAll(".verify").forEach((b) => (b.onclick = () => проверитьИсправление(b.dataset.vf)));
+    root.querySelectorAll(".rep").forEach((b) => (b.onclick = () => {
+      const к = клиентыРеестр.find((x) => x.id === b.dataset.rep);
+      if (к) отчётКлиента(к);
+    }));
     root.querySelectorAll(".post1c").forEach((b) => (b.onclick = () => {
       const н = принятые.find((x) => x.id === b.dataset.vf);
       if (н) провестиВ1С(н);
