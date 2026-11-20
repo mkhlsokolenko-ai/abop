@@ -353,6 +353,10 @@
  ],
  [
   "GET",
+  "/api/methodology/patrol"
+ ],
+ [
+  "GET",
   "/api/methodology/{fid}/matrix"
  ],
  [

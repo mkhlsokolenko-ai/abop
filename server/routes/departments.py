@@ -104,6 +104,18 @@ async def subtask_retry(fid: str, tid: str, sid: str, u: dict = Depends(user)) -
     return итог
 
 
+@router.get("/api/methodology/patrol")
+async def methodology_patrol(u: dict = Depends(user)) -> dict:
+    """Заявки методолога по всей установке (автоматизация шага 6): детерминированный патруль —
+    сверка отделов, дыры способов, NCR, аудит назначения. Manager+: заявки адресованы тому,
+    кто правит конфигурацию и матрицу."""
+    require_level(u, "manager")
+    итог = await methodology.патруль()
+    await audit_store.record(u.get("name") or u.get("sub") or "dev", "methodology.patrol",
+                             "установка", {"заявок": итог["всего"]})
+    return итог
+
+
 @router.get("/api/methodology/{fid}/sverka")
 async def methodology_sverka(fid: str, u: dict = Depends(user)) -> dict:
     """Сверка методологии (шаг 6, ADR-084): регламент × матрица × конфигурация. Только расхождения

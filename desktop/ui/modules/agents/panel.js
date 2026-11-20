@@ -331,7 +331,7 @@ export async function mount(root, ctx) {
         : (families.some((f) => f.id === сохран) ? сохран : ((families[0] || {}).id || ""));
     }
     render();
-    await Promise.all([загрузитьИКАвсех(), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов(), загрузитьЗадачи(), загрузитьПринятые(), загрузитьПоля()]);
+    await Promise.all([загрузитьИКАвсех(), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов(), загрузитьЗадачи(), загрузитьПринятые(), загрузитьПоля(), загрузитьМетодолога()]);
     render();
   }
 
@@ -511,6 +511,7 @@ export async function mount(root, ctx) {
       <div style="display:flex;flex-direction:column;gap:6px">
         ${ncrЧисло == null ? "" : `<button type="button" class="btn sm${ncrЧисло ? " danger" : " ghost"}" id="ncrBtn" title="Несоответствия аудитора качества — список по клику">${ncrЧисло ? "NCR " + ncrЧисло : "NCR чисто"}</button>`}
         ${поляСчёт ? `<button type="button" class="btn sm mid" id="fieldsBtn" title="Поля первички ниже порога — ждут вашего ввода в «Решениях»">первичка: ${поляСчёт} докум.</button>` : ""}
+        <button type="button" class="btn sm${методолог ? (JSON.parse(методолог["счёт"] || "{}")["качество"] || JSON.parse(методолог["счёт"] || "{}")["назначение"] ? " danger" : " mid") : " ghost"}" id="patrolBtn" title="Заявки методолога: сверка, способы, NCR, назначение — патруль собирает код">${методолог ? "методолог: " + (JSON.parse(методолог["заявки"] || "[]").length) + " заявок" : "методолог: патруль"}</button>
         <button type="button" class="btn sm ghost" id="deptCard" title="Карточка отдела: аудит назначения, расход, состав ролей">карточка</button>
       </div>
     </div>`;
@@ -727,6 +728,61 @@ export async function mount(root, ctx) {
 
   // Поля первички ниже порога — то, что размазано по «Решениям», но ждёт именно этот отдел.
   let поляСчёт = null;
+  // Заявки методолога (автоматизация шага 6): патруль пишет снимок в Data Plane по крону.
+  let методолог = null;
+  async function загрузитьМетодолога() {
+    if (!deptSel) return;
+    try {
+      const строки = await api("/api/modules/agents/resolve/methodology_patrol");
+      методолог = (строки || [])[0] || null;
+    } catch (e) { методолог = null; }
+  }
+
+  function показатьМетодолога() {
+    const р = методолог || {};
+    let заявки = [];
+    try { заявки = JSON.parse(р["заявки"] || "[]"); } catch { заявки = []; }
+    let счёт = {};
+    try { счёт = JSON.parse(р["счёт"] || "{}"); } catch { счёт = {}; }
+    const ТИП = { "методология": ["mid", "методология"], "способ": ["sev", "способ"],
+                  "качество": ["mid", "NCR"], "назначение": ["sev", "назначение"] };
+    const строки = заявки.map((з) => {
+      const [кл, имя] = ТИП[з["тип"]] || ["", з["тип"]];
+      return `<div style="display:flex;gap:7px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--line)">
+        <span class="tag ${кл}">${esc(имя || з["тип"])}</span>
+        <span style="flex:1;min-width:0;font-size:12px;color:var(--ink-2);line-height:1.45">${esc(String(з["причина"] || ""))}${з["пункт"] ? " · пункт " + esc(String(з["пункт"])) : ""}${з["агент"] ? " · " + esc(String(з["агент"])) : ""}</span>
+        ${з["применимое"] ? `<button type="button" class="btn sm primary zapply" data-otdel="${esc(з["отдел"] || "")}" data-r="${esc(JSON.stringify(з["расхождение"] || {}))}">Применить</button>` : ""}
+      </div>`;
+    }).join("");
+    const шапка = `снимок ${esc(String(р["дата"] || "—"))} · ` +
+      Object.entries(счёт).map(([к, n]) => `${к}: ${n}`).join(" · ");
+    const ov = ctx.modal("Заявки методолога — автоматический патруль",
+      `<div style="font-size:11px;color:var(--ink-3);margin-bottom:8px">${esc(шапка)}</div>
+       <div style="max-height:52vh;overflow-y:auto">${строки || "Открытых заявок нет — патруль молчит, пока факты чистые."}</div>
+       <div style="font-size:11px;color:var(--ink-3);margin-top:8px">Заявки собирает код по расписанию; применимое машиной — только роли отдела (ADR-084), остальное — на пересмотр.</div>`,
+      null, "Закрыть", { kicker: "методолог · патруль", width: "680px" });
+    ov.querySelectorAll(".zapply").forEach((b) => (b.onclick = async () => {
+      b.disabled = true;
+      try {
+        await api("/api/methodology/" + encodeURIComponent(b.dataset.otdel) + "/apply",
+          { method: "POST", body: JSON.stringify({ расхождение: JSON.parse(b.dataset.r || "{}") }) });
+        toast("Применено: роль отдела обновлена", "ok");
+        b.textContent = "применено";
+      } catch (e) { b.disabled = false; toast(humanError(e), "danger"); }
+    }));
+  }
+
+  async function пересчитатьМетодолога() {
+    busyЗ = "patrol"; render();
+    try {
+      const р = await api("/api/methodology/patrol");
+      методолог = { "дата": р["дата"], "заявки": JSON.stringify(р["заявки"]),
+                    "счёт": JSON.stringify(р["счёт"]) };
+      toast("Патруль: заявок — " + (р["всего"] || 0), "ok");
+      показатьМетодолога();
+    } catch (e) { toast(humanError(e), "danger"); }
+    busyЗ = ""; render();
+  }
   async function загрузитьПоля() {
     if (!deptSel) return;
     try {
@@ -975,6 +1031,9 @@ export async function mount(root, ctx) {
     }));
     const nb = root.querySelector("#ncrBtn"); if (nb) nb.onclick = () => показатьNCR(f);
     const fb = root.querySelector("#fieldsBtn"); if (fb) fb.onclick = () => ctx.open("decisions");
+    const pb = root.querySelector("#patrolBtn"); if (pb) pb.onclick = показатьМетодолога;
+    const pr = root.querySelector("#patrolBtn");
+    if (pr) pr.ondblclick = пересчитатьМетодолога;
     const dc = root.querySelector("#deptCard"); if (dc) dc.onclick = () => openDeptCard(f);
     const hb = root.querySelector("#histBtn"); if (hb) hb.onclick = () => ctx.open("decisions");
     const hb2 = root.querySelector("#histBtn2"); if (hb2) hb2.onclick = () => ctx.open("decisions");
@@ -1095,7 +1154,7 @@ export async function mount(root, ctx) {
     if (tab === "dept") привязатьОтделы();
     root.querySelector("#refresh").onclick = async () => {
       await loadAgents();
-      if (tab === "dept") await Promise.all([загрузитьИКАвсех(), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов(), загрузитьЗадачи(), загрузитьПринятые(), загрузитьПоля()]);
+      if (tab === "dept") await Promise.all([загрузитьИКАвсех(), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов(), загрузитьЗадачи(), загрузитьПринятые(), загрузитьПоля(), загрузитьМетодолога()]);
       render();
     };
     const bb = root.querySelector("#build"); if (bb) bb.onclick = async () => { if (!families.length) await loadFamilies(); bFamily = ""; bSkills = new Set(); bName = ""; editingId = null; bOutput = ""; mode = "builder"; render(); };
@@ -1252,7 +1311,7 @@ export async function mount(root, ctx) {
     if (!инт || !инт.dept) return;
     tab = "dept"; deptSel = инт.dept; deptГотово = true;
     render();
-    await Promise.all([загрузитьИКАвсех(), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов(), загрузитьЗадачи(), загрузитьПринятые(), загрузитьПоля()]);
+    await Promise.all([загрузитьИКАвсех(), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов(), загрузитьЗадачи(), загрузитьПринятые(), загрузитьПоля(), загрузитьМетодолога()]);
     render();
   };
   const инт0 = (typeof ctx.takeIntent === "function" ? ctx.takeIntent() : null) || (root.intent || null);
