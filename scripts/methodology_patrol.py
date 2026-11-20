@@ -9,6 +9,7 @@ import asyncio
 import json
 import sys
 
+sys.path.insert(0, "/app")
 sys.path.insert(0, "/app/cli")
 
 
