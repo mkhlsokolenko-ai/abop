@@ -558,15 +558,16 @@ export async function mount(root, ctx) {
     const дельтаСтр = дельта == null ? "" :
       `<span class="delta${дельта >= 0 ? " ok" : " warn"}">${дельта >= 0 ? "+" : ""}${esc(String(дельта))} за неделю</span>${уровень ? `<span class="delta"> · автономия: ${esc(String(уровень))}</span>` : ""}`;
     const в = сводкаОч || {};
-    const плита = (подпись, число, цвет) => `<div style="min-width:0">
+    const плита = (подпись, число, цвет, дельта) => `<div style="min-width:0">
         <div class="lbl" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(подпись)}</div>
         <b class="tile-num"${цвет ? ` style="color:${цвет}"` : ""}>${esc(String(число ?? "—"))}</b>
+        ${дельта || ""}
       </div>`;
     const дельтаСегодня = (ч) => (ч == null ? "" : `<span class="delta">${ч >= 0 ? "+" : ""}${esc(String(ч))} сегодня</span>`);
     const плитки = [
-      плита("найдено", в["всего"] ?? "—") + дельтаСегодня(в["найдено_сегодня"]),
-      плита("признано", в["подтверждено"] ?? "—", в["подтверждено"] ? "var(--ok-ink)" : "") + дельтаСегодня(в["признано_сегодня"]),
-      плита("исправлено", в["исправлено"] ?? "—") + дельтаСегодня(в["исправлено_сегодня"]),
+      плита("найдено", в["всего"] ?? "—", "", дельтаСегодня(в["найдено_сегодня"])),
+      плита("признано", в["подтверждено"] ?? "—", в["подтверждено"] ? "var(--ok-ink)" : "", дельтаСегодня(в["признано_сегодня"])),
+      плита("исправлено", в["исправлено"] ?? "—", "", дельтаСегодня(в["исправлено_сегодня"])),
       плита("доля признания", в["доля_подтверждения"] != null && в["доля_подтверждения"] !== "" ? в["доля_подтверждения"] + " %" : "—"),
     ].join("");
     return `<section class="state-zone" aria-label="Состояние отдела">
@@ -803,7 +804,7 @@ export async function mount(root, ctx) {
         <button type="button" class="chip" id="goClients">Подключить</button>
       </div>
       <div class="card lift" data-firm="" role="button" tabindex="0"
-        style="padding:9px 12px;cursor:pointer;display:flex;gap:8px;align-items:center;${!фирма ? "border-color:var(--accent);background:var(--accent-bg)" : ""}">
+        style="padding:9px 12px;cursor:pointer;display:flex;flex-direction:row;align-items:center;gap:8px;${!фирма ? "border-color:var(--accent);background:var(--accent-bg)" : ""}">
         <b style="font-size:12px;color:${!фирма ? "var(--accent-ink)" : "var(--ink-2)"}">все фирмы</b>
         <span style="flex:1"></span>
         <span class="tag${разрезыОч["открытых_всего"] ? " mid" : ""}">всего ${разрезыОч["открытых_всего"] || 0}</span>

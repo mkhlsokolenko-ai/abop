@@ -940,3 +940,4 @@ button:disabled { cursor: default; }
 .hrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
 .mod-scroll { flex: 1; min-width: 0; overflow-y: auto; }
 .dept-screen { display: flex; flex-direction: column; gap: 12px; padding: 22px 26px; max-width: 1320px; margin: 0 auto; animation: ape-in .35s ease-out; }
+.edo > b { min-width: 110px; }   /* имя документа не сжимается в один символ */
