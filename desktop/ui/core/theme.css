@@ -9,16 +9,10 @@
 @font-face { font-family: "IBM Plex Mono"; font-weight: 600; font-style: normal; font-display: swap; src: url("../fonts/ibm-plex-mono-latin-600-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
 @font-face { font-family: "IBM Plex Mono"; font-weight: 700; font-style: normal; font-display: swap; src: url("../fonts/ibm-plex-mono-cyrillic-700-normal.woff2") format("woff2"); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
 @font-face { font-family: "IBM Plex Mono"; font-weight: 700; font-style: normal; font-display: swap; src: url("../fonts/ibm-plex-mono-latin-700-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
-@font-face { font-family: "Manrope"; font-weight: 400; font-style: normal; font-display: swap; src: url("../fonts/manrope-cyrillic-400-normal.woff2") format("woff2"); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
-@font-face { font-family: "Manrope"; font-weight: 400; font-style: normal; font-display: swap; src: url("../fonts/manrope-latin-400-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
-@font-face { font-family: "Manrope"; font-weight: 500; font-style: normal; font-display: swap; src: url("../fonts/manrope-cyrillic-500-normal.woff2") format("woff2"); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
-@font-face { font-family: "Manrope"; font-weight: 500; font-style: normal; font-display: swap; src: url("../fonts/manrope-latin-500-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
-@font-face { font-family: "Manrope"; font-weight: 600; font-style: normal; font-display: swap; src: url("../fonts/manrope-cyrillic-600-normal.woff2") format("woff2"); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
-@font-face { font-family: "Manrope"; font-weight: 600; font-style: normal; font-display: swap; src: url("../fonts/manrope-latin-600-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
-@font-face { font-family: "Manrope"; font-weight: 700; font-style: normal; font-display: swap; src: url("../fonts/manrope-cyrillic-700-normal.woff2") format("woff2"); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
-@font-face { font-family: "Manrope"; font-weight: 700; font-style: normal; font-display: swap; src: url("../fonts/manrope-latin-700-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
-@font-face { font-family: "Manrope"; font-weight: 800; font-style: normal; font-display: swap; src: url("../fonts/manrope-cyrillic-800-normal.woff2") format("woff2"); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
-@font-face { font-family: "Manrope"; font-weight: 800; font-style: normal; font-display: swap; src: url("../fonts/manrope-latin-800-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+/* Manrope — вариативный (ось 200–800), один файл на подмножество: отдельные font-weight
+   на каждое начертание зажали бы ось в 400, и весь жир разом пропал бы. */
+@font-face { font-family: "Manrope"; font-weight: 200 800; font-style: normal; font-display: swap; src: url("../fonts/manrope-cyrillic-400-normal.woff2") format("woff2"); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: "Manrope"; font-weight: 200 800; font-style: normal; font-display: swap; src: url("../fonts/manrope-latin-400-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
 
 /* Inter (бандл, latin+cyrillic) — типографика ДС без внешних CDN (CSP-safe). */
 @font-face { font-family: "Inter"; font-weight: 400; font-style: normal; font-display: swap; src: url("../fonts/inter-latin-400-normal.woff2") format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+2000-206F,U+2074,U+20AC,U+2122,U+2212,U+FEFF,U+FFFD; }
@@ -50,8 +44,9 @@
    (test_desktop_contrast) считает контраст заново по подложкам. */
 :root {
   --bg: #060a12;
-  --mesh-a: rgba(139, 92, 246, 0.05);
-  --mesh-b: rgba(99, 102, 241, 0.04);
+  /* «Дыхание» фона — 0.02 (допрос 21.11): фон не мёртвый, но и не космос. */
+  --mesh-a: rgba(139, 92, 246, 0.02);
+  --mesh-b: rgba(99, 102, 241, 0.02);
   --panel: #101726;
   --panel-2: #16203a;
   --line: #22304e;
@@ -91,10 +86,10 @@
   --user-bubble: rgba(99, 102, 241, 0.16); --user-bubble-line: rgba(129, 140, 248, 0.3);
   --ui: "Manrope", "Inter", "Segoe UI", system-ui, sans-serif;
   --mono: "IBM Plex Mono", "JetBrains Mono", ui-monospace, monospace;
-  /* Корпоративная плотность (DIZAJN_DESKTOPA_ENTERPRISE, раздел 2): шаг сетки 4/8, строка списка
-     32px вместо 44, отступ карточки 12/16. Одна плотность на приложение — «компактный режим»
+  /* Корпоративная плотность (допрос 21.11: масштаб снят с мокапов v5/пульт): строка списка 28px,
+     тело 13px, кнопки 11.5px — как в концептах. Одна плотность на приложение — «компактный режим»
      отдельной настройкой был бы признаком того, что не выбрали. */
-  --row-h: 32px;
+  --row-h: 28px;
   --pad-card: 12px;
   --pad-card-2: 16px;
   --gap-group: 16px;
@@ -105,11 +100,12 @@
   --ink1: var(--ink); --ink2: var(--ink-2); --ink3: var(--ink-3);
   --ok: var(--ok-ink); --warn: var(--warn-ink); --crit: var(--danger-ink);
   --radius: 16px;
-  /* ── обогащение из webapp (категорийные градиенты · шкала теней · сильное стекло · halo) ── */
-  --grad-ok: linear-gradient(135deg, #10b981, #059669);
-  --grad-warn: linear-gradient(135deg, #f59e0b, #ef4444);
-  --grad-info: linear-gradient(135deg, #0ea5e9, #6366f1);
-  --grad-violet: linear-gradient(135deg, #7c3aed, #a855f7);
+  /* ── категорийные градиенты погашены (допрос 21.11: цвет состояния — плоская подложка,
+     как в мокапах); имена оставлены, чтобы не рвать импорты, значения — плоские ── */
+  --grad-ok: linear-gradient(135deg, #10b981, #10b981);
+  --grad-warn: linear-gradient(135deg, #f59e0b, #f59e0b);
+  --grad-info: linear-gradient(135deg, #0ea5e9, #0ea5e9);
+  --grad-violet: linear-gradient(135deg, #7c3aed, #7c3aed);
   --shadow-1: 0 6px 20px rgba(0, 0, 0, 0.35);
   --shadow-2: 0 14px 40px rgba(0, 0, 0, 0.45);
   --shadow-accent: 0 10px 30px rgba(139, 92, 246, 0.25);
@@ -138,7 +134,7 @@
      темы: поверхность знает свой радиус, кромку и тень по роли, а не по месту в разметке.
      «Кромка света» (--edge) — верхний внутренний блик на стекле: ровно он отличает дорогую
      поверхность от плоского прямоугольника и повторяет свет, который уже есть в вебе. */
-  --r-xs: 8px; --r-sm: 9px; --r-md: 11px; --r-lg: 14px; --r-xl: 18px; --r-pill: 9999px;
+  --r-2xs: 6px; --r-xs: 8px; --r-sm: 9px; --r-md: 11px; --r-lg: 14px; --r-xl: 18px; --r-pill: 9999px;
   /* Радиусная шкала снята с мокапа 20.11 (карточка 11px). Кромка света и градиент панелей
      приглушены почти до нуля: язык мокапов — плоская поверхность с рамкой, но карточки
      по-прежнему собираются этими токенами (сторож design_language проверяет ссылки на них). */
@@ -231,7 +227,10 @@
 *, *::before, *::after { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
 body {
-  color: var(--ink); font-family: var(--ui); font-size: 14px; overflow: hidden;
+  color: var(--ink); font-family: var(--ui); font-size: 13px; overflow: hidden;
+  /* Числа всегда табличные (допрос 21.11, «живые числа»): счётчики и суммы прыгают шириной,
+     если цифры пропорциональные — человек сравнивает их глазами, и дрожь читается как изменение. */
+  font-variant-numeric: tabular-nums;
   background:
     radial-gradient(58% 48% at 10% 0%, var(--mesh-a), transparent 60%),
     radial-gradient(52% 44% at 100% 100%, var(--mesh-b), transparent 60%),
@@ -309,7 +308,7 @@ a { color: var(--accent-ink-2); } a:hover { color: var(--accent-ink); }
 .rail-narrow .navitem.on { box-shadow: inset 3px 0 0 var(--accent-2); }
 .rail-narrow .navitem .lbl, .rail-narrow .railcap { display: none; }
 .rail-narrow .navitem .bdg { position: absolute; top: 3px; right: 5px; padding: 0 5px; }
-.railcap { font-family: var(--mono); font-size: 10.5px; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3); padding: 0 4px; }
+.railcap { font: 500 9.5px/1 var(--mono); letter-spacing: .13em; text-transform: uppercase; color: var(--ink-3); padding: 0 4px; }
 
 /* ── каркас ── */
 #app { display: flex; height: 100vh; }
@@ -336,7 +335,9 @@ a { color: var(--accent-ink-2); } a:hover { color: var(--accent-ink); }
 
 /* ── компонент-классы ДС (рецепты 1:1) ── */
 .ape-card { padding: 20px; border-radius: var(--r-lg); background-color: var(--panel); background-image: var(--panel-grad); border: 1px solid var(--line); backdrop-filter: var(--blur); display: flex; flex-direction: column; gap: 12px; }
-.ape-label { font-family: var(--mono); font-size: 11px; letter-spacing: .8px; text-transform: uppercase; color: var(--ink-3); }
+/* Капсы — «гравировка на приборах» (допрос 21.11): один рецепт 9.5px/.13em для обоих имён
+   класса, пока модули не слились на одном (.lbl). Второго словаря подписей быть не должно. */
+.ape-label, .lbl { font: 500 9.5px/1 var(--mono); letter-spacing: .13em; text-transform: uppercase; color: var(--ink-3); }
 .ape-h1 { margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -.7px; }
 .ape-iconbtn { width: 30px; height: 30px; flex: none; border: 1px solid var(--line); border-radius: 9px; background: transparent; color: var(--ink-2); font-size: 13px; cursor: pointer; }
 .ape-iconbtn:hover { background: var(--hover); color: var(--ink); }
@@ -350,19 +351,21 @@ a { color: var(--accent-ink-2); } a:hover { color: var(--accent-ink); }
 .i-xl { width: 22px; height: 22px; stroke-width: 1.5; }
 
 .btn {
+  /* Масштаб — с мокапов (допрос 21.11): кнопка 11.5px/8×12/r8. Кнопка — инструмент пульта,
+     а не витрина: одинаковый вес со строкой данных, не крупнее. */
   display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-  border: 1px solid var(--line); background-color: var(--panel); background-image: var(--panel-grad);
-  backdrop-filter: var(--blur); color: var(--ink); box-shadow: var(--edge);
-  padding: 8px 14px; border-radius: var(--r-md); font-weight: 600; font-size: 12.5px;
+  border: 1px solid var(--line); background-color: var(--panel-2); background-image: none;
+  color: var(--ink);
+  padding: 8px 12px; border-radius: var(--r-xs); font-weight: 700; font-size: 11.5px; line-height: 1;
   transition: background-color .15s, border-color .15s, box-shadow .2s, transform .12s;
 }
-.btn:hover { background-color: var(--hover); border-color: var(--line-2); transform: translateY(-1px); box-shadow: var(--shadow-1), var(--edge); }
-.btn:active { transform: translateY(0); box-shadow: var(--edge); }
-.btn.primary { background-image: var(--grad); border-color: transparent; color: #fff; box-shadow: var(--shadow-accent), var(--edge-strong); }
-.btn.primary:hover { filter: brightness(1.07); box-shadow: 0 14px 38px rgba(99, 102, 241, .38), var(--edge-strong); }
-.btn.sm { padding: 6px 11px; font-size: 11.5px; border-radius: var(--r-sm); }
+.btn:hover { background-color: var(--hover); border-color: rgba(139, 92, 246, .45); }
+.btn:active { transform: translateY(0); }
+.btn.primary { background-image: var(--grad); border-color: transparent; color: #fff; box-shadow: var(--shadow-accent); }
+.btn.primary:hover { filter: brightness(1.07); }
+.btn.sm { padding: 7px 10px; font-size: 11px; border-radius: var(--r-xs); }
 /* Крупная — для единственного действия, ради которого экран открывали. */
-.btn.lg { padding: 11px 18px; font-size: 13.5px; }
+.btn.lg { padding: 10px 16px; font-size: 12.5px; }
 /* Тихая — отказ, отмена, «потом»: не спорит за внимание с утвердительной и основной.
    До этого отказ выглядел так же, как согласие, и человек выбирал по подписи, а не по виду. */
 .btn.ghost { background-color: transparent; background-image: none; border-color: var(--line); color: var(--ink-2); box-shadow: none; }
@@ -383,21 +386,21 @@ a { color: var(--accent-ink-2); } a:hover { color: var(--accent-ink); }
 .msgact:focus-visible { box-shadow: var(--ring); }
 
 .chip {
-  /* Фильтр и вкладка — рецепт из макетов: пилюля побольше, моноширинная, со слотом под значок.
+  /* Фильтр и вкладка — рецепт из мокапов (допрос 21.11): 10px mono, 5×8, радиус 6.
      Маленькая метка-бейдж — это `.tag`, у неё своя роль; смешивать их значит получить два
      похожих, но разных вида одного и того же элемента на соседних экранах. */
-  display: inline-flex; align-items: center; gap: 6px; font: 500 11.5px/1 var(--mono);
-  padding: 7px 12px; border-radius: var(--r-pill); border: 1px solid var(--line);
-  background: var(--panel); color: var(--ink-2);
+  display: inline-flex; align-items: center; gap: 6px; font: 500 10px/1 var(--mono);
+  padding: 5px 8px; border-radius: var(--r-2xs); border: 1px solid var(--line);
+  background: var(--panel-2); color: var(--ink-2);
 }
-.chip.on { background: var(--accent-bg); color: var(--accent-ink); border-color: var(--accent); }
+.chip.on { background: var(--accent-bg); color: var(--accent-ink); border-color: rgba(139, 92, 246, .4); }
 /* Метка состояния — не то же самое, что чип-фильтр: она ничего не переключает, а называет.
    Поэтому мельче, заглавными и моноширинной: в макетах ими подписаны серьёзность, исход и
    принадлежность. Варианты — по смыслу, а не по цвету: sev (опасно) · mid (внимание) ·
    ok (хорошо) · ai (расчёт). */
 .tag {
-  display: inline-flex; align-items: center; gap: 5px; font: 600 10.5px/1 var(--mono);
-  letter-spacing: .05em; text-transform: uppercase; padding: 4px 8px; border-radius: var(--r-pill);
+  display: inline-flex; align-items: center; gap: 5px; font: 500 9.5px/1 var(--mono);
+  letter-spacing: .05em; text-transform: uppercase; padding: 3px 7px; border-radius: 5px;
   border: 1px solid var(--line); color: var(--ink-3); white-space: nowrap;
 }
 .tag.sev { color: var(--danger-ink); border-color: var(--danger-line); background: var(--danger-bg); }
@@ -471,20 +474,23 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent-ink-2); b
 @keyframes gwire-flow { to { stroke-dashoffset: -26; } }   /* поток данных по рёбрам графа (семантика webapp) */
 @keyframes ape-stage { 0%, 100% { fill: #fbbf24; } 33% { fill: #818cf8; } 66% { fill: #34d399; } }  /* маячок «думает»: жёлтый→синий→зелёный */
 
-/* статус-точка с живым ореолом (ok/warn/crit) — из семантики статусов webapp */
+/* Статус-точка горит РОВНО (допрос 21.11): штатное состояние не дышит — маячок мигает только
+   у реально исполняющегося прогона (.dot.run), иначе мигание обесценивает сигнал. */
 .dot { display: inline-block; width: 9px; height: 9px; border-radius: 9999px; background: var(--ink-3); }
-.dot.ok { background: #34d399; box-shadow: 0 0 0 4px var(--ok-glow); animation: ab-pulse 2.4s ease-in-out infinite; }
-.dot.warn { background: #fbbf24; box-shadow: 0 0 0 4px var(--warn-glow); animation: ab-pulse 2.4s ease-in-out infinite; }
-.dot.crit { background: #f87171; box-shadow: 0 0 0 4px var(--danger-glow); animation: ab-pulse 1.6s ease-in-out infinite; }
+.dot.ok { background: #34d399; box-shadow: 0 0 0 3px var(--ok-glow); }
+.dot.warn { background: #fbbf24; box-shadow: 0 0 0 3px var(--warn-glow); }
+.dot.crit { background: #f87171; box-shadow: 0 0 0 3px var(--danger-glow); }
+.dot.run { background: var(--accent-2); box-shadow: 0 0 0 3px var(--accent-bg); animation: ab-pulse 1.6s ease-in-out infinite; }
 
 /* прогресс-бар: cubic-bezier + анимированные полосы (как в webapp) */
 .bar { height: 6px; border-radius: 6px; background: var(--hover); overflow: hidden; }
 .bar > .fill { height: 100%; border-radius: 6px; background: var(--grad); transition: width .26s cubic-bezier(.4, 0, .2, 1); }
 .bar.stripe > .fill { background-image: linear-gradient(90deg, var(--accent), var(--violet)); background-size: 28px 28px; animation: ab-stripe .8s linear infinite; }
 
-/* sheen/shimmer-свип для загрузки/акцентов */
+/* sheen — ТОЛЬКО на загрузке (допрос 21.11): блик по данным выглядит как «здесь что-то бежит»,
+   хотя ничего не бежит. Класс зовётся с `.load`, иначе эффекта нет. */
 .sheen { position: relative; overflow: hidden; }
-.sheen::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .14), transparent); transform: translateX(-120%); animation: ape-sheen 1.8s ease-in-out infinite; }
+.sheen.load::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .1), transparent); transform: translateX(-120%); animation: ape-sheen 1.8s ease-in-out infinite; }
 
 /* элевации: карточки/кнопки/модалки богаче (шкала теней webapp) */
 .ape-card { box-shadow: var(--shadow-1); transition: border-color .15s, box-shadow .2s; }
@@ -492,9 +498,10 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent-ink-2); b
 .btn.primary { box-shadow: var(--shadow-accent); }
 .chip.on { box-shadow: 0 0 0 3px var(--accent-bg); }
 
-/* ── hover-lift для интерактивных карточек модулей (паритет живости с webapp) ── */
-.lift { transition: transform .16s ease, box-shadow .2s ease, border-color .15s ease; }
-.lift:hover { transform: translateY(-2px); box-shadow: var(--shadow-2); border-color: var(--line-2); }
+/* ── hover-отклик интерактивных карточек. Lift (подъём + тень) убит допросом 21.11:
+   на пульте ничего не взлетает; кликабельность показывает рамка и курсор. ── */
+.lift { transition: border-color .15s ease, background .15s ease; }
+.lift:hover { border-color: var(--line-2); background: var(--hover); }
 /* граф: палитра, узлы и порты «живые» на наведении */
 .pal { transition: transform .14s ease, border-color .15s ease, background .15s ease; }
 .pal:hover { transform: translateX(3px); border-color: var(--line-2); background: var(--hover); }
@@ -628,10 +635,10 @@ button:disabled { cursor: default; }
    Перенесены один в один из макетов. Дальше панели зовут классы, а не рисуют стили. */
 
 /* заголовок экрана */
+/* Шапка экрана — мокап: заголовок 15px/800 (допрос 21.11, ветка каркас), происхождение рядом. */
 .h-screen { display: flex; align-items: center; gap: 11px; flex-wrap: wrap; }
-.h-screen h3 { margin: 0; font: 800 20px/1.15 var(--ui); letter-spacing: -.5px; text-wrap: balance; }
-.origin { font-size: 11.5px; color: var(--ink-3); line-height: 1.5; }
-.lbl { font: 600 10.5px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
+.h-screen h3 { margin: 0; font: 800 15px/1.2 var(--ui); letter-spacing: -.01em; text-wrap: balance; }
+.origin { font-size: 11px; color: var(--ink-3); line-height: 1.5; }
 .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
 /* карточка экрана и её части */
@@ -843,8 +850,8 @@ button:disabled { cursor: default; }
    поведение другое, поэтому отдельный класс, а не перекраска .btn. */
 .tagbtn {
   display: inline-flex; align-items: center; gap: 5px;
-  font: 600 10.5px/1 var(--mono); letter-spacing: .05em; text-transform: uppercase;
-  padding: 4px 8px; border-radius: var(--r-pill); border: 1px solid var(--line);
+  font: 500 9.5px/1 var(--mono); letter-spacing: .05em; text-transform: uppercase;
+  padding: 3px 7px; border-radius: 5px; border: 1px solid var(--line);
   color: var(--ink-3); background: transparent; cursor: pointer; white-space: nowrap;
   transition: color .15s, border-color .15s, background .15s;
 }
