@@ -32,6 +32,16 @@ export async function mount(root, ctx) {
   // кто читает карточку и закрывает приложение — то есть у большинства.
   let итог = null, _сИтога = 0;
 
+  async function загрузитьЖивое() {
+    try { живое = ((await api(R + "/live")) || {})["живое"] || []; }
+    catch { живое = []; }
+  }
+  async function загрузитьБюджет() {
+    const отдел = (() => { try { return localStorage.getItem("ape_dept_sel") || ""; } catch { return ""; } })();
+    if (!отдел) { бюджет = null; return; }
+    try { бюджет = await api("/api/modules/agents/departments/" + encodeURIComponent(отдел) + "/budget"); }
+    catch { бюджет = null; }
+  }
   async function load() {
     busy = true; loadErr = null; render();
     const p = new URLSearchParams();
