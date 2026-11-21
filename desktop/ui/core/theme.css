@@ -1,3 +1,25 @@
+/* Manrope + IBM Plex Mono (бандл, latin+cyrillic) — язык мокапов (решение владельца 21.11.2026).
+   Все макеты начиная с v5 набраны этой парой; Inter и JetBrains Mono ниже остаются фолбэком,
+   пока в шрифте не появится нужный глиф, и деградацией на старых сборках. CSP-safe: файлы в бандле. */
+@font-face { font-family: "IBM Plex Mono"; font-weight: 400; font-style: normal; font-display: swap; src: url("../fonts/ibm-plex-mono-cyrillic-400-normal.woff2") format("woff2"); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: "IBM Plex Mono"; font-weight: 400; font-style: normal; font-display: swap; src: url("../fonts/ibm-plex-mono-latin-400-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "IBM Plex Mono"; font-weight: 500; font-style: normal; font-display: swap; src: url("../fonts/ibm-plex-mono-cyrillic-500-normal.woff2") format("woff2"); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: "IBM Plex Mono"; font-weight: 500; font-style: normal; font-display: swap; src: url("../fonts/ibm-plex-mono-latin-500-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "IBM Plex Mono"; font-weight: 600; font-style: normal; font-display: swap; src: url("../fonts/ibm-plex-mono-cyrillic-600-normal.woff2") format("woff2"); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: "IBM Plex Mono"; font-weight: 600; font-style: normal; font-display: swap; src: url("../fonts/ibm-plex-mono-latin-600-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "IBM Plex Mono"; font-weight: 700; font-style: normal; font-display: swap; src: url("../fonts/ibm-plex-mono-cyrillic-700-normal.woff2") format("woff2"); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: "IBM Plex Mono"; font-weight: 700; font-style: normal; font-display: swap; src: url("../fonts/ibm-plex-mono-latin-700-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Manrope"; font-weight: 400; font-style: normal; font-display: swap; src: url("../fonts/manrope-cyrillic-400-normal.woff2") format("woff2"); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: "Manrope"; font-weight: 400; font-style: normal; font-display: swap; src: url("../fonts/manrope-latin-400-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Manrope"; font-weight: 500; font-style: normal; font-display: swap; src: url("../fonts/manrope-cyrillic-500-normal.woff2") format("woff2"); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: "Manrope"; font-weight: 500; font-style: normal; font-display: swap; src: url("../fonts/manrope-latin-500-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Manrope"; font-weight: 600; font-style: normal; font-display: swap; src: url("../fonts/manrope-cyrillic-600-normal.woff2") format("woff2"); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: "Manrope"; font-weight: 600; font-style: normal; font-display: swap; src: url("../fonts/manrope-latin-600-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Manrope"; font-weight: 700; font-style: normal; font-display: swap; src: url("../fonts/manrope-cyrillic-700-normal.woff2") format("woff2"); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: "Manrope"; font-weight: 700; font-style: normal; font-display: swap; src: url("../fonts/manrope-latin-700-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Manrope"; font-weight: 800; font-style: normal; font-display: swap; src: url("../fonts/manrope-cyrillic-800-normal.woff2") format("woff2"); unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116; }
+@font-face { font-family: "Manrope"; font-weight: 800; font-style: normal; font-display: swap; src: url("../fonts/manrope-latin-800-normal.woff2") format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+
 /* Inter (бандл, latin+cyrillic) — типографика ДС без внешних CDN (CSP-safe). */
 @font-face { font-family: "Inter"; font-weight: 400; font-style: normal; font-display: swap; src: url("../fonts/inter-latin-400-normal.woff2") format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+2000-206F,U+2074,U+20AC,U+2122,U+2212,U+FEFF,U+FFFD; }
 @font-face { font-family: "Inter"; font-weight: 400; font-style: normal; font-display: swap; src: url("../fonts/inter-cyrillic-400-normal.woff2") format("woff2"); unicode-range: U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116; }
@@ -20,21 +42,22 @@
 @font-face { font-family: "JetBrains Mono"; font-weight: 700; font-style: normal; font-display: swap; src: url("../fonts/jetbrains-mono-latin-700-normal.woff2") format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+2000-206F,U+2074,U+20AC,U+2122,U+2212,U+FEFF,U+FFFD; }
 @font-face { font-family: "JetBrains Mono"; font-weight: 700; font-style: normal; font-display: swap; src: url("../fonts/jetbrains-mono-cyrillic-700-normal.woff2") format("woff2"); unicode-range: U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116; }
 
-/* APE Desktop — дизайн-система ABOP (1:1 с макетом APE Desktop.dc.html).
-   Токены и рецепты сняты из макета без отхода. Тема — data-theme на <html>.
-   Легаси-алиасы (--bg0/--b1/--ink1…) маппятся на токены ДС, чтобы модули не падали. */
-
-/* ── токены ДС (тёмная) ── */
+/* ABOP Desktop — дизайн-система. Палитра и шрифты — язык мокапов (Manrope/Plex Mono, плоские
+   панели #101726 с рамкой #22304e, фиолетовый акцент #8b5cf6) — решение владельца 21.11.2026;
+   прежняя стеклянная тема APE Desktop.dc.html — в истории git. Рецепты экранов и механизмы
+   токенов (panel-grad/edge/тени) сохранены: карточки по-прежнему собираются токенами, а не
+   инлайнами. Ступени текста (--ink/-2/-3) не тронуты — их альфы выверены по AA, сторож
+   (test_desktop_contrast) считает контраст заново по подложкам. */
 :root {
-  --bg: #0f172a;
-  --mesh-a: rgba(99, 102, 241, 0.16);
-  --mesh-b: rgba(139, 92, 246, 0.14);
-  --panel: rgba(255, 255, 255, 0.05);
-  --panel-2: rgba(255, 255, 255, 0.08);
-  --line: rgba(255, 255, 255, 0.1);
-  --line-2: rgba(255, 255, 255, 0.16);
-  --line-field: rgba(255, 255, 255, 0.44);   /* 3.34:1 к худшей подложке — граница поля ввода */
-  --hover: rgba(255, 255, 255, 0.09);
+  --bg: #060a12;
+  --mesh-a: rgba(139, 92, 246, 0.05);
+  --mesh-b: rgba(99, 102, 241, 0.04);
+  --panel: #101726;
+  --panel-2: #16203a;
+  --line: #22304e;
+  --line-2: #31415f;
+  --line-field: rgba(255, 255, 255, 0.44);   /* ~3.5:1 к худшей подложке на поле #0d1526 — граница поля */
+  --hover: rgba(255, 255, 255, 0.06);
   --ink: #ffffff;
   --ink-2: rgba(255, 255, 255, 0.62);
   /* .42 давал 3.19:1 на --panel-2 с мешем и 3.93:1 на самой тёмной подложке — ниже AA (4.5:1)
@@ -42,14 +65,14 @@
      4.81:1 в худшем случае и 6.51:1 в лучшем; .62 сравнялось бы с --ink-2 и схлопнуло бы
      трёхуровневую шкалу текста в двухуровневую. Светлая тема отревизована раньше (#6b7280). */
   --ink-3: rgba(255, 255, 255, 0.60);
-  --field: rgba(15, 23, 42, 0.55);
+  --field: #0d1526;
   --code: #0b1020;
-  --rail: rgba(15, 23, 42, 0.6);
-  --accent: #6366f1;
-  --accent-2: #818cf8;
-  --accent-ink: #c7d2fe;
-  --accent-ink-2: #a5b4fc;
-  --accent-bg: rgba(99, 102, 241, 0.18);
+  --rail: rgba(10, 15, 26, 0.6);
+  --accent: #8b5cf6;
+  --accent-2: #a78bfa;
+  --accent-ink: #c4b5fd;
+  --accent-ink-2: #b9a4fc;
+  --accent-bg: rgba(139, 92, 246, 0.14);
   --violet: #8b5cf6;
   --grad: linear-gradient(135deg, #6366f1, #8b5cf6);   /* бренд-градиент (эталон APE Desktop) */
   --warn-ink: #fbbf24;
@@ -66,8 +89,8 @@
   --danger-bg: rgba(239, 68, 68, 0.12); --danger-line: rgba(239, 68, 68, 0.38);
   --info-bg: rgba(139, 92, 246, 0.14); --info-line: rgba(139, 92, 246, 0.5); --info-ink: #c4b5fd;
   --user-bubble: rgba(99, 102, 241, 0.16); --user-bubble-line: rgba(129, 140, 248, 0.3);
-  --ui: "Inter", "Segoe UI", system-ui, sans-serif;
-  --mono: "JetBrains Mono", ui-monospace, monospace;
+  --ui: "Manrope", "Inter", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", "JetBrains Mono", ui-monospace, monospace;
   /* Корпоративная плотность (DIZAJN_DESKTOPA_ENTERPRISE, раздел 2): шаг сетки 4/8, строка списка
      32px вместо 44, отступ карточки 12/16. Одна плотность на приложение — «компактный режим»
      отдельной настройкой был бы признаком того, что не выбрали. */
@@ -87,9 +110,9 @@
   --grad-warn: linear-gradient(135deg, #f59e0b, #ef4444);
   --grad-info: linear-gradient(135deg, #0ea5e9, #6366f1);
   --grad-violet: linear-gradient(135deg, #7c3aed, #a855f7);
-  --shadow-1: 0 10px 30px rgba(0, 0, 0, 0.45);
-  --shadow-2: 0 18px 50px rgba(0, 0, 0, 0.55);
-  --shadow-accent: 0 10px 30px rgba(99, 102, 241, 0.28);
+  --shadow-1: 0 6px 20px rgba(0, 0, 0, 0.35);
+  --shadow-2: 0 14px 40px rgba(0, 0, 0, 0.45);
+  --shadow-accent: 0 10px 30px rgba(139, 92, 246, 0.25);
   --blur-strong: blur(20px);
   --ok-glow: rgba(52, 211, 153, 0.28);
   --warn-glow: rgba(245, 158, 11, 0.28);
@@ -115,14 +138,17 @@
      темы: поверхность знает свой радиус, кромку и тень по роли, а не по месту в разметке.
      «Кромка света» (--edge) — верхний внутренний блик на стекле: ровно он отличает дорогую
      поверхность от плоского прямоугольника и повторяет свет, который уже есть в вебе. */
-  --r-xs: 8px; --r-sm: 10px; --r-md: 13px; --r-lg: 17px; --r-xl: 22px; --r-pill: 9999px;
-  --edge: inset 0 1px 0 rgba(255, 255, 255, 0.07);
-  --edge-strong: inset 0 1px 0 rgba(255, 255, 255, 0.16);
-  --panel-grad: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.025));
-  --rail-grad: linear-gradient(180deg, rgba(15, 23, 42, 0.74), rgba(15, 23, 42, 0.52));
+  --r-xs: 8px; --r-sm: 9px; --r-md: 11px; --r-lg: 14px; --r-xl: 18px; --r-pill: 9999px;
+  /* Радиусная шкала снята с мокапа 20.11 (карточка 11px). Кромка света и градиент панелей
+     приглушены почти до нуля: язык мокапов — плоская поверхность с рамкой, но карточки
+     по-прежнему собираются этими токенами (сторож design_language проверяет ссылки на них). */
+  --edge: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --edge-strong: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  --panel-grad: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.012));
+  --rail-grad: linear-gradient(180deg, rgba(10, 15, 26, 0.74), rgba(10, 15, 26, 0.52));
   --shadow-3: 0 34px 90px rgba(0, 0, 0, 0.62);
-  --ring: 0 0 0 3px var(--accent-bg);
-  --sel: rgba(99, 102, 241, 0.34);
+  --ring: 0 0 0 3px rgba(139, 92, 246, 0.25);
+  --sel: rgba(139, 92, 246, 0.3);
   --rail-w: 186px;
 }
 /* ── токены ДС (светлая) ── */
@@ -144,11 +170,13 @@
   --field: #ffffff;
   --code: #0f172a;
   --rail: rgba(255, 255, 255, 0.7);
-  --accent-ink: #3730a3;
-  --accent-ink-2: #4338ca;
+  --accent: #7c3aed;
+  --accent-2: #7c3aed;   /* полоса активного раздела рейла — нетекст 3:1 на белом (a78bfa давал 2.2) */
+  --accent-ink: #5b21b6;
+  --accent-ink-2: #6d28d9;
   --violet: #8b5cf6;
   --grad: linear-gradient(135deg, #6366f1, #8b5cf6);
-  --accent-bg: rgba(79, 70, 229, 0.12);
+  --accent-bg: rgba(124, 58, 237, 0.12);
   --warn-ink: #92400e;
   --ok-ink: #065f46;
   --danger-ink: #991b1b;
