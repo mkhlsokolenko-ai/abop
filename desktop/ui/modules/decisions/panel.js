@@ -528,7 +528,7 @@ export async function mount(root, ctx) {
     const ещё = находки.length - показать.length;
     return `<div style="display:flex;flex-direction:column;gap:10px">
       <div class="h-screen">
-        <h3 style="font-size:16px">Сегодня требует вас · ${показать.length}</h3>
+        <h3 class="grp-title">Сегодня требует вас · ${показать.length}</h3>
         ${порядок ? `<span class="tag ai">порядок: расчёт · объяснение: расчёт</span>` : ""}
       </div>
       ${показать.map((н, i) => находкаКарточка(н, !всеНаходки || i < ВЕРХ)).join("")}
@@ -541,7 +541,7 @@ export async function mount(root, ctx) {
     const закрытых = группы.reduce((н, г) => н + Number(г["находок"] || 0), 0);
     return `<div style="display:flex;flex-direction:column;gap:10px;margin-top:4px">
       <div class="h-screen">
-        <h3 style="font-size:16px">Можно закрыть пакетом · ${группы.length}</h3>
+        <h3 class="grp-title">Можно закрыть пакетом · ${группы.length}</h3>
         <span class="tag">${закрытых} ${склонение(закрытых, "находка", "находки", "находок")}</span>
       </div>
       ${origin("Группа — это одна ПРИЧИНА, а не список похожих строк: решение по ней применяется ко всем её находкам сразу, и в журнал пишется каждая. Поштучный разбор остаётся за «Раскрыть».")}

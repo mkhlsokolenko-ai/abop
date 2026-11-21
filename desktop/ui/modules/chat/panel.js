@@ -561,7 +561,7 @@ export async function mount(root, ctx) {
     return `<div style="display:flex;flex-direction:column;gap:22px;padding:26px 0;animation:ape-in .4s ease-out">
       <div style="display:flex;align-items:center;gap:18px">${mascot("idle", 66)}
         <div style="display:flex;flex-direction:column;gap:6px">
-          <h1 style="margin:0;font-size:24px;font-weight:800;letter-spacing:-.6px">С чего начнём?</h1>
+          <h1 class="scr-title">С чего начнём?</h1>
           <p style="margin:0;max-width:460px;font-size:13.5px;line-height:1.55;color:var(--ink-2)">Опишите задачу словами или возьмите готовый шаблон — чат создастся сам. Файлы можно просто перетащить в окно.</p></div></div>
       ${myTilesHTML()}
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(214px,1fr));gap:12px">

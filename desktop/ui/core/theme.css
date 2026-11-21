@@ -635,9 +635,13 @@ button:disabled { cursor: default; }
    Перенесены один в один из макетов. Дальше панели зовут классы, а не рисуют стили. */
 
 /* заголовок экрана */
-/* Шапка экрана — мокап: заголовок 15px/800 (допрос 21.11, ветка каркас), происхождение рядом. */
+/* Шапка экрана — мокап: заголовок 15px/800 (допрос 21.11, ветка каркас), происхождение рядом.
+   Три роли текста: .scr-title (заголовок экрана), .lbl (капса секции), .grp-title
+   (заголовок группы/карточки 12.5px/600). Инлайновых размеров на h1–h3 быть не должно. */
 .h-screen { display: flex; align-items: center; gap: 11px; flex-wrap: wrap; }
 .h-screen h3 { margin: 0; font: 800 15px/1.2 var(--ui); letter-spacing: -.01em; text-wrap: balance; }
+.scr-title { margin: 0; font: 800 15px/1.2 var(--ui); letter-spacing: -.01em; text-wrap: balance; }
+.grp-title { margin: 0; font: 600 12.5px/1.35 var(--ui); color: var(--ink); }
 .origin { font-size: 11px; color: var(--ink-3); line-height: 1.5; }
 .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
@@ -859,3 +863,23 @@ button:disabled { cursor: default; }
 .tagbtn:focus-visible { box-shadow: var(--ring); outline: none; }
 .tagbtn.mid { color: var(--warn-ink); border-color: var(--warn-line); background: var(--warn-bg); }
 .tagbtn.sev { color: var(--danger-ink); border-color: var(--danger-line); background: var(--danger-bg); }
+
+/* ── Лестница ответственности — грамматика кнопок (допрос 21.11; словарь классов общий
+   с webapp/verstak/blocks.css: b-do/b-out/b-irr/b-calc — один язык, два материала).
+   Ступень видна ДО нажатия. «Внутри» — плоская кнопка по умолчанию, класс в разметке
+   нужен для сторожа. primary — не ступень, а флаг главной цели экрана; ставится
+   РЯДОМ со ступенью и никогда вместо неё. ── */
+.btn.b-do { /* внутри — обратимое действие в системе: жать смело */ }
+.btn.b-calc { /* расчёт — детерминированно считает код: станочная двойная рамка */
+  background-color: transparent; border-color: rgba(139, 92, 246, .35);
+  box-shadow: inset 0 0 0 3px var(--panel), inset 0 0 0 4px rgba(139, 92, 246, .22);
+}
+.btn.b-calc:hover { border-color: var(--accent); background-color: var(--hover); }
+.btn.b-out { /* наружу — адресат обязан стоять на подписи кнопки (STYLE_APP_DESKTOP §3) */
+  border-color: var(--line-2);
+}
+.btn.b-irr { /* необратимое — штриховка и предохранитель: цена решения видна по виду */
+  background-image: repeating-linear-gradient(135deg, rgba(248, 113, 113, .09) 0 7px, transparent 7px 14px);
+  border-color: var(--danger-line); color: var(--danger-ink);
+}
+.btn.b-irr:hover { border-color: var(--danger-ink); background-color: var(--danger-bg); }

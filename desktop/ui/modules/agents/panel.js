@@ -660,7 +660,7 @@ export async function mount(root, ctx) {
         </div>
         <span style="font:500 12px var(--mono,monospace);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;color:var(--ink-2)">×${esc(String(г["находок"] || 0))}${сумма ? " · " + esc(деньгиП(сумма)) : ""}</span>
         ${раскрыта_г ? "" : `<button type="button" class="btn sm" data-gx="${esc(String(г["код"]))}">развернуть</button>`}
-        <button type="button" class="btn sm primary" data-gy="${esc(String(г["код"]))}" ${busyН === "группа" ? "disabled" : ""} title="Признать все находки группы по правилам — способ попадёт в журнал каждой">Признать группу</button>
+        <button type="button" class="btn sm primary b-do" data-gy="${esc(String(г["код"]))}" ${busyН === "группа" ? "disabled" : ""} title="Признать все находки группы по правилам — способ попадёт в журнал каждой">Признать группу</button>
       </div>`;
   }
 
@@ -688,10 +688,10 @@ export async function mount(root, ctx) {
       "что_сделать": что_сделать,
       "действия": [
         String(н["способ"] || "").toLowerCase().includes("провести")
-          ? `<button type="button" class="btn sm post1c" data-vf="${esc(н.id)}" ${ждёт ? "disabled" : ""}>Провести в 1С</button>` : "",
-        `<button type="button" class="btn sm verify" data-vf="${esc(н.id)}" ${ждёт ? "disabled" : ""}>Исправлено — проверить</button>`,
-        `<button type="button" class="btn sm ghost" data-fy="${esc(н.id)}" data-fsp="${esc(способ)}" ${ждёт ? "disabled" : ""}>Признать</button>`,
-        `<button type="button" class="btn sm ghost" data-fn="${esc(н.id)}" ${ждёт ? "disabled" : ""}>Норма</button>`,
+          ? `<button type="button" class="btn sm b-irr post1c" data-vf="${esc(н.id)}" ${ждёт ? "disabled" : ""}>Провести в 1С</button>` : "",
+        `<button type="button" class="btn sm b-calc verify" data-vf="${esc(н.id)}" ${ждёт ? "disabled" : ""}>Исправлено — проверить</button>`,
+        `<button type="button" class="btn sm b-do ghost" data-fy="${esc(н.id)}" data-fsp="${esc(способ)}" ${ждёт ? "disabled" : ""}>Признать</button>`,
+        `<button type="button" class="btn sm b-do ghost" data-fn="${esc(н.id)}" ${ждёт ? "disabled" : ""}>Норма</button>`,
       ],
     });
   }
@@ -725,9 +725,9 @@ export async function mount(root, ctx) {
         <div style="font-size:10.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${подвал}</div>
         <div style="font-family:var(--mono,monospace);font-size:10px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">граница ${esc(к["система"] || "—")} · доступ ${esc(к["секрет"] || "не задан")}</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;padding-top:2px">
-          <button type="button" class="btn sm rep" data-rep="${esc(к.id)}" title="Отчёт клиенту: итоги, причины, суммы — печатный документ">Отчёт</button>
-          <button type="button" class="btn sm primary" data-rescan="${esc(к.id)}" ${сканИдёт ? "disabled" : ""} title="Вычитать базу и поставить прогон сверщика — результат в чате">Пересчитать</button>
-          <button type="button" class="btn sm ghost" data-refreshonly="${esc(к.id)}" ${сканИдёт ? "disabled" : ""} title="Только перечитать базу, без прогона">Только вычитать</button>
+          <button type="button" class="btn sm b-do rep" data-rep="${esc(к.id)}" title="Отчёт клиенту: итоги, причины, суммы — печатный документ">Отчёт</button>
+          <button type="button" class="btn sm b-calc" data-rescan="${esc(к.id)}" ${сканИдёт ? "disabled" : ""} title="Вычитать базу и поставить прогон сверщика — результат в чате">Пересчитать</button>
+          <button type="button" class="btn sm b-calc ghost" data-refreshonly="${esc(к.id)}" ${сканИдёт ? "disabled" : ""} title="Только перечитать базу, без прогона">Только вычитать</button>
         </div>
       </div>`;
   }
@@ -971,7 +971,7 @@ export async function mount(root, ctx) {
         ${принятые.map((н) => `<div style="display:flex;gap:8px;align-items:center;padding:7px 10px">
           <span class="tag${серьёзностьКлассН(н["серьёзность"])}">${esc(н["код"] || "—")}</span>
           <span style="flex:1;min-width:0;font-size:12px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(н["название"] || "")} · ${esc(н["организация"] || "")}</span>
-          <button type="button" class="btn sm verify" data-vf="${esc(н.id)}" ${busyП === н.id ? "disabled" : ""} title="Вычитать базу, пересчитать сверку и проверить: воспроизводится ли находка">${busyП === н.id ? "проверяю…" : "Исправлено — проверить"}</button>
+          <button type="button" class="btn sm b-calc verify" data-vf="${esc(н.id)}" ${busyП === н.id ? "disabled" : ""} title="Вычитать базу, пересчитать сверку и проверить: воспроизводится ли находка">${busyП === н.id ? "проверяю…" : "Исправлено — проверить"}</button>
         </div>`).join("")}
       </div>`;
   }
@@ -1039,7 +1039,7 @@ export async function mount(root, ctx) {
       <div class="row">
         <input id="taskText" value="${esc(задачаТекст)}" placeholder="Задача отделу: супервайзер разложит на подзадачи с DoD и поставит исполнителям…"
           style="flex:1;min-width:0;padding:7px 11px;border-radius:9px;font-size:12.5px"/>
-        <button type="button" class="btn sm primary" id="taskGo" ${busyЗ === "create" ? "disabled" : ""}>Отдать отделу</button>
+        <button type="button" class="btn sm primary b-do" id="taskGo" ${busyЗ === "create" ? "disabled" : ""}>Отдать отделу</button>
       </div>
     </div>`;
   }
