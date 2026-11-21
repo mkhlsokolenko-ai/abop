@@ -1098,8 +1098,8 @@ export async function mount(root, ctx) {
     };
     const строки = эдоДоки.map((д) => `<div class="edo">
         <span class="sevbar ${sev(д)}"></span>
-        <b style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink);font-size:12.5px">${esc(д["название_типа"] || д["тип"] || "документ")}</b>
-        <span style="color:var(--ink-2);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(д["организация"] || "")}</span>
+        <b style="min-width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink);font-size:12.5px">${esc(д["название_типа"] || д["тип"] || д["файл"] || "документ")}</b>
+        <span style="flex:1;min-width:0;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(д["организация"] || "")}</span>
         <span style="flex:1"></span>
         ${Number(д["на_проверку"] || 0) ? `<span class="tag mid">на проверке: ${esc(String(д["на_проверку"]))} пол.</span>` : `<span class="tag ok">готов</span>`}
         <button type="button" class="btn sm ghost" data-edo-open="1">Открыть</button>
