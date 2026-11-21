@@ -53,7 +53,7 @@ def test_раздел_рейла_повторяет_маршрут_веба():
 
 
 def test_свёрнутый_рейл_запоминается():
-    assert '"ape_rail_narrow"' in APP, "состояние рейла не хранится"
+    assert '"ape_rail_min"' in APP, "состояние рейла не хранится (ключ мигрирован при переносе на abop.css)"
     assert ".rail.min" in ЭТАЛОН and "classList.toggle(\"min\"" in APP, "нет узкого вида рейла (abop .rail.min)"
     # мокап-dark 21.11: переключатель живёт в рейле (rail-foot), состояние — aria-label кнопки
     assert 'id="railFold"' in APP and "Свернуть рейл" in APP, "в рейле нет переключателя меню"

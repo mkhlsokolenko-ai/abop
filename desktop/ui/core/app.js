@@ -681,8 +681,8 @@ function renderNav() {
     <div class="rail-foot-note" style="margin:0 8px 6px">сервис виден только админ-ролям · ABAC</div>` : "";
   nav.innerHTML = первый.map((m) => railBtn(m, m.id === active)).join("")
     + капса + сервис.map((m) => railBtn(m, m.id === active)).join("")
-    + `<div class="rail-foot"><button class="rail-item" id="railFold" aria-label="Свернуть рейл">
-        <span class="rail-ico" aria-hidden="true">${icon("left", "lg")}</span><span class="rail-label">Свернуть</span></button></div>`;
+    + `<div class="rail-foot"><button class="rail-item" id="railFold" aria-label="${railNarrow() ? "Развернуть рейл" : "Свернуть рейл"}">
+        <span class="rail-ico" aria-hidden="true">${icon(railNarrow() ? "right" : "left", "lg")}</span><span class="rail-label">${railNarrow() ? "Развернуть" : "Свернуть"}</span></button></div>`;
   nav.querySelectorAll("[data-id]").forEach((b) => { b.onclick = () => loadModule(b.dataset.id); });
   const ф = $("railFold"); if (ф) ф.onclick = toggleRail;
 }
@@ -758,7 +758,7 @@ function открытьОтдел(id) {
 
 // Свёрнутый рейл: место под работу на небольшом экране. Выбор человека переживает перезапуск —
 // иначе каждый вход возвращал меню в состояние по умолчанию.
-const LS_RAIL = "ape_rail_narrow";
+const LS_RAIL = "ape_rail_min";   // переименован при переносе на abop.css: старый «свёрнутый» не наследуется
 function railNarrow() { try { return localStorage.getItem(LS_RAIL) === "1"; } catch { return false; } }
 function applyRail() {
   const aside = $("rail"), btn = $("railToggle");

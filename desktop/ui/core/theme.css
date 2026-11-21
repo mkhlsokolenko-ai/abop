@@ -310,28 +310,7 @@ a { color: var(--accent-ink-2); } a:hover { color: var(--accent-ink); }
 .rail-narrow .navitem .bdg { position: absolute; top: 3px; right: 5px; padding: 0 5px; }
 .railcap { font: 500 9.5px/1 var(--mono); letter-spacing: .13em; text-transform: uppercase; color: var(--ink-3); padding: 0 4px; }
 
-/* ── каркас ── */
-#app { display: flex; height: 100vh; }
-#rail {
-  width: 66px; flex-shrink: 0; background: var(--rail); backdrop-filter: var(--blur);
-  border-right: 1px solid var(--line); display: flex; flex-direction: column;
-  align-items: center; padding: 14px 0; gap: 6px;
-}
-#rail .logo { font-family: var(--mono); font-weight: 700; font-size: 15px; letter-spacing: -.3px; color: var(--accent-2); margin-bottom: 10px; }
-.railbtn {
-  width: 46px; height: 46px; border-radius: 12px; border: 1px solid transparent; background: transparent;
-  color: var(--ink-2); font-size: 11px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
-}
-.railbtn:hover { background: var(--hover); }
-.railbtn.on { background: var(--accent-bg); color: var(--accent-ink); border-color: var(--line); }
-#rail .spacer { flex: 1; }
-#main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-#topbar {
-  flex: none; height: 48px; display: flex; align-items: center; gap: 16px; padding: 0 16px;
-  border-bottom: 1px solid var(--line); background: var(--rail); backdrop-filter: var(--blur);
-}
-#topbar .title { font-weight: 700; letter-spacing: -.3px; flex: 1; }
-#panel { flex: 1; min-height: 0; overflow: hidden; }
+/* каркас старой оболочки (#app/#rail/#topbar) удалён — раскладку держит abop.css */
 
 /* ── компонент-классы ДС (рецепты 1:1) ── */
 .ape-card { padding: 20px; border-radius: var(--r-lg); background-color: var(--panel); background-image: var(--panel-grad); border: 1px solid var(--line); backdrop-filter: var(--blur); display: flex; flex-direction: column; gap: 12px; }
