@@ -25,6 +25,8 @@ const fmtCost = (c) => { const v = Number(rub(c)); return (rub(c) == null || !is
 export async function mount(root, ctx) {
   const { api, toast, humanError, gate, sanitizeHtml } = ctx;
   let runs = [], agentsList = [], total = 0, loadErr = null, busy = false;
+  // Живые прогоны (hero мокапа runs.tsx) и бюджет отдела: реальные ручки, без выдумок.
+  let живое = [], бюджет = null;
   let q = "", agentId = "", verdict = "", days = 0, deep = false, hits = {};
   let open = null, openData = null, openTab = "findings", openErr = "", templates = [];
   // Итог в числах и время у экрана. Секундомер идёт, пока карточка открыта; накопленное уходит на
@@ -140,14 +142,12 @@ export async function mount(root, ctx) {
   function filterBar() {
     const opts = [`<option value="">все агенты</option>`]
       .concat(agentsList.map((a) => `<option value="${esc(a.id)}"${a.id === agentId ? " selected" : ""}>${esc(a.name)}</option>`)).join("");
-    const vOpts = [["", "любой итог"], ["ok", "пройден"], ["issues", "есть замечания"]]
-      .map(([v, t]) => `<option value="${v}"${v === verdict ? " selected" : ""}>${t}</option>`).join("");
+
     const dOpts = [[0, "за всё время"], [1, "за сутки"], [7, "за неделю"], [30, "за месяц"]]
       .map(([v, t]) => `<option value="${v}"${v === days ? " selected" : ""}>${t}</option>`).join("");
     return `<div class="filters">
       <input id="rq" value="${esc(q)}" placeholder="Поиск: агент, отдел, а с галочкой — по находкам и ответам навыков" style="${INP};flex:1;min-width:220px"/>
       <select id="rag" style="${INP}">${opts}</select>
-      <select id="rv" style="${INP}">${vOpts}</select>
       <select id="rd" style="${INP}">${dOpts}</select>
       <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-2);cursor:pointer">
         <input type="checkbox" id="rDeep"${deep ? " checked" : ""}/> искать внутри прогонов
@@ -161,16 +161,20 @@ export async function mount(root, ctx) {
   // одинаковые записи выглядели как набор отдельных плиток, и глазу не на что было опереться.
   function rowHTML(r) {
     const ok = r.verdict_ok;
-    return `<button type="button" class="row r5 rrow" data-id="${esc(r.id)}" style="width:100%;text-align:left;background:none;border-left:0;border-right:0;border-bottom:0">
-      <span style="min-width:0;display:flex;align-items:center;gap:9px">
-        <span style="width:8px;height:8px;border-radius:9999px;flex:none;background:${ok ? "var(--ok-ink)" : "var(--warn-ink)"}"></span>
-        <span class="num" style="color:var(--ink-2)">${esc(fmtDate(r.created_at))}</span>
+    const ид = String(r.id || "");
+    return `<div class="row row-static" style="cursor:pointer" data-open-run="${esc(ид)}">
+      <span class="grp-code" style="width:74px;flex:none">#${esc(ид.slice(0, 8))}</span>
+      <span class="num-sm" style="width:110px;flex:none">${esc(r.family || "—")}</span>
+      <span class="doc-name muted" style="min-width:120px;font-weight:600">${esc(r.agent_name || r.agent_id)}</span>
+      <span class="num-sm dim">${esc(fmtDate(r.created_at))}</span>
+      <span class="spacer"></span>
+      <span class="num-sm" style="width:64px;text-align:right">${esc(фмд(r.seconds))}</span>
+      <span class="num" style="width:86px;text-align:right">${esc(fmtCost(r.cost))}</span>
+      <span class="tag${ok ? " tag-ok" : " tag-warn"}">${ok ? "пройден" : "замечания"}</span>
+      <span class="row-actions">
+        <button type="button" class="btn btn-out btn-sm" data-rreport="${esc(ид)}" title="Отчёт прогона — печатный документ">Отчёт<span class="addr">бухгалтеру</span></button>
       </span>
-      <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink);font-weight:600">${esc(r.agent_name || r.agent_id)}</span>
-      <span class="num" style="color:var(--ink-3)">${esc(r.family || "")}${r.started_by ? " · " + esc(r.started_by) : ""}</span>
-      <span class="num" style="color:var(--ink-2)">${esc(fmtCost(r.cost))}</span>
-      <span class="tag ${ok ? "ok" : "mid"}">${ok ? "пройден" : "замечания"}</span>
-    </button>${(hits[r.id] || []).length ? `<div class="row" style="padding-top:0"><span style="grid-column:1/-1;font-size:11.5px;color:var(--ink-3);line-height:1.45">${hits[r.id].map((h) => "…" + esc(h) + "…").join("<br>")}</span></div>` : ""}`;
+    </div>${(hits[r.id] || []).length ? `<div class="row row-static" style="padding-top:0"><span class="num-sm dim" style="display:block;line-height:1.45">${hits[r.id].map((h) => "…" + esc(h) + "…").join("<br>")}</span></div>` : ""}`;
   }
 
   function listHTML() {
@@ -450,14 +454,79 @@ export async function mount(root, ctx) {
   // Уход из раздела (переключили рейл, закрыли окно) — последняя возможность не потерять замер.
   window.addEventListener("beforeunload", () => { отметить(); });
 
+  const фмд = (с) => {
+    const з = Number(с || 0);
+    if (!з) return "—";
+    if (з < 60) return Math.round(з) + " с";
+    const м = Math.floor(з / 60), о = Math.round(з % 60);
+    return о ? м + " м " + String(о).padStart(2, "0") + " с" : м + " м";
+  };
+
+  // Отчёт прогона — печатный HTML из ручки report-html: реальный документ, а не скриншот.
+  async function отчётПрогона(id) {
+    busy = id; render();
+    try {
+      const р = await api(R + "/report-html/" + encodeURIComponent(id));
+      const окно = window.open("", "_blank");
+      окно.document.write((р || {})["html"] || "<html><body>отчёт пуст</body></html>");
+      окно.document.close();
+      setTimeout(() => { try { окно.print(); } catch { /* печать по Ctrl+P */ } }, 400);
+    } catch (e) { toast(humanError(e), "danger"); }
+    busy = ""; render();
+  }
+
+  async function отменитьЗадание(jobId) {
+    busy = jobId; render();
+    try {
+      await api(R + "/jobs/" + encodeURIComponent(jobId) + "/cancel", { method: "POST" });
+      toast("Прогон отменён · потраченное время записано в журнал", "ok");
+      await Promise.all([загрузитьЖивое(), load()]);
+    } catch (e) { toast(humanError(e), "danger"); busy = ""; render(); }
+  }
+
   function render() {
-    root.innerHTML = `<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:14px;padding:26px 28px;overflow:auto;animation:ape-in .3s ease-out">
-      ${head({
-        "глаз": "журнал",
-        "что": "Прогоны",
-        "подпись": "Вся работа агентов: находки целиком, доставка, затраты и отчёт. Записи приходят с сервера ABOP и не зависят от чатов.",
-      })}
-      ${open ? openHTML() : filterBar() + listHTML()}</div>`;
+    const герой = живое[0];
+    const сек = герой && герой["начато"] ? Math.max(0, Math.round((Date.now() - Date.parse(герой["начато"])) / 1000)) : 0;
+    const длит = сек ? (сек < 60 ? сек + " с" : Math.floor(сек / 60) + " м " + String(сек % 60).padStart(2, "0") + " с") : "";
+    const наружу = бюджет ? Number(бюджет["наружу_за_сутки"] || 0) : null;
+    const сто = бюджет ? Number(бюджет["за_сутки_руб"] || 0) : null;
+    const за24 = бюджет ? Number(бюджет["прогонов_за_сутки"] || 0) : null;
+    const геройHTML = !герой ? "" : `<section class="hero-run" aria-label="Исполняющийся прогон">
+      <div class="hrow">
+        <span class="dot dot-accent beacon" aria-hidden="true"></span>
+        <span class="card-title" style="font-size:13.5px">Прогон ${esc(String(герой["run_id"] || герой["job_id"] || "—"))} · ${esc(герой.agent_id || "агент")} · ${esc(герой["что"] || "")}</span>
+        ${герой["шаг"] ? `<span class="tag tag-acc"><span class="dot dot-accent beacon" style="display:inline-block"></span>ступень: ${esc(String(герой["шаг"]))}</span>` : ""}
+        <span class="spacer"></span>
+        <span class="num-tile" style="font-size:22px">${esc(длит || "—")}</span>
+        <span class="origin">с запуска</span>
+        ${герой["job_id"] ? `<button type="button" class="btn btn-run btn-sm" id="heroCancel" data-job="${esc(String(герой["job_id"] || ""))}" ${busy === герой["job_id"] ? "disabled" : ""}>Отменить</button>` : ""}
+      </div>
+      <div class="origin">стоимость прогона появится в журнале по завершении · тарификация по факту, без подписки</div>
+    </section>`;
+    const бюджетСтр = бюджет == null ? "" : `<div class="empty" style="padding:12px 20px 20px">
+      <span class="cap">бюджет отдела</span>
+      <p>${сто != null ? `За сутки: ${за24} прогон(ов) на ${esc(String(сто))} ₽.` : ""} ${бюджет["лимит_руб"] != null ? `Лимит: ${esc(String(бюджет["лимит_руб"]))} ₽${сто > лим ? " — превышен" : ""}.` : "Лимит не задан — задать его можно на пульте отдела."} ${наружу != null ? (наружу ? `Проведено в 1С за сутки: ${наружу}.` : "Граница цела: наружу не ушло ничего.") : ""}</p>
+    </div>`;
+    root.innerHTML = `<div class="screen">
+      <div class="screen-head">
+        <div>
+          <h1 class="title-screen">Прогоны</h1>
+          <div class="origin">журнал расчётов · вся работа агентов: находки, доставка, затраты, отчёт${сто != null ? ` · за сутки: ${esc(String(сто))} ₽` : ""}</div>
+        </div>
+        <div class="head-links">
+          ${живое.length ? `<span class="tag tag-acc"><span class="dot dot-accent beacon" style="display:inline-block"></span>исполняется: ${живое.length}</span>` : ""}
+        </div>
+      </div>
+      ${геройHTML}
+      ${open ? `<div class="flow" style="overflow-y:auto"><div style="padding:16px 20px">${openHTML()}</div></div>`
+             : `<div class="flow" style="overflow-y:auto"><div class="flow-head" style="position:static">
+                  <span class="cap">журнал</span><span class="vsep"></span>
+                  ${[["", "все"], ["ok", "пройдены"], ["issues", "замечания"]].map(([v, t]) =>
+                    `<button type="button" class="chip${verdict === v ? " on" : ""}" data-verdict="${v}">${t}</button>`).join("")}
+                  <span class="spacer"></span>
+                  ${filterBar()}
+                </div>${listHTML()}${бюджетСтр}</div>`}
+    </div>`;
     wire();
   }
 
@@ -476,7 +545,11 @@ export async function mount(root, ctx) {
       if ($("rReload")) $("rReload").onclick = () => load();
       if ($("errRetry")) $("errRetry").onclick = () => load();
       if ($("rClear")) $("rClear").onclick = () => { q = ""; agentId = ""; verdict = ""; days = 0; load(); };
-      root.querySelectorAll(".rrow").forEach((b) => { b.onclick = () => openRun(b.dataset.id); });
+      root.querySelectorAll("[data-open-run]").forEach((b) => { b.onclick = () => openRun(b.dataset.openRun); });
+      root.querySelectorAll("[data-rreport]").forEach((b) => { b.onclick = (e) => { e.stopPropagation(); отчётПрогона(b.dataset.rreport); }; });
+      root.querySelectorAll("[data-verdict]").forEach((b) => { b.onclick = () => { verdict = b.dataset.verdict; load(); }; });
+      const героеОтм = root.querySelector("#heroCancel");
+      if (героОтм) героеОтм.onclick = () => отменитьЗадание(героОтм.dataset.job);
       return;
     }
     if ($("oBack")) $("oBack").onclick = () => {

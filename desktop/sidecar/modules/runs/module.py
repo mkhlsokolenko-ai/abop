@@ -122,6 +122,15 @@ def run_metrics(run_id: str):
         return _err(e)
 
 
+@router.post("/jobs/{job_id}/cancel")
+def jobs_cancel(job_id: str):
+    """Отменить задание очереди: кнопка «Отменить» на hero «Прогонов» (мокап-dark)."""
+    try:
+        return {"ok": True, "результат": abop.cancel_job(job_id)}
+    except abop.AbopError as e:
+        return _err(e)
+
+
 @router.get("/live")
 def live():
     """Что сейчас идёт у ЭТОГО человека — для строки живой работы.
