@@ -53,6 +53,9 @@ export async function mount(root, ctx) {
     busy = false; render();
   }
 
+  загрузитьЖивое();
+  загрузитьБюджет();
+
   async function openRun(id) {
     await отметить();                 // уходим с прошлой карточки — её время не теряем
     open = id; openData = null; openErr = ""; openTab = "findings"; итог = null;
