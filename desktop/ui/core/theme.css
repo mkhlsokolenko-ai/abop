@@ -920,3 +920,16 @@ button:disabled { cursor: default; }
 .mod-scroll { flex: 1; min-width: 0; overflow-y: auto; }
 .dept-screen { display: flex; flex-direction: column; gap: 12px; padding: 22px 26px; max-width: 1320px; margin: 0 auto; animation: ape-in .35s ease-out; }
 .edo > b { min-width: 110px; }   /* имя документа не сжимается в один символ */
+
+
+/* ---------- легаси-примитивы поверх abop.css: вкладки без собственного tsx выглядят
+   в той же системе (плитка/карточка/строка), пока не портированы класс-в-класс ---------- */
+.kpi { min-height: 96px; border-radius: var(--r3); }
+.kpi b { font: 600 24px/1 var(--font-mono); }
+.kpi .cap { font-size: 10px; color: var(--text-3); }
+.kpi .sub { color: var(--text-3); }
+.card { background-color: var(--panel); background-image: none; box-shadow: none;
+        border-radius: var(--r3); }
+.card .t { font-size: 12.5px; font-weight: 600; }
+.ev { background: var(--field); border-left: 2px solid var(--accent); border-radius: var(--r1);
+      font-size: 12.5px; }
