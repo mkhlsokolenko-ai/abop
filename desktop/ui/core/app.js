@@ -735,7 +735,8 @@ function статусОбновить() {
   const о = (м && м !== "*" && ОТДЕЛЫ.find((x) => x.id === м)) || null;
   const версия = (($("verChip") || {}).textContent || "").replace(/^v/, "") || "";
   const ика = о && о.ика != null ? `ИКА ${о.ика}` : "";
-  const время = new Date(Date.now() + 3 * 3600000).toTimeString().slice(0, 5) + " МСК";
+  const д = new Date(Date.now() + 3 * 3600000);
+  const время = `МСК ${String(д.getUTCHours()).padStart(2, "0")}:${String(д.getUTCMinutes()).padStart(2, "0")}`;
   const части = [`ABOP${версия ? " " + версия : ""}`, ика, время].filter(Boolean);
   с.innerHTML = части.map((ч, i) => (i ? `<span class="sep" aria-hidden="true"></span>` : "") + `<span>${esc(ч)}</span>`).join("");
 }
