@@ -115,7 +115,7 @@ export function modal(title, bodyHTML, onOk, okLabel, opts = {}) {
     label: title || "Диалог",
     closeOnBackdrop: opts.closeOnBackdrop !== false,
     html: `<div class="ape-modal" style="${opts.width ? "width:min(" + opts.width + ",92vw)" : ""}">
-      ${opts.kicker ? `<div class="ape-label">${esc(opts.kicker)}</div>` : ""}
+      ${opts.kicker ? `<div class="lbl">${esc(opts.kicker)}</div>` : ""}
       <h2>${esc(title || "")}</h2>
       <div id="mBody">${bodyHTML || ""}</div>
       <div class="ape-actions">
@@ -434,7 +434,7 @@ function renderAuthBox(me) {
                       : "неизвестно — нет связи"]];
       const ov = modal("Учётная запись",
         `<div style="display:flex;flex-direction:column;gap:8px">${rows.map(([k, v]) => `<div style="display:flex;gap:10px;align-items:baseline">
-          <span class="ape-label" style="min-width:52px">${k}</span><span style="font-size:13px;color:var(--ink);word-break:break-all">${esc(String(v))}</span></div>`).join("")}
+          <span class="lbl" style="min-width:52px">${k}</span><span style="font-size:13px;color:var(--ink);word-break:break-all">${esc(String(v))}</span></div>`).join("")}
           <div class="dcard-note">Под этой почтой агенты отправляют письма и заводят задачи — проверяйте её перед внешними действиями.${
             me["запомнили"] ? " Сессия запомнена: на этом компьютере лежит действующий ключ доступа — выходите, если оставляете его другим." : ""}</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
@@ -522,9 +522,14 @@ function visibleModules() { return MODULES.filter((m) => !HIDDEN_MODULES.has(m.i
 // «Решения» стоят вторыми: там ждут человека, и это важнее журнала прогонов. Переключателя
 // режимов нет (DIZAJN, 5.1) — руководитель тоже ставит задачи, и прыгать между двумя
 // приложениями ради одного подтверждения он не должен.
-const RAIL_ORDER = ["chat", "decisions", "control", "runs", "agents", "clients", "watch",
-                    "graphlens", "verticals", "cabinet"];
-const RAIL_TITLE = { agents: "Мои агенты" };
+// Рейл = кольцо работы (дизайн-допрос 21.11, STYLE_APP_DESKTOP §4): первый класс — 6 разделов,
+// каждый — этап кольца «открыл пульт → разобрал → запустил → прогон → реестр → кабинет».
+// Инженерное — под капсой «сервис», для тех, кому ABAC его показывает; вертикали — тоже там:
+// представление меняется из шапки (vertBtn), рейл не должен расходовать на это первый класс.
+const RAIL_ORDER = ["agents", "chat", "decisions", "runs", "clients", "cabinet",
+                    "verticals", "graphlens", "control", "watch"];
+const РАЙЛ_СЕРВИС = new Set(["verticals", "graphlens", "control", "watch"]);
+const RAIL_TITLE = { agents: "Пульт отдела" };
 function railModules() {
   const rank = (id) => { const i = RAIL_ORDER.indexOf(id); return i < 0 ? RAIL_ORDER.length : i; };
   return разделыПрофиля(visibleModules()).slice().sort((a, b) => rank(a.id) - rank(b.id));
@@ -665,7 +670,13 @@ function railBtn(m, on) {
 }
 function renderNav() {
   const nav = $("railNav"); if (!nav) return;
-  nav.innerHTML = railОтделыHTML() + railModules().map((m) => railBtn(m, m.id === active)).join("");
+  const модули = railModules();
+  const первый = модули.filter((m) => !РАЙЛ_СЕРВИС.has(m.id));
+  const сервис = модули.filter((m) => РАЙЛ_СЕРВИС.has(m.id));
+  // Капса «сервис» — только когда есть что показывать: у расчётчика её нет, и рейл короче.
+  const капса = сервис.length ? `<div class="railcap" style="margin:10px 4px 3px">сервис</div>` : "";
+  nav.innerHTML = railОтделыHTML() + первый.map((m) => railBtn(m, m.id === active)).join("")
+    + капса + сервис.map((m) => railBtn(m, m.id === active)).join("");
   nav.querySelectorAll("[data-id]").forEach((b) => { b.onclick = () => loadModule(b.dataset.id); });
   nav.querySelectorAll("[data-dept]").forEach((b) => { b.onclick = () => открытьОтдел(b.dataset.dept); });
   nav.querySelectorAll("[data-deptfold]").forEach((b) => { b.onclick = toggleОтделы; });
@@ -726,7 +737,7 @@ function railОтделыHTML() {
   return `<button type="button" class="navitem" data-deptfold="1" title="Отделы — свернуть"
       aria-expanded="true" style="justify-content:flex-start;gap:9px;margin-bottom:2px">
     <span class="glyph" aria-hidden="true">${icon("down", "lg")}</span><span class="lbl">Отделы · ${ОТДЕЛЫ.length}</span></button>`
-    + кнопки + `<div class="cap" style="margin-top:9px">Инструменты</div>`;
+    + кнопки;
 }
 function открытьОтдел(id) {
   активный_отдел = id;
@@ -1094,7 +1105,7 @@ function tenantDetails() {
   ];
   const свитч = ctx.tenantCanSwitch
     ? `<div style="display:flex;flex-direction:column;gap:7px;margin-top:12px;padding-top:11px;border-top:1px solid var(--line)">
-         <span class="ape-label">посмотреть установку клиента</span>
+         <span class="lbl">посмотреть установку клиента</span>
          <div style="display:flex;gap:8px;flex-wrap:wrap">
            <input id="tnInp" value="${esc(своё ? "" : ctx.tenant)}" placeholder="имя арендатора"
                   style="flex:1;min-width:160px;padding:8px 10px;border-radius:9px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-size:12.5px"/>

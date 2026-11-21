@@ -118,7 +118,7 @@ export function head(o = {}) {
   return `<div style="display:flex;flex-direction:column;gap:6px;min-width:0">
     ${o["глаз"] ? `<span style="${S_EYE}">${esc(o["глаз"])}</span>` : ""}
     <div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap;min-width:0">
-      <h2 style="margin:0;font-size:20px;font-weight:800;letter-spacing:-.5px">${esc(o["что"] || "")}</h2>
+      <h1 class="scr-title">${esc(o["что"] || "")}</h1>
       ${метки}
       ${действия ? `<span style="margin-left:auto;display:flex;gap:7px;align-items:center;flex-wrap:wrap">${действия}</span>` : ""}
     </div>

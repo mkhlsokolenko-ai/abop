@@ -107,13 +107,13 @@ export async function mount(root, ctx) {
   const authed = !!ctx.authed;
 
   const kpi = (label, val, note, col) => `<div style="padding:17px;border-radius:14px;background:var(--panel);border:1px solid var(--line);display:flex;flex-direction:column;gap:6px;min-width:0">
-    <span class="ape-label">${esc(label)}</span><span style="font-size:20px;font-weight:800;letter-spacing:-.6px;color:${col || "var(--ink)"};overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(String(val))}">${esc(String(val))}</span>
+    <span class="lbl">${esc(label)}</span><span style="font-size:20px;font-weight:800;letter-spacing:-.6px;color:${col || "var(--ink)"};overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(String(val))}">${esc(String(val))}</span>
     <span style="font-size:11.5px;color:var(--ink-3)">${esc(note)}</span></div>`;
   const chips = (arr, danger) => (arr && arr.length ? arr.map((x) => `<span class="chip ${danger ? "" : "on"}"${danger ? ' style="color:var(--danger-ink);border-color:var(--danger-line)"' : ""}>${esc(x)}</span>`).join("") : `<span style="font-size:12px;color:var(--ink-3)">—</span>`);
   const roleCard = (r) => `<div style="${CARD};padding:16px;gap:10px">
     <b style="font-size:14px">${esc(r.role)}</b>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="ape-label" style="width:84px">разрешено</span>${chips(r.allowed)}</div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="ape-label" style="width:84px">запрещено</span>${chips(r.denied, true)}</div></div>`;
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="lbl" style="width:84px">разрешено</span>${chips(r.allowed)}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="lbl" style="width:84px">запрещено</span>${chips(r.denied, true)}</div></div>`;
 
   // ── состояние установки: обновление, связь, расход ────────────────────────────────────────
   const давность = (когда) => {
@@ -187,7 +187,7 @@ export async function mount(root, ctx) {
       ${строка("Организация", String(ctx.tenant || "—"),
                свой ? "вы в своих данных" : "данные клиента", свой ? "ok" : "warn")}
       <div style="display:grid;gap:6px;margin-top:4px">
-        <span class="ape-label">адрес ABOP · источник: ${esc((адресABOP && адресABOP["источник"]) || "умолчание")}</span>
+        <span class="lbl">адрес ABOP · источник: ${esc((адресABOP && адресABOP["источник"]) || "умолчание")}</span>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <input id="abopAddr" type="url" style="flex:1 1 220px;min-width:200px"
                  value="${esc((адресABOP && адресABOP["адрес"]) || "")}"
@@ -247,14 +247,14 @@ export async function mount(root, ctx) {
       </div>
       <div style="display:flex;gap:16px;flex-wrap:wrap">
         <div style="flex:1 1 380px;min-width:320px;${CARD}">
-          <span class="ape-label">мой доступ</span>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="ape-label" style="width:84px">роли</span>${chips(myRoles)}</div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="ape-label" style="width:84px">можно</span>${chips(me.allowed)}</div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="ape-label" style="width:84px">нельзя</span>${chips(me.denied, true)}</div>
+          <span class="lbl">мой доступ</span>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="lbl" style="width:84px">роли</span>${chips(myRoles)}</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="lbl" style="width:84px">можно</span>${chips(me.allowed)}</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span class="lbl" style="width:84px">нельзя</span>${chips(me.denied, true)}</div>
           <span style="font-size:11.5px;color:var(--ink-3)">${authed ? "Роли и отдел приходят из вашей учётной записи ABOP; агент не получает прав больше, чем у вас." : "Войдите — покажу ваши роли, отдел и что разрешено агентам."}</span>
         </div>
         <div style="flex:1 1 380px;min-width:320px;${CARD}">
-          <span class="ape-label">мои агенты и источники</span>
+          <span class="lbl">мои агенты и источники</span>
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
             ${kpi("мои агенты", mine.length, "созданы мной")}
             ${kpi("общие", common.length, "доступны по роли")}
@@ -265,10 +265,10 @@ export async function mount(root, ctx) {
           <div><button class="btn sm" id="goAgents">${icon("agents")}Мои агенты</button> <button class="btn sm" id="goSrc">${icon("connectors")}Источники</button></div>
         </div>
       </div>
-      ${(pol.roles && pol.roles.length) ? `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="ape-label">политика ролей · роль → разрешено / запрещено</span>${enforced ? "" : '<span class="chip" title="Реальная политика применяется на шлюзе ABOP; здесь — справочный пример">пример</span>'}</div>
+      ${(pol.roles && pol.roles.length) ? `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span class="lbl">политика ролей · роль → разрешено / запрещено</span>${enforced ? "" : '<span class="chip" title="Реальная политика применяется на шлюзе ABOP; здесь — справочный пример">пример</span>'}</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px">${pol.roles.map(roleCard).join("")}</div>` : ""}
       <div style="${CARD};gap:16px">
-        <span class="ape-label">настройки</span>
+        <span class="lbl">настройки</span>
         <label style="display:flex;flex-direction:column;gap:7px">
           <span style="font-size:12.5px;font-weight:600">Персона и постоянные инструкции <span style="font-weight:400;color:var(--ink-3)">· чат учитывает в каждом ответе · хранится на этом устройстве</span></span>
           <textarea id="persona" rows="3" placeholder="Например: я руководитель отдела продаж; отвечай кратко, по пунктам, на «вы»; суммы в рублях"></textarea>

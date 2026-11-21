@@ -246,7 +246,7 @@ export async function mount(root, ctx) {
         <button class="ico ghost thfav" data-id="${t.id}" title="${t.favorite ? "Убрать из избранного" : "В избранное"}" aria-label="Избранное" style="width:26px;height:26px;color:${t.favorite ? "var(--warn-ink)" : "var(--ink-3)"}">${icon("star")}</button>
         <button class="ico ghost danger thdel" data-id="${t.id}" title="Удалить чат" aria-label="Удалить чат" style="width:26px;height:26px;font-size:11px">${icon("close")}</button>
       </div>`; };
-    const group = (folder, arr) => arr.length ? `<div style="display:flex;flex-direction:column;gap:5px"><span class="ape-label" style="padding:0 4px">${folder}</span>${arr.map(row).join("")}</div>` : "";
+    const group = (folder, arr) => arr.length ? `<div style="display:flex;flex-direction:column;gap:5px"><span class="lbl" style="padding:0 4px">${folder}</span>${arr.map(row).join("")}</div>` : "";
     const emptyHTML = threadsError
       ? `<div style="padding:18px 10px;text-align:center;font-size:12px;color:var(--ink-3);line-height:1.6">Список чатов не загрузился.<br><span style="color:var(--danger-ink)">${esc(threadsError)}</span><br><button type="button" class="btn sm thRetry" style="margin-top:10px">Повторить</button></div>`
       : `<div style="padding:20px 10px;text-align:center;font-size:12px;color:var(--ink-3);line-height:1.5">${search ? "Ничего не нашлось по «" + esc(search) + "»" : "Чатов пока нет.<br>Напишите задачу справа — чат создастся сам."}</div>`;
@@ -359,7 +359,7 @@ export async function mount(root, ctx) {
     const verd = s.verdict && s.verdict.within_envelope != null ? `<span style="font-family:var(--mono);font-size:11px;color:${s.verdict.within_envelope ? "var(--ok-ink)" : "var(--danger-ink)"}">конверт: ${s.verdict.within_envelope ? "в рамках" : "превышен"}${s.verdict.autonomy_used ? " · " + esc(s.verdict.autonomy_used) : ""}</span>` : "";
     const name = s.agent_name || agentName(s.agent_id, s.agent_id);
     return `<div style="display:flex;flex-direction:column;gap:8px">
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="ape-label">агент · ${esc(name)}</span>${s.cached ? '<span style="font-size:11px;color:var(--ink-3)">· из кэша</span>' : ""}${s.trace_id ? `<span style="font-size:11px;color:var(--ink-3)" title="идентификатор трассы прогона">· ${esc((s.trace_id || "").slice(0, 8))}</span>` : ""}${s.model ? `<span style="font-family:var(--mono);font-size:11px;color:${String(s.model).startsWith("local/") ? "var(--ok-ink)" : "var(--warn-ink)"}" title="${String(s.model).startsWith("local/") ? "свой бокс — данные не уходили к облачному провайдеру" : "облачный роутер: свой бокс был недоступен"}">· ${esc(s.model)}${s.cost_rub != null ? ` · ${s.cost_rub} ₽` : ""}</span>` : ""}</div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="lbl">агент · ${esc(name)}</span>${s.cached ? '<span style="font-size:11px;color:var(--ink-3)">· из кэша</span>' : ""}${s.trace_id ? `<span style="font-size:11px;color:var(--ink-3)" title="идентификатор трассы прогона">· ${esc((s.trace_id || "").slice(0, 8))}</span>` : ""}${s.model ? `<span style="font-family:var(--mono);font-size:11px;color:${String(s.model).startsWith("local/") ? "var(--ok-ink)" : "var(--warn-ink)"}" title="${String(s.model).startsWith("local/") ? "свой бокс — данные не уходили к облачному провайдеру" : "облачный роутер: свой бокс был недоступен"}">· ${esc(s.model)}${s.cost_rub != null ? ` · ${s.cost_rub} ₽` : ""}</span>` : ""}</div>
       ${(() => {
         // Итог в числах — ОДНОЙ сборкой на все поверхности: числа и происхождение считает сервер
         // (`server/run_card.итог_в_числах`), рисует общий примитив ядра. Своя строка счётчиков
@@ -407,7 +407,7 @@ export async function mount(root, ctx) {
           <div style="display:flex;flex-direction:column;gap:3px;margin-top:5px">${st.map(row).join("")}</div></details>`;
       })()}
       ${fnd || ((s.summary || []).length ? "" : '<div style="font-size:12px;color:var(--ink-3)">Находок не выявлено.</div>')}
-      ${dl ? `<div class="ape-label" style="margin-top:4px">доставка</div>${dl}` : ""}
+      ${dl ? `<div class="lbl" style="margin-top:4px">доставка</div>${dl}` : ""}
       ${waits.length ? (s.hitl_done ? `<div style="font-size:12px;font-weight:600;color:${s.hitl_done === "approve" ? "var(--ok-ink)" : "var(--ink-3)"}">${s.hitl_done === "approve" ? "✓ Действие подтверждено" : "⃠ Действие отклонено"}${s.hitl_result ? `<div style="font-size:11px;color:var(--ink-3);font-weight:400;margin-top:3px">${esc(String(s.hitl_result).slice(0, 140))}</div>` : ""}</div>`
         : `<div class="hitl-panel" data-hitl="${esc(hitlIds.join(","))}" data-agent="${esc(s.agent_id || "")}" style="margin-top:4px">
         <span class="hitl-head">${icon("shield")}Агент подготовил внешнее действие — нужно ваше решение</span>
@@ -421,7 +421,7 @@ export async function mount(root, ctx) {
     const steps = pr.steps || [];
     const totTok = steps.reduce((a, s) => a + (s.tokens || 0), 0), totFnd = steps.reduce((a, s) => a + (s.findings_total || 0), 0);
     const cards = steps.map((s, i) => `<div style="border-top:1px solid var(--line);padding-top:8px;margin-top:8px">
-      <div class="ape-label" style="margin-bottom:4px">шаг ${i + 1}/${steps.length}${s.deliver ? " · результат " + esc(DELIVER_LABEL[s.deliver] || s.deliver) : " · только в чат"}</div>
+      <div class="lbl" style="margin-bottom:4px">шаг ${i + 1}/${steps.length}${s.deliver ? " · результат " + esc(DELIVER_LABEL[s.deliver] || s.deliver) : " · только в чат"}</div>
       ${s.error ? `<span class="danger-ink" style="font-size:12px">ошибка: ${esc(humanError(s.error))}</span>` : runCard(s)}</div>`).join("");
     return `<div style="font-weight:600;margin-bottom:2px">🔗 Цепочка «${esc(pr.name || pr.pid)}» — шагов: ${steps.length} · находок: ${totFnd}${totTok ? ` · 🎫 ${totTok >= 1000 ? Math.round(totTok / 1000) + "k" : totTok} токенов` : ""}</div>${pr.task ? `<div style="font-size:12px;color:var(--ink-3)">задача: ${esc(pr.task.slice(0, 200))}</div>` : ""}${cards}`;
   }
@@ -548,7 +548,7 @@ export async function mount(root, ctx) {
   function myTilesHTML() {
     if (!myTiles.length) return "";
     return `<div style="display:flex;flex-direction:column;gap:9px">
-      <span class="ape-label">ваши цепочки — запускались раньше</span>
+      <span class="lbl">ваши цепочки — запускались раньше</span>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(214px,1fr));gap:12px">
         ${myTiles.map((t, i) => `<button type="button" data-mine="${i}" class="lift" style="display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:14px;border:1px solid var(--line);border-radius:var(--r-lg);background-color:var(--panel);background-image:var(--panel-grad);box-shadow:var(--shadow-1),var(--edge);text-align:left;color:inherit">
           <span style="font-size:13px;font-weight:600;color:var(--ink)">${esc(t.name)}</span>
@@ -569,7 +569,7 @@ export async function mount(root, ctx) {
           <span style="color:var(--accent-ink)" aria-hidden="true">${icon(t[0], "lg")}</span><span style="font-size:13.5px;font-weight:600;color:var(--ink)">${t[1]}</span><span style="font-size:11.5px;line-height:1.45;color:var(--ink-3)">${t[2]}</span></button>`).join("")}
       </div>
       <div style="display:flex;align-items:center;gap:16px;padding:14px 18px;border-radius:var(--r-lg);background-color:var(--panel);background-image:var(--panel-grad);border:1px solid var(--line);box-shadow:var(--edge);flex-wrap:wrap">
-        <span class="ape-label">${ctx.authed ? "как это работает" : "первый запуск"}</span>
+        <span class="lbl">${ctx.authed ? "как это работает" : "первый запуск"}</span>
         ${steps.map((o) => `<span style="display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-2)"><span style="width:20px;height:20px;border-radius:7px;background:var(--hover);color:var(--accent-ink);font-family:var(--mono);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">${o[0]}</span>${o[1]}</span>`).join("")}
       </div></div>`;
   }
@@ -1701,13 +1701,13 @@ export async function mount(root, ctx) {
     const qs = (need["вопросы"] || []).map((q) => `<li style="margin:3px 0">${esc(q)}</li>`).join("");
     const ci = messages.findIndex((m) => m.meta && m.meta.clarify === c);
     return `<div style="display:flex;flex-direction:column;gap:9px">
-      <div style="display:flex;align-items:center;gap:8px"><span class="ape-label">нужно уточнить задачу</span>${cardCloseHTML(ci, "уточнение задачи")}</div>
+      <div style="display:flex;align-items:center;gap:8px"><span class="lbl">нужно уточнить задачу</span>${cardCloseHTML(ci, "уточнение задачи")}</div>
       <div style="font-size:13px;color:var(--ink-2);line-height:1.5">${esc(need["почему"] || "Описания не хватает, чтобы выбрать исполнителя уверенно.")}</div>
       ${qs ? `<ul style="margin:0;padding-left:18px;font-size:12.5px;color:var(--ink)">${qs}</ul>` : ""}
       <div style="font-size:12px;color:var(--ink-3);line-height:1.5">${esc(need["подсказка"] || "")}</div>
       ${need["пример"] ? `<div style="font-size:12px;color:var(--ink-2);background:var(--surface-2);border:1px solid var(--line);border-radius:9px;padding:8px 10px;line-height:1.5">Например: ${esc(need["пример"])}</div>` : ""}
       ${(need["кандидаты"] || []).length ? `<div style="display:flex;flex-direction:column;gap:5px">
-        <span class="ape-label">подбор остановился на этом — можно выбрать сразу</span>
+        <span class="lbl">подбор остановился на этом — можно выбрать сразу</span>
         ${(need["кандидаты"] || []).slice(0, 4).map((sid) => `<button type="button" class="drow pick clPick" data-t="${esc(c.text)}" data-skill="${esc(sid)}">
           <span class="drow-main"><span class="drow-name">${esc(skillName(sid) || sid)}</span><span class="drow-sub">собрать исполнителя по этому навыку</span></span></button>`).join("")}
       </div>` : ""}

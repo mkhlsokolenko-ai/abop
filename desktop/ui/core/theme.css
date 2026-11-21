@@ -335,9 +335,9 @@ a { color: var(--accent-ink-2); } a:hover { color: var(--accent-ink); }
 
 /* ── компонент-классы ДС (рецепты 1:1) ── */
 .ape-card { padding: 20px; border-radius: var(--r-lg); background-color: var(--panel); background-image: var(--panel-grad); border: 1px solid var(--line); backdrop-filter: var(--blur); display: flex; flex-direction: column; gap: 12px; }
-/* Капсы — «гравировка на приборах» (допрос 21.11): один рецепт 9.5px/.13em для обоих имён
-   класса, пока модули не слились на одном (.lbl). Второго словаря подписей быть не должно. */
-.ape-label, .lbl { font: 500 9.5px/1 var(--mono); letter-spacing: .13em; text-transform: uppercase; color: var(--ink-3); }
+/* Капсы — «гравировка на приборах» (допрос 21.11): один рецепт, одно имя (.lbl).
+   Синоним .ape-label выведен из употребления (волна 3: 39 использований перенесены на .lbl). */
+.lbl { font: 500 9.5px/1 var(--mono); letter-spacing: .13em; text-transform: uppercase; color: var(--ink-3); }
 .ape-h1 { margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -.7px; }
 .ape-iconbtn { width: 30px; height: 30px; flex: none; border: 1px solid var(--line); border-radius: 9px; background: transparent; color: var(--ink-2); font-size: 13px; cursor: pointer; }
 .ape-iconbtn:hover { background: var(--hover); color: var(--ink); }

@@ -75,7 +75,7 @@ export async function mount(root, ctx) {
   // первым, и человек не знал бы, какому верить.
   const блок = (title, inner) => inner
     ? `<div style="display:flex;flex-direction:column;gap:7px;margin-top:14px">
-         <span class="ape-label">${esc(title)}</span>${inner}</div>`
+         <span class="lbl">${esc(title)}</span>${inner}</div>`
     : "";
   const строка = (left, right, fg) =>
     `<div style="display:flex;align-items:center;gap:9px;padding:8px 11px;border-radius:9px;background:var(--field);border:1px solid var(--line)">
@@ -203,7 +203,7 @@ export async function mount(root, ctx) {
       ${ика ? `<div style="display:flex;gap:14px;align-items:baseline;padding:12px 14px;border-radius:11px;background:var(--field);border:1px solid var(--line)">
         <span style="font-size:30px;font-weight:800;color:var(--ink)">${р["ика"] == null ? "—" : esc(String(р["ика"]))}</span>
         <div style="display:flex;flex-direction:column">
-          <span class="ape-label">ИКА отдела · окно ${esc(String(р["окно_дней"] || 30))} дн.</span>
+          <span class="lbl">ИКА отдела · окно ${esc(String(р["окно_дней"] || 30))} дн.</span>
           <span style="font-size:11.5px;color:var(--ink-3)">веса: ${esc((р["веса"] || {})["источник"] || "—")} · прогонов ${esc(String(факты["прогонов"] || 0))} · в среднем ${факты["средняя_стоимость_руб"] != null ? факты["средняя_стоимость_руб"] + " ₽" : "—"} и ${факты["средние_секунды"] != null ? факты["средние_секунды"] + " с" : "—"} за прогон</span>
         </div>
       </div>` : ""}
@@ -538,14 +538,14 @@ export async function mount(root, ctx) {
     const способ = String(н["способ"] || "");
     const что_сделать = исход === "выбран" && способ
       ? `<div style="display:flex;flex-direction:column;gap:4px">
-           <span class="ape-label">что сделать</span>
+           <span class="lbl">что сделать</span>
            <div style="font-size:13px;font-weight:600;color:var(--ink)">${esc(способ)}</div>
            ${н["как_устранить"] ? `<div style="font-size:12.5px;line-height:1.5;color:var(--ink-2)">${esc(String(н["как_устранить"]))}</div>` : ""}
            ${н["основание_способа"] ? `<div style="font-size:11.5px;color:var(--ink-3)">основание: ${esc(String(н["основание_способа"]))}</div>` : ""}
          </div>`
       : исход
         ? `<div style="display:flex;flex-direction:column;gap:4px">
-             <span class="ape-label">способ устранения — ${esc(исход)}</span>
+             <span class="lbl">способ устранения — ${esc(исход)}</span>
              <div style="font-size:12.5px;line-height:1.5;color:var(--ink-2)">${esc(String(н["почему_способ"] || "") || "методолог способ не объявил")}</div>
            </div>`
         : "";
@@ -628,7 +628,7 @@ export async function mount(root, ctx) {
           : "");
     }
     return `<div style="display:flex;flex-direction:column;gap:8px;min-width:0">
-      <span class="ape-label">${esc(заголовок)}</span>
+      <span class="lbl">${esc(заголовок)}</span>
       ${тело}
     </div>`;
   }
@@ -671,7 +671,7 @@ export async function mount(root, ctx) {
     const способ = String(н["способ"] || "");
     const что_сделать = исход === "выбран" && способ
       ? `<div style="display:flex;flex-direction:column;gap:4px">
-           <span class="ape-label">что сделать</span>
+           <span class="lbl">что сделать</span>
            <div style="font-size:13px;font-weight:600;color:var(--ink)">${esc(способ)}</div>
            ${н["как_устранить"] ? `<div style="font-size:12.5px;line-height:1.5;color:var(--ink-2)">${esc(String(н["как_устранить"]))}</div>` : ""}
            ${н["основание_способа"] ? `<div style="font-size:11.5px;color:var(--ink-3)">основание: ${esc(String(н["основание_способа"]))}</div>` : ""}
@@ -739,7 +739,7 @@ export async function mount(root, ctx) {
     const список = клиентыРеестр.filter((к) => фирма === (к["организация"] || к["название"] || к.id))
       .concat(активных.filter((к) => фирма !== (к["организация"] || к["название"] || к.id)));
     return `<div style="display:flex;flex-direction:column;gap:8px;min-width:0">
-      <span class="ape-label">фирмы · ${активных.length}</span>
+      <span class="lbl">фирмы · ${активных.length}</span>
       <div class="card lift" data-firm="" role="button" tabindex="0"
         style="padding:9px 12px;cursor:pointer;display:flex;gap:8px;align-items:center;${!фирма ? "border-color:var(--accent);background:var(--accent-bg)" : ""}">
         <b style="font-size:12px;color:${!фирма ? "var(--accent-ink)" : "var(--ink-2)"}">все фирмы</b>
@@ -967,7 +967,7 @@ export async function mount(root, ctx) {
   function петляБлок() {
     if (!принятые.length) return "";
     return `<div class="card" style="padding:10px 12px;display:flex;flex-direction:column;gap:4px">
-        <div class="row"><span class="ape-label">петля доведения</span><span class="tag mid">${принятые.length} в работе</span></div>
+        <div class="row"><span class="lbl">петля доведения</span><span class="tag mid">${принятые.length} в работе</span></div>
         ${принятые.map((н) => `<div style="display:flex;gap:8px;align-items:center;padding:7px 10px">
           <span class="tag${серьёзностьКлассН(н["серьёзность"])}">${esc(н["код"] || "—")}</span>
           <span style="flex:1;min-width:0;font-size:12px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(н["название"] || "")} · ${esc(н["организация"] || "")}</span>
@@ -991,7 +991,7 @@ export async function mount(root, ctx) {
         ${Number(д["на_проверку"] || 0) ? `<span class="tag mid">на проверке: ${esc(String(д["на_проверку"]))} пол.</span>` : `<span class="tag ok">готов</span>`}
       </div>`).join("");
     return `<div class="card" style="padding:10px 12px">
-      <div class="row" style="margin-bottom:6px"><span class="ape-label">входящие · СБИС / Диадок</span><span style="flex:1"></span><button type="button" class="chip" id="sbisBtn" title="Что нужно, чтобы подключить приёмник ЭДО">подключить СБИС</button></div>
+      <div class="row" style="margin-bottom:6px"><span class="lbl">входящие · СБИС / Диадок</span><span style="flex:1"></span><button type="button" class="chip" id="sbisBtn" title="Что нужно, чтобы подключить приёмник ЭДО">подключить СБИС</button></div>
       ${строки || `<div style="font-size:11.5px;color:var(--ink-3);padding:4px 0">входящих, ждущих проверки полей, нет</div>`}
       <div style="font-size:11px;color:var(--ink-3);padding:6px 2px 0">СБИС не подключен — нужны API-ключи приложения кабинета (Безопасность → Интеграция → Приложения). Пока входящие видны из вычитки.</div>
     </div>`;
@@ -1026,12 +1026,12 @@ export async function mount(root, ctx) {
   function тулбарБлок(f) {
     if (задачи_умеет === false)
       return `<div class="card" style="padding:10px 12px;display:flex;flex-direction:column;gap:8px">
-        <div class="row"><span class="ape-label">агенты отдела</span>${агентЧипы(f)}</div>
+        <div class="row"><span class="lbl">агенты отдела</span>${агентЧипы(f)}</div>
         <div style="font-size:12.5px;color:var(--ink-2)">Постановка задач отделу приедет с релизом 1.0.43 — сайдкар установленного приложения ещё не знает этих ручек. Обновление: Кабинет → Обновление.</div>
       </div>`;
     return `<div class="card" style="padding:10px 12px;display:flex;flex-direction:column;gap:8px">
       <div class="row">
-        <span class="ape-label">агенты отдела</span>
+        <span class="lbl">агенты отдела</span>
         ${агентЧипы(f)}
         <span style="flex:1"></span>
         <button type="button" class="chip" id="taskToggle" title="Поставить задачу отделу — супервайзер разложит на подзадачи с DoD">${icon("plus")} Задача отделу</button>
@@ -1086,7 +1086,7 @@ export async function mount(root, ctx) {
         </div>`;
     }).join(`<div style="height:8px"></div>`);
     return `<div style="display:flex;flex-direction:column;gap:8px;min-width:0">
-      <span class="ape-label">задачи отдела — супервайзер разложит и поставит исполнителям</span>
+      <span class="lbl">задачи отдела — супервайзер разложит и поставит исполнителям</span>
       ${строки}
     </div>`;
   }
@@ -1312,7 +1312,7 @@ export async function mount(root, ctx) {
         ${tab === "dept" ? renderОтделы() : `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">
           ${shown.length ? shown.map((a) => `<div class="lift" style="${CARD}">
             <div style="min-width:0">
-              <div style="min-width:0"><div class="ape-label">${esc(a.family || "—")}${a.role ? " · " + esc(a.role) : ""}</div>
+              <div style="min-width:0"><div class="lbl">${esc(a.family || "—")}${a.role ? " · " + esc(a.role) : ""}</div>
                 <button type="button" class="pass" data-id="${esc(a.id)}" data-name="${esc(a.name)}"
                         title="Паспорт агента: навыки, зависимости, привязки, оценка"
                         aria-label="Паспорт агента «${esc(a.name)}»"
@@ -1422,12 +1422,12 @@ export async function mount(root, ctx) {
           "действия": [`<button id="back" class="btn ghost">${icon("left")} Каталог</button>`],
         })}
         <div style="${CARD}">
-          <label class="ape-label" for="fam">1 · Семья (отдел)</label>
+          <label class="lbl" for="fam">1 · Семья (отдел)</label>
           <select id="fam"><option value="">— выберите семью —</option>${families.map((f) => `<option value="${esc(f.id)}" ${f.id === bFamily ? "selected" : ""}>${esc(f.title)}</option>`).join("")}</select>
           ${fam ? `<div style="font-size:12px;color:var(--ink-2);line-height:1.5">${esc(fam.mission || "")}</div>` : ""}
         </div>
         ${fam ? `<div style="${CARD}">
-          <span class="ape-label">2 · Навыки в цепочку (в порядке клика)</span>
+          <span class="lbl">2 · Навыки в цепочку (в порядке клика)</span>
           <div style="display:flex;flex-direction:column;gap:6px">
             ${famSkills.map((s) => { const on = bSkills.has(s); const idx = chain.indexOf(s); return `<label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:9px;border:1px solid ${on ? "var(--accent)" : "var(--line)"};background:${on ? "var(--accent-bg)" : "var(--field)"};cursor:pointer">
               <input type="checkbox" class="sk" value="${esc(s)}" ${on ? "checked" : ""} style="accent-color:var(--accent)"/>
@@ -1436,10 +1436,10 @@ export async function mount(root, ctx) {
           </div>
         </div>` : ""}
         ${chain.length ? `<div style="${CARD}">
-          <span class="ape-label">3 · Цепочка и имя</span>
+          <span class="lbl">3 · Цепочка и имя</span>
           <div style="font-family:var(--mono);font-size:11.5px;color:var(--accent-ink-2)">${chain.map(esc).join(" → ")}</div>
           <input id="bname" placeholder="Имя агента (необязательно)" value="${esc(bName)}"/>
-          <span class="ape-label" style="margin-top:2px">Режим вывода</span>
+          <span class="lbl" style="margin-top:2px">Режим вывода</span>
           <div style="display:flex;gap:6px">
             ${[["", "Наследовать"], ["structured", "Структурный"], ["freeform", "Рассуждения"]].map(([v, t]) => `<button type="button" data-o="${v}" class="bout btn" aria-pressed="${bOutput === v}" style="flex:1;${bOutput === v ? "background:var(--accent-bg);color:var(--accent-ink);border-color:var(--line-2)" : ""}">${t}</button>`).join("")}
           </div>
