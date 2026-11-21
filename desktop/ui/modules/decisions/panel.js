@@ -591,7 +591,7 @@ export async function mount(root, ctx) {
             <span class="vsep"></span>
             ${разрезыЧипы}
           </div>
-          ${!loading && !err && показ_вкладки}
+          ${!loading && !err ? показ_вкладки : ""}
           ${вкладка === "реестр" ? польза() : ""}
         </div>
         <aside class="inspector" aria-label="Сводка реестра">
