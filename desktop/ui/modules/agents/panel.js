@@ -32,7 +32,7 @@ export async function mount(root, ctx) {
   // Пульт (мокап 20.11): поток ГРУППАМИ причин с полосой значимости, чипы агентов и фирм.
   let группыПульт = [], развернутаГруппа = "", показыватьВсё = false;
   // Сортировка потока — чипы «по значимости / по сумме» над потоком (мокап 20.11, блок 2).
-  let сортРежим = "важность", группыСвёрнуты = true;
+  let сортРежим = "важность";
   // ЭДО-окно (мокап 20.11, блок 3): входящие показываем из вычитки/OCR, пока СБИС не подключен —
   // ярлык говорит «первичка из вычитки», а не выдаёт их за документы от оператора ЭДО.
   let эдоДоки = [];
@@ -357,7 +357,7 @@ export async function mount(root, ctx) {
 
   async function выбратьОтдел(id) {
     deptSel = id; фирма = ""; раскрыта = ""; раскрыта_задача = "";
-    развернутаГруппа = ""; показыватьВсё = false; группыСвёрнуты = true;
+    развернутаГруппа = ""; показыватьВсё = false;
     try { localStorage.setItem("ape_dept_sel", id); } catch { /* приватное окно */ }
     render();
     await Promise.all([загрузитьОчередь(), загрузитьИКА7(deptSel), загрузитьNCR(), загрузитьЗадачи(), загрузитьПринятые(), загрузитьПоля(), загрузитьАвтономию(), загрузитьБюджет()]);
@@ -367,7 +367,7 @@ export async function mount(root, ctx) {
   async function выбратьФирму(id) {
     const к = клиентыРеестр.find((x) => x.id === id);
     фирма = id && к ? (к["организация"] || к["название"] || к.id) : "";
-    раскрыта = ""; развернутаГруппа = ""; группыСвёрнуты = true;
+    раскрыта = ""; развернутаГруппа = "";
     await загрузитьОчередь();
     render();
   }
@@ -1300,7 +1300,6 @@ export async function mount(root, ctx) {
       render();
     }));
     root.querySelectorAll("[data-gall]").forEach((b) => (b.onclick = (e) => { e.stopPropagation(); показыватьВсё = true; render(); }));
-    root.querySelectorAll("[data-gallgrp]").forEach((b) => (b.onclick = () => { группыСвёрнуты = false; render(); }));
     root.querySelectorAll("[data-sort]").forEach((b) => (b.onclick = () => {
       if (сортРежим === b.dataset.sort) return;
       сортРежим = b.dataset.sort; развернутаГруппа = "";
