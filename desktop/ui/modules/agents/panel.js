@@ -796,7 +796,7 @@ export async function mount(root, ctx) {
         ${наружу != null ? (наружу ? `<div class="bad-note">наружу ушло: ${наружу} документов в 1С за сутки</div>` : `<div class="delta ok">наружу не ушло · проведений в 1С за сутки: 0</div>`) : ""}
       </div>`;
     return `<div style="display:flex;flex-direction:column;gap:8px;min-width:0">
-      <div class="row">
+      <div class="hrow">
         <span class="lbl">фирмы · ${активных.length}</span>
         <span style="flex:1"></span>
         ${наружу != null && !наружу ? `<span class="tag ok">наружу не ушло</span>` : ""}
@@ -1067,7 +1067,7 @@ export async function mount(root, ctx) {
         `<button type="button" class="chip${фирма === имя ? " on" : ""}" data-firmname="${esc(имя)}">${esc(имя)} · ${счёт[имя]}</button>`));
     const сорт = [["важность", "по значимости"], ["сумма", "по сумме"]]
       .map(([к, имя]) => `<button type="button" class="chip${сортРежим === к ? " on" : ""}" data-sort="${к}" title="Порядок групп в потоке">${имя}${сортРежим === к ? " ▾" : ""}</button>`).join("");
-    return `<div class="row" style="min-width:0">
+    return `<div class="hrow" style="min-width:0">
       ${чипы.join("")}
       <span style="flex:1"></span>
       ${сорт}
@@ -1077,7 +1077,7 @@ export async function mount(root, ctx) {
   function петляБлок() {
     if (!принятые.length) return "";
     return `<div class="card" style="padding:10px 12px;display:flex;flex-direction:column;gap:4px">
-        <div class="row"><span class="lbl">петля доведения</span><span class="tag mid">${принятые.length} в работе</span></div>
+        <div class="hrow"><span class="lbl">петля доведения</span><span class="tag mid">${принятые.length} в работе</span></div>
         ${принятые.map((н) => `<div style="display:flex;gap:8px;align-items:center;padding:7px 10px">
           <span class="tag ai">${esc(н["код"] || "—")}</span>
           ${н["величина"] ? `<span style="font:500 11px var(--mono,monospace);color:var(--ink-2)">×${esc(String(н["величина"]))}</span>` : ""}
@@ -1104,7 +1104,7 @@ export async function mount(root, ctx) {
         <button type="button" class="btn sm ghost" data-edo-open="1">Открыть</button>
       </div>`).join("");
     return `<div class="card" style="padding:10px 12px">
-      <div class="row" style="margin-bottom:6px"><span class="lbl">входящие · ЭДО из вычитки</span>${эдоДоки.length ? `<span class="tag ai">${эдоДоки.length}</span>` : ""}<span style="flex:1"></span><button type="button" class="chip" id="sbisBtn" title="Что нужно, чтобы подключить приёмник ЭДО (Saby)">подключить источник</button></div>
+      <div class="hrow" style="margin-bottom:6px"><span class="lbl">входящие · ЭДО из вычитки</span>${эдоДоки.length ? `<span class="tag ai">${эдоДоки.length}</span>` : ""}<span style="flex:1"></span><button type="button" class="chip" id="sbisBtn" title="Что нужно, чтобы подключить приёмник ЭДО (Saby)">подключить источник</button></div>
       ${строки || `<div style="font-size:11.5px;color:var(--ink-3);padding:4px 0">входящих, ждущих проверки полей, нет</div>`}
       <div style="font-size:11px;color:var(--ink-3);padding:6px 2px 0">Оператор ЭДО не подключён — ключи приложения кабинета Saby (Безопасность → Интеграция → Приложения). Пока входящие видны из вычитки.</div>
     </div>`;
@@ -1139,16 +1139,16 @@ export async function mount(root, ctx) {
   function тулбарБлок(f) {
     if (задачи_умеет === false)
       return `<div class="card" style="padding:10px 12px;display:flex;flex-direction:column;gap:8px">
-        <div class="row"><span class="lbl">агенты отдела</span>${агентЧипы(f)}</div>
+        <div class="hrow"><span class="lbl">агенты отдела</span>${агентЧипы(f)}</div>
         <div style="font-size:12.5px;color:var(--ink-2)">Постановка задач отделу приедет с релизом 1.0.43 — сайдкар установленного приложения ещё не знает этих ручек. Обновление: Кабинет → Обновление.</div>
       </div>`;
     return `<section class="card" style="padding:10px 12px;display:flex;flex-direction:column;gap:8px" aria-label="Задача агентам">
-      <div class="row">
+      <div class="hrow">
         <input id="taskText" value="${esc(задачаТекст)}" placeholder="Задача агенту: что сделать" class="input-lg"/>
         <button type="button" class="btn lg primary b-calc" id="runText" ${busyЗ === "run" ? "disabled" : ""} title="Запустить выбранного агента отдела на этом тексте — прогон в очереди, результат в «Прогонах»">${icon("play")} Запустить<span class="kbd">Enter</span></button>
         <button type="button" class="btn lg b-do" id="taskGo" ${busyЗ === "create" ? "disabled" : ""} title="Супервайзер разложит задачу на подзадачи с DoD">${icon("chain")} Отдать отделу</button>
       </div>
-      <div class="row">
+      <div class="hrow">
         <span class="lbl">агенты</span>
         ${агентЧипы(f)}
         ${выбран_агент ? "" : `<span class="delta">не выбран — «Запустить» возьмёт первого запущенного</span>`}
@@ -1415,15 +1415,23 @@ export async function mount(root, ctx) {
     // инлайновыми цветами была шестым способом нарисовать одно и то же.
     const tabBtn = (id, label, n) =>
       `<button type="button" class="tabBtn btn sm${tab === id ? " primary" : ""}" data-tab="${id}" aria-pressed="${tab === id}">${esc(label)} · ${n}</button>`;
-    root.innerHTML = `<div style="flex:1;min-width:0;overflow-y:auto">
-      <div style="display:flex;flex-direction:column;gap:18px;padding:22px 26px;max-width:${tab === "dept" ? "1120px" : "960px"};margin:0 auto;animation:ape-in .35s ease-out">
+    // Мокап-dark 21.11 (полное соответствие): вкладка «Отделы» = пульт целиком, без шапки
+    // каталога и табов — переключение отделов живёт в шапке (brandDept), каталог — в соседних
+    // вкладках. Ширина полотна — 1320px из мокапа.
+    if (tab === "dept") {
+      root.innerHTML = `<div class="mod-scroll">
+        <div class="dept-screen">
+          ${errorBlock()}
+          ${renderОтделы()}
+        </div></div>`;
+      return;
+    }
+    root.innerHTML = `<div class="mod-scroll">
+      <div style="display:flex;flex-direction:column;gap:18px;padding:22px 26px;max-width:960px;margin:0 auto;animation:ape-in .35s ease-out">
         ${head({
           "глаз": "рантайм ABOP",
-          "что": tab === "dept" ? "Отделы" : "Мои агенты",
-          "подпись": tab === "dept"
-            ? ((families.find((x) => x.id === deptSel) || families[0] || {}).mission
-               || "Рабочее место отдела: полоса здоровья, очередь находок и фирмы.")
-            : "Запуск идёт в чате: там результат, подтверждение внешних действий и «сделать регулярной».",
+          "что": "Мои агенты",
+          "подпись": "Запуск идёт в чате: там результат, подтверждение внешних действий и «сделать регулярной».",
           "действия": [
             tab === "mine" ? `<button id="build" class="btn primary">${icon("plus")} Собрать агента</button>` : "",
             `<button id="refresh" class="ico" title="Обновить" aria-label="Обновить данные раздела">${icon("refresh")}</button>`,
@@ -1431,7 +1439,7 @@ export async function mount(root, ctx) {
         })}
         ${errorBlock()}
         <div style="display:flex;gap:8px">${tabBtn("mine", "Мои агенты", mine.length)}${tabBtn("common", "Общие агенты", common.length)}${tabBtn("dept", "Отделы", families.length)}${tabBtn("arch", "Архив", archived.length)}</div>
-        ${tab === "dept" ? renderОтделы() : `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">
           ${shown.length ? shown.map((a) => `<div class="lift" style="${CARD}">
             <div style="min-width:0">
               <div style="min-width:0"><div class="lbl">${esc(a.family || "—")}${a.role ? " · " + esc(a.role) : ""}</div>
@@ -1449,7 +1457,7 @@ export async function mount(root, ctx) {
             </div>
             ${tab === "arch" ? archActions(a) : actions(a)}
           </div>`).join("") : (loadErr ? "" : `<div class="faint" style="padding:20px;grid-column:1/-1">${tab === "mine" ? "У вас пока нет своих агентов — нажмите «Собрать агента» в шапке." : (tab === "arch" ? "Архив пуст: выведенных из работы агентов нет." : "Нет общих агентов, доступных вашей роли.")}</div>`)}
-        </div>`}
+        </div>
       </div></div>`;
     root.querySelectorAll(".tabBtn").forEach((b) => (b.onclick = () => {
       tab = b.dataset.tab;
