@@ -39,6 +39,11 @@ export async function mount(root, ctx) {
   // Уровень автономии отдела (ADR-085) — подпись под ИКА, как в мокапе. Ручка едет с новым
   // сайдкаром; на старом её нет (404) — подпись просто короче, ничего не ломаем.
   let автономия = null;
+  // Бюджет отдела (мокап-dark): суточная стоимость, лимит, наружу, вычитка/сверка. 404 старого
+  // сайдкара — зоны честно молчат, выдуманных чисел нет.
+  let бюджет = null;
+  // Выбранный агент для «Запустить» (мокап-dark): чипы — выбор, кнопка — запуск.
+  let выбран_агент = "";
   // Задачи отдела (шаг 5): дверь супервайзера в десктопе. Сайдкар 1.0.43+ — с ручками задач;
   // на старом секция честно говорит про релиз, а не делает вид.
   let задачи = [], задачаТекст = "", раскрыта_задача = "", задачи_умеет = null, busyЗ = "";
@@ -346,7 +351,7 @@ export async function mount(root, ctx) {
         : (families.some((f) => f.id === сохран) ? сохран : ((families[0] || {}).id || ""));
     }
     render();
-    await Promise.all([загрузитьИКАвсех(), загрузитьИКА7(deptSel), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов(), загрузитьЗадачи(), загрузитьПринятые(), загрузитьПоля(), загрузитьМетодолога(), загрузитьАвтономию()]);
+    await Promise.all([загрузитьИКАвсех(), загрузитьИКА7(deptSel), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов(), загрузитьЗадачи(), загрузитьПринятые(), загрузитьПоля(), загрузитьМетодолога(), загрузитьАвтономию(), загрузитьБюджет()]);
     render();
   }
 
@@ -355,7 +360,7 @@ export async function mount(root, ctx) {
     развернутаГруппа = ""; показыватьВсё = false; группыСвёрнуты = true;
     try { localStorage.setItem("ape_dept_sel", id); } catch { /* приватное окно */ }
     render();
-    await Promise.all([загрузитьОчередь(), загрузитьИКА7(deptSel), загрузитьNCR(), загрузитьЗадачи(), загрузитьПринятые(), загрузитьПоля(), загрузитьАвтономию()]);
+    await Promise.all([загрузитьОчередь(), загрузитьИКА7(deptSel), загрузитьNCR(), загрузитьЗадачи(), загрузитьПринятые(), загрузитьПоля(), загрузитьАвтономию(), загрузитьБюджет()]);
     render();
   }
 
@@ -505,8 +510,12 @@ export async function mount(root, ctx) {
     const периоды = клиентыРеестр.filter((к) => String(к["состояние"] || "") !== "выключен")
       .map((к) => String(к["период_с"] || "")).filter(Boolean);
     const период = периоды.length ? периоды[0] + " → " + (клиентыРеестр[0]["период_по"] || "…") : "";
+    const времена = [
+      бюджет && бюджет["вычитка"] ? "вычитка " + esc(фмск(бюджет["вычитка"])) : "",
+      бюджет && бюджет["сверка"] ? "сверка " + esc(фмск(бюджет["сверка"])) : "",
+    ].filter(Boolean).join(" · ");
     const происхождение = базы.length
-      ? `базы: ${базы.map((б) => esc(б)).join(", ")}${период ? " · " + esc(период) : ""}`
+      ? [времена, `базы: ${базы.map((б) => esc(б)).join(", ")}${период ? " · " + esc(период) : ""}`].filter(Boolean).join(" · ")
       : `источники не подключены — подключить источник: раздел «Клиенты»`;
     const патрульСчёт = методолог ? JSON.parse(методолог["счёт"] || "{}") : {};
     const патрТон = методолог ? (патрульСчёт["качество"] || патрульСчёт["назначение"] ? " sev" : " mid") : "";
@@ -553,10 +562,11 @@ export async function mount(root, ctx) {
         <div class="lbl" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(подпись)}</div>
         <b class="tile-num"${цвет ? ` style="color:${цвет}"` : ""}>${esc(String(число ?? "—"))}</b>
       </div>`;
+    const дельтаСегодня = (ч) => (ч == null ? "" : `<span class="delta">${ч >= 0 ? "+" : ""}${esc(String(ч))} сегодня</span>`);
     const плитки = [
-      плита("найдено", в["всего"] ?? "—"),
-      плита("признано", в["подтверждено"] ?? "—", в["подтверждено"] ? "var(--ok-ink)" : ""),
-      плита("исправлено", в["исправлено"] ?? "—"),
+      плита("найдено", в["всего"] ?? "—") + дельтаСегодня(в["найдено_сегодня"]),
+      плита("признано", в["подтверждено"] ?? "—", в["подтверждено"] ? "var(--ok-ink)" : "") + дельтаСегодня(в["признано_сегодня"]),
+      плита("исправлено", в["исправлено"] ?? "—") + дельтаСегодня(в["исправлено_сегодня"]),
       плита("доля признания", в["доля_подтверждения"] != null && в["доля_подтверждения"] !== "" ? в["доля_подтверждения"] + " %" : "—"),
     ].join("");
     return `<section class="state-zone" aria-label="Состояние отдела">
@@ -780,8 +790,22 @@ export async function mount(root, ctx) {
     const активных = клиентыРеестр.filter((к) => String(к["состояние"] || "") !== "выключен");
     const список = клиентыРеестр.filter((к) => фирма === (к["организация"] || к["название"] || к.id))
       .concat(активных.filter((к) => фирма !== (к["организация"] || к["название"] || к.id)));
+    const наружу = бюджет ? Number(бюджет["наружу_за_сутки"] || 0) : null;
+    const лим = бюджет ? бюджет["лимит_руб"] : null;
+    const сто = бюджет ? Number(бюджет["за_сутки_руб"] || 0) : null;
+    const превыш = (лим != null && сто != null && сто > лим);
+    const бюджетСтр = бюджет == null ? "" : `<div class="foot-note">
+        ${сто != null ? `стоимость прогонов за сутки: ${esc(String(сто))} ₽` : ""}${лим != null ? ` · лимит: ${esc(String(лим))} ₽ <button type="button" class="tagbtn" id="budgetSet" title="Суточный лимит расходов отдела — manager+">задать</button>` : `${сто != null ? ` · ` : ""}лимит не задан <button type="button" class="tagbtn" id="budgetSet" title="Суточный лимит расходов отдела — manager+">задать</button>`}
+        ${превыш ? `<div class="bad-note">лимит превышен</div>` : ""}
+        ${наружу != null ? (наружу ? `<div class="bad-note">наружу ушло: ${наружу} документов в 1С за сутки</div>` : `<div class="delta ok">наружу не ушло · проведений в 1С за сутки: 0</div>`) : ""}
+      </div>`;
     return `<div style="display:flex;flex-direction:column;gap:8px;min-width:0">
-      <span class="lbl">фирмы · ${активных.length}</span>
+      <div class="row">
+        <span class="lbl">фирмы · ${активных.length}</span>
+        <span style="flex:1"></span>
+        ${наружу != null && !наружу ? `<span class="tag ok">наружу не ушло</span>` : ""}
+        <button type="button" class="chip" id="goClients">Подключить</button>
+      </div>
       <div class="card lift" data-firm="" role="button" tabindex="0"
         style="padding:9px 12px;cursor:pointer;display:flex;gap:8px;align-items:center;${!фирма ? "border-color:var(--accent);background:var(--accent-bg)" : ""}">
         <b style="font-size:12px;color:${!фирма ? "var(--accent-ink)" : "var(--ink-2)"}">все фирмы</b>
@@ -789,10 +813,7 @@ export async function mount(root, ctx) {
         <span class="tag${разрезыОч["открытых_всего"] ? " mid" : ""}">всего ${разрезыОч["открытых_всего"] || 0}</span>
       </div>
       ${список.map(фирмаКарта).join("")}
-      <div class="card" style="padding:10px 12px;display:flex;gap:8px;align-items:center">
-        <span style="font-size:11px;color:var(--ink-3);flex:1;min-width:0">подключение — редкое действие: форма целиком в разделе «Клиенты»</span>
-        <button type="button" class="btn sm" id="goClients">Подключить</button>
-      </div>
+      ${бюджетСтр}
     </div>`;
   }
 
@@ -870,6 +891,57 @@ export async function mount(root, ctx) {
     if (!deptSel) return;
     try { автономия = await api(A + "/departments/" + encodeURIComponent(deptSel) + "/autonomy"); }
     catch (e) { автономия = null; }
+  }
+
+  async function загрузитьБюджет() {
+    if (!deptSel) return;
+    try { бюджет = await api(A + "/departments/" + encodeURIComponent(deptSel) + "/budget"); }
+    catch (e) { бюджет = null; }
+  }
+
+  const фмск = (ts) => {
+    const s = String(ts || "");
+    if (!s) return "";
+    const d = new Date(s.endsWith("Z") || s.includes("+") ? s : s + "Z");
+    if (isNaN(d)) return "";
+    return new Date(d.getTime() + 3 * 3600000).toTimeString().slice(0, 5);
+  };
+
+  async function запуститьТекст() {
+    const текст = (задачаТекст || "").trim();
+    if (!текст) { toast("Опишите, что сделать — агент получит это задачей", "warn"); return; }
+    busyЗ = "run"; render();
+    try {
+      const р = await api(A + "/departments/" + encodeURIComponent(deptSel) + "/run-text",
+        { method: "POST", body: JSON.stringify({ текст, agent_id: выбран_агент || "" }) });
+      const ид = (р && (р["job_id"] || (р["run"] || {})["id"] || (р["run"] || {})["run_id"])) || "";
+      toast("Прогон поставлен в очередь" + (ид ? " · " + ид : "") + " — результат в «Прогонах»", "ok");
+      задачаТекст = "";
+    } catch (e) { toast(humanError(e), "danger"); }
+    busyЗ = ""; render();
+  }
+
+  async function задатьЛимит() {
+    const тек = бюджет && бюджет["лимит_руб"] != null ? String(бюджет["лимит_руб"]) : "";
+    let значение = тек;
+    await new Promise((готово) => {
+      const ov = ctx.modal("Суточный лимит расходов отдела",
+        `<div style="display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:12.5px;color:var(--ink-2);line-height:1.5">Лимит не блокирует прогоны — пульт красит превышение. Число в рублях за сутки.</div>
+          <input id="limVal" value="${esc(тек)}" placeholder="500.00" class="input-lg"/>
+        </div>`,
+        async () => {
+          значение = (ov.querySelector("#limVal") || {}).value || "";
+          try {
+            const р = await api(A + "/departments/" + encodeURIComponent(deptSel) + "/budget",
+              { method: "PUT", body: JSON.stringify({ лимит_руб: Number(значение) }) });
+            бюджет = Object.assign(бюджет || {}, { "лимит_руб": р["лимит_руб"] });
+            toast("Лимит задан: " + р["лимит_руб"] + " ₽", "ok");
+          } catch (e) { toast(humanError(e), "danger"); }
+          render(); готово();
+          return true;
+        }, "Задать", { okKind: "primary", width: "480px" });
+    });
   }
 
   // ── петля доведения: принятые находки и точечная проверка ─────────────────────────────────
@@ -1058,8 +1130,8 @@ export async function mount(root, ctx) {
   function агентЧипы(f) {
     const живые = agents.filter((a) => a.family === f.id && String(a.status || "") === "deployed")
       .sort((a, b) => (b.version || 0) - (a.version || 0)).slice(0, 4);
-    return живые.map((a) => `<button type="button" class="chip agent-chip runa" data-aid="${esc(a.id)}" data-anm="${esc(a.name)}"
-        title="Запустить в чате: ${esc(a.name)}">▶ ${esc((a.name || "").split("(")[0].trim())} v${esc(String(a.version || 1))}</button>`).join("");
+    return живые.map((a) => `<button type="button" class="chip${выбран_агент === a.id ? " on" : " agent-chip"}" data-agent="${esc(a.id)}"
+        title="${esc(a.name)} — выбрать для «Запустить»">${esc((a.name || "").split("(")[0].trim())} v${esc(String(a.version || 1))}</button>`).join("");
   }
 
   // Тулбар пульта (мокап 20.11, блок 1): запуск агентов семьи и постановка задачи — НАВЕРХУ,
@@ -1073,12 +1145,14 @@ export async function mount(root, ctx) {
       </div>`;
     return `<section class="card" style="padding:10px 12px;display:flex;flex-direction:column;gap:8px" aria-label="Задача агентам">
       <div class="row">
-        <input id="taskText" value="${esc(задачаТекст)}" placeholder="Задача отделу: супервайзер разложит на подзадачи с DoD и поставит исполнителям…" class="input-lg"/>
-        <button type="button" class="btn primary b-do" id="taskGo" ${busyЗ === "create" ? "disabled" : ""}>Отдать отделу</button>
+        <input id="taskText" value="${esc(задачаТекст)}" placeholder="Задача агенту: что сделать" class="input-lg"/>
+        <button type="button" class="btn primary b-calc" id="runText" ${busyЗ === "run" ? "disabled" : ""} title="Запустить выбранного агента отдела на этом тексте — прогон в очереди, результат в «Прогонах»">${icon("play")} Запустить</button>
+        <button type="button" class="btn b-do" id="taskGo" ${busyЗ === "create" ? "disabled" : ""} title="Супервайзер разложит задачу на подзадачи с DoD">${icon("chain")} Отдать отделу</button>
       </div>
       <div class="row">
         <span class="lbl">агенты</span>
         ${агентЧипы(f)}
+        ${выбран_агент ? "" : `<span class="delta">не выбран — «Запустить» возьмёт первого запущенного</span>`}
       </div>
     </section>`;
   }
@@ -1233,7 +1307,12 @@ export async function mount(root, ctx) {
       сортРежим = b.dataset.sort; развернутаГруппа = "";
       render();
     }));
-    root.querySelectorAll(".runa").forEach((b) => (b.onclick = () => ctx.open("chat", { runAgent: { id: b.dataset.aid, name: b.dataset.anm } })));
+    root.querySelectorAll("[data-agent]").forEach((b) => (b.onclick = () => {
+      выбран_агент = (выбран_агент === b.dataset.agent) ? "" : b.dataset.agent;
+      render();
+    }));
+    const rt = root.querySelector("#runText");
+    if (rt) rt.onclick = запуститьТекст;
     const sb = root.querySelector("#sbisBtn"); if (sb) sb.onclick = показатьСБИС;
     root.querySelectorAll("[data-firm]").forEach((b) => {
       const выбор = () => { const id = b.dataset.firm; if ((id || "") !== фирмаИд()) выбратьФирму(id); };
@@ -1262,6 +1341,7 @@ export async function mount(root, ctx) {
     const ir = root.querySelector("#deptIkaRetry");
     if (ir) ir.onclick = async () => { await загрузитьИКА(deptSel); render(); };
     const gc = root.querySelector("#goClients"); if (gc) gc.onclick = () => ctx.open("clients");
+    const bs = root.querySelector("#budgetSet"); if (bs) bs.onclick = задатьЛимит;
     // задачи отдела
     const tt = root.querySelector("#taskText");
     if (tt) {

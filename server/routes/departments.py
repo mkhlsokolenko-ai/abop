@@ -8,9 +8,11 @@
 """
 from __future__ import annotations
 
+import datetime as _dt
+
 from fastapi import APIRouter, Depends, HTTPException
 
-from .. import audit_store, autonomy, dept_tasks, ika, matrix_store, methodology, ncr_store, quality_audit, supervisor
+from .. import audit_store, autonomy, budget_store, dept_tasks, ika, matrix_store, methodology, ncr_store, quality_audit, run_store, supervisor
 from ..deps import can_see_family, require_level, user
 
 router = APIRouter()
@@ -268,3 +270,53 @@ async def autonomy_toggle(fid: str, body: dict, u: dict = Depends(user)) -> dict
     await audit_store.record(actor, "autonomy.toggle", fid,
                              {"динамическая_автономия": вкл})
     return {"ok": True, "отдел": fid, "динамическая_автономия": вкл}
+
+
+@router.get("/api/departments/{fid}/budget")
+async def budget_status(fid: str, u: dict = Depends(user)) -> dict:
+    """Бюджет отдела на сутки (мокап-dark 21.11): стоимость прогонов за 24 ч, лимит,
+    «наружу не ушло» (проведения в 1С из журнала аудита), время вычитки и сверки.
+    Все числа — факты из store'ов, ничего не выдумываем."""
+    if not can_see_family(u, fid):
+        raise HTTPException(403, "семья другого отдела")
+    граница = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(hours=24)).isoformat()[:19]
+    прогоны = [r for r in await run_store.list_runs(limit=1000)
+               if r.get("family") == fid and str(r.get("created_at") or "")[:19] >= граница]
+    за_сутки = round(sum(float(r.get("cost_rub") or 0) for r in прогоны), 2)
+    наружу, вычитка = 0, ""
+    try:
+        for е in await audit_store.list_events(limit=500):
+            ts = str(е.get("ts") or "")[:19]
+            if not ts or ts < граница:
+                continue
+            if е.get("action") == "1c.post.document":
+                наружу += 1
+            if е.get("action") == "client.refresh" and ts > вычитка:
+                вычитка = ts
+    except Exception:  # noqa: BLE001 — журнал аудита не должен валить бюджет
+        pass
+    все = await run_store.list_runs(limit=200)
+    сверка = max((str(r.get("created_at") or "")[:19] for r in все if r.get("family") == fid),
+                 default="")
+    return {"отдел": fid, "за_сутки_руб": за_сутки, "лимит_руб": await budget_store.лимит(fid),
+            "прогонов_за_сутки": len(прогоны), "наружу_за_сутки": наружу,
+            "вычитка": вычитка, "сверка": сверка}
+
+
+@router.put("/api/departments/{fid}/budget")
+async def budget_set(fid: str, body: dict, u: dict = Depends(user)) -> dict:
+    """Задать суточный лимит расходов отдела — manager+. Число не блокирует прогоны (v1):
+    пульт показывает «лимит превышен» цветом, блокировка — отдельное решение владельца."""
+    require_level(u, "manager")
+    if not can_see_family(u, fid):
+        raise HTTPException(403, "семья другого отдела")
+    try:
+        руб = round(float((body or {}).get("лимит_руб")), 2)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "лимит_руб — число рублей")
+    if руб < 0:
+        raise HTTPException(400, "лимит — неотрицательное число рублей")
+    actor = u.get("name") or u.get("sub") or "dev"
+    итог = await budget_store.задать_лимит(fid, руб, actor)
+    await audit_store.record(actor, "dept.budget.set", fid, {"лимит_руб": итог})
+    return {"ok": True, "отдел": fid, "лимит_руб": итог}

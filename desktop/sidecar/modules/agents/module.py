@@ -472,3 +472,32 @@ def del_agent(agent_id: str):
         return {"ok": True, **(abop.del_agent(agent_id) or {})}
     except abop.AbopError as e:
         return _err(e)
+
+
+@router.get("/departments/{fid}/budget")
+def dept_budget(fid: str):
+    """Бюджет отдела: суточная стоимость прогонов, лимит, наружу, вычитка/сверка (мокап-dark)."""
+    try:
+        return abop.department_budget(fid)
+    except abop.AbopError as e:
+        return _err(e)
+
+
+@router.put("/departments/{fid}/budget")
+def dept_budget_set(fid: str, body: dict):
+    """Суточный лимит расходов отдела — manager+; решение уходит в журнал аудита на сервере."""
+    try:
+        return abop.department_budget_set(fid, float(body.get("лимит_руб")))
+    except abop.AbopError as e:
+        return _err(e)
+
+
+@router.post("/departments/{fid}/run-text")
+def dept_run_text(fid: str, body: dict):
+    """«Запустить» с пульта: текст задачей агенту отдела; прогон в очередь ABOP (202 job)."""
+    try:
+        return abop.run_text(fid, str(body.get("текст") or ""), str(body.get("agent_id") or ""))
+    except abop.AbopError as e:
+        return _err(e)
+    except ValueError as e:
+        return {"error": str(e), "status": 422}

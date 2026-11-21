@@ -891,3 +891,29 @@ def hitl_approve(item_id: str, decision: str = "approve", reason: str = "") -> d
 
 def health() -> dict:
     return _req("GET", "/api/health", timeout=10)
+
+
+def department_budget(fid: str) -> dict:
+    """Бюджет отдела на сутки: прогонов, рублей, лимит, «наружу за сутки», вычитка/сверка."""
+    return _req("GET", "/api/departments/" + urllib.request.quote(str(fid)) + "/budget",
+                timeout=30) or {}
+
+
+def department_budget_set(fid: str, лимит_руб: float) -> dict:
+    """Задать суточный лимит расходов отдела (manager+; на сервере ABAC)."""
+    return _req("PUT", "/api/departments/" + urllib.request.quote(str(fid)) + "/budget",
+                body={"лимит_руб": лимит_руб}, timeout=30) or {}
+
+
+def run_text(fid: str, текст: str, agent_id: str = "") -> dict:
+    """«Запустить» с пульта: агент отдела (задан → он; иначе первый deployed старшей версии)
+    получает текст задачей; прогон ставится в очередь ABOP (202 job), результат — в «Прогонах»."""
+    if agent_id:
+        return run_async(agent_id, текст)
+    кат = _req("GET", "/api/agents", timeout=30)
+    агенты = [a for a in (кат.get("agents") if isinstance(кат, dict) else кат) or []
+              if a.get("family") == fid and str(a.get("status") or "") == "deployed"]
+    if not агенты:
+        raise ValueError("в отделе нет запущенных агентов — соберите и запустите агента в разделе «Пульт отдела»")
+    агенты.sort(key=lambda a: (a.get("version") or 0), reverse=True)
+    return run_async(агенты[0]["id"], текст)

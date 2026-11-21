@@ -916,3 +916,5 @@ button:disabled { cursor: default; }
   border-color: var(--danger-line); color: var(--danger-ink);
 }
 .btn.b-irr:hover { border-color: var(--danger-ink); background-color: var(--danger-bg); }
+
+.foot-note { font-size: 11px; color: var(--ink-3); line-height: 1.5; padding: 4px 2px 0; }
