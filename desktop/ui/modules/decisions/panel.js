@@ -30,6 +30,8 @@ export async function mount(root, ctx) {
   // сервер по объявленным весам, а не панель — иначе два экрана считали бы «важное» по-разному.
   let группы = [], порядок = "", почемуБезПорядка = "", незнакомыеФакторы = [];
   let раскрытаГруппа = "", всеНаходки = false;
+  // Вкладки секций (мокап decisions.tsx): внешние действия · реестр находок · очередь первички.
+  let вкладка = "";
   // Третий поток раздела: поля первички ниже порога. Вопрос человеку здесь третий и по смыслу:
   // не «отправить ли» и не «проблема ли это», а «что в документе на самом деле».
   let поля = [], первичка = {}, ошибкаПолей = "", правки = {};
@@ -191,22 +193,20 @@ export async function mount(root, ctx) {
 
   function плитки() {
     const заявок = ((данные || {})["queue"] || []).length;
-    const сумма = группы.reduce((н, г) => н + Number(г["сумма"] || 0), 0);
-    const безСуммы = группы.reduce((н, г) => н + Number(г["сумм_неизвестно"] || 0), 0);
-    const доля = сводка["доля_подтверждения"];
-    const числа = [
-      [String(заявок), "требуют вашего слова", заявок ? "внешние действия · решает исполнитель" : "внешних действий нет"],
-      [сумма ? деньги(сумма) : "—", "сумма под риском",
-       сумма ? `по документам находок${безСуммы ? ` · без суммы: ${безСуммы}` : ""}` : "величина не объявлена правилами"],
-      [String(сводка["открытых"] || 0), `находок в ${группы.length} ${склонение(группы.length, "группе", "группах", "группах")}`,
-       "одна причина — одна группа"],
-      [доля === "" || доля == null ? "—" : доля + " %", "доля признания",
-       `${сводка["подтверждено"] || 0} из ${(сводка["подтверждено"] || 0) + (сводка["отклонено"] || 0) || 0} решённых`],
-    ];
-    return kpis(числа.map(([ч, п, о], i) => ({
-      "число": ч, "подпись": п, "откуда": о,
-      "тон": i === 0 && заявок ? "ждёт" : i === 1 && сумма ? "деньги" : "",
-    })));
+    const с = сводка || {};
+    const доля = с["доля_подтверждения"];
+    const дельта = (ч, класс) => (ч == null ? "" : `<div class="delta${класс ? " " + класс : ""}">${typeof ч === "number" && ч >= 0 ? "+" : ""}${esc(String(ч))} сегодня</div>`);
+    const плита = (подпись, число, дель, класс_числа) => `<div class="tile">
+        <span class="cap">${esc(подпись)}</span>
+        <div class="num-tile"${класс_числа ? ` style="color:${класс_числа}"` : ""}>${esc(String(число))}</div>
+        ${дель}
+      </div>`;
+    return `<section class="zone-state" aria-label="Состояние реестра"><div class="tiles">
+      ${плита("очередь на решение", заявок, `<div class="delta">внешние действия · решает исполнитель</div>`, заявок ? "var(--warn)" : "")}
+      ${плита("находок в группах", с["открытых"] ?? "—", дельта(с["найдено_сегодня"]))}
+      ${плита("признано сегодня", с["признано_сегодня"] ?? 0, `<div class="delta delta-ok">доля признания: ${с["доля_подтверждения"] != null && с["доля_подтверждения"] !== "" ? esc(String(с["доля_подтверждения"])) + " %" : "—"}</div>`, "var(--ok)")}
+      ${плита("первичка ниже порога", поля.length, `<div class="delta">подтверждаются поля, не документы</div>`)}
+    </div></section>`;
   }
 
   const склонение = (н, од, дв, мн) => {
@@ -232,24 +232,27 @@ export async function mount(root, ctx) {
       Number(г["отложено"] || 0) ? `отложено: ${г["отложено"]}` : "",
     ].filter(Boolean).join(" · ");
     const свои = находки.filter((н) => String(н["код"] || "") === г["код"]);
-    const т = String(г["серьёзность"] || "").toLowerCase();
-    const бордер = т.startsWith("выс") ? "border-left:3px solid var(--danger-ink);" : (
-      т.startsWith("сред") ? "border-left:3px solid var(--warn-ink);" : "");
-    return `<div class="card" style="${бордер}">
-      <div class="card-head">
-        <span class="tag${серьёзностьКласс(г["серьёзность"])}">${esc(г["серьёзность"] || "")}</span>
-        <span class="t">${esc(г["код"])}${г["название"] ? " · " + esc(г["название"]) : ""}</span>
-      </div>
-      <div class="ev">${esc(части)}</div>
-      <div class="acts">
-        <button data-gy="${esc(г["код"])}" class="btn ok sm" ${ждёт ? "disabled" : ""}>${icon("check")}Признать все</button>
-        <button data-gn="${esc(г["код"])}" class="btn ghost sm" ${ждёт ? "disabled" : ""}>Это норма</button>
-        <button data-gp="${esc(г["код"])}" class="btn ghost sm" ${ждёт ? "disabled" : ""}>${icon("clock")}Отложить</button>
-        <button data-gx="${esc(г["код"])}" class="btn sm">${раскрыта ? "Свернуть" : "Раскрыть"}</button>
-      </div>
-      ${раскрыта ? `<div style="display:flex;flex-direction:column;gap:10px;padding-top:4px">${
-        свои.map(находкаКарточка).join("") || `<span style="${LBL}">по этой причине нерешённых находок нет — все уже признаны или отложены</span>`}
-        ${свои.length && свои.length < Number(г["находок"] || 0) ? `<span style="${LBL}">показаны ${свои.length} из ${г["находок"]}: остальные уже признаны или отложены — решение по группе применится ко всем</span>` : ""}</div>` : ""}
+    const тн = String(г["серьёзность"] || "").toLowerCase();
+    const sev = тн.startsWith("выс") ? "h" : тн.startsWith("сред") ? "m" : "l";
+    return `<div class="grp">
+      <button type="button" class="grp-head" aria-expanded="${раскрыта}" data-gx="${esc(г["код"])}">
+        <span class="sev-edge ${sev}"></span>
+        <span class="grp-code">${esc(г["код"])}</span>
+        <span class="grp-title">${esc(г["название"] || г["код"])}</span>
+        <span class="tag" title="Серьёзность: ${esc(г["серьёзность"] || "—")}">${esc(г["серьёзность"] || "")}</span>
+        <span class="grp-sum">${esc(части)}</span>
+        <span class="grp-chev">${раскрыта ? "▾" : "▸"}</span>
+      </button>
+      ${раскрыта ? `<div class="grp-body">
+        <div class="grp-actions">
+          <button data-gy="${esc(г["код"])}" class="btn btn-ghost" ${ждёт ? "disabled" : ""}>Признать все ×${esc(String(г["находок"] || 0))}</button>
+          <button data-gn="${esc(г["код"])}" class="btn btn-in btn-sm" ${ждёт ? "disabled" : ""}>Это норма</button>
+          <button data-gp="${esc(г["код"])}" class="btn btn-in btn-sm" ${ждёт ? "disabled" : ""}>Отложить</button>
+          <span class="actions-note">решение по группе применяется ко всем её находкам — в журнале каждая</span>
+        </div>
+        ${свои.map(находкаКарточка).join("") || `<span class="origin">по этой причине нерешённых находок нет — все уже признаны или отложены</span>`}
+        ${свои.length && свои.length < Number(г["находок"] || 0) ? `<span class="origin">показаны ${свои.length} из ${г["находок"]}: остальные уже признаны или отложены — решение по группе применится ко всем</span>` : ""}
+      </div>` : ""}
     </div>`;
   }
 
@@ -554,37 +557,67 @@ export async function mount(root, ctx) {
 
   function render() {
     const q = (данные || {})["queue"] || [];
-    root.innerHTML = `<div style="flex:1;min-width:0;overflow-y:auto;padding:22px 24px 30px">
-      <div style="max-width:880px;margin:0 auto;display:flex;flex-direction:column;gap:var(--gap-group);animation:ape-in .3s ease-out">
-      ${head({ "глаз": "решения", "что": "Что ждёт вашего решения",
-               "подпись": "Решает тот, в чьи обязанности это входит: У2 — исполнитель прогона, У3 — владелец операции в карте процессов. Руководитель здесь не нажимает кнопки за других." })}
-      ${разрезыHTML()}
+    if (!вкладка) вкладка = q.length ? "внешние" : "реестр";
+    const решённых = Number((сводка || {})["подтверждено"] || 0) + Number((сводка || {})["отклонено"] || 0);
+    const с = сводка || {};
+    const чипВклад = (ид, имя, n) => `<button type="button" class="chip${вкладка === ид ? " on" : ""}" data-vt="${ид}">${имя} · ${n}</button>`;
+    const разрезыЧипы = разрезыHTML();
+    const показ_вкладки = вкладка === "внешние"
+      ? (q.map(карточка).join("") || `<div class="empty"><span class="cap">решений нет</span><p>Решений нет — ничего не ждёт вас. Письмо наружу и необратимое действие попадут сюда сами: цепочка при этом дойдёт до конца, а наружу ничего не уйдёт без вашего слова.</p></div>`)
+      : вкладка === "реестр"
+        ? `${верхНаходок()}${разделГрупп()}`
+        : `${разделПолей()}${поля.length ? "" : `<div class="empty"><span class="cap">порог первички</span><p>Документы ниже порога не попадают в сверку — им нужен пакетный признак или правило методолога, чтобы не возвращаться ежедневно.</p></div>`}`;
+    root.innerHTML = `<div class="screen">
+      <div class="screen-head">
+        <div>
+          <h1 class="title-screen">Решения</h1>
+          <div class="origin">журнал за всё время · решённых: ${esc(String(решённых))}${организация ? " · " + esc(организация) : ""}${процесс ? " · " + esc(процесс) : ""}${отдел && сайдкарУмеет ? " · мой отдел включён" : ""}</div>
+        </div>
+        <div class="head-links">
+          ${q.length ? `<span class="tag tag-acc"><span class="dot dot-accent"></span>в работе ${q.length}</span>` : ""}
+          ${поля.length ? `<span class="tag tag-warn"><span class="dot dot-warn"></span>первичка ${поля.length}</span>` : ""}
+          ${с["отсрочка_истекла"] ? `<span class="tag tag-danger"><span class="dot dot-danger"></span>отсрочка истекла: ${esc(String(с["отсрочка_истекла"]))}</span>` : ""}
+        </div>
+      </div>
       ${плитки()}
-      ${err ? `<div style="font-size:12.5px;color:var(--danger-ink)">${esc(err)}</div>` : ""}
-      ${loading && !данные ? `<div style="${LBL}">читаю очередь…</div>` : ""}
-      ${!loading && !err && !q.length ? `<div style="display:flex;flex-direction:column;gap:6px">
-        <div style="font-size:13px">${находки.length
-          ? "Внешних действий на подтверждение нет — но ниже есть находки расчёта."
-          : "Решений нет — ничего не ждёт вас."}</div>
-        ${origin("Письмо наружу и необратимое действие попадут сюда сами: цепочка при этом дойдёт до конца, а наружу ничего не уйдёт без вашего слова.")}
-      </div>` : ""}
-      ${q.map(карточка).join("")}
-      ${находки.length || группы.length || ошибкаНаходок ? `<div style="display:flex;flex-direction:column;gap:4px;margin-top:6px">
-        <div class="h-screen"><h3>Что нашёл расчёт</h3></div>
-        ${origin(порядок
-          ? "Порядок считает расчёт по весам, объявленным методологом: деньги, срок, повторяемость, доля признания по похожим находкам. Модель здесь не участвует — у каждой находки написано, из чего сложился её приоритет."
-          : (почемуБезПорядка || "Порядок важности не объявлен — находки идут по состоянию и тяжести."))}
-        ${незнакомыеФакторы.length ? origin("В весах есть факторы, которых движок не знает: "
-          + незнакомыеФакторы.join(", ") + ". Они не учтены — это правило методолога не сработало.") : ""}
-      </div>` : ""}
-      ${ошибкаНаходок ? `<div style="font-size:12.5px;color:var(--danger-ink)">${esc(ошибкаНаходок)}</div>` : ""}
-      ${верхНаходок()}
-      ${разделГрупп()}
-      ${разделПолей()}
-      ${польза()}
-    </div></div>`;
+      ${err ? `<div class="empty"><p style="color:var(--danger)">${esc(err)}</p></div>` : ""}
+      ${loading && !данные ? `<div class="skel" style="height:44px;margin:14px 20px"></div>` : ""}
+      <div class="flow-layout">
+        <div class="flow">
+          <div class="flow-head">
+            ${чипВклад("внешние", "внешние действия", q.length)}
+            ${чипВклад("реестр", "реестр находок", (сводка || {})["открытых"] ?? группы.length)}
+            ${чипВклад("первичка", "очередь первички", поля.length)}
+            <span class="vsep"></span>
+            ${разрезыЧипы}
+          </div>
+          ${!loading && !err && показ_вкладки}
+          ${вкладка === "реестр" ? польза() : ""}
+        </div>
+        <aside class="inspector" aria-label="Сводка реестра">
+          <section class="insp-sec">
+            <span class="cap">реестр за всё время</span>
+            <div class="kv"><span class="k cap">найдено</span><span class="v num">${esc(String((с)["всего"] ?? "—"))}</span></div>
+            <div class="kv"><span class="k cap">признано</span><span class="v num">${esc(String((с)["подтверждено"] ?? "—"))}</span></div>
+            <div class="kv"><span class="k cap">норма</span><span class="v num">${esc(String((с)["отклонено"] ?? "—"))}</span></div>
+            <div class="kv"><span class="k cap">исправлено</span><span class="v num">${esc(String((с)["исправлено"] ?? "—"))}</span></div>
+            <div class="kv"><span class="k cap">не воспроизводится</span><span class="v num">${esc(String((с)["не_воспроизводится"] ?? "—"))}</span></div>
+            <div class="kv"><span class="k cap">отложено</span><span class="v num">${esc(String((с)["отложено"] ?? "—"))}</span></div>
+          </section>
+          <section class="insp-sec">
+            <span class="cap">порядок важности</span>
+            <div class="origin">${esc(порядок || почемуБезПорядка || "не объявлен — находки идут по состоянию и тяжести.")}${незнакомыеФакторы.length ? " Не учтены факторы: " + esc(незнакомыеФакторы.join(", ")) + " — правило методолога не сработало." : ""}</div>
+          </section>
+          <section class="insp-sec pad-b0">
+            <span class="cap">польза отдела</span>
+            <div class="origin">${esc((польза() || "").replace(/<[^>]+>/g, "")).slice(0, 600)}</div>
+          </section>
+        </aside>
+      </div>
+    </div>`;
     // Правка живёт в памяти раздела, а не в DOM: перерисовка карточек не должна терять то, что
     // человек уже набрал в соседнем поле.
+    root.querySelectorAll("[data-vt]").forEach((b) => (b.onclick = () => { вкладка = b.dataset.vt; render(); }));
     root.querySelectorAll("[data-field]").forEach((вход) => {
       вход.oninput = () => {
         const [документ, поле] = String(вход.dataset.field || "").split("::");

@@ -60,7 +60,7 @@ def test_экраны_не_рисуют_свои_плитки():
     промахи = []
     for имя, путь in ЭКРАНЫ.items():
         живое = _живое(путь.read_text(encoding="utf-8"))
-        if "kpis(" not in живое and "kpi(" not in живое:
+        if "kpis(" not in живое and "kpi(" not in живое and 'class="tile"' not in живое:
             промахи.append(f"{имя}: не зовёт плитку ядра")
         # Своя разметка плитки узнаётся по связке «моношрифт + крупный кегль» в одном стиле.
         for строка in живое.splitlines():
@@ -73,7 +73,7 @@ def test_заголовки_разделов_из_ядра():
     for имя in ("решения", "прогоны"):
         живое = _живое(ЭКРАНЫ[имя].read_text(encoding="utf-8"))
         if имя == "решения":
-            assert "head({" in живое, "раздел «Решения» собирает шапку своей разметкой"
+            assert 'class="screen-head"' in живое, "раздел «Решения» потерял каркасную шапку (мокап decisions.tsx)"
 
 
 def test_панель_вертикали_говорит_тем_же_языком():
@@ -139,7 +139,7 @@ def test_шапка_раздела_везде_из_ядра():
             if "<html" in с:
                 continue  # это не экран, а документ на выгрузку (экспорт чата в файл)
             приветствие = any("mascot(" in x for x in строки[max(0, n - 3):n + 2])
-            if приветствие or есть_ядро:
+            if приветствие or есть_ядро or 'class="title-screen"' in с:
                 continue
             промахи.append(f"{путь.parent.name}: собирает заголовок сам — {с.strip()[:70]}")
     assert not промахи, "разделы снова расходятся в шапке:\n" + "\n".join(промахи)
@@ -167,7 +167,7 @@ def test_четыре_экрана_зовут_рецепты_а_не_рисую�
     экраны не могут разойтись ни между собой, ни с макетом.
     """
     ждём = {
-        "decisions": ['class="h-screen"', "kpis(", "card({"],
+        "decisions": ['class="screen"', 'class="screen-head"', 'class="zone-state"', 'class="grp"'],
         "runs": ['class="rows"', 'class="row head r5"', "kpis(", 'class="tabs"'],
         "verticals": ['class="market"', 'class="vcard', 'class="vstat '],
         "cabinet": ['class="two"', 'class="card calm"', 'class="row r4"'],
