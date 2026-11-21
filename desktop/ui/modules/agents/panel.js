@@ -26,7 +26,7 @@ export async function mount(root, ctx) {
   // пустое состояние очереди, компактные фирмы с раскрытием, выбор фирмы режет очередь,
   // иконки отделов в рейле, в полосе только главные числа (расход и веса — в карточке).
   let deptSel = "", deptГотово = false, старыйСайдкар = false;
-  let ика_карты = {}, ncrКарты = {}, клиентыРеестр = [];
+  let ика_карты = {}, ика7_карты = {}, ncrКарты = {}, клиентыРеестр = [];
   let очередь = [], разрезыОч = {}, сводкаОч = {}, ошибкаОчереди = "", очередиГрузят = false;
   let фирма = "", раскрыта = "", busyН = "", сканИдёт = "";
   // Пульт (мокап 20.11): поток ГРУППАМИ причин с полосой значимости, чипы агентов и фирм.
@@ -228,6 +228,13 @@ export async function mount(root, ctx) {
       ика_карты[fid] = null;
     }
   }
+  // Недельное окно — для честной дельты на пульте («+N за неделю»): оба числа из одного
+  // эндпоинта, разница считается на клиенте и показывается только когда посчитались ОБА.
+  async function загрузитьИКА7(fid) {
+    if (!fid) return;
+    try { ика7_карты[fid] = await api(A + "/families/ika?family=" + encodeURIComponent(fid) + "&дней=7"); }
+    catch (e) { ика7_карты[fid] = null; }
+  }
   const загрузитьИКАвсех = () => Promise.allSettled(families.map((f) => загрузитьИКА(f.id)));
 
   async function загрузитьNCR() {
@@ -339,7 +346,7 @@ export async function mount(root, ctx) {
         : (families.some((f) => f.id === сохран) ? сохран : ((families[0] || {}).id || ""));
     }
     render();
-    await Promise.all([загрузитьИКАвсех(), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов(), загрузитьЗадачи(), загрузитьПринятые(), загрузитьПоля(), загрузитьМетодолога(), загрузитьАвтономию()]);
+    await Promise.all([загрузитьИКАвсех(), загрузитьИКА7(deptSel), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов(), загрузитьЗадачи(), загрузитьПринятые(), загрузитьПоля(), загрузитьМетодолога(), загрузитьАвтономию()]);
     render();
   }
 
@@ -348,7 +355,7 @@ export async function mount(root, ctx) {
     развернутаГруппа = ""; показыватьВсё = false; группыСвёрнуты = true;
     try { localStorage.setItem("ape_dept_sel", id); } catch { /* приватное окно */ }
     render();
-    await Promise.all([загрузитьОчередь(), загрузитьNCR(), загрузитьЗадачи(), загрузитьПринятые(), загрузитьПоля(), загрузитьАвтономию()]);
+    await Promise.all([загрузитьОчередь(), загрузитьИКА7(deptSel), загрузитьNCR(), загрузитьЗадачи(), загрузитьПринятые(), загрузитьПоля(), загрузитьАвтономию()]);
     render();
   }
 
@@ -487,7 +494,41 @@ export async function mount(root, ctx) {
   // Полоса здоровья: ИКА большим числом (светофор красит), слагаемые — барами. Расход, веса и
   // прогонов — в карточке отдела по кнопке: разбор v5 (#3) — в ежедневном поле зрения только
   // главные числа.
-  function полосаЗдоровья(f) {
+  // Шапка пульта (мокап-dark 21.11): заголовок + происхождение из РЕАЛЬНЫХ данных реестра
+  // (базы и период) + ярлыки-кнопки, переехавшие из полосы здоровья. Времени вычитки/сверки
+  // в реестре нет — не рисуем выдумку, только то, что приходит с сервера.
+  function шапкаПульта(f) {
+    const n = ncrКарты[f.id];
+    const ncrЧисло = n ? Number(n["открытых"] || 0) : null;
+    const базы = клиентыРеестр.filter((к) => String(к["состояние"] || "") !== "выключен")
+      .map((к) => к["организация"] || к["название"] || к.id);
+    const периоды = клиентыРеестр.filter((к) => String(к["состояние"] || "") !== "выключен")
+      .map((к) => String(к["период_с"] || "")).filter(Boolean);
+    const период = периоды.length ? периоды[0] + " → " + (клиентыРеестр[0]["период_по"] || "…") : "";
+    const происхождение = базы.length
+      ? `базы: ${базы.map((б) => esc(б)).join(", ")}${период ? " · " + esc(период) : ""}`
+      : `источники не подключены — подключить источник: раздел «Клиенты»`;
+    const патрульСчёт = методолог ? JSON.parse(методолог["счёт"] || "{}") : {};
+    const патрТон = методолог ? (патрульСчёт["качество"] || патрульСчёт["назначение"] ? " sev" : " mid") : "";
+    return `<div class="h-screen">
+      <div style="flex:1;min-width:0">
+        <h1 class="scr-title">Пульт отдела</h1>
+        <div class="origin">${происхождение}</div>
+      </div>
+      <div class="head-links">
+        ${ncrЧисло == null ? "" : `<button type="button" class="tagbtn${ncrЧисло ? " mid" : ""}" id="ncrBtn" title="Несоответствия аудитора качества — список по клику">${ncrЧисло ? "NCR ×" + ncrЧисло : "NCR чисто"}</button>`}
+        ${поляСчёт ? `<button type="button" class="tagbtn" id="fieldsBtn" title="Поля первички ниже порога — ждут вашего ввода в «Решениях»">первичка ×${поляСчёт}</button>` : `<button type="button" class="tagbtn" id="fieldsBtn" title="Поля первички ниже порога — ждут вашего ввода в «Решениях»">первичка</button>`}
+        <button type="button" class="tagbtn${патрТон}" id="patrolBtn" title="Заявки методолога: сверка, способы, NCR, назначение — патруль собирает код по расписанию">${методолог ? "методолог ×" + (JSON.parse(методолог["заявки"] || "[]").length) : "методолог"}</button>
+        <button type="button" class="tagbtn" id="deptCard" title="Карточка отдела: слагаемые ИКА, аудит назначения, состав ролей">карточка</button>
+      </div>
+    </div>`;
+  }
+
+  // Зона состояния (мокап-dark 21.11): ИКА-карточка — герой, плитки — те же честные числа
+  // сводки. Дельта недели = ИКА(7дн) − ИКА(30дн) из одного эндпоинта; «автономия» — из ручки
+  // автономии; того и другого без данных нет — строчка просто не рисуется (решение владельца:
+  // только реальные цифры, никаких выдумок «+48 сегодня»).
+  function зонаСостояния(f) {
     const и = ика_карты[f.id];
     if (старыйСайдкар)
       return `<div class="card" style="padding:12px 14px;font-size:12.5px;color:var(--ink-2);line-height:1.5">ИКА и аудит назначения приедут с релизом 1.0.41 — сайдкар установленного приложения ещё не знает этих ручек. Обновление: Кабинет → Обновление. Очередь и фирмы ниже работают.</div>`;
@@ -496,38 +537,37 @@ export async function mount(root, ctx) {
         <span style="font-size:12.5px;color:var(--ink-2)">ИКА отдела не посчитался — обычно это мгновенный сбой связи.</span>
         <button type="button" class="btn sm" id="deptIkaRetry">Повторить</button></div>`;
     const ика = и["ика"];
-    const n = ncrКарты[f.id];
-    const ncrЧисло = n ? Number(n["открытых"] || 0) : null;
-    // Польза отдела — те же честные числа, что в «Решениях», плитками рядом с ИКА (мокап 20.11):
-    // найдено · признано · исправлено · доля признания. Доля исправления и «норма» — в строке
-    // происхождения под полосой: место в полосе — четырём главным числам, не всем восьми.
+    const тон = ика == null ? "" : ика >= 90 ? " ok" : ика >= 70 ? " mid" : " sev";
+    const цвет = ика == null ? "var(--ink-3)" : ика >= 90 ? "var(--ok-ink)" : ика >= 70 ? "var(--warn-ink)" : "var(--danger-ink)";
+    const и7 = (ика7_карты[f.id] || {})["ика"];
+    const дельта = (ика != null && и7 != null) ? Math.round((ика7_карты[f.id]["ика"] - ика) * 10) / 10 : null;
+    const уровень = (автономия || {})["уровень"];
+    const шкала = `<div class="ika-scale${тон.trim()}">
+        <i style="width:${ика == null ? 0 : Math.min(100, Math.round(ика))}%"></i>
+        ${ика != null ? `<b style="left:70%"></b><b style="left:90%"></b>` : ""}
+      </div>`;
+    const дельтаСтр = дельта == null ? "" :
+      `<span class="delta${дельта >= 0 ? " ok" : " warn"}">${дельта >= 0 ? "+" : ""}${esc(String(дельта))} за неделю</span>${уровень ? `<span class="delta"> · автономия: ${esc(String(уровень))}</span>` : ""}`;
     const в = сводкаОч || {};
     const плита = (подпись, число, цвет) => `<div style="min-width:0">
-        <div style="font-size:10px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(подпись)}</div>
-        <b style="font:600 15px/1.3 var(--mono,monospace);font-variant-numeric:tabular-nums;color:${цвет || "var(--ink)"}">${esc(String(число ?? "—"))}</b>
+        <div class="lbl" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(подпись)}</div>
+        <b class="tile-num"${цвет ? ` style="color:${цвет}"` : ""}>${esc(String(число ?? "—"))}</b>
       </div>`;
-    const ячейки = [
+    const плитки = [
       плита("найдено", в["всего"] ?? "—"),
       плита("признано", в["подтверждено"] ?? "—", в["подтверждено"] ? "var(--ok-ink)" : ""),
       плита("исправлено", в["исправлено"] ?? "—"),
       плита("доля признания", в["доля_подтверждения"] != null && в["доля_подтверждения"] !== "" ? в["доля_подтверждения"] + " %" : "—"),
     ].join("");
-    const уровень = (автономия || {})["уровень"];
-    const патрульСчёт = методолог ? JSON.parse(методолог["счёт"] || "{}") : {};
-    const патрТон = методолог ? (патрульСчёт["качество"] || патрульСчёт["назначение"] ? " sev" : " mid") : "";
-    return `<div class="card" style="padding:12px 16px;display:grid;grid-template-columns:auto 1fr auto;gap:16px;align-items:center">
-      <div>
-        <span style="font-family:var(--mono,monospace);font-size:30px;font-weight:600;font-variant-numeric:tabular-nums;color:${ика == null ? "var(--ink-3)" : ика >= 90 ? "var(--ok-ink)" : ика >= 70 ? "var(--warn-ink)" : "var(--danger-ink)"}">${ика == null ? "—" : esc(String(ика))}</span>
-        <div style="font-size:10px;color:var(--ink-3);margin-top:3px">ИКА · ${esc(String(и["окно_дней"] || 30))} дн.${уровень ? " · " + esc(String(уровень)) + " автономия" : ""}</div>
+    return `<section class="state-zone" aria-label="Состояние отдела">
+      <div class="ika-card${тон}">
+        <span class="lbl">ИКА отдела · ${esc(String(и["окно_дней"] || 30))} дн.</span>
+        <span class="hero-num">${ика == null ? "—" : esc(String(ика))}</span>
+        ${шкала}
+        <div>${дельтаСтр || `<span class="delta">дельта появится, когда посчитаются оба окна</span>`}</div>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px 12px;min-width:0">${ячейки}</div>
-      <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">
-        ${ncrЧисло == null ? "" : `<button type="button" class="tagbtn${ncrЧисло ? " mid" : ""}" id="ncrBtn" title="Несоответствия аудитора качества — список по клику">${ncrЧисло ? "NCR " + ncrЧисло : "NCR чисто"}</button>`}
-        ${поляСчёт ? `<button type="button" class="tagbtn" id="fieldsBtn" title="Поля первички ниже порога — ждут вашего ввода в «Решениях»">первичка: ${поляСчёт} докум.</button>` : ""}
-        <button type="button" class="tagbtn${патрТон}" id="patrolBtn" title="Заявки методолога: сверка, способы, NCR, назначение — патруль собирает код по расписанию">${методолог ? "методолог: " + (JSON.parse(методолог["заявки"] || "[]").length) : "методолог: патруль"}</button>
-        <button type="button" class="tagbtn" id="deptCard" title="Карточка отдела: слагаемые ИКА, аудит назначения, состав ролей">карточка</button>
-      </div>
-    </div>`;
+      <div class="tile-row">${плитки}</div>
+    </section>`;
   }
 
   // Карточка находки — тот же примитив card() и те же поля, что в «Решениях»: способ, порядок
@@ -646,6 +686,7 @@ export async function mount(root, ctx) {
       разворот = `<div style="display:flex;flex-direction:column;gap:6px;padding:6px 0 2px">` +
         (видно.length ? видно.map(карточкаНаходки_пульт).join("") : `<span class="faint" style="font-size:12px">нерешённых строк в этой группе нет</span>`) +
         (свои.length > 10 && !показыватьВсё ? `<button type="button" class="btn sm ghost" data-gall="1">показать все ${свои.length}</button>` : "") +
+        `<div style="padding-top:2px"><button type="button" class="btn sm primary b-do" data-gy="${esc(String(г["код"]))}" ${busyН === "группа" ? "disabled" : ""} title="Признать все находки группы по правилам — способ попадёт в журнал каждой">Признать группу · ${esc(String(г["находок"] || 0))}</button></div>` +
         `</div>`;
     }
     return `<div class="card" style="display:flex;gap:10px;padding:10px 13px;align-items:center">
@@ -655,12 +696,12 @@ export async function mount(root, ctx) {
             <span class="tag ai">${esc(String(г["код"] || "—"))}</span>
             <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink);font-weight:600;font-size:12.5px">${esc(г["название"] || "")}</span>
           </div>
-          <div style="font-size:10.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc([org, способ].filter(Boolean).join(" · "))}</div>
+          <div style="font-size:10.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(org || "")}</div>
           ${раскрыта_г ? разворот : ""}
         </div>
+        <span class="tag" title="Способ устранения по правилу учёта">${esc(способ || "")}</span>
         <span style="font:500 12px var(--mono,monospace);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;color:var(--ink-2)">×${esc(String(г["находок"] || 0))}${сумма ? " · " + esc(деньгиП(сумма)) : ""}</span>
-        ${раскрыта_г ? "" : `<button type="button" class="btn sm" data-gx="${esc(String(г["код"]))}">развернуть</button>`}
-        <button type="button" class="btn sm primary b-do" data-gy="${esc(String(г["код"]))}" ${busyН === "группа" ? "disabled" : ""} title="Признать все находки группы по правилам — способ попадёт в журнал каждой">Признать группу</button>
+        <span class="grp-chev">${раскрыта_г ? "▾" : "▸"}</span>
       </div>`;
   }
 
@@ -724,9 +765,10 @@ export async function mount(root, ctx) {
         </div>
         <div style="font-size:10.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${подвал}</div>
         <div style="font-family:var(--mono,monospace);font-size:10px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">граница ${esc(к["система"] || "—")} · доступ ${esc(к["секрет"] || "не задан")}</div>
+        ${выключен ? `<div class="bad-note">доступ отозван — подключить источник в разделе «Клиенты»</div>` : ""}
         <div style="display:flex;gap:6px;flex-wrap:wrap;padding-top:2px">
-          <button type="button" class="btn sm b-do rep" data-rep="${esc(к.id)}" title="Отчёт клиенту: итоги, причины, суммы — печатный документ">Отчёт</button>
-          <button type="button" class="btn sm b-calc" data-rescan="${esc(к.id)}" ${сканИдёт ? "disabled" : ""} title="Вычитать базу и поставить прогон сверщика — результат в чате">Пересчитать</button>
+          <button type="button" class="btn sm b-out rep" data-rep="${esc(к.id)}" ${выключен || сканИдёт ? "disabled" : ""} title="Отчёт клиенту: итоги, причины, суммы — печатный документ">Отчёт<span class="lbl">→ бухгалтеру</span></button>
+          <button type="button" class="btn sm b-calc" data-rescan="${esc(к.id)}" ${выключен || сканИдёт ? "disabled" : ""} title="Вычитать базу и поставить прогон сверщика — результат в чате">Пересчитать</button>
           <button type="button" class="btn sm b-calc ghost" data-refreshonly="${esc(к.id)}" ${сканИдёт ? "disabled" : ""} title="Только перечитать базу, без прогона">Только вычитать</button>
         </div>
       </div>`;
@@ -991,9 +1033,9 @@ export async function mount(root, ctx) {
         ${Number(д["на_проверку"] || 0) ? `<span class="tag mid">на проверке: ${esc(String(д["на_проверку"]))} пол.</span>` : `<span class="tag ok">готов</span>`}
       </div>`).join("");
     return `<div class="card" style="padding:10px 12px">
-      <div class="row" style="margin-bottom:6px"><span class="lbl">входящие · СБИС / Диадок</span><span style="flex:1"></span><button type="button" class="chip" id="sbisBtn" title="Что нужно, чтобы подключить приёмник ЭДО">подключить СБИС</button></div>
+      <div class="row" style="margin-bottom:6px"><span class="lbl">входящие · ЭДО из вычитки</span><span style="flex:1"></span><button type="button" class="chip" id="sbisBtn" title="Что нужно, чтобы подключить приёмник ЭДО (Saby)">подключить источник</button></div>
       ${строки || `<div style="font-size:11.5px;color:var(--ink-3);padding:4px 0">входящих, ждущих проверки полей, нет</div>`}
-      <div style="font-size:11px;color:var(--ink-3);padding:6px 2px 0">СБИС не подключен — нужны API-ключи приложения кабинета (Безопасность → Интеграция → Приложения). Пока входящие видны из вычитки.</div>
+      <div style="font-size:11px;color:var(--ink-3);padding:6px 2px 0">Оператор ЭДО не подключён — ключи приложения кабинета Saby (Безопасность → Интеграция → Приложения). Пока входящие видны из вычитки.</div>
     </div>`;
   }
 
@@ -1029,19 +1071,16 @@ export async function mount(root, ctx) {
         <div class="row"><span class="lbl">агенты отдела</span>${агентЧипы(f)}</div>
         <div style="font-size:12.5px;color:var(--ink-2)">Постановка задач отделу приедет с релизом 1.0.43 — сайдкар установленного приложения ещё не знает этих ручек. Обновление: Кабинет → Обновление.</div>
       </div>`;
-    return `<div class="card" style="padding:10px 12px;display:flex;flex-direction:column;gap:8px">
+    return `<section class="card" style="padding:10px 12px;display:flex;flex-direction:column;gap:8px" aria-label="Задача агентам">
       <div class="row">
-        <span class="lbl">агенты отдела</span>
+        <input id="taskText" value="${esc(задачаТекст)}" placeholder="Задача отделу: супервайзер разложит на подзадачи с DoD и поставит исполнителям…" class="input-lg"/>
+        <button type="button" class="btn primary b-do" id="taskGo" ${busyЗ === "create" ? "disabled" : ""}>Отдать отделу</button>
+      </div>
+      <div class="row">
+        <span class="lbl">агенты</span>
         ${агентЧипы(f)}
-        <span style="flex:1"></span>
-        <button type="button" class="chip" id="taskToggle" title="Поставить задачу отделу — супервайзер разложит на подзадачи с DoD">${icon("plus")} Задача отделу</button>
       </div>
-      <div class="row">
-        <input id="taskText" value="${esc(задачаТекст)}" placeholder="Задача отделу: супервайзер разложит на подзадачи с DoD и поставит исполнителям…"
-          style="flex:1;min-width:0;padding:7px 11px;border-radius:9px;font-size:12.5px"/>
-        <button type="button" class="btn sm primary b-do" id="taskGo" ${busyЗ === "create" ? "disabled" : ""}>Отдать отделу</button>
-      </div>
-    </div>`;
+    </section>`;
   }
 
   function задачаБлок() {
@@ -1119,18 +1158,24 @@ export async function mount(root, ctx) {
     // Пульт отдела — порядок мокапа 20.11: полоса здоровья+польза → тулбар агентов и задачи →
     // чипы фирм с сортировкой → [ЭДО, поток, петля | фирмы] → задачи. Отделы живут в рейле
     // оболочки (слева) — дубль на карточке удалён (19.11).
+    // Пульт — порядок мокапа-dark 21.11: шапка с ярлыками → зона состояния (ИКА-герой + плитки)
+    // → задача отделу → чипы фирм → [поток, петля | ЭДО, фирмы] → задачи. Правило переноса
+    // (решение владельца): только реальные цифры и эндпоинты; нет данных — «подключить источник».
     return `<div style="min-width:0;display:flex;flex-direction:column;gap:12px">
-      ${полосаЗдоровья(f)}
+      ${шапкаПульта(f)}
+      ${зонаСостояния(f)}
       ${пользаБлок()}
       ${тулбарБлок(f)}
       ${фирмЧипыРяд()}
       <div class="dept-cols">
         <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
-          ${эдоБлок()}
           ${потокБлок()}
           ${петляБлок()}
         </div>
-        ${фирмыБлок()}
+        <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
+          ${эдоБлок()}
+          ${фирмыБлок()}
+        </div>
       </div>
       ${задачаБлок()}
     </div>`;
@@ -1189,8 +1234,6 @@ export async function mount(root, ctx) {
       render();
     }));
     root.querySelectorAll(".runa").forEach((b) => (b.onclick = () => ctx.open("chat", { runAgent: { id: b.dataset.aid, name: b.dataset.anm } })));
-    const ttg = root.querySelector("#taskToggle");
-    if (ttg) ttg.onclick = () => { const t = root.querySelector("#taskText"); if (t) t.focus(); };
     const sb = root.querySelector("#sbisBtn"); if (sb) sb.onclick = показатьСБИС;
     root.querySelectorAll("[data-firm]").forEach((b) => {
       const выбор = () => { const id = b.dataset.firm; if ((id || "") !== фирмаИд()) выбратьФирму(id); };
