@@ -563,17 +563,15 @@ function живаяСтрокаHTML(список) {
   const ещё = список.length > 1 ? ` · и ещё ${список.length - 1}` : "";
   const сек = r["начато"] ? Math.max(0, Math.round((Date.now() - Date.parse(r["начато"])) / 1000)) : 0;
   const длит = длительность(сек);
-  const знак = r.status === "running" ? "●" : (r.status === "awaiting_hitl" ? "◐" : "○");
   const куда = r.status === "awaiting_hitl" ? "decisions" : "runs";
-  return `<div id="liveWork" style="display:flex;gap:10px;align-items:center;padding:6px 12px;border-bottom:1px solid var(--line);font-size:12px">
-    <span style="color:var(--ok-ink)">${знак}</span>
-    <b style="font-weight:650">${esc(r["что"])}</b>
-    <span style="color:var(--ink-2)">${esc(r.agent_id || "агент")}</span>
-    ${r["шаг"] ? `<span style="color:var(--ink-3)">${esc(r["шаг"])}</span>` : ""}
-    ${длит ? `<span style="font-family:var(--mono);color:var(--ink-3)">${esc(длит)}</span>` : ""}
-    ${r["место"] ? `<span style="color:var(--ink-3)">в очереди ${esc(r["место"])}</span>` : ""}
-    <span style="color:var(--ink-3)">${esc(ещё)}</span>
-    <button id="liveOpen" data-go="${esc(куда)}" style="margin-left:auto;padding:3px 10px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);color:var(--ink);font-size:11.5px;cursor:pointer">Открыть</button>
+  return `<div id="liveWork" class="livestrip">
+    <span class="beacon" aria-hidden="true"></span>
+    <span>идёт: <b style="font-weight:700">${esc(r["что"])}</b> · ${esc(r.agent_id || "агент")}</span>
+    ${r["шаг"] ? `<span class="dim">· ${esc(r["шаг"])}</span>` : ""}
+    <span class="dim">${esc(ещё)}</span>
+    <span class="dim">${r["место"] ? "в очереди " + esc(r["место"]) : (длит ? esc(длит) : "")}</span>
+    <span style="margin-left:auto"></span>
+    <button id="liveOpen" class="livestrip-link" data-go="${esc(куда)}">прогон →</button>
   </div>`;
 }
 function длительность(с) {
@@ -673,13 +671,17 @@ function renderNav() {
   const модули = railModules();
   const первый = модули.filter((m) => !РАЙЛ_СЕРВИС.has(m.id));
   const сервис = модули.filter((m) => РАЙЛ_СЕРВИС.has(m.id));
-  // Капса «сервис» — только когда есть что показывать: у расчётчика её нет, и рейл короче.
-  const капса = сервис.length ? `<div class="railcap" style="margin:10px 4px 3px">сервис</div>` : "";
-  nav.innerHTML = railОтделыHTML() + первый.map((m) => railBtn(m, m.id === active)).join("")
-    + капса + сервис.map((m) => railBtn(m, m.id === active)).join("");
+  // Мокап-dark 21.11 (полное соответствие): рейл = 6 пунктов кольца + «сервис» с примечанием
+  // про ABAC и «Свернуть». Отдел живёт в шапке (brandDept) — пульт и есть его экран, а блок
+  // отдела в рейле дублировал выбор, который делается один раз.
+  const капса = сервис.length ? `<div class="railcap" style="margin:10px 4px 3px">сервис</div>
+    <div class="railcap" style="margin:0 4px 6px;letter-spacing:0;text-transform:none;color:var(--ink-3)">сервис виден только админ-ролям · ABAC</div>` : "";
+  nav.innerHTML = первый.map((m) => railBtn(m, m.id === active)).join("")
+    + капса + сервис.map((m) => railBtn(m, m.id === active)).join("")
+    + `<button class="navitem" id="railFold" title="Свернуть меню разделов">
+        <span class="glyph" aria-hidden="true">${icon("left", "lg")}</span><span class="lbl">Свернуть</span></button>`;
   nav.querySelectorAll("[data-id]").forEach((b) => { b.onclick = () => loadModule(b.dataset.id); });
-  nav.querySelectorAll("[data-dept]").forEach((b) => { b.onclick = () => открытьОтдел(b.dataset.dept); });
-  nav.querySelectorAll("[data-deptfold]").forEach((b) => { b.onclick = toggleОтделы; });
+  const ф = $("railFold"); if (ф) ф.onclick = toggleRail;
 }
 
 // ── Отделы в рейле (оболочка v5): отделы — навигация первого класса, не вкладка внутри агентов ──
@@ -702,43 +704,43 @@ async function loadОтделы() {
     }));
     ОТДЕЛЫ = список;
   } catch { ОТДЕЛЫ = []; }
-  renderNav();
+  брендОбновить();
+  статусОбновить();
 }
-const LS_СВОРН = "ape_dept_rail_fold";
-function отделыСвернуты() { try { return localStorage.getItem(LS_СВОРН) === "1"; } catch { return false; } }
-function toggleОтделы() {
-  try { localStorage.setItem(LS_СВОРН, отделыСвернуты() ? "0" : "1"); } catch { /* приватное окно */ }
-  renderNav();
+// ── бренд-чип отдела в шапке + статус-строка (мокап-dark 21.11, полное соответствие) ──
+// Отдел живёт в шапке рядом с логотипом: название = вход на его пульт, клик — смена отдела.
+function брендОбновить() {
+  const б = $("brandDept"); if (!б) return;
+  const м = мой_отдел_рейл();
+  const о = (м && м !== "*" && ОТДЕЛЫ.find((x) => x.id === м)) || null;
+  б.textContent = о ? о.title : "отдел";
+  б.onclick = () => выбратьОтделОкно();
 }
-function railОтделыHTML() {
-  if (!ОТДЕЛЫ.length) return "";
-  // Сворачивание (20.11): отделы в рейле много места занимают у того, чей отдел один. Шапка —
-  // кнопка: клик складывает/разворачивает, выбор переживает перезапуск. В свернутом виде —
-  // только шапка со счётчиком; клик по отделу всегда возвращает полный вид.
-  const сверн = отделыСвернуты();
-  if (сверн) {
-    const м = мой_отдел_рейл();
-    const мой = (м && м !== "*" && ОТДЕЛЫ.some((о) => о.id === м)) ? м : "";
-    const з = мой ? ((ОТДЕЛЫ.find((о) => о.id === мой) || {}).ика) : null;
-    const кл = з == null ? "" : з >= 90 ? " bdg-ok" : з >= 70 ? " bdg-mid" : " bdg-sev";
-    return `<button type="button" class="navitem" data-deptfold="1" title="Отделы (${ОТДЕЛЫ.length}) — развернуть"
-        aria-expanded="false" style="justify-content:flex-start;gap:9px">
-      <span class="glyph" aria-hidden="true">${icon("right", "lg")}</span><span class="lbl">Отделы · ${ОТДЕЛЫ.length}</span>
-      ${мой ? `<span class="bdg${кл}" title="ИКА моего отдела">${з == null ? "—" : з}</span>` : `<span class="bdg">${ОТДЕЛЫ.length}</span>`}</button>`;
-  }
-  const кнопки = ОТДЕЛЫ.map((о) => {
-    const on = active === "agents" && активный_отдел === о.id;
-    const з = о.ика;
-    const кл = з == null ? "" : з >= 90 ? " bdg-ok" : з >= 70 ? " bdg-mid" : " bdg-sev";
-    const подпись = `${esc(о.title)}${з == null ? "" : " — ИКА " + з}`;
-    return `<button class="navitem${on ? " on" : ""}" data-dept="${esc(о.id)}" title="${подпись}" aria-label="Отдел: ${подпись}" aria-current="${on ? "page" : "false"}">
-      <span class="glyph" aria-hidden="true">${icon(ИКОНКА_ОТДЕЛА[о.id] || "agents")}</span><span class="lbl">${esc(о.title)}</span><span class="bdg${кл}">${з == null ? "—" : з}</span></button>`;
+function выбратьОтделОкно() {
+  if (!ОТДЕЛЫ.length) return;
+  const м = мой_отдел_рейл();
+  const строки = ОТДЕЛЫ.map((о) => {
+    const кл = о.ика == null ? "" : о.ика >= 90 ? " bdg-ok" : о.ика >= 70 ? " bdg-mid" : " bdg-sev";
+    return `<button class="navitem${м === о.id ? " on" : ""}" data-pd="${esc(о.id)}" style="border-radius:var(--r-md);width:100%">
+      <span class="lbl" style="font-weight:600">${esc(о.title)}</span><span class="bdg${кл}">${о.ика == null ? "—" : о.ика}</span></button>`;
   }).join("");
-  return `<button type="button" class="navitem" data-deptfold="1" title="Отделы — свернуть"
-      aria-expanded="true" style="justify-content:flex-start;gap:9px;margin-bottom:2px">
-    <span class="glyph" aria-hidden="true">${icon("down", "lg")}</span><span class="lbl">Отделы · ${ОТДЕЛЫ.length}</span></button>`
-    + кнопки;
+  const ov = openOverlay({ label: "Мой отдел", html: `<div class="ape-modal" style="width:min(460px,92vw)">
+    <div class="lbl">мой отдел</div><h2>Отдел: чей пульт открыт</h2>
+    <div id="mBody" style="display:flex;flex-direction:column;gap:4px">${строки}</div></div>` });
+  ov.querySelectorAll("[data-pd]").forEach((b) => (b.onclick = () => { открытьОтдел(b.dataset.pd); ov.close(); }));
 }
+function статусОбновить() {
+  const с = $("statusbar"); if (!с) return;
+  const м = мой_отдел_рейл();
+  const о = (м && м !== "*" && ОТДЕЛЫ.find((x) => x.id === м)) || null;
+  const версия = (($("verChip") || {}).textContent || "").replace(/^v/, "") || "";
+  const ика = о && о.ика != null ? `ИКА ${о.ика}` : "";
+  const время = new Date(Date.now() + 3 * 3600000).toTimeString().slice(0, 5) + " МСК";
+  const части = [`ABOP${версия ? " " + версия : ""}`, ика, время].filter(Boolean);
+  с.innerHTML = части.map((ч, i) => (i ? `<span class="sep" aria-hidden="true"></span>` : "") + `<span>${esc(ч)}</span>`).join("");
+}
+setInterval(статусОбновить, 60000);
+
 function открытьОтдел(id) {
   активный_отдел = id;
   try { localStorage.setItem("ape_dept_sel", id); } catch { /* приватное окно */ }

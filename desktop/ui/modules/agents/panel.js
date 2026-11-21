@@ -670,12 +670,8 @@ export async function mount(root, ctx) {
       } else {
         сортировка_пульта(группыПульт);
       }
-      const верх = группыСвёрнуты ? группыПульт.slice(0, 5) : группыПульт;
-      const хвост = группыПульт.slice(5);
-      тело = верх.map(группаПультСтрокой).join(`<div style="height:8px"></div>`) +
-        (группыСвёрнуты && хвост.length
-          ? `<div style="font-size:11px;color:var(--ink-3);padding:2px 2px">ещё ${хвост.length} ${скл(хвост.length, "группа", "группы", "групп")}: ${слит(хвост)} — <button type="button" class="tagbtn" data-gallgrp="1" style="text-transform:none">показать</button></div>`
-          : "");
+      // Мокап-dark 21.11: все группы видны — «требует слова» честно называет каждую причину.
+      тело = группыПульт.map(группаПультСтрокой).join(`<div style="height:8px"></div>`);
     }
     return `<div style="display:flex;flex-direction:column;gap:8px;min-width:0">
       <span class="lbl">${esc(заголовок)}</span>
@@ -1083,9 +1079,11 @@ export async function mount(root, ctx) {
     return `<div class="card" style="padding:10px 12px;display:flex;flex-direction:column;gap:4px">
         <div class="row"><span class="lbl">петля доведения</span><span class="tag mid">${принятые.length} в работе</span></div>
         ${принятые.map((н) => `<div style="display:flex;gap:8px;align-items:center;padding:7px 10px">
-          <span class="tag${серьёзностьКлассН(н["серьёзность"])}">${esc(н["код"] || "—")}</span>
-          <span style="flex:1;min-width:0;font-size:12px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(н["название"] || "")} · ${esc(н["организация"] || "")}</span>
-          <button type="button" class="btn sm b-calc verify" data-vf="${esc(н.id)}" ${busyП === н.id ? "disabled" : ""} title="Вычитать базу, пересчитать сверку и проверить: воспроизводится ли находка">${busyП === н.id ? "проверяю…" : "Исправлено — проверить"}</button>
+          <span class="tag ai">${esc(н["код"] || "—")}</span>
+          ${н["величина"] ? `<span style="font:500 11px var(--mono,monospace);color:var(--ink-2)">×${esc(String(н["величина"]))}</span>` : ""}
+          <span style="flex:1;min-width:0;font-size:12px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(н["способ"] || н["название"] || "")} · ${esc(н["организация"] || "")}</span>
+          ${busyП === н.id ? `<span class="tag ai"><span class="dot run" aria-hidden="true"></span>проверяется…</span>` : `<span class="tag mid">ждёт человека</span>`}
+          <button type="button" class="btn sm b-calc verify" data-vf="${esc(н.id)}" ${busyП === н.id ? "disabled" : ""} title="Вычитать базу, пересчитать сверку и проверить: воспроизводится ли находка">Исправлено — проверить</button>
         </div>`).join("")}
       </div>`;
   }
@@ -1103,9 +1101,10 @@ export async function mount(root, ctx) {
         <span style="color:var(--ink-2);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(д["организация"] || "")}</span>
         <span style="flex:1"></span>
         ${Number(д["на_проверку"] || 0) ? `<span class="tag mid">на проверке: ${esc(String(д["на_проверку"]))} пол.</span>` : `<span class="tag ok">готов</span>`}
+        <button type="button" class="btn sm ghost" data-edo-open="1">Открыть</button>
       </div>`).join("");
     return `<div class="card" style="padding:10px 12px">
-      <div class="row" style="margin-bottom:6px"><span class="lbl">входящие · ЭДО из вычитки</span><span style="flex:1"></span><button type="button" class="chip" id="sbisBtn" title="Что нужно, чтобы подключить приёмник ЭДО (Saby)">подключить источник</button></div>
+      <div class="row" style="margin-bottom:6px"><span class="lbl">входящие · ЭДО из вычитки</span>${эдоДоки.length ? `<span class="tag ai">${эдоДоки.length}</span>` : ""}<span style="flex:1"></span><button type="button" class="chip" id="sbisBtn" title="Что нужно, чтобы подключить приёмник ЭДО (Saby)">подключить источник</button></div>
       ${строки || `<div style="font-size:11.5px;color:var(--ink-3);padding:4px 0">входящих, ждущих проверки полей, нет</div>`}
       <div style="font-size:11px;color:var(--ink-3);padding:6px 2px 0">Оператор ЭДО не подключён — ключи приложения кабинета Saby (Безопасность → Интеграция → Приложения). Пока входящие видны из вычитки.</div>
     </div>`;
@@ -1146,8 +1145,8 @@ export async function mount(root, ctx) {
     return `<section class="card" style="padding:10px 12px;display:flex;flex-direction:column;gap:8px" aria-label="Задача агентам">
       <div class="row">
         <input id="taskText" value="${esc(задачаТекст)}" placeholder="Задача агенту: что сделать" class="input-lg"/>
-        <button type="button" class="btn primary b-calc" id="runText" ${busyЗ === "run" ? "disabled" : ""} title="Запустить выбранного агента отдела на этом тексте — прогон в очереди, результат в «Прогонах»">${icon("play")} Запустить</button>
-        <button type="button" class="btn b-do" id="taskGo" ${busyЗ === "create" ? "disabled" : ""} title="Супервайзер разложит задачу на подзадачи с DoD">${icon("chain")} Отдать отделу</button>
+        <button type="button" class="btn lg primary b-calc" id="runText" ${busyЗ === "run" ? "disabled" : ""} title="Запустить выбранного агента отдела на этом тексте — прогон в очереди, результат в «Прогонах»">${icon("play")} Запустить<span class="kbd">Enter</span></button>
+        <button type="button" class="btn lg b-do" id="taskGo" ${busyЗ === "create" ? "disabled" : ""} title="Супервайзер разложит задачу на подзадачи с DoD">${icon("chain")} Отдать отделу</button>
       </div>
       <div class="row">
         <span class="lbl">агенты</span>
@@ -1314,6 +1313,7 @@ export async function mount(root, ctx) {
     const rt = root.querySelector("#runText");
     if (rt) rt.onclick = запуститьТекст;
     const sb = root.querySelector("#sbisBtn"); if (sb) sb.onclick = показатьСБИС;
+    root.querySelectorAll("[data-edo-open]").forEach((b) => (b.onclick = () => ctx.open("decisions")));
     root.querySelectorAll("[data-firm]").forEach((b) => {
       const выбор = () => { const id = b.dataset.firm; if ((id || "") !== фирмаИд()) выбратьФирму(id); };
       b.onclick = выбор;
@@ -1346,7 +1346,7 @@ export async function mount(root, ctx) {
     const tt = root.querySelector("#taskText");
     if (tt) {
       tt.oninput = (e) => { задачаТекст = e.target.value; };
-      tt.onkeydown = (e) => { if (e.key === "Enter") отдатьЗадачу(); };
+      tt.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey) запуститьТекст(); };
     }
     const tg = root.querySelector("#taskGo"); if (tg) tg.onclick = отдатьЗадачу;
     root.querySelectorAll("[data-tx]").forEach((b) => {
