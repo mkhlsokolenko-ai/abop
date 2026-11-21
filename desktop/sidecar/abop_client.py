@@ -235,6 +235,12 @@ def ncr_open(fid: str) -> dict:
     return _req("GET", "/api/audit/" + urllib.request.quote(str(fid)) + "/ncr", timeout=30) or {}
 
 
+def department_autonomy(fid: str) -> dict:
+    """Уровень автономии отдела (ADR-085): подпись под ИКА на пульте («суженная автономия»)."""
+    return _req("GET", "/api/departments/" + urllib.request.quote(str(fid)) + "/autonomy",
+                timeout=30) or {}
+
+
 def ncr_close(ncr_id: str, причина: str = "") -> dict:
     """Закрыть NCR: решение человека и его причина попадают в журнал аудита."""
     return _req("POST", "/api/audit/ncr/" + urllib.request.quote(str(ncr_id)) + "/close",

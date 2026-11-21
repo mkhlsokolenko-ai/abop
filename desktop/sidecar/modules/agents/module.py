@@ -151,6 +151,15 @@ def ncr_list(family: str = ""):
         return _err(e)
 
 
+@router.get("/departments/{fid}/autonomy")
+def dept_autonomy(fid: str):
+    """Уровень автономии отдела (ADR-085): подпись под ИКА на пульте отдела (мокап 20.11)."""
+    try:
+        return abop.department_autonomy(fid)
+    except abop.AbopError as e:
+        return _err(e)
+
+
 @router.post("/ncr/{ncr_id}/close")
 def ncr_close(ncr_id: str):
     """Закрыть NCR — manager+; причина уходит в журнал аудита на сервере."""

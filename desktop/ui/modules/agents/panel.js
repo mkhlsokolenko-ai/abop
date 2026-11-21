@@ -30,7 +30,15 @@ export async function mount(root, ctx) {
   let очередь = [], разрезыОч = {}, сводкаОч = {}, ошибкаОчереди = "", очередиГрузят = false;
   let фирма = "", раскрыта = "", busyН = "", сканИдёт = "";
   // Пульт (мокап 20.11): поток ГРУППАМИ причин с полосой значимости, чипы агентов и фирм.
-  let группыПульт = [], развернутаГруппа = "", показыватьВсё = false, задачаРаскрыта = false;
+  let группыПульт = [], развернутаГруппа = "", показыватьВсё = false;
+  // Сортировка потока — чипы «по значимости / по сумме» над потоком (мокап 20.11, блок 2).
+  let сортРежим = "важность", группыСвёрнуты = true;
+  // ЭДО-окно (мокап 20.11, блок 3): входящие показываем из вычитки/OCR, пока СБИС не подключен —
+  // ярлык говорит «первичка из вычитки», а не выдаёт их за документы от оператора ЭДО.
+  let эдоДоки = [];
+  // Уровень автономии отдела (ADR-085) — подпись под ИКА, как в мокапе. Ручка едет с новым
+  // сайдкаром; на старом её нет (404) — подпись просто короче, ничего не ломаем.
+  let автономия = null;
   // Задачи отдела (шаг 5): дверь супервайзера в десктопе. Сайдкар 1.0.43+ — с ручками задач;
   // на старом секция честно говорит про релиз, а не делает вид.
   let задачи = [], задачаТекст = "", раскрыта_задача = "", задачи_умеет = null, busyЗ = "";
@@ -331,22 +339,23 @@ export async function mount(root, ctx) {
         : (families.some((f) => f.id === сохран) ? сохран : ((families[0] || {}).id || ""));
     }
     render();
-    await Promise.all([загрузитьИКАвсех(), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов(), загрузитьЗадачи(), загрузитьПринятые(), загрузитьПоля(), загрузитьМетодолога()]);
+    await Promise.all([загрузитьИКАвсех(), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов(), загрузитьЗадачи(), загрузитьПринятые(), загрузитьПоля(), загрузитьМетодолога(), загрузитьАвтономию()]);
     render();
   }
 
   async function выбратьОтдел(id) {
     deptSel = id; фирма = ""; раскрыта = ""; раскрыта_задача = "";
+    развернутаГруппа = ""; показыватьВсё = false; группыСвёрнуты = true;
     try { localStorage.setItem("ape_dept_sel", id); } catch { /* приватное окно */ }
     render();
-    await Promise.all([загрузитьОчередь(), загрузитьNCR(), загрузитьЗадачи(), загрузитьПринятые(), загрузитьПоля()]);
+    await Promise.all([загрузитьОчередь(), загрузитьNCR(), загрузитьЗадачи(), загрузитьПринятые(), загрузитьПоля(), загрузитьАвтономию()]);
     render();
   }
 
   async function выбратьФирму(id) {
     const к = клиентыРеестр.find((x) => x.id === id);
     фирма = id && к ? (к["организация"] || к["название"] || к.id) : "";
-    раскрыта = "";
+    раскрыта = ""; развернутаГруппа = ""; группыСвёрнуты = true;
     await загрузитьОчередь();
     render();
   }
@@ -486,33 +495,37 @@ export async function mount(root, ctx) {
       return `<div class="card" style="padding:12px 14px;display:flex;gap:10px;align-items:center">
         <span style="font-size:12.5px;color:var(--ink-2)">ИКА отдела не посчитался — обычно это мгновенный сбой связи.</span>
         <button type="button" class="btn sm" id="deptIkaRetry">Повторить</button></div>`;
-    const сл = и["слагаемые"] || {};
-    const ключи = Object.keys(сл);
-    const бары = ключи.map((k) => {
-      const з = (сл[k] || {})["значение"];
-      const ширина = з == null ? 0 : Math.round(з * 100);
-      const не_покрыто = (и["не_покрыто"] || []).includes(k);
-      const подпись = не_покрыто || з == null ? "не покрыто" : ширина + " %";
-      return `<div style="min-width:0">
-        <div style="font-size:10px;color:var(--ink-3);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(k)}</div>
-        <div style="height:5px;border-radius:3px;background:var(--line);overflow:hidden"><i style="display:block;height:100%;border-radius:3px;width:${ширина}%;background:${ширина >= 90 ? "var(--ok-ink)" : "var(--accent)"}"></i></div>
-        <div style="font-family:var(--mono,monospace);font-size:9.5px;color:${не_покрыто || з == null ? "var(--ink-3)" : "var(--ink-2)"};margin-top:3px">${esc(подпись)}</div>
-      </div>`;
-    }).join("");
     const ика = и["ика"];
     const n = ncrКарты[f.id];
     const ncrЧисло = n ? Number(n["открытых"] || 0) : null;
-    return `<div class="card" style="padding:13px 16px;display:grid;grid-template-columns:auto 1fr auto;gap:18px;align-items:center">
+    // Польза отдела — те же честные числа, что в «Решениях», плитками рядом с ИКА (мокап 20.11):
+    // найдено · признано · исправлено · доля признания. Доля исправления и «норма» — в строке
+    // происхождения под полосой: место в полосе — четырём главным числам, не всем восьми.
+    const в = сводкаОч || {};
+    const плита = (подпись, число, цвет) => `<div style="min-width:0">
+        <div style="font-size:10px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(подпись)}</div>
+        <b style="font:600 15px/1.3 var(--mono,monospace);font-variant-numeric:tabular-nums;color:${цвет || "var(--ink)"}">${esc(String(число ?? "—"))}</b>
+      </div>`;
+    const ячейки = [
+      плита("найдено", в["всего"] ?? "—"),
+      плита("признано", в["подтверждено"] ?? "—", в["подтверждено"] ? "var(--ok-ink)" : ""),
+      плита("исправлено", в["исправлено"] ?? "—"),
+      плита("доля признания", в["доля_подтверждения"] != null && в["доля_подтверждения"] !== "" ? в["доля_подтверждения"] + " %" : "—"),
+    ].join("");
+    const уровень = (автономия || {})["уровень"];
+    const патрульСчёт = методолог ? JSON.parse(методолог["счёт"] || "{}") : {};
+    const патрТон = методолог ? (патрульСчёт["качество"] || патрульСчёт["назначение"] ? " sev" : " mid") : "";
+    return `<div class="card" style="padding:12px 16px;display:grid;grid-template-columns:auto 1fr auto;gap:16px;align-items:center">
       <div>
-        <span style="font-family:var(--mono,monospace);font-size:32px;font-weight:600;font-variant-numeric:tabular-nums;color:${ика == null ? "var(--ink-3)" : ика >= 90 ? "var(--ok-ink)" : ика >= 70 ? "var(--warn-ink)" : "var(--danger-ink)"}">${ика == null ? "—" : esc(String(ика))}</span>
-        <div style="font-size:10px;color:var(--ink-3);margin-top:3px">ИКА · окно ${esc(String(и["окно_дней"] || 30))} дн.</div>
+        <span style="font-family:var(--mono,monospace);font-size:30px;font-weight:600;font-variant-numeric:tabular-nums;color:${ика == null ? "var(--ink-3)" : ика >= 90 ? "var(--ok-ink)" : ика >= 70 ? "var(--warn-ink)" : "var(--danger-ink)"}">${ика == null ? "—" : esc(String(ика))}</span>
+        <div style="font-size:10px;color:var(--ink-3);margin-top:3px">ИКА · ${esc(String(и["окно_дней"] || 30))} дн.${уровень ? " · " + esc(String(уровень)) + " автономия" : ""}</div>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(${Math.max(ключи.length, 1)},1fr);gap:6px 14px;min-width:0">${бары}</div>
-      <div style="display:flex;flex-direction:column;gap:6px">
-        ${ncrЧисло == null ? "" : `<button type="button" class="btn sm${ncrЧисло ? " danger" : " ghost"}" id="ncrBtn" title="Несоответствия аудитора качества — список по клику">${ncrЧисло ? "NCR " + ncrЧисло : "NCR чисто"}</button>`}
-        ${поляСчёт ? `<button type="button" class="btn sm mid" id="fieldsBtn" title="Поля первички ниже порога — ждут вашего ввода в «Решениях»">первичка: ${поляСчёт} докум.</button>` : ""}
-        <button type="button" class="btn sm${методолог ? (JSON.parse(методолог["счёт"] || "{}")["качество"] || JSON.parse(методолог["счёт"] || "{}")["назначение"] ? " danger" : " mid") : " ghost"}" id="patrolBtn" title="Заявки методолога: сверка, способы, NCR, назначение — патруль собирает код">${методолог ? "методолог: " + (JSON.parse(методолог["заявки"] || "[]").length) + " заявок" : "методолог: патруль"}</button>
-        <button type="button" class="btn sm ghost" id="deptCard" title="Карточка отдела: аудит назначения, расход, состав ролей">карточка</button>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px 12px;min-width:0">${ячейки}</div>
+      <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">
+        ${ncrЧисло == null ? "" : `<button type="button" class="tagbtn${ncrЧисло ? " mid" : ""}" id="ncrBtn" title="Несоответствия аудитора качества — список по клику">${ncrЧисло ? "NCR " + ncrЧисло : "NCR чисто"}</button>`}
+        ${поляСчёт ? `<button type="button" class="tagbtn" id="fieldsBtn" title="Поля первички ниже порога — ждут вашего ввода в «Решениях»">первичка: ${поляСчёт} докум.</button>` : ""}
+        <button type="button" class="tagbtn${патрТон}" id="patrolBtn" title="Заявки методолога: сверка, способы, NCR, назначение — патруль собирает код по расписанию">${методолог ? "методолог: " + (JSON.parse(методолог["заявки"] || "[]").length) : "методолог: патруль"}</button>
+        <button type="button" class="tagbtn" id="deptCard" title="Карточка отдела: слагаемые ИКА, аудит назначения, состав ролей">карточка</button>
       </div>
     </div>`;
   }
@@ -578,27 +591,41 @@ export async function mount(root, ctx) {
     : Math.round(ч).toLocaleString("ru-RU") + " ₽");
 
   // ── поток пульта: группы причин с полосой значимости (мокап 20.11) ────────────────────────
+  // Мокап показывает верхние 5 групп, остальное — строкой «ещё N групп: код ×ч … — показать»:
+  // девять карточек на экране конкурировали за внимание, а слово руководителя нужно первым двум.
   function потокБлок() {
-    const заголовок = `поток находок · ${группыПульт.length} причин(ы) · ${очередь.length} нерешённых · ${фирма ? фирма : "все фирмы"}`;
+    const заголовок = `поток находок · ${группыПульт.length} причин(ы) · ${очередь.length} нерешённых`;
+    const скл = (ч, од, дв, мн) => {
+      const о = Math.abs(ч) % 100, е = о % 10;
+      if (о > 10 && о < 20) return мн;
+      if (е > 1 && е < 5) return дв;
+      return е === 1 ? од : мн;
+    };
     let тело;
     if (очередиГрузят) тело = `<div class="faint" style="padding:14px;font-size:12.5px">собираю поток отдела…</div>`;
     else if (ошибкаОчереди) тело = `<div class="card" style="padding:12px 14px;font-size:12.5px;color:var(--danger-ink)">${esc(ошибкаОчереди)}</div>`;
     else if (!группыПульт.length) {
       const признано = Number(сводкаОч["подтверждено"] || 0), норм = Number(сводкаОч["отклонено"] || 0);
-      const скл = (ч, од, дв, мн) => {
-        const о = Math.abs(ч) % 100, е = о % 10;
-        if (о > 10 && о < 20) return мн;
-        if (е > 1 && е < 5) return дв;
-        return е === 1 ? од : мн;
-      };
       тело = `<div class="card" style="padding:16px;display:flex;flex-direction:column;gap:10px;align-items:flex-start">
         <div style="font-size:13px;font-weight:600;color:var(--ok-ink)">Поток пуст — все находки разобраны.</div>
         <div style="font-size:12px;color:var(--ink-2)">За всё время отдел признавал проблемой ${признано} ${скл(признано, "находку", "находки", "находок")} · отмечал нормой ${норм}.</div>
         <button type="button" class="btn sm" id="histBtn2">История решений — в «Решениях»</button>
       </div>`;
     } else {
-      сортировка_пульта(группыПульт);
-      тело = группыПульт.map(группаПультСтрокой).join(`<div style="height:8px"></div>`);
+      const по_сумме = (a, b) => Number(b["сумма"] || 0) - Number(a["сумма"] || 0);
+      const слит = (список) => список.map((г) => `${esc(String(г["код"] || "—"))} ×${esc(String(г["находок"] || 0))}`).join(" · ");
+      if (сортРежим === "сумма") {
+        const ранг = (г) => (СЕВ_РАНГ[String(г["серьёзность"] || "").toLowerCase()] ?? 2);
+        группыПульт.sort((a, b) => по_сумме(a, b) || ранг(a) - ранг(b));
+      } else {
+        сортировка_пульта(группыПульт);
+      }
+      const верх = группыСвёрнуты ? группыПульт.slice(0, 5) : группыПульт;
+      const хвост = группыПульт.slice(5);
+      тело = верх.map(группаПультСтрокой).join(`<div style="height:8px"></div>`) +
+        (группыСвёрнуты && хвост.length
+          ? `<div style="font-size:11px;color:var(--ink-3);padding:2px 2px">ещё ${хвост.length} ${скл(хвост.length, "группа", "группы", "групп")}: ${слит(хвост)} — <button type="button" class="tagbtn" data-gallgrp="1" style="text-transform:none">показать</button></div>`
+          : "");
     }
     return `<div style="display:flex;flex-direction:column;gap:8px;min-width:0">
       <span class="ape-label">${esc(заголовок)}</span>
@@ -625,13 +652,13 @@ export async function mount(root, ctx) {
         <span class="${бар}" style="min-height:34px"></span>
         <div style="flex:1;min-width:0;cursor:pointer" role="button" tabindex="0" data-gx="${esc(String(г["код"]))}">
           <div style="display:flex;gap:8px;align-items:center;min-width:0">
-            <span class="tag">${esc(String(г["код"] || "—"))}</span>
-            <span class="gn" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink);font-weight:600">${esc(г["название"] || "")}</span>
+            <span class="tag ai">${esc(String(г["код"] || "—"))}</span>
+            <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink);font-weight:600;font-size:12.5px">${esc(г["название"] || "")}</span>
           </div>
           <div style="font-size:10.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc([org, способ].filter(Boolean).join(" · "))}</div>
           ${раскрыта_г ? разворот : ""}
         </div>
-        <span style="font:500 12px var(--mono,monospace);font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--ink-2)">×${esc(String(г["находок"] || 0))}${сумма ? " · " + esc(деньгиП(сумма)) : ""}</span>
+        <span style="font:500 12px var(--mono,monospace);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;color:var(--ink-2)">×${esc(String(г["находок"] || 0))}${сумма ? " · " + esc(деньгиП(сумма)) : ""}</span>
         ${раскрыта_г ? "" : `<button type="button" class="btn sm" data-gx="${esc(String(г["код"]))}">развернуть</button>`}
         <button type="button" class="btn sm primary" data-gy="${esc(String(г["код"]))}" ${busyН === "группа" ? "disabled" : ""} title="Признать все находки группы по правилам — способ попадёт в журнал каждой">Признать группу</button>
       </div>`;
@@ -679,6 +706,7 @@ export async function mount(root, ctx) {
     const ждёт = счёт[имя] || 0;
     const выбрана = фирма === имя;
     const выключен = String(к["состояние"] || "") === "выключен";
+    const подвал = `схема ${esc(к["схема_учёта"] || "базовая")} · ${esc((к["период_с"] || "—") + " → " + (к["период_по"] || "—"))}`;
     if (!выбрана) {
       return `<div class="card lift" data-firm="${esc(к.id)}" role="button" tabindex="0"
           style="display:flex;flex-direction:column;gap:4px;padding:10px 12px;cursor:pointer;${выключен ? "opacity:.55" : ""}">
@@ -686,20 +714,19 @@ export async function mount(root, ctx) {
             <b style="flex:1;min-width:0;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)">${esc(имя)}</b>
             ${ждёт ? `<span class="tag mid">ждёт ${ждёт}</span>` : `<span class="tag">тихо</span>`}
           </div>
-          <div style="font-size:10.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">схема ${esc(к["схема_учёта"] || "базовая")} · ${esc((к["период_с"] || "—") + " → " + (к["период_по"] || "—"))}</div>
+          <div style="font-size:10.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${подвал}</div>
         </div>`;
     }
-    return `<div class="card" style="display:flex;flex-direction:column;gap:7px;padding:12px 13px;border-color:var(--accent);${выключен ? "opacity:.55" : ""}">
+    return `<div class="card" style="display:flex;flex-direction:column;gap:5px;padding:10px 12px;border-color:var(--accent);${выключен ? "opacity:.55" : ""}">
         <div style="display:flex;gap:8px;align-items:center;min-width:0">
-          <b style="flex:1;min-width:0;font-size:13px;color:var(--ink)">${esc(имя)}</b>
+          <b style="flex:1;min-width:0;font-size:12.5px;color:var(--ink)">${esc(имя)}</b>
           <span class="tag${выключен ? "" : " ok"}">${выключен ? "выключен" : "активен"}</span>
         </div>
-        <div style="font-size:11.5px;color:var(--ink-2)">схема учёта ${esc(к["схема_учёта"] || "базовая")} · период ${esc((к["период_с"] || "—") + " → " + (к["период_по"] || "—"))}</div>
-        <div style="font-family:var(--mono,monospace);font-size:10.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">граница ${esc(к["система"] || "—")}</div>
-        <div style="font-size:11px;color:var(--ink-3)">доступ: ${esc(к["секрет"] || "не задан")}</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <div style="font-size:10.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${подвал}</div>
+        <div style="font-family:var(--mono,monospace);font-size:10px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">граница ${esc(к["система"] || "—")} · доступ ${esc(к["секрет"] || "не задан")}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;padding-top:2px">
           <button type="button" class="btn sm rep" data-rep="${esc(к.id)}" title="Отчёт клиенту: итоги, причины, суммы — печатный документ">Отчёт</button>
-          <button type="button" class="btn sm" data-rescan="${esc(к.id)}" ${сканИдёт ? "disabled" : ""} title="Вычитать базу и поставить прогон сверщика — результат в чате">Пересчитать</button>
+          <button type="button" class="btn sm primary" data-rescan="${esc(к.id)}" ${сканИдёт ? "disabled" : ""} title="Вычитать базу и поставить прогон сверщика — результат в чате">Пересчитать</button>
           <button type="button" class="btn sm ghost" data-refreshonly="${esc(к.id)}" ${сканИдёт ? "disabled" : ""} title="Только перечитать базу, без прогона">Только вычитать</button>
         </div>
       </div>`;
@@ -790,7 +817,17 @@ export async function mount(root, ctx) {
       const ф = String(((клиентыРеестр.find((x) => (x["организация"] || x["название"] || x.id) === фирма) || {})["организация"]) || "");
       const р = await api("/api/modules/decisions/fields" + (ф ? "?organisation=" + encodeURIComponent(ф) : ""));
       поляСчёт = Number(((р["контроль"] || {})["документов"]) ?? 0);
-    } catch (e) { поляСчёт = null; }
+      // ЭДО-окно: документы, которые ждут слова человека (та же ручка очереди первички).
+      эдоДоки = (р["документы"] || []).slice(0, 4);
+    } catch (e) { поляСчёт = null; эдоДоки = []; }
+  }
+
+  // Подпись «ИКА · 30 дн · суженная автономия» (мокап 20.11): уровень — из ручки автономии
+  // (ADR-085). 404 старого сайдкара — штатная деградация: подпись без уровня.
+  async function загрузитьАвтономию() {
+    if (!deptSel) return;
+    try { автономия = await api(A + "/departments/" + encodeURIComponent(deptSel) + "/autonomy"); }
+    catch (e) { автономия = null; }
   }
 
   // ── петля доведения: принятые находки и точечная проверка ─────────────────────────────────
@@ -911,26 +948,68 @@ export async function mount(root, ctx) {
   // ── разметка задач отдела ──────────────────────────────────────────────────────────────────
   const СТАТУС_КЛАСС = { "выполнено": " ok", "возврат": " mid", "эскалация": " sev", "в очереди": " mid" };
 
-  function очередьБлок() {
-    // Фирм-чипы (мокап 20.11): разрез потока сверху, без клика в колонку фирм.
+  function фирмЧипыРяд() {
+    // Разрез потока (мокап 20.11, блок 2): чипы фирм + справа сортировка «по значимости / по сумме».
     const счёт = {};
     (разрезыОч["организации"] || []).forEach((о) => { счёт[о["имя"]] = Number(о["открытых"] || 0); });
     const чипы = [`<button type="button" class="chip${!фирма ? " on" : ""}" data-firmname="" title="Все фирмы">все фирмы · ${разрезыОч["открытых_всего"] || 0}</button>`]
       .concat(Object.keys(счёт).sort((a, b) => счёт[b] - счёт[a]).map((имя) =>
         `<button type="button" class="chip${фирма === имя ? " on" : ""}" data-firmname="${esc(имя)}">${esc(имя)} · ${счёт[имя]}</button>`));
-    const петля = принятые.length ? `<div class="card" style="padding:10px 12px;display:flex;flex-direction:column;gap:4px">
-        <span class="ape-label">петля доведения · ${принятые.length} в работе</span>
+    const сорт = [["важность", "по значимости"], ["сумма", "по сумме"]]
+      .map(([к, имя]) => `<button type="button" class="chip${сортРежим === к ? " on" : ""}" data-sort="${к}" title="Порядок групп в потоке">${имя}${сортРежим === к ? " ▾" : ""}</button>`).join("");
+    return `<div class="row" style="min-width:0">
+      ${чипы.join("")}
+      <span style="flex:1"></span>
+      ${сорт}
+    </div>`;
+  }
+
+  function петляБлок() {
+    if (!принятые.length) return "";
+    return `<div class="card" style="padding:10px 12px;display:flex;flex-direction:column;gap:4px">
+        <div class="row"><span class="ape-label">петля доведения</span><span class="tag mid">${принятые.length} в работе</span></div>
         ${принятые.map((н) => `<div style="display:flex;gap:8px;align-items:center;padding:7px 10px">
           <span class="tag${серьёзностьКлассН(н["серьёзность"])}">${esc(н["код"] || "—")}</span>
           <span style="flex:1;min-width:0;font-size:12px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(н["название"] || "")} · ${esc(н["организация"] || "")}</span>
           <button type="button" class="btn sm verify" data-vf="${esc(н.id)}" ${busyП === н.id ? "disabled" : ""} title="Вычитать базу, пересчитать сверку и проверить: воспроизводится ли находка">${busyП === н.id ? "проверяю…" : "Исправлено — проверить"}</button>
         </div>`).join("")}
-      </div>` : "";
-    return `<div style="display:flex;flex-direction:column;gap:8px;min-width:0">
-      <div class="row">${чипы.join("")}</div>
-      ${потокБлок()}
-      ${петля}
+      </div>`;
+  }
+
+  // ЭДО-окно (мокап 20.11, блок 3): входящие. СБИС не подключен — строки показываем из вычитки
+  // (первичка, ждущая проверки полей) и говорим об этом словами, а не выдаём за поток от оператора.
+  function эдоБлок() {
+    const sev = (д) => {
+      const обяз = (д["поля"] || []).some((п) => п["обязательное"] === "да");
+      return Number(д["на_проверку"] || 0) ? (обяз ? "h" : "m") : "l";
+    };
+    const строки = эдоДоки.map((д) => `<div class="edo">
+        <span class="sevbar ${sev(д)}"></span>
+        <b style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink);font-size:12.5px">${esc(д["название_типа"] || д["тип"] || "документ")}</b>
+        <span style="color:var(--ink-2);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(д["организация"] || "")}</span>
+        <span style="flex:1"></span>
+        ${Number(д["на_проверку"] || 0) ? `<span class="tag mid">на проверке: ${esc(String(д["на_проверку"]))} пол.</span>` : `<span class="tag ok">готов</span>`}
+      </div>`).join("");
+    return `<div class="card" style="padding:10px 12px">
+      <div class="row" style="margin-bottom:6px"><span class="ape-label">входящие · СБИС / Диадок</span><span style="flex:1"></span><button type="button" class="chip" id="sbisBtn" title="Что нужно, чтобы подключить приёмник ЭДО">подключить СБИС</button></div>
+      ${строки || `<div style="font-size:11.5px;color:var(--ink-3);padding:4px 0">входящих, ждущих проверки полей, нет</div>`}
+      <div style="font-size:11px;color:var(--ink-3);padding:6px 2px 0">СБИС не подключен — нужны API-ключи приложения кабинета (Безопасность → Интеграция → Приложения). Пока входящие видны из вычитки.</div>
     </div>`;
+  }
+
+  // Инструкция подключения — окно, а не молчание: человек должен знать, ЧТО ждёт система.
+  function показатьСБИС() {
+    ctx.modal("Подключение СБИС (Saby)",
+      `<div style="display:flex;flex-direction:column;gap:8px;font-size:12.5px;color:var(--ink-2);line-height:1.55">
+        <div>Креды «Коннекта» для API не подходят — нужны ключи СОЗДАННОГО ПРИЛОЖЕНИЯ кабинета:</div>
+        <div style="font-family:var(--mono);font-size:11.5px;color:var(--ink-3);background:var(--field);border:1px solid var(--line);border-radius:10px;padding:10px 12px">
+          1. Кабинет Saby → Безопасность → Интеграция → Приложения<br>
+          2. Создать приложение → доступ к API документов<br>
+          3. Прислать три значения: app_client_id · app_client_secret · secret_key
+        </div>
+        <div>Пока приёмник стоит, входящие видны из вычитки (окно «входящие» выше). Дока: saby.ru/help/integration/api/auth/service.</div>
+      </div>`,
+      null, "Закрыть", { kicker: "ЭДО-приёмник", width: "560px" });
   }
 
   // Тулбар пульта: чипы агентов семьи + постановка задачи + список задач (мокап 20.11).
@@ -941,12 +1020,33 @@ export async function mount(root, ctx) {
         title="Запустить в чате: ${esc(a.name)}">▶ ${esc((a.name || "").split("(")[0].trim())} v${esc(String(a.version || 1))}</button>`).join("");
   }
 
-  function задачаБлок() {
+  // Тулбар пульта (мокап 20.11, блок 1): запуск агентов семьи и постановка задачи — НАВЕРХУ,
+  // сразу под полосой здоровья. Постановка задачи — главное действие руководителя отдела;
+  // внизу списка она терялась за потоком находок.
+  function тулбарБлок(f) {
     if (задачи_умеет === false)
-      return `<div style="display:flex;flex-direction:column;gap:8px">
-        <span class="ape-label">задачи отдела</span>
-        <div class="card" style="padding:12px 14px;font-size:12.5px;color:var(--ink-2)">Задачи отдела приедут с релизом 1.0.43 — сайдкар установленного приложения ещё не знает этих ручек. Обновление: Кабинет → Обновление.</div>
+      return `<div class="card" style="padding:10px 12px;display:flex;flex-direction:column;gap:8px">
+        <div class="row"><span class="ape-label">агенты отдела</span>${агентЧипы(f)}</div>
+        <div style="font-size:12.5px;color:var(--ink-2)">Постановка задач отделу приедет с релизом 1.0.43 — сайдкар установленного приложения ещё не знает этих ручек. Обновление: Кабинет → Обновление.</div>
       </div>`;
+    return `<div class="card" style="padding:10px 12px;display:flex;flex-direction:column;gap:8px">
+      <div class="row">
+        <span class="ape-label">агенты отдела</span>
+        ${агентЧипы(f)}
+        <span style="flex:1"></span>
+        <button type="button" class="chip" id="taskToggle" title="Поставить задачу отделу — супервайзер разложит на подзадачи с DoD">${icon("plus")} Задача отделу</button>
+      </div>
+      <div class="row">
+        <input id="taskText" value="${esc(задачаТекст)}" placeholder="Задача отделу: супервайзер разложит на подзадачи с DoD и поставит исполнителям…"
+          style="flex:1;min-width:0;padding:7px 11px;border-radius:9px;font-size:12.5px"/>
+        <button type="button" class="btn sm primary" id="taskGo" ${busyЗ === "create" ? "disabled" : ""}>Отдать отделу</button>
+      </div>
+    </div>`;
+  }
+
+  function задачаБлок() {
+    if (задачи_умеет === false) return "";
+    if (!задачи.length) return "";
     const строки = задачи.map((з) => {
       const стат = Object.entries(з["по_статусу"] || {}).map(([с, n]) =>
         `<span class="tag${СТАТУС_КЛАСС[с] || ""}">${esc(с)}: ${n}</span>`).join(" ");
@@ -985,16 +1085,9 @@ export async function mount(root, ctx) {
           ${карточка}
         </div>`;
     }).join(`<div style="height:8px"></div>`);
-    return `<div class="card" style="padding:10px 12px;display:flex;flex-direction:column;gap:8px">
+    return `<div style="display:flex;flex-direction:column;gap:8px;min-width:0">
       <span class="ape-label">задачи отдела — супервайзер разложит и поставит исполнителям</span>
-      <div class="row">
-        ${агентЧипы(families.find((x) => x.id === deptSel) || {})}
-        <span style="flex:1"></span>
-        <button type="button" class="chip${задачаРаскрыта ? " on" : ""}" id="taskToggle" title="Поставить задачу отделу — супервайзер разложит">${icon("plus")} Задача отделу</button>
-      </div>
-      ${задачаРаскрыта ? `<div class="row"><input id="taskText" value="${esc(задачаТекст)}" placeholder="Например: разобрать группу E1 по Жигулёвой — подтвердить и провести"
-        style="flex:1;min-width:0;padding:7px 10px;border-radius:9px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-size:12.5px"/><button type="button" class="btn sm primary" id="taskGo" ${busyЗ === "create" ? "disabled" : ""}>Отдать отделу</button></div>` : ""}
-      ${строки || (задачаРаскрыта ? `<div class="faint" style="font-size:12px;padding:4px 2px">Задач отделу ещё не было.</div>` : "")}
+      ${строки}
     </div>`;
   }
 
@@ -1023,13 +1116,20 @@ export async function mount(root, ctx) {
   function renderОтделы() {
     if (!families.length) return `<div class="faint" style="padding:20px">Ростер семей не загрузился — обновите список.</div>`;
     const f = families.find((x) => x.id === deptSel) || families[0];
-    // Отделы живут в рейле оболочки (слева) — дубль на карточке удалён (19.11): место ушло
-    // данным, которые были размазаны по «Решениям» (польза) и первичке.
-    return `<div style="min-width:0;display:flex;flex-direction:column;gap:14px">
+    // Пульт отдела — порядок мокапа 20.11: полоса здоровья+польза → тулбар агентов и задачи →
+    // чипы фирм с сортировкой → [ЭДО, поток, петля | фирмы] → задачи. Отделы живут в рейле
+    // оболочки (слева) — дубль на карточке удалён (19.11).
+    return `<div style="min-width:0;display:flex;flex-direction:column;gap:12px">
       ${полосаЗдоровья(f)}
       ${пользаБлок()}
+      ${тулбарБлок(f)}
+      ${фирмЧипыРяд()}
       <div class="dept-cols">
-        ${очередьБлок()}
+        <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
+          ${эдоБлок()}
+          ${потокБлок()}
+          ${петляБлок()}
+        </div>
         ${фирмыБлок()}
       </div>
       ${задачаБлок()}
@@ -1082,9 +1182,16 @@ export async function mount(root, ctx) {
       render();
     }));
     root.querySelectorAll("[data-gall]").forEach((b) => (b.onclick = (e) => { e.stopPropagation(); показыватьВсё = true; render(); }));
+    root.querySelectorAll("[data-gallgrp]").forEach((b) => (b.onclick = () => { группыСвёрнуты = false; render(); }));
+    root.querySelectorAll("[data-sort]").forEach((b) => (b.onclick = () => {
+      if (сортРежим === b.dataset.sort) return;
+      сортРежим = b.dataset.sort; развернутаГруппа = "";
+      render();
+    }));
     root.querySelectorAll(".runa").forEach((b) => (b.onclick = () => ctx.open("chat", { runAgent: { id: b.dataset.aid, name: b.dataset.anm } })));
     const ttg = root.querySelector("#taskToggle");
-    if (ttg) ttg.onclick = () => { задачаРаскрыта = !задачаРаскрыта; render(); };
+    if (ttg) ttg.onclick = () => { const t = root.querySelector("#taskText"); if (t) t.focus(); };
+    const sb = root.querySelector("#sbisBtn"); if (sb) sb.onclick = показатьСБИС;
     root.querySelectorAll("[data-firm]").forEach((b) => {
       const выбор = () => { const id = b.dataset.firm; if ((id || "") !== фирмаИд()) выбратьФирму(id); };
       b.onclick = выбор;
