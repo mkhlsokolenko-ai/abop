@@ -18,6 +18,7 @@ from pathlib import Path
 
 КОРЕНЬ = Path(__file__).resolve().parents[1]
 ЯДРО = (КОРЕНЬ / "desktop" / "ui" / "core" / "cards.js").read_text(encoding="utf-8")
+ЭТАЛОН = (КОРЕНЬ / "desktop" / "ui" / "core" / "abop.css").read_text(encoding="utf-8")
 ТЕМА = (КОРЕНЬ / "desktop" / "ui" / "core" / "theme.css").read_text(encoding="utf-8")
 ЭКРАНЫ = {
     "решения": КОРЕНЬ / "desktop" / "ui" / "modules" / "decisions" / "panel.js",
@@ -253,7 +254,7 @@ def test_ни_одна_панель_не_рисует_несуществующи
             классы.update(к for к in кусок.split() if к)
         # Крючок — это и «.skp», и «.skp:checked»: ищем начало селектора, а не точное совпадение.
         крючок = lambda к: (f'".{к}' in текст) or (f"'.{к}" in текст)   # noqa: E731
-        нет = sorted(к for к in классы if ("." + к) not in ТЕМА and not крючок(к))
+        нет = sorted(к for к in классы if ("." + к) not in ТЕМА and ("." + к) not in ЭТАЛОН and not крючок(к))
         if нет:
             промахи.append(str(путь.relative_to(КОРЕНЬ)) + ": " + ", ".join(нет))
     assert not промахи, "панели рисуют классами, которых нет в теме:\n" + "\n".join(промахи)

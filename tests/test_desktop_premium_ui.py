@@ -18,6 +18,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+ЭТАЛОН = (ROOT / "desktop" / "ui" / "core" / "abop.css").read_text(encoding="utf-8")
 THEME = (ROOT / "desktop" / "ui" / "core" / "theme.css").read_text(encoding="utf-8")
 APP = (ROOT / "desktop" / "ui" / "core" / "app.js").read_text(encoding="utf-8")
 APE = (ROOT / "desktop" / "ui" / "core" / "ape.js").read_text(encoding="utf-8")
@@ -53,10 +54,9 @@ def test_раздел_рейла_повторяет_маршрут_веба():
 
 def test_свёрнутый_рейл_запоминается():
     assert '"ape_rail_narrow"' in APP, "состояние рейла не хранится"
-    assert "rail-narrow" in THEME and "rail-narrow" in APP, "нет узкого вида рейла"
-    toggle = APP.split("function applyRail()")[1].split("function toggleRail()")[0]
-    assert "aria-expanded" in toggle, "переключатель не объявляет состояние диктору"
-    assert 'id="railToggle"' in SHELL, "в шапке нет переключателя меню"
+    assert ".rail.min" in ЭТАЛОН and "classList.toggle(\"min\"" in APP, "нет узкого вида рейла (abop .rail.min)"
+    # мокап-dark 21.11: переключатель живёт в рейле (rail-foot), состояние — aria-label кнопки
+    assert 'id="railFold"' in APP and "Свернуть рейл" in APP, "в рейле нет переключателя меню"
 
 
 def test_знак_совпадает_с_вебом():

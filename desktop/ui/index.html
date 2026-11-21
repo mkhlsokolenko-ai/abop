@@ -6,72 +6,55 @@
         content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src http://127.0.0.1:*; img-src 'self' data:; font-src 'self';" />
   <title>ABOP Desktop</title>
   <link rel="stylesheet" href="core/theme.css" />
+  <link rel="stylesheet" href="core/abop.css" />
 </head>
 <body>
-  <!-- Оболочка 1:1 из макета APE Desktop.dc.html -->
-  <div style="height:100vh;display:flex;flex-direction:column;background:var(--bg);
-    background-image:radial-gradient(circle at 8% -5%, var(--mesh-a), transparent 45%),radial-gradient(circle at 96% 105%, var(--mesh-b), transparent 45%);
-    color:var(--ink);font-size:13px">
+  <!-- Оболочка — эталон workspace дизайнера (src/components/abop/shell.tsx), классы 1:1.
+       Старые id (railNav, liveWorkSlot, panel, verChip, cmdBtn…) сохранены — wiring ядра не менялся. -->
+  <div class="abop" data-theme="dark">
 
-    <header style="flex:none;display:flex;align-items:center;gap:16px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--rail);backdrop-filter:blur(16px)">
-      <div style="display:flex;align-items:center;gap:10px">
-        <span id="apeLogo"></span>
-        <span style="display:flex;flex-direction:column;line-height:1.15">
-          <span style="font-family:var(--mono);font-size:15px;font-weight:700;letter-spacing:-.3px">ABOP</span>
-          <span id="verChip" style="font-size:11px;color:var(--ink-3)"></span>
-          <button id="brandDept" class="chip" title="Мой отдел — сменить" style="font-size:10px"></button>
-        </span>
-        <button id="railToggle" class="ico" title="Свернуть меню разделов" aria-label="Свернуть меню разделов" aria-expanded="true" style="margin-left:4px"></button>
+    <header class="hdr">
+      <div class="hdr-brand">
+        <span class="hdr-logo">AB<b>O</b>P</span>
+        <button id="brandDept" class="hdr-dept cap" title="Мой отдел — сменить" style="background:none;border:none;cursor:pointer;padding:0"></button>
+        <span id="verChip" class="hdr-dept cap" style="opacity:.75"></span>
       </div>
-      <button id="cmdBtn" title="Командная палитра · Ctrl+K" aria-label="Поиск и команды, Ctrl+K" style="display:flex;align-items:center;gap:10px;min-width:240px;padding:7px 12px;border:1px solid var(--line);border-radius:9999px;background:var(--panel);color:var(--ink-3);font-size:12.5px;text-align:left">
-        <span>Поиск и команды</span>
-        <span style="margin-left:auto;font-family:var(--mono);font-size:11px;padding:2px 7px;border-radius:6px;background:var(--hover)">Ctrl K</span>
+      <button id="cmdBtn" type="button" class="btn btn-ghost btn-sm" aria-label="Палитра команд">
+        Палитра <span class="kbd">Ctrl K</span>
       </button>
-      <button id="linkPill" type="button" aria-live="polite" aria-label="Состояние связи с ABOP"
-              title="Состояние связи · нажмите для подробностей"
-              style="display:flex;align-items:center;gap:8px;padding:7px 12px;border-radius:9999px;background:var(--panel);border:1px solid var(--line)">
-        <span id="linkDot" style="width:9px;height:9px;border-radius:9999px;background:var(--ink-3);flex:none"></span>
-        <span id="linkText" style="font-size:11.5px;color:var(--ink-2);font-weight:600">проверяю связь…</span>
+      <div class="hdr-spacer"></div>
+      <button id="linkPill" type="button" class="hdr-pill" aria-live="polite" aria-label="Состояние связи с ABOP"
+              title="Состояние связи · нажмите для подробностей">
+        <span id="linkDot" class="dot dot-neutral"></span><span id="linkText">проверяю связь…</span>
       </button>
-      <!-- Чьи данные на экране. Скрыта, пока человек работает в своей организации: лишняя плашка в
-           шапке у всех мешала бы. Появляется, когда это ПЕРЕСТАЛО быть верным — при вендорском
-           переходе поддержки на установку клиента, — и тогда её видно всё время работы. -->
-      <button id="tenantPill" type="button" hidden aria-live="polite"
-              style="display:flex;align-items:center;gap:8px;padding:7px 12px;border-radius:9999px;background:var(--warn-bg);border:1px solid var(--warn-line)">
-        <span aria-hidden="true" style="font-size:11.5px">&#128065;</span>
-        <span id="tenantText" style="font-size:11.5px;color:var(--warn-ink);font-weight:600"></span>
+      <button id="tenantPill" type="button" class="hdr-pill" hidden aria-live="polite"
+              title="Режим вендорского перехода: вы смотрите данные клиента">
+        <span id="tenantText" style="color:var(--warn)"></span>
       </button>
-      <div style="margin-left:auto;display:flex;align-items:center;gap:10px;min-width:0">
-        <div id="costPill" title="Реальный расход токенов (RunMetrics)" style="display:flex;align-items:center;gap:9px;padding:7px 13px;border-radius:9999px;background:var(--panel);border:1px solid var(--line);flex:none">
-          <span id="costVal" style="font-family:var(--mono);font-size:11.5px;color:var(--ink-2)">— ₽</span>
-          <span style="width:1px;height:12px;background:var(--line-2)"></span>
-          <span id="quotaVal" style="font-family:var(--mono);font-size:11.5px;color:var(--ink-2)">квота —</span>
-        </div>
-        <!-- Представление (вертикаль): какие разделы и какими словами. Пусто — значит выбирать
-             не из чего, и место в шапке не занимается. -->
-        <div id="verticalBox" style="display:flex;align-items:center;gap:8px;min-width:0"></div>
-        <button id="themeBtn" title="Тема" aria-label="Переключить тему" style="width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink-2)"></button>
-        <div id="authBox" style="display:flex;align-items:center;gap:8px;min-width:0"></div>
-      </div>
+      <span id="costPill" class="hdr-pill" title="Реальный расход (RunMetrics)">
+        <span id="costVal">— ₽</span><span class="sep" aria-hidden="true"></span><span id="quotaVal">квота —</span>
+      </span>
+      <div id="verticalBox" style="display:flex;align-items:center;gap:8px;min-width:0"></div>
+      <button id="themeBtn" class="btn btn-icon" title="Тема" aria-label="Переключить тему"></button>
+      <div id="authBox" style="display:flex;align-items:center;gap:8px;min-width:0"></div>
     </header>
 
     <div id="updateBar" style="display:none"></div>
 
-    <div style="flex:1;display:flex;min-height:0;position:relative">
-      <aside id="rail" aria-label="Разделы" style="flex:none;width:var(--rail-w);display:flex;flex-direction:column;gap:3px;padding:14px 10px 14px 0;border-right:1px solid var(--line);background-image:var(--rail-grad);backdrop-filter:blur(18px);transition:width .26s cubic-bezier(.4,0,.2,1);overflow:hidden">
-        <span class="railcap" style="margin:0 0 6px 11px">маршрут</span>
-        <div id="railNav" style="display:flex;flex-direction:column;gap:3px;width:100%"></div>
-        <span style="height:1px;background:var(--line);margin:12px 8px 10px 11px"></span>
-        <span class="railcap" style="margin:0 0 6px 11px">быстрые</span>
-        <div id="railQuick" style="display:flex;flex-direction:column;gap:4px;width:100%;padding:0 0 0 11px"></div>
-      </aside>
+    <div class="abop-main">
+      <nav id="rail" class="rail" aria-label="Разделы">
+        <div class="rail-cap-wrap"><div class="cap">маршрут</div></div>
+        <div id="railNav" style="display:flex;flex-direction:column;gap:2px;width:100%"></div>
+        <div class="rail-cap-wrap"><div class="cap">быстрые</div></div>
+        <div id="railQuick" style="display:flex;flex-direction:column;gap:2px;width:100%"></div>
+      </nav>
       <div style="flex:1;display:flex;flex-direction:column;min-width:0;min-height:0">
-        <!-- Строка живой работы: «что идёт, где оно и сколько уже стоило» — одной строкой и из
-             любого раздела. Пусто, когда ничего не идёт: плашка без содержания — это шум. -->
+        <!-- Строка живой работы: что идёт, где оно и сколько стоило. Пуста, когда ничего не идёт. -->
         <div id="liveWorkSlot" aria-live="polite"></div>
         <main id="panel" style="flex:1;display:flex;min-width:0;min-height:0"></main>
       </div>
     </div>
+
     <footer id="statusbar" class="statusbar" aria-live="polite"></footer>
   </div>
   <script type="module" src="core/app.js"></script>

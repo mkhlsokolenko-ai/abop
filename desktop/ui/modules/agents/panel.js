@@ -502,7 +502,7 @@ export async function mount(root, ctx) {
   // Шапка пульта (мокап-dark 21.11): заголовок + происхождение из РЕАЛЬНЫХ данных реестра
   // (базы и период) + ярлыки-кнопки, переехавшие из полосы здоровья. Времени вычитки/сверки
   // в реестре нет — не рисуем выдумку, только то, что приходит с сервера.
-  function шапкаПульта(f) {
+    function шапкаПульта(f) {
     const n = ncrКарты[f.id];
     const ncrЧисло = n ? Number(n["открытых"] || 0) : null;
     const базы = клиентыРеестр.filter((к) => String(к["состояние"] || "") !== "выключен")
@@ -518,17 +518,17 @@ export async function mount(root, ctx) {
       ? [времена, `базы: ${базы.map((б) => esc(б)).join(", ")}${период ? " · " + esc(период) : ""}`].filter(Boolean).join(" · ")
       : `источники не подключены — подключить источник: раздел «Клиенты»`;
     const патрульСчёт = методолог ? JSON.parse(методолог["счёт"] || "{}") : {};
-    const патрТон = методолог ? (патрульСчёт["качество"] || патрульСчёт["назначение"] ? " sev" : " mid") : "";
-    return `<div class="h-screen">
-      <div style="flex:1;min-width:0">
-        <h1 class="scr-title">Пульт отдела</h1>
+    const патрТон = методолог ? (патрульСчёт["качество"] || патрульСчёт["назначение"] ? " tag-danger" : " tag-warn") : "";
+    return `<div class="screen-head">
+      <div>
+        <h1 class="title-screen">Пульт отдела</h1>
         <div class="origin">${происхождение}</div>
       </div>
       <div class="head-links">
-        ${ncrЧисло == null ? "" : `<button type="button" class="tagbtn${ncrЧисло ? " mid" : ""}" id="ncrBtn" title="Несоответствия аудитора качества — список по клику">${ncrЧисло ? "NCR ×" + ncrЧисло : "NCR чисто"}</button>`}
-        ${поляСчёт ? `<button type="button" class="tagbtn" id="fieldsBtn" title="Поля первички ниже порога — ждут вашего ввода в «Решениях»">первичка ×${поляСчёт}</button>` : `<button type="button" class="tagbtn" id="fieldsBtn" title="Поля первички ниже порога — ждут вашего ввода в «Решениях»">первичка</button>`}
-        <button type="button" class="tagbtn${патрТон}" id="patrolBtn" title="Заявки методолога: сверка, способы, NCR, назначение — патруль собирает код по расписанию">${методолог ? "методолог ×" + (JSON.parse(методолог["заявки"] || "[]").length) : "методолог"}</button>
-        <button type="button" class="tagbtn" id="deptCard" title="Карточка отдела: слагаемые ИКА, аудит назначения, состав ролей">карточка</button>
+        ${ncrЧисло == null ? "" : `<button type="button" class="tag${ncrЧисло ? " tag-warn" : ""}" id="ncrBtn" title="Несоответствия аудитора качества — список по клику">NCR ×${ncrЧисло}</button>`}
+        <button type="button" class="tag" id="fieldsBtn" title="Поля первички ниже порога — ждут вашего ввода в «Решениях»">первичка ×${поляСчёт ?? 0}</button>
+        <button type="button" class="tag${патрТон}" id="patrolBtn" title="Заявки методолога — патруль собирает код по расписанию">методолог</button>
+        <button type="button" class="tag" id="deptCard" title="Карточка отдела: слагаемые ИКА, аудит назначения, состав ролей">карточка</button>
       </div>
     </div>`;
   }
@@ -537,47 +537,38 @@ export async function mount(root, ctx) {
   // сводки. Дельта недели = ИКА(7дн) − ИКА(30дн) из одного эндпоинта; «автономия» — из ручки
   // автономии; того и другого без данных нет — строчка просто не рисуется (решение владельца:
   // только реальные цифры, никаких выдумок «+48 сегодня»).
-  function зонаСостояния(f) {
+    function зонаСостояния(f) {
     const и = ика_карты[f.id];
     if (старыйСайдкар)
-      return `<div class="card" style="padding:12px 14px;font-size:12.5px;color:var(--ink-2);line-height:1.5">ИКА и аудит назначения приедут с релизом 1.0.41 — сайдкар установленного приложения ещё не знает этих ручек. Обновление: Кабинет → Обновление. Очередь и фирмы ниже работают.</div>`;
+      return `<div class="empty">Если ИКА и аудит назначения не появились — обновите приложение (Кабинет → Обновление). Очередь и фирмы ниже работают.</div>`;
     if (!и)
-      return `<div class="card" style="padding:12px 14px;display:flex;gap:10px;align-items:center">
-        <span style="font-size:12.5px;color:var(--ink-2)">ИКА отдела не посчитался — обычно это мгновенный сбой связи.</span>
-        <button type="button" class="btn sm" id="deptIkaRetry">Повторить</button></div>`;
+      return `<div class="empty"><span class="cap">ИКА отдела не посчитался</span>
+        <p>Обычно это мгновенный сбой связи.</p>
+        <button type="button" class="btn btn-run btn-sm" id="deptIkaRetry">Повторить</button></div>`;
     const ика = и["ика"];
-    const тон = ика == null ? "" : ика >= 90 ? " ok" : ика >= 70 ? " mid" : " sev";
-    const цвет = ика == null ? "var(--ink-3)" : ика >= 90 ? "var(--ok-ink)" : ика >= 70 ? "var(--warn-ink)" : "var(--danger-ink)";
+    const тон = ика == null ? "" : ика >= 90 ? "ok" : ика >= 70 ? "warn" : "danger";
     const и7 = (ика7_карты[f.id] || {})["ика"];
     const дельта = (ика != null && и7 != null) ? Math.round((ика7_карты[f.id]["ика"] - ика) * 10) / 10 : null;
     const уровень = (автономия || {})["уровень"];
-    const шкала = `<div class="ika-scale${тон.trim()}">
-        <i style="width:${ика == null ? 0 : Math.min(100, Math.round(ика))}%"></i>
-        ${ика != null ? `<b style="left:70%"></b><b style="left:90%"></b>` : ""}
-      </div>`;
-    const дельтаСтр = дельта == null ? "" :
-      `<span class="delta${дельта >= 0 ? " ok" : " warn"}">${дельта >= 0 ? "+" : ""}${esc(String(дельта))} за неделю</span>${уровень ? `<span class="delta"> · автономия: ${esc(String(уровень))}</span>` : ""}`;
     const в = сводкаОч || {};
-    const плита = (подпись, число, цвет, дельта) => `<div style="min-width:0">
-        <div class="lbl" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(подпись)}</div>
-        <b class="tile-num"${цвет ? ` style="color:${цвет}"` : ""}>${esc(String(число ?? "—"))}</b>
-        ${дельта || ""}
-      </div>`;
-    const дельтаСегодня = (ч) => (ч == null ? "" : `<span class="delta">${ч >= 0 ? "+" : ""}${esc(String(ч))} сегодня</span>`);
-    const плитки = [
-      плита("найдено", в["всего"] ?? "—", "", дельтаСегодня(в["найдено_сегодня"])),
-      плита("признано", в["подтверждено"] ?? "—", в["подтверждено"] ? "var(--ok-ink)" : "", дельтаСегодня(в["признано_сегодня"])),
-      плита("исправлено", в["исправлено"] ?? "—", "", дельтаСегодня(в["исправлено_сегодня"])),
-      плита("доля признания", в["доля_подтверждения"] != null && в["доля_подтверждения"] !== "" ? в["доля_подтверждения"] + " %" : "—"),
-    ].join("");
-    return `<section class="state-zone" aria-label="Состояние отдела">
-      <div class="ika-card${тон}">
-        <span class="lbl">ИКА отдела · ${esc(String(и["окно_дней"] || 30))} дн.</span>
-        <span class="hero-num">${ика == null ? "—" : esc(String(ика))}</span>
-        ${шкала}
-        <div>${дельтаСтр || `<span class="delta">дельта появится, когда посчитаются оба окна</span>`}</div>
+    const дельтаСегодня = (ч) => (ч == null ? "" : `<div class="delta">${ч >= 0 ? "+" : ""}${esc(String(ч))} сегодня</div>`);
+    return `<section class="zone-state" aria-label="Состояние отдела">
+      <div class="ika-card tone-${тон || "warn"}">
+        <span class="cap">ИКА отдела · ${esc(String(и["окно_дней"] || 30))} дн.</span>
+        <div class="num-hero ${тон === "ok" ? "num-hero-ok" : тон === "warn" ? "num-hero-warn" : тон === "danger" ? "num-hero-danger" : ""}">${ика == null ? "—" : esc(String(ика))}</div>
+        <div class="ika-meter">
+          <i style="width:${ика == null ? 0 : Math.min(100, Math.round(ика))}%;background:${ика >= 90 ? "var(--ok)" : ика >= 70 ? "var(--warn)" : "var(--danger)"}"></i>
+          <span class="ika-tick" style="left:70%"></span>
+          <span class="ika-tick" style="left:90%"></span>
+        </div>
+        <div class="delta ${дельта != null && дельта >= 0 ? "delta-ok" : "delta-warn"}">${дельта != null ? (дельта >= 0 ? "+" : "") + esc(String(дельта)) + " за неделю" : "дельта появится, когда посчитаются оба окна"}${уровень ? " · автономия: " + esc(String(уровень)) : ""}</div>
       </div>
-      <div class="tile-row">${плитки}</div>
+      <div class="tiles">
+        <div class="tile"><span class="cap">найдено</span><div class="num-tile">${esc(String(в["всего"] ?? "—"))}</div>${дельтаСегодня(в["найдено_сегодня"])}</div>
+        <div class="tile"><span class="cap">признано</span><div class="num-tile">${esc(String(в["подтверждено"] ?? "—"))}</div>${дельтаСегодня(в["признано_сегодня"])}</div>
+        <div class="tile"><span class="cap">исправлено</span><div class="num-tile">${esc(String(в["исправлено"] ?? "—"))}</div>${дельтаСегодня(в["исправлено_сегодня"])}</div>
+        <div class="tile"><span class="cap">доля признания</span><div class="num-tile">${в["доля_подтверждения"] != null && в["доля_подтверждения"] !== "" ? esc(String(в["доля_подтверждения"])) + "%" : "—"}</div><div class="delta">по подтверждённым находкам</div></div>
+      </div>
     </section>`;
   }
 
@@ -644,144 +635,119 @@ export async function mount(root, ctx) {
   // ── поток пульта: группы причин с полосой значимости (мокап 20.11) ────────────────────────
   // Мокап показывает верхние 5 групп, остальное — строкой «ещё N групп: код ×ч … — показать»:
   // девять карточек на экране конкурировали за внимание, а слово руководителя нужно первым двум.
-  function потокБлок() {
-    const заголовок = `поток находок · ${группыПульт.length} причин(ы) · ${очередь.length} нерешённых`;
-    const скл = (ч, од, дв, мн) => {
-      const о = Math.abs(ч) % 100, е = о % 10;
-      if (о > 10 && о < 20) return мн;
-      if (е > 1 && е < 5) return дв;
-      return е === 1 ? од : мн;
-    };
+    function потокБлок() {
+    const заголовок = `<span class="cap">поток находок</span>
+      <span class="tag${очередь.length ? " tag-warn" : " tag-ok"}">${очередь.length} нерешённых</span>
+      <span class="vsep"></span>`;
     let тело;
-    if (очередиГрузят) тело = `<div class="faint" style="padding:14px;font-size:12.5px">собираю поток отдела…</div>`;
-    else if (ошибкаОчереди) тело = `<div class="card" style="padding:12px 14px;font-size:12.5px;color:var(--danger-ink)">${esc(ошибкаОчереди)}</div>`;
+    if (очередиГрузят) тело = `<div class="skel" style="height:44px;margin:14px 20px"></div>`;
+    else if (ошибкаОчереди) тело = `<div class="empty"><p style="color:var(--danger)">${esc(ошибкаОчереди)}</p></div>`;
     else if (!группыПульт.length) {
       const признано = Number(сводкаОч["подтверждено"] || 0), норм = Number(сводкаОч["отклонено"] || 0);
-      тело = `<div class="card" style="padding:16px;display:flex;flex-direction:column;gap:10px;align-items:flex-start">
-        <div style="font-size:13px;font-weight:600;color:var(--ok-ink)">Поток пуст — все находки разобраны.</div>
-        <div style="font-size:12px;color:var(--ink-2)">За всё время отдел признавал проблемой ${признано} ${скл(признано, "находку", "находки", "находок")} · отмечал нормой ${норм}.</div>
-        <button type="button" class="btn sm" id="histBtn2">История решений — в «Решениях»</button>
+      тело = `<div class="empty">
+        <span class="cap">поток пуст</span>
+        <p>Нерешённых находок по фильтру нет. За всё время отдел признавал проблемой ${признано} находк(и) · отмечал нормой ${норм}. История решений — в «Решениях».</p>
+        <button type="button" class="btn btn-run" id="histBtn2">Пересчитать клиент</button>
       </div>`;
     } else {
       const по_сумме = (a, b) => Number(b["сумма"] || 0) - Number(a["сумма"] || 0);
-      const слит = (список) => список.map((г) => `${esc(String(г["код"] || "—"))} ×${esc(String(г["находок"] || 0))}`).join(" · ");
       if (сортРежим === "сумма") {
         const ранг = (г) => (СЕВ_РАНГ[String(г["серьёзность"] || "").toLowerCase()] ?? 2);
         группыПульт.sort((a, b) => по_сумме(a, b) || ранг(a) - ранг(b));
       } else {
         сортировка_пульта(группыПульт);
       }
-      // Мокап-dark 21.11: все группы видны — «требует слова» честно называет каждую причину.
-      тело = группыПульт.map(группаПультСтрокой).join(`<div style="height:8px"></div>`);
+      тело = группыПульт.map(группаПультСтрокой).join("");
     }
-    return `<div style="display:flex;flex-direction:column;gap:8px;min-width:0">
-      <span class="lbl">${esc(заголовок)}</span>
-      ${тело}
-    </div>`;
+    return `<div class="flow-head">${заголовок}${фирмЧипыРяд()}</div>
+      <div class="flow">${тело}${петляБлок()}</div>`;
   }
 
-  function группаПультСтрокой(г) {
+    function группаПультСтрокой(г) {
     const раскрыта_г = развернутаГруппа === String(г["код"]);
-    const бар = sevБарКласс(г["серьёзность"]);
     const сумма = Number(г["сумма"] || 0);
     const способ = String(г["способ"] || "");
-    const org = (г["организации"] || []).map((о) => о["имя"] || о).join(", ");
+    const орг = (г["организации"] || []).map((о) => о["имя"] || о).join(", ");
+    const sev = sevБарКласс(г["серьёзность"]).split(" ")[1] || "l";
     let разворот = "";
     if (раскрыта_г) {
       const свои = очередь.filter((н) => String(н["код"] || "") === String(г["код"]));
-      const видно = показыватьВсё ? свои : свои.slice(0, 10);
-      разворот = `<div style="display:flex;flex-direction:column;gap:6px;padding:6px 0 2px">` +
-        (видно.length ? видно.map(карточкаНаходки_пульт).join("") : `<span class="faint" style="font-size:12px">нерешённых строк в этой группе нет</span>`) +
-        (свои.length > 10 && !показыватьВсё ? `<button type="button" class="btn sm ghost" data-gall="1">показать все ${свои.length}</button>` : "") +
-        `<div style="padding-top:2px"><button type="button" class="btn sm primary b-do" data-gy="${esc(String(г["код"]))}" ${busyН === "группа" ? "disabled" : ""} title="Признать все находки группы по правилам — способ попадёт в журнал каждой">Признать группу · ${esc(String(г["находок"] || 0))}</button></div>` +
-        `</div>`;
-    }
-    return `<div class="card" style="display:flex;gap:10px;padding:10px 13px;align-items:center">
-        <span class="${бар}" style="min-height:34px"></span>
-        <div style="flex:1;min-width:0;cursor:pointer" role="button" tabindex="0" data-gx="${esc(String(г["код"]))}">
-          <div style="display:flex;gap:8px;align-items:center;min-width:0">
-            <span class="tag ai">${esc(String(г["код"] || "—"))}</span>
-            <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink);font-weight:600;font-size:12.5px">${esc(г["название"] || "")}</span>
-          </div>
-          <div style="font-size:10.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(org || "")}</div>
-          ${раскрыта_г ? разворот : ""}
+      const видно = показыватьВсё ? свои : свои.slice(0, 3);
+      const общ_сумма = группыПульт.reduce((s, g) => s + Number(g["сумма"] || 0), 0) || 1;
+      const доля = Math.max(4, Math.min(100, Math.round(100 * сумма / общ_сумма)));
+      const провос = способ.toLowerCase().includes("провести");
+      разворот = `
+        <div class="grp-sevline">
+          <span class="sevbar sev-${sev}"><i style="width:${доля}%"></i></span>
+          <span class="origin">${доля}% суммы потока</span>
         </div>
-        <span class="tag" title="Способ устранения по правилу учёта">${esc(способ || "")}</span>
-        <span style="font:500 12px var(--mono,monospace);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;color:var(--ink-2)">×${esc(String(г["находок"] || 0))}${сумма ? " · " + esc(деньгиП(сумма)) : ""}</span>
-        <span class="grp-chev">${раскрыта_г ? "▾" : "▸"}</span>
+        <div class="grp-body">
+          <div class="grp-actions">
+            ${провос ? `<button type="button" class="btn btn-fuse" data-gy="${esc(String(г["код"]))}" ${busyН === "группа" ? "disabled" : ""} title="Провести все документы группы в 1С — необратимо, с подтверждением перечня">${icon("play")} Провести в 1С ×${esc(String(г["находок"] || 0))}</button>` : ""}
+            <button type="button" class="btn btn-ghost" data-gy="${esc(String(г["код"]))}" ${busyН === "группа" ? "disabled" : ""} title="Признать все находки группы по правилам — способ попадёт в журнал каждой">Признать группу ×${esc(String(г["находок"] || 0))}</button>
+            <span class="actions-note">проведение — необратимо: подтвердите перечнем документов</span>
+          </div>
+          ${(свои[0] && свои[0]["доказательство"]) ? `<div class="quote">${esc(String(свои[0]["доказательство"])).slice(0, 400)}<span class="q-src">${esc(String(г["код"]))} · воспроизводится прогоном · база ${esc(org || "—")}</span></div>` : ""}
+          ${видно.map((н) => `<div class="row doc-row row-static">
+              <span class="num-sm dim" style="width:34px;flex:none">${esc(String(г["код"]).split("-")[0])}</span>
+              <span class="doc-name muted">${esc(н["название"] || "")}${н["предмет"] ? " · " + esc(String(н["предмет"]).slice(0, 24)) : ""}</span>
+              ${Number(н["сумма"] || 0) ? `<span class="num">${esc(деньгиП(Number(н["сумма"])))}</span>` : ""}
+              <span class="spacer"></span>
+              <div class="row-actions">
+                ${String(н["способ"] || "").toLowerCase().includes("провести") ? `<button type="button" class="btn btn-fuse btn-sm post1c" data-vf="${esc(н.id)}" ${busyН === н.id ? "disabled" : ""} title="Провести документ в 1С — необратимо: подтвердите перечнем">Провести</button>` : ""}
+                <button type="button" class="btn btn-in btn-sm" data-fy="${esc(н.id)}" data-fsp="${esc(String(н["способ"] || ""))}" ${busyН === н.id ? "disabled" : ""}>Признать</button>
+                <button type="button" class="btn btn-ghost btn-sm" data-fn="${esc(н.id)}" ${busyН === н.id ? "disabled" : ""}>Норма</button>
+              </div>
+            </div>`).join("")}
+          ${свои.length > 3 && !показыватьВсё ? `<div class="row doc-row row-static" style="min-height:34px">
+              <span class="num-sm dim">и ещё ${свои.length - 3} документов — полный перечень в реестре</span>
+              <span class="spacer"></span>
+              <button type="button" class="btn btn-ghost btn-sm" data-gall="1">Реестр →</button>
+            </div>` : ""}
+        </div>`;
+    }
+    return `<div class="grp">
+        <button type="button" class="grp-head" aria-expanded="${раскрыта_г}" data-gx="${esc(String(г["код"]))}">
+          <span class="sev-edge ${sev}"></span>
+          <span class="grp-code">${esc(String(г["код"] || "—"))}</span>
+          <span class="grp-title">${esc(г["название"] || "")}</span>
+          <span class="tag" title="Способ устранения по правилу учёта">${esc(способ || "способ уточняется")}</span>
+          <span class="grp-sum">×${esc(String(г["находок"] || 0))} · ${esc(деньгиП(сумма))}</span>
+          <span class="grp-chev">${раскрыта_г ? "▾" : "▸"}</span>
+        </button>
+        ${раскрыта_г ? разворот : ""}
       </div>`;
   }
 
   // Раскрытая строка группы — тот же примитив card() с действиями петли
-  function карточкаНаходки_пульт(н) {
-    const ждёт = busyН === н.id;
-    const исход = String(н["исход_способа"] || "");
-    const способ = String(н["способ"] || "");
-    const что_сделать = исход === "выбран" && способ
-      ? `<div style="display:flex;flex-direction:column;gap:4px">
-           <span class="lbl">что сделать</span>
-           <div style="font-size:13px;font-weight:600;color:var(--ink)">${esc(способ)}</div>
-           ${н["как_устранить"] ? `<div style="font-size:12.5px;line-height:1.5;color:var(--ink-2)">${esc(String(н["как_устранить"]))}</div>` : ""}
-           ${н["основание_способа"] ? `<div style="font-size:11.5px;color:var(--ink-3)">основание: ${esc(String(н["основание_способа"]))}</div>` : ""}
-         </div>`
-      : "";
-    return card({
-      "что": н["код"] || "находка",
-      "класс": н["серьёзность"] || "",
-      "класс_тон": серьёзностьКлассН(н["серьёзность"]),
-      "состояние": н["величина"] || "",
-      "справа": [н["организация"], н["процесс"]].filter(Boolean).join(" · "),
-      "суть": [н["название"], н["предмет"] ? "предмет: " + н["предмет"] : ""].filter(Boolean).join(" — "),
-      "доказательство": н["доказательство"] || "",
-      "что_сделать": что_сделать,
-      "действия": [
-        String(н["способ"] || "").toLowerCase().includes("провести")
-          ? `<button type="button" class="btn sm b-irr post1c" data-vf="${esc(н.id)}" ${ждёт ? "disabled" : ""}>Провести в 1С</button>` : "",
-        `<button type="button" class="btn sm b-calc verify" data-vf="${esc(н.id)}" ${ждёт ? "disabled" : ""}>Исправлено — проверить</button>`,
-        `<button type="button" class="btn sm b-do ghost" data-fy="${esc(н.id)}" data-fsp="${esc(способ)}" ${ждёт ? "disabled" : ""}>Признать</button>`,
-        `<button type="button" class="btn sm b-do ghost" data-fn="${esc(н.id)}" ${ждёт ? "disabled" : ""}>Норма</button>`,
-      ],
-    });
-  }
-
+  
   // Фирмы (разбор v5, #2 и #4): компактная карточка в две строки; клик выбирает фирму —
   // разрез очереди — и раскрывает карточку. Выбор — и раскрытие одним действием: два разных
   // клика по одной строке человек бы не различил.
-  function фирмаКарта(к) {
+    function фирмаКарта(к) {
     const имя = к["организация"] || к["название"] || к.id;
     const счёт = {};
     (разрезыОч["организации"] || []).forEach((о) => { счёт[о["имя"]] = Number(о["открытых"] || 0); });
     const ждёт = счёт[имя] || 0;
     const выбрана = фирма === имя;
     const выключен = String(к["состояние"] || "") === "выключен";
-    const подвал = `схема ${esc(к["схема_учёта"] || "базовая")} · ${esc((к["период_с"] || "—") + " → " + (к["период_по"] || "—"))}`;
-    if (!выбрана) {
-      return `<div class="card lift" data-firm="${esc(к.id)}" role="button" tabindex="0"
-          style="display:flex;flex-direction:column;gap:4px;padding:10px 12px;cursor:pointer;${выключен ? "opacity:.55" : ""}">
-          <div style="display:flex;gap:8px;align-items:center;min-width:0">
-            <b style="flex:1;min-width:0;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)">${esc(имя)}</b>
-            ${ждёт ? `<span class="tag mid">ждёт ${ждёт}</span>` : `<span class="tag">тихо</span>`}
-          </div>
-          <div style="font-size:10.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${подвал}</div>
-        </div>`;
-    }
-    return `<div class="card" style="display:flex;flex-direction:column;gap:5px;padding:10px 12px;border-color:var(--accent);${выключен ? "opacity:.55" : ""}">
-        <div style="display:flex;gap:8px;align-items:center;min-width:0">
-          <b style="flex:1;min-width:0;font-size:12.5px;color:var(--ink)">${esc(имя)}</b>
-          <span class="tag${выключен ? "" : " ok"}">${выключен ? "выключен" : "активен"}</span>
+    const подвал = `${esc(к["система"] || "1С")} · граница: ${esc((к["период_с"] || "—") + " → " + (к["период_по"] || "—"))}`;
+    return `<div style="border:1px solid ${выбрана ? "var(--accent)" : "var(--border)"};border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;background:var(--panel);${выключен ? "opacity:.6;" : ""}${выбрана ? "cursor:default;" : "cursor:pointer;"}" ${выбрана ? "" : `data-firm="${esc(к.id)}" role="button" tabindex="0"`}>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="card-title" style="min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${esc(имя)}</span>
+          <span class="spacer"></span>
+          ${выключен ? `<span class="tag tag-danger"><span class="dot dot-danger"></span>доступ</span>` : ждёт ? `<span class="tag tag-warn"><span class="dot dot-warn"></span>ждёт ${ждёт}</span>` : `<span class="tag tag-ok"><span class="dot dot-ok"></span>ок</span>`}
         </div>
-        <div style="font-size:10.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${подвал}</div>
-        <div style="font-family:var(--mono,monospace);font-size:10px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">граница ${esc(к["система"] || "—")} · доступ ${esc(к["секрет"] || "не задан")}</div>
-        ${выключен ? `<div class="bad-note">доступ отозван — подключить источник в разделе «Клиенты»</div>` : ""}
-        <div style="display:flex;gap:6px;flex-wrap:wrap;padding-top:2px">
-          <button type="button" class="btn sm b-out rep" data-rep="${esc(к.id)}" ${выключен || сканИдёт ? "disabled" : ""} title="Отчёт клиенту: итоги, причины, суммы — печатный документ">Отчёт<span class="lbl">→ бухгалтеру</span></button>
-          <button type="button" class="btn sm b-calc" data-rescan="${esc(к.id)}" ${выключен || сканИдёт ? "disabled" : ""} title="Вычитать базу и поставить прогон сверщика — результат в чате">Пересчитать</button>
-          <button type="button" class="btn sm b-calc ghost" data-refreshonly="${esc(к.id)}" ${сканИдёт ? "disabled" : ""} title="Только перечитать базу, без прогона">Только вычитать</button>
+        <div class="origin">схема ${esc(к["схема_учёта"] || "базовая")} · ${подвал}</div>
+        ${выключен ? `<div class="origin" style="color:var(--danger)">доступ отозван — подключить источник в разделе «Клиенты»</div>` : ""}
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button type="button" class="btn btn-run btn-sm" data-rescan="${esc(к.id)}" ${выключен || сканИдёт ? "disabled" : ""} title="Вычитать базу и поставить прогон сверщика — результат в чате">Пересчитать</button>
+          <button type="button" class="btn btn-out btn-sm rep" data-rep="${esc(к.id)}" ${выключен ? "disabled" : ""} title="Отчёт клиенту: итоги, причины, суммы — печатный документ">Отчёт<span class="addr">бухгалтеру</span></button>
         </div>
       </div>`;
   }
 
-  function фирмыБлок() {
+    function фирмыБлок() {
     const счёт = {};
     (разрезыОч["организации"] || []).forEach((о) => { счёт[о["имя"]] = Number(о["открытых"] || 0); });
     const активных = клиентыРеестр.filter((к) => String(к["состояние"] || "") !== "выключен");
@@ -790,28 +756,18 @@ export async function mount(root, ctx) {
     const наружу = бюджет ? Number(бюджет["наружу_за_сутки"] || 0) : null;
     const лим = бюджет ? бюджет["лимит_руб"] : null;
     const сто = бюджет ? Number(бюджет["за_сутки_руб"] || 0) : null;
-    const превыш = (лим != null && сто != null && сто > лим);
-    const бюджетСтр = бюджет == null ? "" : `<div class="foot-note">
-        ${сто != null ? `стоимость прогонов за сутки: ${esc(String(сто))} ₽` : ""}${лим != null ? ` · лимит: ${esc(String(лим))} ₽ <button type="button" class="tagbtn" id="budgetSet" title="Суточный лимит расходов отдела — manager+">задать</button>` : `${сто != null ? ` · ` : ""}лимит не задан <button type="button" class="tagbtn" id="budgetSet" title="Суточный лимит расходов отдела — manager+">задать</button>`}
+    const превыш = лим != null && сто != null && сто > лим;
+    const бюджетСтр = бюджет == null ? "" : `<div class="origin" style="padding:4px 2px 14px">
+        ${сто != null ? `стоимость прогонов за сутки: ${esc(String(сто))} ₽` : ""}${лим != null ? ` · лимит отдела: ${esc(String(лим))} ₽ ` : " · лимит не задан "}
+        <button type="button" class="tagbtn" id="budgetSet" title="Суточный лимит расходов отдела — manager+">задать</button>
         ${превыш ? `<div class="bad-note">лимит превышен</div>` : ""}
-        ${наружу != null ? (наружу ? `<div class="bad-note">наружу ушло: ${наружу} документов в 1С за сутки</div>` : `<div class="delta ok">наружу не ушло · проведений в 1С за сутки: 0</div>`) : ""}
+        ${наружу != null ? (наружу ? `<div class="bad-note">наружу ушло: ${наружу} документов в 1С за сутки</div>` : `<div class="delta delta-ok">граница цела: наружу не ушло ничего</div>`) : ""}
       </div>`;
-    return `<div style="display:flex;flex-direction:column;gap:8px;min-width:0">
-      <div class="hrow">
-        <span class="lbl">фирмы · ${активных.length}</span>
-        <span style="flex:1"></span>
-        ${наружу != null && !наружу ? `<span class="tag ok">наружу не ушло</span>` : ""}
-        <button type="button" class="chip" id="goClients">Подключить</button>
-      </div>
-      <div class="card lift" data-firm="" role="button" tabindex="0"
-        style="padding:9px 12px;cursor:pointer;display:flex;flex-direction:row;align-items:center;gap:8px;${!фирма ? "border-color:var(--accent);background:var(--accent-bg)" : ""}">
-        <b style="font-size:12px;color:${!фирма ? "var(--accent-ink)" : "var(--ink-2)"}">все фирмы</b>
-        <span style="flex:1"></span>
-        <span class="tag${разрезыОч["открытых_всего"] ? " mid" : ""}">всего ${разрезыОч["открытых_всего"] || 0}</span>
-      </div>
+    return `<section class="insp-sec pad-b0">
       ${список.map(фирмаКарта).join("")}
+      ${активных.length ? "" : `<div class="empty"><span class="cap">источники не подключены</span><p>Подключите 1С или ЭДО клиента — реестр в разделе «Клиенты».</p><button type="button" class="btn btn-in btn-sm" id="goClients">Подключить источник</button></div>`}
       ${бюджетСтр}
-    </div>`;
+    </section>`;
   }
 
   // Поля первички ниже порога — то, что размазано по «Решениям», но ждёт именно этот отдел.
@@ -1059,56 +1015,57 @@ export async function mount(root, ctx) {
   // ── разметка задач отдела ──────────────────────────────────────────────────────────────────
   const СТАТУС_КЛАСС = { "выполнено": " ok", "возврат": " mid", "эскалация": " sev", "в очереди": " mid" };
 
-  function фирмЧипыРяд() {
-    // Разрез потока (мокап 20.11, блок 2): чипы фирм + справа сортировка «по значимости / по сумме».
+      function фирмЧипыРяд() {
+    // Чипы фирм и сортировка живут ВНУТРИ flow-head (мокап): разрез потока сверху.
     const счёт = {};
     (разрезыОч["организации"] || []).forEach((о) => { счёт[о["имя"]] = Number(о["открытых"] || 0); });
-    const чипы = [`<button type="button" class="chip${!фирма ? " on" : ""}" data-firmname="" title="Все фирмы">все фирмы · ${разрезыОч["открытых_всего"] || 0}</button>`]
+    const чипы = [`<button type="button" class="chip${!фирма ? " on" : ""}" data-firmname="" title="Все фирмы">все ${разрезыОч["открытых_всего"] || 0}</button>`]
       .concat(Object.keys(счёт).sort((a, b) => счёт[b] - счёт[a]).map((имя) =>
-        `<button type="button" class="chip${фирма === имя ? " on" : ""}" data-firmname="${esc(имя)}">${esc(имя)} · ${счёт[имя]}</button>`));
+        `<button type="button" class="chip${фирма === имя ? " on" : ""}" data-firmname="${esc(имя)}">${esc(имя)} ${счёт[имя]}</button>`));
     const сорт = [["важность", "по значимости"], ["сумма", "по сумме"]]
-      .map(([к, имя]) => `<button type="button" class="chip${сортРежим === к ? " on" : ""}" data-sort="${к}" title="Порядок групп в потоке">${имя}${сортРежим === к ? " ▾" : ""}</button>`).join("");
-    return `<div class="hrow" style="min-width:0">
-      ${чипы.join("")}
-      <span style="flex:1"></span>
-      ${сорт}
-    </div>`;
+      .map(([к, имя]) => `<button type="button" class="chip${сортРежим === к ? " on" : ""}" data-sort="${к}">${имя}</button>`).join("");
+    return чипы.join("") + `<span class="spacer"></span>` + сорт;
   }
 
-  function петляБлок() {
+    function петляБлок() {
     if (!принятые.length) return "";
-    return `<div class="card" style="padding:10px 12px;display:flex;flex-direction:column;gap:4px">
-        <div class="hrow"><span class="lbl">петля доведения</span><span class="tag mid">${принятые.length} в работе</span></div>
-        ${принятые.map((н) => `<div style="display:flex;gap:8px;align-items:center;padding:7px 10px">
-          <span class="tag ai">${esc(н["код"] || "—")}</span>
-          ${н["величина"] ? `<span style="font:500 11px var(--mono,monospace);color:var(--ink-2)">×${esc(String(н["величина"]))}</span>` : ""}
-          <span style="flex:1;min-width:0;font-size:12px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(н["способ"] || н["название"] || "")} · ${esc(н["организация"] || "")}</span>
-          ${busyП === н.id ? `<span class="tag ai"><span class="dot run" aria-hidden="true"></span>проверяется…</span>` : `<span class="tag mid">ждёт человека</span>`}
-          <button type="button" class="btn sm b-calc verify" data-vf="${esc(н.id)}" ${busyП === н.id ? "disabled" : ""} title="Вычитать базу, пересчитать сверку и проверить: воспроизводится ли находка">Исправлено — проверить</button>
+    return `<div style="padding:14px 20px 18px;display:flex;flex-direction:column;gap:8px">
+        <div class="hrow"><span class="cap">петля доведения</span><span class="tag">${принятые.length} в работе</span></div>
+        ${принятые.map((н) => `<div class="row row-static" style="padding-left:12px">
+          <span class="grp-code">${esc(н["код"] || "—")}</span>
+          ${н["величина"] ? `<span class="num-sm">×${esc(String(н["величина"]))}</span>` : ""}
+          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--text-2)">${esc(н["способ"] || н["название"] || "")} · ${esc(н["организация"] || "")}</span>
+          ${busyП === н.id ? `<span class="tag tag-acc"><span class="dot dot-accent beacon" style="display:inline-block"></span>проверяется…</span>` : `<span class="tag tag-warn"><span class="dot dot-warn"></span>ждёт человека</span>`}
+          <span class="row-actions">
+            <button type="button" class="btn btn-run btn-sm verify" data-vf="${esc(н.id)}" ${busyП === н.id ? "disabled" : ""} title="Вычитать базу, пересчитать сверку и проверить: воспроизводится ли находка">Исправлено — проверить</button>
+          </span>
         </div>`).join("")}
       </div>`;
   }
 
   // ЭДО-окно (мокап 20.11, блок 3): входящие. СБИС не подключен — строки показываем из вычитки
   // (первичка, ждущая проверки полей) и говорим об этом словами, а не выдаём за поток от оператора.
-  function эдоБлок() {
+    function эдоБлок() {
     const sev = (д) => {
       const обяз = (д["поля"] || []).some((п) => п["обязательное"] === "да");
       return Number(д["на_проверку"] || 0) ? (обяз ? "h" : "m") : "l";
     };
-    const строки = эдоДоки.map((д) => `<div class="edo">
-        <span class="sevbar ${sev(д)}"></span>
-        <b style="min-width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink);font-size:12.5px">${esc(д["название_типа"] || д["тип"] || д["файл"] || "документ")}</b>
-        <span style="flex:1;min-width:0;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(д["организация"] || "")}</span>
-        <span style="flex:1"></span>
-        ${Number(д["на_проверку"] || 0) ? `<span class="tag mid">на проверке: ${esc(String(д["на_проверку"]))} пол.</span>` : `<span class="tag ok">готов</span>`}
-        <button type="button" class="btn sm ghost" data-edo-open="1">Открыть</button>
+    const строки = эдоДоки.map((д) => `<div class="row doc-row row-static" style="min-height:38px">
+        <span class="sev-edge ${sev(д)}"></span>
+        <span class="doc-name"><span class="grp-code">${esc((д["название_типа"] || д["тип"] || "документ").slice(0, 24))}</span> <span class="dim">· ${esc(д["организация"] || "")}</span></span>
+        <span class="spacer"></span>
+        ${д["сумма"] ? `<span class="num-sm">${esc(д["сумма"])}</span>` : ""}
+        ${д["время"] ? `<span class="num-sm dim" style="width:64px;text-align:right">${esc(фмск(д["время"]))}</span>` : ""}
+        <button type="button" class="btn btn-ghost btn-sm" data-edo-open="1">Открыть</button>
       </div>`).join("");
-    return `<div class="card" style="padding:10px 12px">
-      <div class="hrow" style="margin-bottom:6px"><span class="lbl">входящие · ЭДО из вычитки</span>${эдоДоки.length ? `<span class="tag ai">${эдоДоки.length}</span>` : ""}<span style="flex:1"></span><button type="button" class="chip" id="sbisBtn" title="Что нужно, чтобы подключить приёмник ЭДО (Saby)">подключить источник</button></div>
-      ${строки || `<div style="font-size:11.5px;color:var(--ink-3);padding:4px 0">входящих, ждущих проверки полей, нет</div>`}
-      <div style="font-size:11px;color:var(--ink-3);padding:6px 2px 0">Оператор ЭДО не подключён — ключи приложения кабинета Saby (Безопасность → Интеграция → Приложения). Пока входящие видны из вычитки.</div>
-    </div>`;
+    return `<section class="insp-sec">
+      <div class="hrow"><span class="cap">входящие · ЭДО из вычитки</span>${эдоДоки.length ? `<span class="tag tag-acc">${эдоДоки.length}</span>` : ""}</div>
+      <div style="max-height:220px;overflow-y:auto;display:flex;flex-direction:column">
+        ${строки || `<div style="font-size:11.5px;color:var(--ink-3);padding:4px 0">входящих, ждущих проверки полей, нет</div>`}
+      </div>
+      <div class="origin">Оператор ЭДО не подключён — ключи приложения кабинета Saby (Безопасность → Интеграция → Приложения). Пока входящие видны из вычитки.</div>
+      <button type="button" class="btn btn-in btn-sm" id="sbisBtn" style="align-self:flex-start">Подключить источник</button>
+    </section>`;
   }
 
   // Инструкция подключения — окно, а не молчание: человек должен знать, ЧТО ждёт система.
@@ -1127,32 +1084,32 @@ export async function mount(root, ctx) {
   }
 
   // Тулбар пульта: чипы агентов семьи + постановка задачи + список задач (мокап 20.11).
-  function агентЧипы(f) {
+    function агентЧипы(f) {
     const живые = agents.filter((a) => a.family === f.id && String(a.status || "") === "deployed")
       .sort((a, b) => (b.version || 0) - (a.version || 0)).slice(0, 4);
-    return живые.map((a) => `<button type="button" class="chip${выбран_агент === a.id ? " on" : " agent-chip"}" data-agent="${esc(a.id)}"
+    return живые.map((a) => `<button type="button" class="chip${выбран_агент === a.id ? " on" : ""}" data-agent="${esc(a.id)}"
         title="${esc(a.name)} — выбрать для «Запустить»">${esc((a.name || "").split("(")[0].trim())} v${esc(String(a.version || 1))}</button>`).join("");
   }
 
   // Тулбар пульта (мокап 20.11, блок 1): запуск агентов семьи и постановка задачи — НАВЕРХУ,
   // сразу под полосой здоровья. Постановка задачи — главное действие руководителя отдела;
   // внизу списка она терялась за потоком находок.
-  function тулбарБлок(f) {
+    function тулбарБлок(f) {
     if (задачи_умеет === false)
-      return `<div class="card" style="padding:10px 12px;display:flex;flex-direction:column;gap:8px">
-        <div class="hrow"><span class="lbl">агенты отдела</span>${агентЧипы(f)}</div>
-        <div style="font-size:12.5px;color:var(--ink-2)">Постановка задач отделу приедет с релизом 1.0.43 — сайдкар установленного приложения ещё не знает этих ручек. Обновление: Кабинет → Обновление.</div>
-      </div>`;
-    return `<section class="card" style="padding:10px 12px;display:flex;flex-direction:column;gap:8px" aria-label="Задача агентам">
-      <div class="hrow">
-        <input id="taskText" value="${esc(задачаТекст)}" placeholder="Задача агенту: что сделать" class="input-lg"/>
-        <button type="button" class="btn lg primary b-calc" id="runText" ${busyЗ === "run" ? "disabled" : ""} title="Запустить выбранного агента отдела на этом тексте — прогон в очереди, результат в «Прогонах»">${icon("play")} Запустить<span class="kbd">Enter</span></button>
-        <button type="button" class="btn lg b-do" id="taskGo" ${busyЗ === "create" ? "disabled" : ""} title="Супервайзер разложит задачу на подзадачи с DoD">${icon("chain")} Отдать отделу</button>
+      return `<section class="taskzone" aria-label="Задача агентам">
+        <div class="taskzone-main"><input class="input input-lg" placeholder="Задача агенту: что сделать" disabled/>
+        <div class="empty" style="padding:0"><p>Постановка задач отделу приедет с релизом 1.0.43 — обновите приложение (Кабинет → Обновление).</p></div></div>
+        <div class="taskzone-agents"><span class="cap">агенты</span><div class="agents-row">${агентЧипы(f)}</div></div>
+      </section>`;
+    return `<section class="taskzone" aria-label="Задача агентам">
+      <div class="taskzone-main">
+        <input id="taskText" class="input input-lg" placeholder="Задача агенту: что сделать" aria-label="Задача агенту" value="${esc(задачаТекст)}"/>
+        <button type="button" class="btn btn-primary btn-lg" id="runText" ${busyЗ === "run" ? "disabled" : ""} title="Запустить выбранного агента отдела на этом тексте — прогон в очереди, результат в «Прогонах»">${icon("play")} Запустить<span class="kbd">Enter</span></button>
+        <button type="button" class="btn btn-in btn-lg" id="taskGo" ${busyЗ === "create" ? "disabled" : ""} title="Супервайзер разложит задачу на подзадачи с DoD">${icon("chain")} Отдать отделу</button>
       </div>
-      <div class="hrow">
-        <span class="lbl">агенты</span>
-        ${агентЧипы(f)}
-        ${выбран_агент ? "" : `<span class="delta">не выбран — «Запустить» возьмёт первого запущенного</span>`}
+      <div class="taskzone-agents">
+        <span class="cap">агенты</span>
+        <div class="agents-row">${агентЧипы(f)}${выбран_агент ? "" : `<span class="origin">не выбран — «Запустить» возьмёт первого запущенного</span>`}</div>
       </div>
     </section>`;
   }
@@ -1226,30 +1183,24 @@ export async function mount(root, ctx) {
       ". Исчезнувшая находка без признания — «перестало воспроизводиться», а не «исправлено».");
   }
 
-  function renderОтделы() {
-    if (!families.length) return `<div class="faint" style="padding:20px">Ростер семей не загрузился — обновите список.</div>`;
+    function renderОтделы() {
+    if (!families.length) return `<div class="empty" style="padding:20px">Ростер семей не загрузился — обновите список.</div>`;
     const f = families.find((x) => x.id === deptSel) || families[0];
-    // Пульт отдела — порядок мокапа 20.11: полоса здоровья+польза → тулбар агентов и задачи →
-    // чипы фирм с сортировкой → [ЭДО, поток, петля | фирмы] → задачи. Отделы живут в рейле
-    // оболочки (слева) — дубль на карточке удалён (19.11).
-    // Пульт — порядок мокапа-dark 21.11: шапка с ярлыками → зона состояния (ИКА-герой + плитки)
-    // → задача отделу → чипы фирм → [поток, петля | ЭДО, фирмы] → задачи. Правило переноса
-    // (решение владельца): только реальные цифры и эндпоинты; нет данных — «подключить источник».
-    return `<div style="min-width:0;display:flex;flex-direction:column;gap:12px">
+    // Пульт — мокап-dark 1:1: screen-head → zone-state → taskzone → flow-layout
+    // ([flow-head + группы + петля] | [ЭДО, фирмы]). Правило переноса: только реальные
+    // цифры и эндпоинты; нет данных — «подключить источник».
+    return `<div class="screen">
       ${шапкаПульта(f)}
       ${зонаСостояния(f)}
-      ${пользаБлок()}
       ${тулбарБлок(f)}
-      ${фирмЧипыРяд()}
-      <div class="dept-cols">
-        <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
+      <div class="flow-layout">
+        <div class="flow">
           ${потокБлок()}
-          ${петляБлок()}
         </div>
-        <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
+        <aside class="inspector" aria-label="Инспектор: ЭДО и фирмы">
           ${эдоБлок()}
           ${фирмыБлок()}
-        </div>
+        </aside>
       </div>
       ${задачаБлок()}
     </div>`;

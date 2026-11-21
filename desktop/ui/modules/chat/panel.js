@@ -107,7 +107,7 @@ export async function mount(root, ctx) {
   ]);
 
   root.innerHTML = `
-    <aside aria-label="Чаты" style="flex:none;width:252px;display:flex;flex-direction:column;gap:10px;padding:14px 12px;border-right:1px solid var(--line);background:var(--rail);min-height:0">
+    <aside class="treads" aria-label="Чаты">
       <button id="newTh" class="btn primary" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:10px;border-radius:11px;font-size:13px">${icon("plus")}Новый чат</button>
       <button id="boardPin" title="Общая доска: факты, которые вы вынесли из прогонов. Их читают следующие разговоры и агенты, объявившие эти ключи." aria-label="Общая доска" style="display:flex;align-items:center;gap:8px;padding:9px 11px;border:1px solid var(--warn-line);border-radius:11px;background:var(--warn-bg);color:var(--warn-ink);font-size:12.5px;font-weight:700;text-align:left">
         ${icon("board")}<span style="flex:1;min-width:0">Общая доска</span><span id="boardCnt" style="font-family:var(--mono);font-size:11px;font-weight:600;opacity:.8"></span>
@@ -121,7 +121,7 @@ export async function mount(root, ctx) {
         ${mascot("scan", 52)}<span style="font-size:15px;font-weight:600;color:var(--accent-ink)">Отпустите файл — добавлю в контекст чата</span>
       </div>
       <div id="scroll" style="flex:1;overflow-y:auto;padding:22px 26px 8px;min-height:0">
-        <div id="col" role="log" aria-live="polite" style="max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:18px"></div>
+        <div id="col" role="log" aria-live="polite" class="feed-scroll" style="max-width:820px;margin:0 auto"></div>
       </div>
       <div style="flex:none;padding:8px 26px 18px">
         <div style="max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:9px">
@@ -130,8 +130,8 @@ export async function mount(root, ctx) {
           <div style="padding:12px 14px;border-radius:var(--r-xl);background-color:var(--panel);background-image:var(--panel-grad);border:1px solid var(--line-2);backdrop-filter:var(--blur-strong);box-shadow:var(--shadow-2),var(--edge);display:flex;flex-direction:column;gap:10px">
             <div id="tools" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"></div>
             <div style="display:flex;align-items:flex-end;gap:10px">
-              <textarea id="inp" rows="2" aria-label="Сообщение" placeholder="Опишите задачу…  (Enter — отправить, Shift+Enter — перенос)" style="flex:1;min-width:0;padding:10px 12px;border-radius:12px;font-size:13.5px;line-height:1.55"></textarea>
-              <button id="sendBtn" class="btn primary" title="Отправить · Enter" aria-label="Отправить" style="width:44px;height:44px;flex:none;padding:0;border-radius:12px">${icon("send", "lg")}</button>
+              <textarea id="inp" rows="2" class="composer-input" aria-label="Сообщение" placeholder="Опишите задачу…  (Enter — отправить, Shift+Enter — перенос)" style="flex:1;min-width:0"></textarea>
+              <button id="sendBtn" class="send-btn" title="Отправить · Enter" aria-label="Отправить">${icon("send", "lg")}</button>
             </div>
           </div>
         </div>
@@ -237,7 +237,7 @@ export async function mount(root, ctx) {
     if (pin) pin.style.boxShadow = boardMode ? "0 0 0 2px var(--warn-line)" : "none";
     const list = threads.filter((t) => !search || (t.title || "").toLowerCase().includes(search));
     const fav = list.filter((t) => t.favorite), rest = list.filter((t) => !t.favorite);
-    const row = (t) => { const on = cur && t.id === cur.id; return `<div class="thr" data-id="${t.id}" style="display:flex;align-items:center;gap:4px;padding:6px 6px 6px 9px;border:1px solid ${on ? "var(--line-2)" : "var(--line)"};border-radius:10px;background:${on ? "var(--hover)" : "transparent"}">
+    const row = (t) => { const on = cur && t.id === cur.id; return `<div class="tread${on ? " on" : ""}" data-id="${t.id}">
         <button class="thopen" data-id="${t.id}" style="flex:1;min-width:0;padding:2px 0;border:none;background:transparent;text-align:left;display:flex;flex-direction:column;gap:2px;color:inherit">
           <span style="font-size:12.5px;font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%">${esc(t.title)}</span>
           <span style="font-size:11px;color:var(--ink-3)">${esc((PROFILES.find((p) => p[0] === t.profile) || [0, t.profile])[1])}${t.skills && t.skills.length ? " · навыков: " + t.skills.length : ""}</span>

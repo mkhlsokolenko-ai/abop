@@ -68,7 +68,7 @@ export function humanError(e) {
 const overlays = [];
 export function openOverlay({ html, onClose, closeOnBackdrop = true, label = "Диалог", className = "" } = {}) {
   const ov = document.createElement("div");
-  ov.className = "ape-overlay";
+  ov.className = "overlay";
   ov.style.zIndex = String(300 + overlays.length);
   ov.setAttribute("role", "dialog"); ov.setAttribute("aria-modal", "true"); ov.setAttribute("aria-label", label);
   ov.innerHTML = html;
@@ -114,13 +114,16 @@ export function modal(title, bodyHTML, onOk, okLabel, opts = {}) {
   const ov = openOverlay({
     label: title || "Диалог",
     closeOnBackdrop: opts.closeOnBackdrop !== false,
-    html: `<div class="ape-modal" style="${opts.width ? "width:min(" + opts.width + ",92vw)" : ""}">
-      ${opts.kicker ? `<div class="lbl">${esc(opts.kicker)}</div>` : ""}
-      <h2>${esc(title || "")}</h2>
-      <div id="mBody">${bodyHTML || ""}</div>
-      <div class="ape-actions">
-        <button class="btn" id="mCancel">${esc(opts.cancelLabel || (onOk ? "Отмена" : "Закрыть"))}</button>
-        ${onOk ? `<button class="btn ${opts.danger ? "danger" : (opts.okKind || "primary")}" id="mOk">${
+    html: `<div class="modal" style="${opts.width ? "width:min(" + opts.width + ",100%)" : ""}">
+      <div class="modal-head">
+        ${opts.kicker ? `<div class="lbl">${esc(opts.kicker)}</div>` : ""}
+        <h2 style="margin:0;font-size:14px;font-weight:700;color:var(--text)">${esc(title || "")}</h2>
+      </div>
+      <div class="modal-body" id="mBody" style="padding:14px 18px">${bodyHTML || ""}</div>
+      <div class="modal-foot">
+        <span class="modal-note"></span>
+        <button class="btn btn-ghost btn-sm" id="mCancel">${esc(opts.cancelLabel || (onOk ? "Отмена" : "Закрыть"))}</button>
+        ${onOk ? `<button class="btn ${opts.okKind === "primary" ? "btn-primary" : (opts.danger ? "btn-fuse" : "btn-in")} btn-sm" id="mOk">${
           opts.okIcon ? icon(opts.okIcon) : ""}${esc(okLabel || "Готово")}</button>` : ""}
       </div></div>`,
     onClose: opts.onClose,
@@ -241,9 +244,9 @@ export function say(msg) {
 
 export function toast(msg, kind = "", opts = {}) {
   let box = document.getElementById("apeToasts");
-  if (!box) { box = document.createElement("div"); box.id = "apeToasts"; box.setAttribute("aria-live", "polite"); document.body.appendChild(box); }
+  if (!box) { box = document.createElement("div"); box.id = "apeToasts"; box.className = "toasts"; box.setAttribute("aria-live", "polite"); document.body.appendChild(box); }
   const t = document.createElement("div");
-  t.className = "ape-toast" + (kind ? " " + kind : "");
+  t.className = "toast";
   t.innerHTML = `<span style="min-width:0">${esc(msg)}</span>${opts.action ? `<button type="button">${esc(opts.action.label)}</button>` : ""}`;
   if (opts.action) t.querySelector("button").onclick = () => { try { opts.action.run(); } finally { t.remove(); } };
   box.appendChild(t);
@@ -657,14 +660,14 @@ function railBtn(m, on) {
     .filter(Boolean).join(" · ");
   let badge = "", aria = label;
   if (m.id === "chat" && hitlCount) {
-    badge = `<span class="bdg" title="Ждут вашего решения">${hitlCount > 99 ? "99+" : hitlCount}</span>`;
+    badge = `<span class="rail-badge hot" title="Ждут вашего решения">${hitlCount > 99 ? "99+" : hitlCount}</span>`;
     aria = `${label}, ждут решения: ${hitlCount}`;
   } else if (m.id === "decisions" && работа) {
-    badge = `<span class="bdg" title="${esc(изЧего)}">${работа > 99 ? "99+" : работа}</span>`;
+    badge = `<span class="rail-badge" title="${esc(изЧего)}">${работа > 99 ? "99+" : работа}</span>`;
     aria = `${label}, ${изЧего}`;
   }
-  return `<button class="navitem${on ? " on" : ""}" data-id="${esc(m.id)}" title="${esc(label)}" aria-label="${esc(aria)}" aria-current="${on ? "page" : "false"}">
-    <span class="glyph" aria-hidden="true">${icon(m.icon)}</span><span class="lbl">${esc(label)}</span>${badge}</button>`;
+  return `<button class="rail-item${on ? " on" : ""}" data-id="${esc(m.id)}" title="${esc(label)}" aria-label="${esc(aria)}" aria-current="${on ? "page" : "false"}">
+    <span class="rail-ico" aria-hidden="true">${icon(m.icon, "lg")}</span><span class="rail-label" style="min-width:0;overflow:hidden;white-space:nowrap">${esc(label)}</span>${badge}</button>`;
 }
 function renderNav() {
   const nav = $("railNav"); if (!nav) return;
@@ -674,12 +677,12 @@ function renderNav() {
   // Мокап-dark 21.11 (полное соответствие): рейл = 6 пунктов кольца + «сервис» с примечанием
   // про ABAC и «Свернуть». Отдел живёт в шапке (brandDept) — пульт и есть его экран, а блок
   // отдела в рейле дублировал выбор, который делается один раз.
-  const капса = сервис.length ? `<div class="railcap" style="margin:10px 4px 3px">сервис</div>
-    <div class="railcap" style="margin:0 4px 6px;letter-spacing:0;text-transform:none;color:var(--ink-3)">сервис виден только админ-ролям · ABAC</div>` : "";
+  const капса = сервис.length ? `<div class="rail-cap-wrap"><div class="cap">сервис</div></div>
+    <div class="rail-foot-note" style="margin:0 8px 6px">сервис виден только админ-ролям · ABAC</div>` : "";
   nav.innerHTML = первый.map((m) => railBtn(m, m.id === active)).join("")
     + капса + сервис.map((m) => railBtn(m, m.id === active)).join("")
-    + `<button class="navitem" id="railFold" title="Свернуть меню разделов">
-        <span class="glyph" aria-hidden="true">${icon("left", "lg")}</span><span class="lbl">Свернуть</span></button>`;
+    + `<div class="rail-foot"><button class="rail-item" id="railFold" aria-label="Свернуть рейл">
+        <span class="rail-ico" aria-hidden="true">${icon("left", "lg")}</span><span class="rail-label">Свернуть</span></button></div>`;
   nav.querySelectorAll("[data-id]").forEach((b) => { b.onclick = () => loadModule(b.dataset.id); });
   const ф = $("railFold"); if (ф) ф.onclick = toggleRail;
 }
@@ -737,8 +740,13 @@ function статусОбновить() {
   const ика = о && о.ика != null ? `ИКА ${о.ика}` : "";
   const д = new Date(Date.now() + 3 * 3600000);
   const время = `МСК ${String(д.getUTCHours()).padStart(2, "0")}:${String(д.getUTCMinutes()).padStart(2, "0")}`;
-  const части = [`ABOP${версия ? " " + версия : ""}`, ика, время].filter(Boolean);
-  с.innerHTML = части.map((ч, i) => (i ? `<span class="sep" aria-hidden="true"></span>` : "") + `<span>${esc(ч)}</span>`).join("");
+  const уровень = о && о.ика != null ? (о.ика >= 90 ? "повышенная" : о.ика >= 70 ? "стандартная" : "суженная") : "";
+  const тон = о && о.ика != null ? (о.ика >= 90 ? "ok" : о.ика >= 70 ? "warn" : "danger") : "";
+  с.innerHTML = `<span>ABOP${версия ? " " + версия : ""}</span><span class="sep" aria-hidden="true"></span>`
+    + (о && о.ика != null
+        ? `<span style="display:inline-flex;align-items:center;gap:7px"><span class="dot dot-${тон}"></span> ИКА ${о.ика} · автономия: ${уровень}</span><span class="sep" aria-hidden="true"></span>`
+        : "")
+    + `<span class="spacer" style="flex:1"></span><span>${время}</span>`;
 }
 setInterval(статусОбновить, 60000);
 
@@ -756,15 +764,7 @@ function applyRail() {
   const aside = $("rail"), btn = $("railToggle");
   if (!aside) return;
   const narrow = railNarrow();
-  aside.classList.toggle("rail-narrow", narrow);
-  aside.style.width = narrow ? "68px" : "var(--rail-w)";
-  aside.style.padding = narrow ? "14px 8px" : "14px 10px 14px 0";
-  const q = $("railQuick"); if (q) q.style.padding = narrow ? "0" : "0 0 0 11px";
-  if (btn) {
-    btn.innerHTML = icon(narrow ? "right" : "left", "lg");
-    btn.title = btn.ariaLabel = narrow ? "Развернуть меню разделов" : "Свернуть меню разделов";
-    btn.setAttribute("aria-expanded", narrow ? "false" : "true");
-  }
+  aside.classList.toggle("min", narrow);   // мокап-dark: .rail.min — 52px, подписи скрыты
   renderQuick();
 }
 function toggleRail() {
@@ -949,6 +949,7 @@ async function проверитьИнтерфейс(руками) {
 
 function applyTheme(t) {
   document.documentElement.dataset.theme = t;
+  const корень = document.querySelector(".abop"); if (корень) корень.dataset.theme = t;
   const b = $("themeBtn");
   if (b) { b.innerHTML = icon(t === "light" ? "sun" : "moon", "lg"); b.setAttribute("aria-label", t === "light" ? "Тема: светлая. Переключить на тёмную" : "Тема: тёмная. Переключить на светлую"); }
 }
@@ -974,23 +975,23 @@ function openPalette() {
   if (document.getElementById("cmdPalette")) return;
   const all = buildCommands();
   const ov = openOverlay({
-    label: "Поиск и команды",
-    html: `<div id="cmdPalette" style="position:absolute;top:14vh;width:600px;max-width:92vw;border-radius:16px;background:var(--panel-2);border:1px solid var(--line-2);box-shadow:var(--shadow-2);backdrop-filter:var(--blur-strong);overflow:hidden;animation:ape-drop .28s ease-out">
-      <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--line)">${apeMascot("idle", 24)}
-        <input id="cmdInp" placeholder="Поиск и команды…" autocomplete="off" aria-label="Поиск команд" style="flex:1;min-width:0;padding:8px 0;border:none;background:transparent;color:var(--ink);font-size:15px;outline:none;box-shadow:none"/>
-        <span style="font-family:var(--mono);font-size:11px;color:var(--ink-3)">Esc</span></div>
-      <div id="cmdList" role="listbox" style="max-height:46vh;overflow-y:auto;padding:8px"></div></div>`,
+    label: "Палитра команд",
+    className: "",
+    html: `<div class="modal pal" id="cmdPalette" role="dialog" aria-modal="true" aria-label="Палитра команд">
+      <input id="cmdInp" class="pal-input" placeholder="Команда или раздел…" autocomplete="off" aria-label="Поиск команд"/>
+      <div id="cmdList" class="pal-list" role="listbox"></div>
+      <div class="modal-foot" style="justify-content:flex-end"><span class="origin">↑↓ — выбор · Enter — выполнить · Esc — закрыть</span></div></div>`,
   });
-  ov.style.alignItems = "flex-start";
-  const pal = ov.querySelector("#cmdPalette"); if (document.documentElement.dataset.theme !== "light") pal.style.background = "rgba(15,23,42,.94)";
+  const pal = ov.querySelector("#cmdPalette");
   let items = all, sel = 0;
   const list = ov.querySelector("#cmdList");
   const runSel = () => { const c = items[sel]; ov.close(); if (c) c.run(); };
   const paint = () => {
-    list.innerHTML = items.map((c, i) => `<button class="cmd" role="option" aria-selected="${i === sel}" data-i="${i}" style="width:100%;display:flex;align-items:center;gap:12px;padding:11px 12px;border:none;border-radius:10px;background:${i === sel ? "var(--hover)" : "transparent"};text-align:left;cursor:pointer;color:inherit">
-      <span style="width:26px;height:26px;flex:none;border-radius:8px;background:var(--hover);display:flex;align-items:center;justify-content:center;font-size:13px">${icon(c.glyph || "dot")}</span>
-      <span style="flex:1;display:flex;flex-direction:column;gap:2px"><span style="font-size:13px;font-weight:600;color:var(--ink)">${esc(c.label)}</span>${c.note ? `<span style="font-size:11px;color:var(--ink-3)">${esc(c.note)}</span>` : ""}</span>
-      ${c.keys ? `<span style="font-family:var(--mono);font-size:11px;color:var(--ink-3)">${esc(c.keys)}</span>` : ""}</button>`).join("")
+    list.innerHTML = items.map((c, i) => `<button class="pal-item${i === sel ? " on" : ""}" role="option" aria-selected="${i === sel}" data-i="${i}">
+      <span class="rail-ico" aria-hidden="true">${icon(c.glyph || "dot")}</span>
+      <span style="flex:1;min-width:0;font-weight:600">${esc(c.label)}</span>
+      ${c.note ? `<span class="cap">${esc(c.note)}</span>` : ""}
+      ${c.keys ? `<span class="kbd">${esc(c.keys)}</span>` : ""}</button>`).join("")
       || `<div style="padding:26px;text-align:center;font-size:12.5px;color:var(--ink-3)">Ничего не нашлось.</div>`;
     list.querySelectorAll(".cmd").forEach((e) => { e.onmouseenter = () => { sel = +e.dataset.i; paint(); }; e.onclick = runSel; });
   };
@@ -1199,7 +1200,6 @@ async function pingLink(manual) {
 async function boot() {
   установитьСпрайт();               // значки доступны всем разделам с первой отрисовки
   const lg = $("apeLogo"); if (lg) lg.innerHTML = apeLogo(32);
-  const rt = $("railToggle"); if (rt) rt.onclick = toggleRail;
   applyRail();
   initTheme();
   const h = await waitEngine();
