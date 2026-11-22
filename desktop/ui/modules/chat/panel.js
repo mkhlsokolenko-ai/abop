@@ -1856,7 +1856,11 @@ export async function mount(root, ctx) {
     const wasNew = messages.length === 0;
     messages.push({ role: "user", content: text, meta: {} });
     const asst = { role: "assistant", content: "", meta: {} }; messages.push(asst); render(); scrollDown(true);
-    const _bubs = $("col").querySelectorAll(".bub"); const el = _bubs[_bubs.length - 1];
+    // Стрим ищет цель ПЕРЕ-ЗАПРОСОМ на каждом дельта-токе: DOM мог перестроиться между
+    // токенами (модульный кэш, poll-обновления). Старый захват .bub один раз и навсегда
+    // приводил к тому, что текст не появлялся постепенно (мокап chat.tsx: msg-сетка).
+    const цель = () => { const bubs = $("col").querySelectorAll(".msg-text.bub"); return bubs[bubs.length - 1]; };
+    const el = цель();
     if (el) el.innerHTML = `<span style="display:inline-flex;gap:12px;align-items:center">${mascot("thinking", 26)}<span style="color:var(--ink-2)">думает…</span></span>`;
     curAbort = new AbortController(); setBusy(true);
     try {
@@ -1871,8 +1875,8 @@ export async function mount(root, ctx) {
         while ((i = buf.indexOf("\n\n")) >= 0) {
           const line = buf.slice(0, i).split("\n").find((l) => l.startsWith("data:")); buf = buf.slice(i + 2);
           if (!line) continue; let d; try { d = JSON.parse(line.slice(5).trim()); } catch { continue; }
-          if (d.delta) { asst.content += d.delta; if (el) { el.innerHTML = md(asst.content) + caret; scrollDown(false); } }
-          else if (d.error) { const msg = d.error === "auth_required" ? humanError({ status: 401 }) : (d.error === "forbidden" ? "🛡 " + (d.message || "профиль недоступен вашей роли") : humanError(d.message || d.error)); asst.content = asst.content || ("Ошибка: " + msg); asst.meta = { notice: { icon: "⚠" } }; if (el) el.textContent = asst.content; if (d.error === "auth_required") toast(msg, "warn", { action: { label: "Войти", run: () => ctx.login() } }); }
+          if (d.delta) { asst.content += d.delta; const tgt = цель(); if (tgt) { tgt.innerHTML = md(asst.content) + caret; scrollDown(false); } }
+          else if (d.error) { const msg = d.error === "auth_required" ? humanError({ status: 401 }) : (d.error === "forbidden" ? "🛡 " + (d.message || "профиль недоступен вашей роли") : humanError(d.message || d.error)); asst.content = asst.content || ("Ошибка: " + msg); asst.meta = { notice: { icon: "⚠" } }; const errEl = цель(); if (errEl) errEl.textContent = asst.content; if (d.error === "auth_required") toast(msg, "warn", { action: { label: "Войти", run: () => ctx.login() } }); }
           else if (d.done && d.meta) asst.meta = d.meta;
         }
       }
