@@ -453,7 +453,7 @@ export async function mount(root, ctx) {
     return `<div class="msg">
       <span class="msg-role${mine ? "" : " agent"}">${mine ? "вы" : esc((meta.model || "ABOP").split("/").pop())}</span>
       <div class="msg-body">
-        <div class="msg-text"${isCard ? "" : ` style="white-space:pre-wrap"`}>${inner}</div>
+        <div class="msg-text bub"${isCard ? "" : ` style="white-space:pre-wrap"`}>${inner}</div>
         ${cost ? `<div class="msg-meta">${esc(meta.model || "")} · ${esc(String(meta.cost_rub ?? 0))} ₽</div>` : ""}
         <div style="display:flex;align-items:center;gap:6px">${acts}</div>
       </div>
