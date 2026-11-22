@@ -208,8 +208,8 @@ body { background: #060a12; margin: 0; }
   transition: width 0.16s ease;
 }
 .rail.min { width: 52px; padding: 10px 6px; }
-.rail.min .rail-label, .rail.min .rail-cap-wrap, .rail.min .rail-badge, .rail.min .rail-foot-note { display: none; }
-.rail-cap-wrap { padding: 12px 8px 4px; }
+.rail.min .rail-label, .rail.min .rail-cap-wrap .cap, .rail.min .rail-badge, .rail.min .rail-foot-note { display: none; }
+.rail-cap-wrap { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 12px 8px 4px; }
 .rail.min .rail-cap-wrap { padding: 10px 4px 4px; display: flex; justify-content: center; }
 .rail-cap-wrap::after {
   content: ""; display: block; height: 1px; background: var(--border-soft); margin-top: 6px;
@@ -241,8 +241,15 @@ body { background: #060a12; margin: 0; }
   border-radius: 5px; padding: 1px 6px;
 }
 .rail-badge.hot { color: var(--danger); border-color: var(--danger-line); background: var(--danger-dim); }
-.rail-foot { margin-top: auto; display: flex; flex-direction: column; gap: 6px; }
 .rail-foot-note { font-family: var(--font-mono); font-size: 9.5px; color: var(--text-3); padding: 0 8px; }
+/* Сворачивание — значок цвета акцента без подписи (строка «маршрут» и список чатов). */
+.rail-fold {
+  width: 22px; height: 22px; flex: none;
+  display: grid; place-items: center; padding: 0;
+  border: none; border-radius: 7px; background: transparent;
+  color: var(--accent-ink); cursor: pointer;
+}
+.rail-fold:hover { background: var(--accent-dim); color: var(--accent-ink); }
 
 /* ---------- статус-бар (низ, всегда виден) ---------- */
 
@@ -644,9 +651,14 @@ body { background: #060a12; margin: 0; }
 
 /* ---------- чат ---------- */
 
-.chat-grid { flex: 1; display: grid; grid-template-columns: 252px minmax(0, 1fr); min-height: 0; }
-.chat-grid.with-tools { grid-template-columns: 252px minmax(0, 1fr) 386px; }
-.treads { border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; background: color-mix(in oklab, var(--bg), var(--panel) 18%); }
+.chat-grid { flex: 1; display: grid; grid-template-columns: 202px minmax(0, 1fr); min-height: 0; }
+.chat-grid.with-tools { grid-template-columns: 202px minmax(0, 1fr) 386px; }
+.treads { width: 202px; flex: none; border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; background: color-mix(in oklab, var(--bg), var(--panel) 18%); }
+.treads-cap { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 12px 10px 4px; }
+.treads.min { width: 52px; }
+.treads.min .treads-hide, .treads.min .treads-cap .cap, .treads.min .treads-lbl { display: none; }
+.treads.min .treads-cap { padding: 12px 4px 4px; justify-content: center; }
+.treads.min #newTh, .treads.min #boardPin { padding-left: 0; padding-right: 0; justify-content: center; }
 .treads-search { padding: 10px 10px 6px; }
 .tread {
   width: 100%; display: flex; align-items: center; gap: 8px;
@@ -797,19 +809,19 @@ body { background: #060a12; margin: 0; }
 /* адаптив: окно 1280–1920, минимум 900 */
 @media (max-width: 1360px) {
   .flow-layout { grid-template-columns: minmax(0, 1fr) 320px; }
-  .chat-grid.with-tools { grid-template-columns: 252px minmax(0, 1fr) 320px; }
+  .chat-grid.with-tools { grid-template-columns: 202px minmax(0, 1fr) 320px; }
 }
 @media (max-width: 1120px) {
   .flow-layout { grid-template-columns: minmax(0, 1fr); }
   .flow-layout .inspector { display: none; }
-  .chat-grid.with-tools { grid-template-columns: 252px minmax(0, 1fr); }
+  .chat-grid.with-tools { grid-template-columns: 202px minmax(0, 1fr); }
   .chat-grid.with-tools .tools-drawer { display: none; }
 }
 @media (max-width: 980px) {
   .chat-grid, .chat-grid.with-tools { grid-template-columns: minmax(0, 1fr); }
   .treads { display: none; }
   .rail { width: 52px; }
-  .rail .rail-label, .rail .rail-cap-wrap, .rail .rail-badge, .rail .rail-foot-note { display: none; }
+  .rail .rail-label, .rail .rail-cap-wrap .cap, .rail .rail-badge, .rail .rail-foot-note { display: none; }
   .rail .rail-item { justify-content: center; padding: 0; }
   .tiles { grid-template-columns: repeat(2, minmax(96px, 1fr)); }
   .zone-state { flex-wrap: wrap; }

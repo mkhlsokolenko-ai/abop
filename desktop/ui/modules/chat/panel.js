@@ -107,14 +107,15 @@ export async function mount(root, ctx) {
   ]);
 
   root.innerHTML = `
-    <aside class="treads" aria-label="Чаты">
-      <button id="newTh" class="btn primary" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:10px;border-radius:11px;font-size:13px">${icon("plus")}Новый чат</button>
+    <aside id="treadsAside" class="treads" aria-label="Чаты">
+      <div class="treads-cap"><span class="cap">чаты</span><button id="treadsFold" class="rail-fold" type="button" title="Свернуть список чатов" aria-label="Свернуть список чатов"></button></div>
+      <button id="newTh" class="btn primary" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:10px;border-radius:11px;font-size:13px">${icon("plus")}<span class="treads-lbl">Новый чат</span></button>
       <button id="boardPin" title="Общая доска: факты, которые вы вынесли из прогонов. Их читают следующие разговоры и агенты, объявившие эти ключи." aria-label="Общая доска" style="display:flex;align-items:center;gap:8px;padding:9px 11px;border:1px solid var(--warn-line);border-radius:11px;background:var(--warn-bg);color:var(--warn-ink);font-size:12.5px;font-weight:700;text-align:left">
-        ${icon("board")}<span style="flex:1;min-width:0">Общая доска</span><span id="boardCnt" style="font-family:var(--mono);font-size:11px;font-weight:600;opacity:.8"></span>
+        ${icon("board")}<span class="treads-lbl" style="flex:1;min-width:0">Общая доска</span><span id="boardCnt" class="treads-lbl" style="font-family:var(--mono);font-size:11px;font-weight:600;opacity:.8"></span>
       </button>
-      <div style="height:1px;background:var(--line);margin:2px 0"></div>
-      <input id="thSearch" placeholder="Поиск по чатам" aria-label="Поиск по чатам" style="padding:9px 12px;border-radius:10px;font-size:12.5px"/>
-      <div id="thList" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:5px;min-height:0"></div>
+      <div class="treads-hide" style="height:1px;background:var(--line);margin:2px 0"></div>
+      <input id="thSearch" class="treads-hide" placeholder="Поиск по чатам" aria-label="Поиск по чатам" style="padding:9px 12px;border-radius:10px;font-size:12.5px"/>
+      <div id="thList" class="treads-hide" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:5px;min-height:0"></div>
     </aside>
     <section id="chatSec" style="flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;position:relative">
       <div id="dropHint" style="display:none;position:absolute;inset:14px;z-index:8;flex-direction:column;align-items:center;justify-content:center;gap:12px;border:2px dashed var(--accent-2);border-radius:18px;background:var(--accent-bg);backdrop-filter:blur(6px);pointer-events:none">
@@ -215,6 +216,23 @@ export async function mount(root, ctx) {
 
   $("thSearch").oninput = (e) => { search = e.target.value.toLowerCase(); renderThreads(); };
   $("drClose").onclick = closeDrawer;
+
+  // Список чатов сворачивается до полосы значков; выбор переживает перезапуск, как у рейла.
+  const ЧАТЫ_LS = "ape_treads_min";
+  const чатыСвёрнуты = () => { try { return localStorage.getItem(ЧАТЫ_LS) === "1"; } catch { return false; } };
+  function применитьЧаты() {
+    const a = $("treadsAside"); if (!a) return;
+    const min = чатыСвёрнуты();
+    a.classList.toggle("min", min);
+    const f = $("treadsFold");
+    if (f) {
+      f.innerHTML = icon(min ? "right" : "left");
+      const что = min ? "Развернуть список чатов" : "Свернуть список чатов";
+      f.title = что; f.setAttribute("aria-label", что);
+    }
+  }
+  $("treadsFold").onclick = () => { try { localStorage.setItem(ЧАТЫ_LS, чатыСвёрнуты() ? "0" : "1"); } catch { /* приватный режим */ } применитьЧаты(); };
+  применитьЧаты();
   const sec = $("chatSec");
   sec.addEventListener("dragover", (e) => { e.preventDefault(); $("dropHint").style.display = "flex"; });
   sec.addEventListener("dragleave", (e) => { if (!sec.contains(e.relatedTarget)) $("dropHint").style.display = "none"; });

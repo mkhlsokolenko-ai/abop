@@ -681,12 +681,10 @@ function renderNav() {
   // отдела в рейле дублировал выбор, который делается один раз.
   const капса = сервис.length ? `<div class="rail-cap-wrap"><div class="cap">сервис</div></div>
     <div class="rail-foot-note" style="margin:0 8px 6px">сервис виден только админ-ролям · ABAC</div>` : "";
+  // Кнопка «Свернуть» живёт наверху, в строке «маршрут» (index.html) — значком без подписи.
   nav.innerHTML = первый.map((m) => railBtn(m, m.id === active)).join("")
-    + капса + сервис.map((m) => railBtn(m, m.id === active)).join("")
-    + `<div class="rail-foot"><button class="rail-item" id="railFold" aria-label="${railNarrow() ? "Развернуть рейл" : "Свернуть рейл"}">
-        <span class="rail-ico" aria-hidden="true">${icon(railNarrow() ? "right" : "left", "lg")}</span><span class="rail-label">${railNarrow() ? "Развернуть" : "Свернуть"}</span></button></div>`;
+    + капса + сервис.map((m) => railBtn(m, m.id === active)).join("");
   nav.querySelectorAll("[data-id]").forEach((b) => { b.onclick = () => loadModule(b.dataset.id); });
-  const ф = $("railFold"); if (ф) ф.onclick = toggleRail;
 }
 
 // ── Отделы в рейле (оболочка v5): отделы — навигация первого класса, не вкладка внутри агентов ──
@@ -763,10 +761,18 @@ function открытьОтдел(id) {
 const LS_RAIL = "ape_rail_min";   // переименован при переносе на abop.css: старый «свёрнутый» не наследуется
 function railNarrow() { try { return localStorage.getItem(LS_RAIL) === "1"; } catch { return false; } }
 function applyRail() {
-  const aside = $("rail"), btn = $("railToggle");
+  const aside = $("rail");
   if (!aside) return;
   const narrow = railNarrow();
   aside.classList.toggle("min", narrow);   // мокап-dark: .rail.min — 52px, подписи скрыты
+  // Значок в строке «маршрут» следит за состоянием: влево — свернуть, вправо — развернуть.
+  const f = $("railFold");
+  if (f) {
+    f.innerHTML = icon(narrow ? "right" : "left");
+    const что = narrow ? "Развернуть рейл" : "Свернуть рейл";
+    f.title = что; f.setAttribute("aria-label", что);
+    f.onclick = toggleRail;
+  }
   renderQuick();
 }
 function toggleRail() {
