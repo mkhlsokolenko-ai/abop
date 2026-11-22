@@ -170,7 +170,7 @@ def test_четыре_экрана_зовут_рецепты_а_не_рисую�
         "decisions": ['class="screen"', 'class="screen-head"', 'class="zone-state"', 'class="grp"'],
         "runs": ['class="rows"', 'class="row head r5"', "kpis(", 'class="tabs"'],
         "verticals": ['class="market"', 'class="vcard', 'class="vstat '],
-        "cabinet": ['class="two"', 'class="card calm"', 'class="row r4"'],
+        "cabinet": ['class="tile"'],
     }
     промахи = []
     for экран, куски in ждём.items():

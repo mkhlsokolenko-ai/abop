@@ -126,7 +126,7 @@ export async function mount(root, ctx) {
   };
   const карточкаОбновления = () => {
     if (!апдейтер) {
-      return `<div class="card calm">
+      return `<div class="tile" style="max-width:560px">
         <div class="card-head"><span class="lbl">обновление</span>
           <span class="t">Авто-обновление в этой сборке выключено</span></div>
         <span style="font-size:11.5px;color:var(--ink-3)">Так собран клиент под macOS (нет подписи Developer ID) и веб-версия. Обновлять вручную — новым установщиком.</span></div>`;
@@ -178,7 +178,7 @@ export async function mount(root, ctx) {
       <span>${esc(подпись)}</span>
       <span class="num" style="color:var(--ink-2);word-break:break-word">${esc(значение)}</span>
       <span class="tag ${тон === "ok" ? "ok" : "mid"}">${esc(метка)}</span><span></span></div>`;
-    return `<div class="card calm">
+    return `<div class="tile" style="max-width:560px">
       <div class="card-head">${icon("link", "lg")}<span class="t">Связь и данные</span></div>
       ${строка("Сервер ABOP", String((адресABOP && адресABOP["адрес"]) || (rt && rt.abop_url) || "—"),
                (rt && rt.abop) ? "есть связь" : "не отвечает", (rt && rt.abop) ? "ok" : "warn")}
@@ -206,7 +206,7 @@ export async function mount(root, ctx) {
     const б = деньги || {};
     if (!б || (!б.tokens && !б.spent_rub)) return "";
     const доля = Math.min(100, Math.round(Number(б.tokens_pct || 0)));
-    return `<div class="card calm">
+    return `<div class="tile" style="max-width:560px">
       <span class="lbl">расход</span>
       <div class="kpi" style="border:0;background:none;box-shadow:none;padding:0">
         <b style="font-size:26px">${esc(б.spent_rub != null ? Number(б.spent_rub).toLocaleString("ru-RU") + " ₽" : "≈0 ₽")}</b>
@@ -230,7 +230,7 @@ export async function mount(root, ctx) {
             ? '<span class="tag">права из учётной записи ABOP</span>'
             : `<button class="btn primary sm" id="cabLogin">${icon("key")} Войти в ABOP</button>`)],
       })}
-      <div class="two">
+      <div style="display:flex;flex-direction:column;gap:14px">
         <div style="display:flex;flex-direction:column;gap:10px">
           ${карточкаОбновления()}
           ${карточкаСвязи()}
