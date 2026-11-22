@@ -82,7 +82,21 @@ def _схемы_учёта() -> list:
 async def clients_list(все: bool = False, u: dict = Depends(user)) -> dict:
     """Реестр клиентов. `все=1` — вместе с выключенными."""
     строки = await _asyncio.to_thread(ape.клиенты, not все)
-    return {"clients": [_наружу(к) for к in строки],
+    # Когда доступ отозван (мокап-dark: «доступ отозван HH:MM» на карточке фирмы) —
+    # время берём из журнала аудита: последнее событие client.state с выключением.
+    события = await audit_store.list_events(limit=300)
+    выключены = {}
+    for е in события:
+        if str(е.get("action") or "") == "client.state"                 and str((е.get("detail") or {}).get("состояние") or "") == "выключен":
+            выключены[str(е.get("target") or "")] = str(е.get("ts") or "")
+    карточки = []
+    for к in строки:
+        карточка = _наружу(к)
+        если_выключен = выключены.get(str(к.get("id") or ""))
+        if если_выключен:
+            карточка["выключен_с"] = если_выключен
+        карточки.append(карточка)
+    return {"clients": карточки,
             "схемы": _схемы_учёта(),
             "контроль": {"всего": len(строки),
                          "почему_пусто": ("" if строки else

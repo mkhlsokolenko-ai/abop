@@ -739,7 +739,7 @@ export async function mount(root, ctx) {
           ${выключен ? `<span class="tag tag-danger"><span class="dot dot-danger"></span>доступ</span>` : ждёт ? `<span class="tag tag-warn"><span class="dot dot-warn"></span>ждёт ${ждёт}</span>` : `<span class="tag tag-ok"><span class="dot dot-ok"></span>ок</span>`}
         </div>
         <div class="origin">схема ${esc(к["схема_учёта"] || "базовая")} · ${подвал}</div>
-        ${выключен ? `<div class="origin" style="color:var(--danger)">доступ отозван — подключить источник в разделе «Клиенты»</div>` : ""}
+        ${выключен ? `<div class="origin" style="color:var(--danger)">доступ отозван${к["выключен_с"] ? " " + esc(фмск(к["выключен_с"])) : ""} — подключить источник в разделе «Клиенты»</div>` : ""}
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           <button type="button" class="btn btn-run btn-sm" data-rescan="${esc(к.id)}" ${выключен || сканИдёт ? "disabled" : ""} title="Вычитать базу и поставить прогон сверщика — результат в чате">Пересчитать</button>
           <button type="button" class="btn btn-out btn-sm rep" data-rep="${esc(к.id)}" ${выключен ? "disabled" : ""} title="Отчёт клиенту: итоги, причины, суммы — печатный документ">Отчёт<span class="addr">бухгалтеру</span></button>
