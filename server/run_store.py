@@ -28,6 +28,8 @@ ALTER TABLE runs ADD COLUMN IF NOT EXISTS actor    TEXT;
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS family   TEXT;
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS cost_rub NUMERIC(12,4);
 ALTER TABLE runs ADD COLUMN IF NOT EXISTS seconds  NUMERIC(10,2);
+-- Токены прогона: агрегат по шагам из run_metrics.steps (допрос 21.11, «токены сегодня»).
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS tokens_total BIGINT DEFAULT 0;
 CREATE INDEX IF NOT EXISTS idx_runs_family ON runs (tenant, family, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_runs_actor ON runs (tenant, actor, created_at DESC);
 """
@@ -51,6 +53,25 @@ UPDATE runs SET
 WHERE actor IS NULL OR family IS NULL OR cost_rub IS NULL OR seconds IS NULL
 """
 
+# Токены прогона: сумма input+output по шагам из JSONB-массива steps.
+# Задним числом для исторических прогонов (та же логика, что у cost_rub).
+ТОКЕНЫ_ДОСЫПКА = """
+UPDATE runs SET tokens_total = sub.total
+FROM (
+    SELECT r.id,
+        COALESCE(SUM(
+            COALESCE((s->>'input_tokens')::bigint, 0) +
+            COALESCE((s->>'output_tokens')::bigint, 0)
+        ), 0) AS total
+    FROM runs r,
+    LATERAL jsonb_array_elements(
+        COALESCE(r.payload->'run_metrics'->'steps', '[]'::jsonb)
+    ) AS s(s)
+    GROUP BY r.id
+) AS sub
+WHERE runs.id = sub.id AND runs.tokens_total = 0
+"""
+
 
 async def init() -> None:
     if not _has_pg():
@@ -69,6 +90,19 @@ async def init() -> None:
             from . import observability as obs
 
             obs.log_event("warn", "runs.backfill_fail", error=f"{type(ex).__name__}: {ex}")
+        try:
+            await conn.execute("ALTER TABLE runs ADD COLUMN IF NOT EXISTS tokens_total BIGINT DEFAULT 0")
+            await conn.execute(ТОКЕНЫ_ДОСЫПКА)
+        except Exception as ex:  # noqa: BLE001
+            from . import observability as obs
+
+            obs.log_event("warn", "runs.tokens_backfill_fail", error=f"{type(ex).__name__}: {ex}")
+        try:
+            await conn.execute(ТОКЕНЫ_ДОСЫПКА)
+        except Exception as ex:  # noqa: BLE001
+            from . import observability as obs
+
+            obs.log_event("warn", "runs.tokens_backfill_fail", error=f"{type(ex).__name__}: {ex}")
 
 
 async def _next_id(agent_id: str) -> str:
@@ -188,7 +222,7 @@ async def list_runs(agent_id: str | None = None, limit: int = 100) -> list[dict]
     # идентификаторов — сводка остаётся лёгкой, тянуть payload целиком ради этого не нужно.
     cols = ("id,agent_id,contract_audit_id,verdict_ok,autonomy_used,hitl_count,created_at,"
             "payload->>'started_by',payload->'run_metrics'->'cost',payload->'op_ids',"
-            "payload->>'source',payload->>'reported_by',family,seconds")
+            "payload->>'source',payload->>'reported_by',family,seconds,tokens_total")
     async with _conn() as conn:
         if agent_id:
             cur = await conn.execute(
@@ -204,7 +238,8 @@ async def list_runs(agent_id: str | None = None, limit: int = 100) -> list[dict]
              "created_at": r[6].isoformat() if r[6] else None, "started_by": r[7],
              "cost": r[8] or {}, "op_ids": r[9] or [],
              "source": r[10] or "abop", "reported_by": r[11],
-             "family": r[12], "seconds": float(r[13]) if r[13] is not None else None}
+             "family": r[12], "seconds": float(r[13]) if r[13] is not None else None,
+             "tokens_total": int(r[14]) if r[14] is not None else None}
             for r in rows]
 
 

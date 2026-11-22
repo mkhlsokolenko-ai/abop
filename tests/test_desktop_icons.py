@@ -116,7 +116,8 @@ def _зовём(код: str) -> str:
     try:
         p = subprocess.run([node, имя], capture_output=True, text=True, encoding="utf-8", timeout=30)
         assert p.returncode == 0, p.stderr
-        return (p.stdout or "") + (p.stderr or "")
+        import re
+        return re.sub(r"\x1b\[[0-9;]*m", "", (p.stdout or "") + (p.stderr or ""))
     finally:
         Path(имя).unlink(missing_ok=True)
 

@@ -138,6 +138,8 @@ def test_незакрытый_style_вырезается_до_конца_стр�
         'console.log("СТИЛЕЙ:", /<style/i.test(чистый));\n'
         'console.log("CSS:", чистый.includes("font-family"));\n'
         'console.log("ТЕКСТ:", чистый.includes("начало"));\n')
+    # node может красить вывод ANSI-кодами (TTY-эмуляция) — стрипаем перед проверкой
+    вывод = re.sub(r"\x1b\[[0-9;]*m", "", вывод)
     assert "СТИЛЕЙ: false" in вывод, (
         "незакрытый <style> остаётся — браузер сочтёт стилями весь остаток и погасит приложение")
     assert "CSS: false" in вывод, "обрывок чужого CSS всё ещё в разметке окна"
@@ -148,6 +150,7 @@ def test_незакрытые_script_и_iframe_тоже_вырезаются():
     вывод = _санитайзер(
         'console.log("SCRIPT:", /<script|alert/i.test(sanitizeHtml("<b>a</b><script>alert(1)")));\n'
         'console.log("IFRAME:", /<iframe/i.test(sanitizeHtml("<b>a</b><iframe src=x")));\n')
+    вывод = re.sub(r"\x1b\[[0-9;]*m", "", вывод)
     assert "SCRIPT: false" in вывод and "IFRAME: false" in вывод, (
         "правило починили только для <style> — остальные незакрытые теги проедут так же")
 
@@ -160,6 +163,7 @@ def test_голова_документа_не_попадает_в_окно():
         'console.log("ГОЛОВА:", /<!DOCTYPE|<html|<head|<meta|<link|<title|<body/i.test(чистый));\n'
         'console.log("ЗАГОЛОВОК:", чистый.includes("Отчёт"));\n'
         'console.log("СУТЬ:", чистый.includes("суть"));\n')
+    вывод = re.sub(r"\x1b\[[0-9;]*m", "", вывод)
     assert "ГОЛОВА: false" in вывод, "в окно подтверждения вставляют целый html-файл, а не содержание"
     assert "ЗАГОЛОВОК: false" in вывод, "<title> напечатался текстом посреди письма"
     assert "СУТЬ: true" in вывод
