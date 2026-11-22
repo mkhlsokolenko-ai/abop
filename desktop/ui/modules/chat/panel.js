@@ -115,7 +115,7 @@ export async function mount(root, ctx) {
       </button>
       <div class="treads-hide" style="height:1px;background:var(--line);margin:2px 0"></div>
       <input id="thSearch" class="treads-hide" placeholder="Поиск по чатам" aria-label="Поиск по чатам" style="padding:9px 12px;border-radius:10px;font-size:12.5px"/>
-      <div id="thList" class="treads-hide" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:5px;min-height:0"></div>
+      <div id="thList" class="treads-hide treads-list" style="flex:1;overflow-y:auto;flex-direction:column;gap:5px;min-height:0"></div>
     </aside>
     <section id="chatSec" style="flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;position:relative">
       <div id="dropHint" style="display:none;position:absolute;inset:14px;z-index:8;flex-direction:column;align-items:center;justify-content:center;gap:12px;border:2px dashed var(--accent-2);border-radius:18px;background:var(--accent-bg);backdrop-filter:blur(6px);pointer-events:none">
