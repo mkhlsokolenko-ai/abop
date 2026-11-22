@@ -818,37 +818,47 @@ async function loadModule(id, intent) {
   if (!m) { toast("Модуль «" + id + "» недоступен", "warn"); return; }
   active = id; renderNav();
   const panel = $("panel");
+  // Модуль ОСТАЁТСЯ в кэше даже при ошибке монтирования: иначе его root выпадал из списка
+  // скрытия и карточка «не загрузился» навсегда висела поверх других разделов (глюк 22.11).
   mounted.forEach((rec, k) => { rec.root.hidden = k !== id; });
   let rec = mounted.get(id);
   if (!rec) {
     const root = document.createElement("div");
     root.dataset.module = id;
-    root.innerHTML = `<div style="flex:1;padding:24px;display:flex;flex-direction:column;gap:12px;max-width:760px"><div class="skeleton" style="height:28px;width:40%"></div><div class="skeleton" style="height:14px;width:70%"></div><div class="skeleton" style="height:120px"></div></div>`;
+    root.innerHTML = `<div style="flex:1;padding:24px;display:flex;flex-direction:column;gap:12px"><div class="skeleton" style="height:28px;width:40%"></div><div class="skeleton" style="height:14px;width:70%"></div><div class="skeleton" style="height:120px"></div></div>`;
     panel.appendChild(root);
     rec = { root, mod: null, intent: intent || null };
     mounted.set(id, rec);
+  }
+  const смонтировать = async () => {
+    rec.root.hidden = false;
+    rec.root.innerHTML = `<div style="flex:1;padding:24px;display:flex;flex-direction:column;gap:12px"><div class="skeleton" style="height:28px;width:40%"></div><div class="skeleton" style="height:14px;width:70%"></div><div class="skeleton" style="height:120px"></div></div>`;
     try {
       const mod = await import(`../modules/${m.ui}/panel.js`);
-      root.innerHTML = "";
+      rec.root.innerHTML = "";
       rec.mod = mod;
       ctx.takeIntent = () => { const i = rec.intent; rec.intent = null; return i; };
-      await mod.mount(root, ctx);
+      await mod.mount(rec.root, ctx);
     } catch (e) {
-      mounted.delete(id);
-      // Ошибка РАЗБОРА файла раздела (SyntaxError) — это не проблема сети, а сломанный код:
-      // «ABOP недоступен — проверьте сеть» отправляло чинить не то место.
-      const broken = e instanceof SyntaxError || /Invalid or unexpected token|Unexpected (token|identifier|end of input)|failed to fetch dynamically imported module/i.test(String(e && (e.message || e)));
-      const why = broken
+      rec.mod = null;
+      const сломан = e instanceof SyntaxError || /Invalid or unexpected token|Unexpected (token|identifier|end of input)|failed to fetch dynamically imported module|is not defined/i.test(String(e && (e.message || e)));
+      const почему = сломан
         ? "Код раздела повреждён: " + esc(String((e && e.message) || e).slice(0, 200)) + ". Сеть тут ни при чём — обновите приложение или сообщите об этом."
         : esc(humanError(e));
-      root.innerHTML = `<div style="padding:24px;display:flex;flex-direction:column;gap:10px;max-width:560px"><div style="font-weight:700">Раздел «${esc(m.title)}» не загрузился</div><div class="danger-ink" style="font-size:12.5px;line-height:1.55">${why}</div><button class="btn" id="modRetry" style="align-self:flex-start">Повторить</button></div>`;
-      root.querySelector("#modRetry").onclick = () => { root.remove(); loadModule(id, intent); };
+      rec.root.innerHTML = `<div style="padding:24px;display:flex;flex-direction:column;gap:10px;max-width:560px"><div style="font-weight:700">Раздел «${esc(m.title)}» не загрузился</div><div class="danger-ink" style="font-size:12.5px;line-height:1.55">${почему}</div><button class="btn" id="modRetry" style="align-self:flex-start">Повторить</button></div>`;
+      rec.root.querySelector("#modRetry").onclick = смонтировать;
       console.error(e);
     }
+  };
+  // Повторный вход в кэшированный модуль: просто показать и отдать намерение.
+  if (rec.mod) {
+    if (intent) rec.root.dispatchEvent(new CustomEvent("ape:intent", { detail: intent }));
     return;
   }
+  await смонтировать();
   if (intent) rec.root.dispatchEvent(new CustomEvent("ape:intent", { detail: intent }));
 }
+
 function reloadModule(id) { const rec = mounted.get(id); if (rec) { rec.root.remove(); mounted.delete(id); } if (active === id) loadModule(id); }
 // Мягкое обновление после возврата связи: раздел перечитывает свои данные САМ, оставаясь на месте.
 // Пересборка разделов тут не годится — она уничтожает то, чего ещё нет на сервере: незаписанный
