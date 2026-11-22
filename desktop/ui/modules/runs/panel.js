@@ -549,7 +549,7 @@ export async function mount(root, ctx) {
       root.querySelectorAll("[data-rreport]").forEach((b) => { b.onclick = (e) => { e.stopPropagation(); отчётПрогона(b.dataset.rreport); }; });
       root.querySelectorAll("[data-verdict]").forEach((b) => { b.onclick = () => { verdict = b.dataset.verdict; load(); }; });
       const героеОтм = root.querySelector("#heroCancel");
-      if (героОтм) героеОтм.onclick = () => отменитьЗадание(героОтм.dataset.job);
+      if (героеОтм) героеОтм.onclick = () => отменитьЗадание(героеОтм.dataset.job);
       return;
     }
     if ($("oBack")) $("oBack").onclick = () => {
