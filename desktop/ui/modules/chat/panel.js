@@ -127,7 +127,7 @@ export async function mount(root, ctx) {
         <div style="max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:9px">
           <div id="hitlBar"></div>
           <div id="dock" class="dock"></div>
-          <div style="padding:12px 14px;border-radius:var(--r-xl);background-color:var(--panel);background-image:var(--panel-grad);border:1px solid var(--line-2);backdrop-filter:var(--blur-strong);box-shadow:var(--shadow-2),var(--edge);display:flex;flex-direction:column;gap:10px">
+          <div class="composer">
             <div id="tools" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"></div>
             <div style="display:flex;align-items:flex-end;gap:10px">
               <textarea id="inp" rows="2" class="composer-input" aria-label="Сообщение" placeholder="Опишите задачу…  (Enter — отправить, Shift+Enter — перенос)" style="flex:1;min-width:0"></textarea>
@@ -429,7 +429,6 @@ export async function mount(root, ctx) {
   // ── сообщения ──
   function bubble(m, idx) {
     const mine = m.role === "user";
-    const radius = mine ? "16px 16px 4px 16px" : "16px 16px 16px 4px";
     const meta = m.meta || {};
     const inner = mine ? `<span style="font-size:13.5px;line-height:1.6;white-space:pre-wrap">${esc(m.content)}</span>`
       : (meta.cancelled ? cancelledHTML(meta.cancelled)
@@ -449,9 +448,16 @@ export async function mount(root, ctx) {
     const acts = mine
       ? `<button type="button" data-edit="${idx}" class="msgact">${icon("pencil")} изменить</button>`
       : `<button type="button" data-copy="${idx}" class="msgact">${icon("copy")} копировать</button>${meta.decision || meta.chain_suggest || meta.assemble || meta.notice || meta.cancelled || meta.work_hint || meta.slot_fail ? "" : `<button type="button" data-regen="${idx}" class="msgact">${icon("refresh")} ещё раз</button>`}${cost}`;
-    return `<div style="display:flex;flex-direction:column;align-items:${mine ? "flex-end" : "flex-start"};gap:7px;animation:ape-in .3s ease-out">
-      <div class="bub" style="max-width:${isCard ? "96%" : "88%"};padding:13px 16px;border-radius:${radius};background:${mine ? "var(--user-bubble)" : "var(--panel)"};border:1px solid ${mine ? "var(--user-bubble-line)" : "var(--line)"};backdrop-filter:blur(16px);box-shadow:${mine ? "0 2px 10px rgba(99,102,241,.14)" : "var(--shadow-1)"};white-space:${isCard ? "normal" : "pre-wrap"};font-size:13.5px;line-height:1.6;min-width:0">${inner}</div>
-      <div style="display:flex;align-items:center;gap:6px">${acts}</div></div>`;
+    // Мокап chat.tsx: плоская msg-сетка (роль · тело · мета), без пузырей. Карточки
+    // (run/decision/hitl/цепочки) живут внутри msg-body без изменений.
+    return `<div class="msg">
+      <span class="msg-role${mine ? "" : " agent"}">${mine ? "вы" : esc((meta.model || "ABOP").split("/").pop())}</span>
+      <div class="msg-body">
+        <div class="msg-text"${isCard ? "" : ` style="white-space:pre-wrap"`}>${inner}</div>
+        ${cost ? `<div class="msg-meta">${esc(meta.model || "")} · ${esc(String(meta.cost_rub ?? 0))} ₽</div>` : ""}
+        <div style="display:flex;align-items:center;gap:6px">${acts}</div>
+      </div>
+    </div>`;
   }
   // Отказ от запуска: предложение остаётся в истории отметкой, а не исчезает и не предлагается
   // заново при перечитывании чата. Текст задачи возвращается в поле ввода — он не должен теряться
