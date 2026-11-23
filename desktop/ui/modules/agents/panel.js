@@ -777,8 +777,13 @@ export async function mount(root, ctx) {
   async function загрузитьМетодолога() {
     if (!deptSel) return;
     try {
-      const строки = await api("/api/modules/agents/resolve/methodology_patrol");
-      методолог = (строки || [])[0] || null;
+      // Разборщик отдаёт {candidates: [{record}]} и хранит записи от старых к новым: просим с запасом
+      // и берём самый свежий снимок по дате. Прежде здесь читали список, которого не бывает, — чип
+      // методолога не появлялся никогда, даже когда маршрут отвечал.
+      const ответ = await api("/api/modules/agents/resolve/methodology_patrol?limit=50");
+      const снимки = (((ответ || {}).candidates) || []).map((к) => (к || {}).record).filter((р) => р && р["дата"]);
+      снимки.sort((а, б) => (String(а["дата"]) < String(б["дата"]) ? 1 : String(а["дата"]) > String(б["дата"]) ? -1 : 0));
+      методолог = снимки[0] || null;
     } catch (e) { методолог = null; }
   }
 
