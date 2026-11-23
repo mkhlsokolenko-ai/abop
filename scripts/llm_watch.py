@@ -14,7 +14,10 @@ import os
 import sys
 import urllib.request
 
-VAST_ID = int(os.environ.get("VAST_INSTANCE", "59895017"))
+# Бокс ищется по МЕТКЕ, а не по вшитому id: 23.11 выяснилось, что id здесь устарел ещё две замены
+# бокса назад — сторож кричал про несуществующий экземпляр, а настоящий никто не вёл.
+VAST_ID = int(os.environ.get("VAST_INSTANCE", "0") or 0)   # задан явно — ищем по нему
+МЕТКА_БОКСА = os.environ.get("VAST_LABEL", "ape-qwen30b")
 ПОРОГ_КРЕДИТА = float(os.environ.get("VAST_CREDIT_MIN", "5"))
 СВОЙСТВО = "/tmp/llm_watch_state.json"
 BOX = os.environ.get("LOCAL_LLM_BASE_URL", "").rstrip("/")
@@ -51,9 +54,14 @@ def читать_проблемы() -> list:
         проблемы.append(f"кредит Vast не проверился: {type(e).__name__} {str(e)[:80]}")
     try:
         инс = vast(ключ, "/instances/").get("instances") or []
-        наш = next((i for i in инс if i.get("id") == VAST_ID), None)
+        if VAST_ID:
+            наш = next((i for i in инс if i.get("id") == VAST_ID), None)
+            имя = f"инстанс {VAST_ID}"
+        else:
+            наш = next((i for i in инс if str(i.get("label") or "").startswith(МЕТКА_БОКСА)), None)
+            имя = f"инстанс с меткой «{МЕТКА_БОКСА}*»"
         if not наш:
-            проблемы.append(f"инстанс {VAST_ID} на аккаунте НЕ НАЙДЕН — бокса нет вовсе")
+            проблемы.append(f"{имя} на аккаунте НЕ НАЙДЕН — бокса нет вовсе")
         elif str(наш.get("cur_state")) != "running":
             проблемы.append(f"инстанс {VAST_ID} в состоянии {наш.get('cur_state')} — не running")
     except Exception as e:
