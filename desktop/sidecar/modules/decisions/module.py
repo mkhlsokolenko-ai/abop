@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from ... import abop_client as abop
@@ -37,6 +38,16 @@ def _ошибка(ex: Exception) -> HTTPException:
     """Отказ сервера пересказываем как есть: он знает, почему нельзя, а мы — нет."""
     код = int(getattr(ex, "code", 0) or 0)
     return HTTPException(код if 400 <= код < 600 else 502, str(ex)[:400])
+
+
+def _err(e: "abop.AbopError") -> JSONResponse:
+    """Отказ ABOP — тем же ответом, что и в соседних модулях: статус + деталь для UI.
+
+    Маршруты проводки документа и проверки исправления звали `_err` без определения: любой
+    отказ платформы превращался в 500 «Internal Server Error» вместо причины.
+    """
+    return JSONResponse({"ok": False, "error": e.detail, "status": e.status},
+                        status_code=e.status if 400 <= e.status < 600 else 502)
 
 
 class ПоляIn(BaseModel):
