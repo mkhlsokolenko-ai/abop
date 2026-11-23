@@ -51,6 +51,24 @@ def test_agents_and_families(client):
     assert client.get("/api/families").status_code == 200
 
 
+def test_resolve_entity_route(client, monkeypatch):
+    """`/api/resolve/{entity}` — разборщик предмета работы: через него чат выбирает проект/клиента,
+    а пульт читает снимок патруля методолога. 22.11 маршрут отвечал 500 NameError: `_re` звали
+    на верхнем уровне, а импорт остался внутри другой функции. Проверялось лишь упоминание
+    маршрута в шаблоне, поэтому регрессия доехала до прода."""
+    r = client.get("/api/resolve/zz-no-such-entity")
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["entity"] == "zz-no-such-entity" and d["mode"] == "empty" and d["candidates"] == []
+    assert client.get("/api/resolve/.,!").status_code == 422        # после очистки имени не осталось (дефис разрешён)
+    from cli import ape
+    monkeypatch.setattr(ape, "data_query", lambda *a, **k: [
+        {"id": "p1", "name": "МетаО3"}, {"id": "p2", "name": "Новороссийский цемент"}])
+    d = client.get("/api/resolve/project", params={"q": "мета", "limit": "5"}).json()
+    assert d["total"] == 2 and len(d["candidates"]) == 2
+    assert d["candidates"][0]["record"]["id"] == "p1" and d["candidates"][0]["score"] > 0   # точное совпадение первым
+
+
 def test_fleet_shape(client):
     r = client.get("/api/fleet")
     assert r.status_code == 200

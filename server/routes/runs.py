@@ -22,6 +22,7 @@ import asyncio as _aio
 import asyncio as _asyncio
 import hashlib as _hashlib
 import os
+import re as _re
 import time as _t
 import time as _time
 
@@ -1040,7 +1041,6 @@ async def run_report(run_id: str, template: str = "", format: str = "html", u: d
     template пусто → авто-выбор по форме результата (audit1c/invest/digest/default). PDF — рендерер ABOP (Gotenberg)."""
     run = await _run_visible(run_id, u)
     ag = await agent_store.get(run.get("agent_id") or "") or {"id": run.get("agent_id"), "name": run.get("agent_name") or run.get("agent_id")}
-    import re as _re
     tid = _re.sub(r"[^a-z0-9_-]", "", str(template or "").lower())
     tpl = await _template_for_run(run, forced=tid)
     if not tpl:
