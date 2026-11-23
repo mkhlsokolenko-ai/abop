@@ -81,6 +81,9 @@ class Settings:
     local_llm_base_url: str = os.getenv("LOCAL_LLM_BASE_URL", "")
     local_llm_model: str = os.getenv("LOCAL_LLM_MODEL", "")
     local_llm_api_key: str = os.getenv("LOCAL_LLM_API_KEY", "EMPTY")
+    # Длина свободного ответа в чате (стрим) — настройка сервера, а не клиента: сайдкар запрашивал
+    # 1500 токенов «по умолчанию», и длинный ответ обрывался на полуслове без признака обрыва.
+    chat_max_tokens: int = int(os.getenv("ABOP_CHAT_MAX_TOKENS", "8192"))
 
     # Qdrant
     qdrant_url: str = os.getenv("QDRANT_URL", "http://127.0.0.1:6333")

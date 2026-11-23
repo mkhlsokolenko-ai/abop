@@ -221,6 +221,7 @@ async def chat_stream(
                                           json=payload) as r:
                         r.raise_for_status()
                         any_text = False
+                        finish = None
                         async for line in r.aiter_lines():
                             if not line or not line.startswith("data:"):
                                 continue
@@ -229,14 +230,17 @@ async def chat_stream(
                                 break
                             try:
                                 d = _json.loads(chunk)
-                                delta = (d.get("choices") or [{}])[0].get("delta", {}).get("content") or ""
+                                choice = (d.get("choices") or [{}])[0]
+                                delta = choice.get("delta", {}).get("content") or ""
+                                finish = choice.get("finish_reason") or finish
                             except Exception:  # noqa: BLE001
                                 continue
                             if delta:
                                 any_text = True
                                 yield {"delta": delta}
             if any_text:
-                yield {"done": True, "model": m}
+                # finish_reason уходит дальше: «length» — ответ оборван по лимиту, а не закончен.
+                yield {"done": True, "model": m, "finish_reason": finish}
                 return
         except Exception:  # noqa: BLE001 — каскад: к следующей модели
             continue

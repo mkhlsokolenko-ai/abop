@@ -13,6 +13,7 @@ from .. import chat_store
 from ..deps import _sub, user
 
 from .. import clients
+from ..config import settings
 from ..deps import user
 from .runs import _rate_check
 
@@ -151,7 +152,9 @@ async def chat_freeform_stream(body: dict, u: dict = Depends(user)):
     system = str((body or {}).get("system") or "").strip()
     context = str((body or {}).get("context") or "").strip()
     profile = str((body or {}).get("profile") or "standard").strip() or "standard"
-    max_tokens = min(int((body or {}).get("max_tokens") or 1500), 4096)
+    # Длина свободного ответа — настройка сервера (ABOP_CHAT_MAX_TOKENS), а не клиента: сайдкар
+    # присылал 1500 «по умолчанию», и длинный ответ обрывался на полуслове без признака обрыва.
+    max_tokens = settings.chat_max_tokens
     messages: list[dict] = [{"role": "system", "content": CHAT_GUARD}]
     if system:
         messages.append({"role": "system", "content": system})

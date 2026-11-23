@@ -84,12 +84,13 @@ def _req(method: str, path: str, body: dict | None = None, timeout: int = 120) -
         raise AbopError(0, f"{type(e).__name__}: {e}") from None
 
 
-def chat_stream(prompt: str, system: str = "", profile: str = "standard", max_tokens: int = 1500):
-    """Проксирует SSE-стрим ABOP /api/chat/stream: генератор yield-ит строки SSE как есть
-    (`data: {...}`). Настоящий стрим токенов (не псевдо-нарезка). Bearer из auth.token()."""
+def chat_stream(prompt: str, system: str = "", profile: str = "standard"):
+    """Проксирует SSE-стрим ABOP /api/chat/stream: генератор yield-ит события как есть (`data: {...}`).
+    Настоящий стрим токенов (не псевдо-нарезка). Bearer из auth.token(). Длину ответа решает сервер
+    (ABOP_CHAT_MAX_TOKENS): прежде здесь запрашивали 1500 токенов, и длинный ответ обрывался."""
     url = config.ABOP.rstrip("/") + "/api/chat/stream"
     headers = _заголовки()
-    payload = {"prompt": prompt, "profile": profile, "max_tokens": max_tokens}
+    payload = {"prompt": prompt, "profile": profile}
     if system:
         payload["system"] = system
     req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")

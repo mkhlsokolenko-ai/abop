@@ -481,6 +481,7 @@ export async function mount(root, ctx) {
       <div class="msg-body">
         <div class="msg-text bub"${isCard ? "" : ` style="white-space:pre-wrap"`}>${inner}</div>
         ${cost ? `<div class="msg-meta">${esc(meta.model || "")} · ${esc(String(meta.cost_rub ?? 0))} ₽</div>` : ""}
+        ${meta.cut ? `<div class="msg-meta" style="color:var(--warn)">ответ оборван по лимиту длины — попросите продолжить с места обрыва</div>` : ""}
         <div style="display:flex;align-items:center;gap:6px">${acts}</div>
       </div>
     </div>`;
@@ -1924,6 +1925,9 @@ export async function mount(root, ctx) {
         }
       }
     } catch (e) { if (e.name === "AbortError") asst.content += "\n\n⏹ остановлено"; else { asst.content = asst.content || ("Сбой: " + humanError(e)); asst.meta = { notice: { icon: "⚠" } }; } }
+    // «length» — модель оборвана по лимиту длины, а не закончила: отметка уходит в meta, и чат
+    // подписывает это под ответом вместо того, чтобы читать обрыв как законченную мысль.
+    if (asst.meta && asst.meta.finish_reason === "length") asst.meta = { ...asst.meta, cut: true };
     curAbort = null; setBusy(false);
     // Команду, выданную вместо ответа, в переписке не показываем: вместо неё — кнопка запуска.
     takeWorkCmd(asst, text);

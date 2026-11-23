@@ -872,12 +872,15 @@ def send_stream(thread_id: int, body: SendIn) -> StreamingResponse:
         prompt = _build_prompt(thread_id, body.prompt)
         full, meta = "", {}
         try:
-            for ev in abop.chat_stream(prompt=prompt, profile=profile, system=_system_for(skills, body.persona), max_tokens=1500):
+            for ev in abop.chat_stream(prompt=prompt, profile=profile, system=_system_for(skills, body.persona)):
                 if ev.get("delta"):
                     full += ev["delta"]
                     yield _sse({"delta": ev["delta"]})
                 elif ev.get("done"):
                     meta = {"model": ev.get("model")}
+                    # «length» — ответ оборван по лимиту длины: чат подпишет это, а не примет за полный ответ.
+                    if ev.get("finish_reason") and ev.get("finish_reason") != "stop":
+                        meta["finish_reason"] = ev["finish_reason"]
                 elif ev.get("error"):
                     yield _sse({"error": ev["error"]})
         except abop.AbopError as e:
