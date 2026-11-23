@@ -269,6 +269,10 @@
  ],
  [
   "GET",
+  "/api/departments/{fid}/budget"
+ ],
+ [
+  "GET",
   "/api/departments/{fid}/tasks"
  ],
  [
@@ -854,6 +858,10 @@
  [
   "POST",
   "/api/departments/{fid}/autonomy"
+ ],
+ [
+  "PUT",
+  "/api/departments/{fid}/budget"
  ],
  [
   "POST",

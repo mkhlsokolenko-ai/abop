@@ -79,7 +79,7 @@ def _зовём(код: str) -> str:
         r = subprocess.run([node, имя], capture_output=True, text=True,
                            encoding="utf-8", errors="replace", timeout=60)
         assert r.returncode == 0, f"node не выполнил примитивы: {(r.stderr or '')[:400]}"
-        return re.sub(r'\[[0-9;]*m', '', r.stdout)
+        return re.sub(r'\x1b\[[0-9;]*m', '', r.stdout)
     finally:
         pathlib.Path(имя).unlink(missing_ok=True)
 
