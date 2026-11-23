@@ -57,10 +57,25 @@ def test_подбор_только_по_команде():
     body = CHAT[i:i + 2600]
     assert "work|задача|агент" in body, "команда /work не разбирается"
     assert "decideAndOffer(task)" in body, "подбор не вызывается по команде"
-    assert "sendPrompt(v)" in body, "обычное сообщение должно уходить в чат потоком"
+    assert "sendPrompt(v, очистить)" in body, "обычное сообщение должно уходить в чат потоком"
     # Решение не должно вызываться на каждое сообщение: вне ветки /work его быть не может.
     before = body[:body.index("const work = v.match")]
     assert "decide(" not in before, "решение всё ещё принимается до проверки команды"
+
+
+def test_текст_не_пропадает_при_сбое():
+    """22.11: поле чистилось до запроса, и сбой создания чата терял набранное молча; поздняя
+    история открытого чата подменяла разговор — отправленное исчезало с экрана."""
+    i = CHAT.index("async function sendFromInput")
+    body = CHAT[i:i + 2600]
+    assert "await sendPrompt(v, очистить)" in body, "поле освобождается не по приёму сообщения"
+    assert 'toast("Не отправлено: "' in body, "при сбое причина не называется"
+    j = CHAT.index("async function sendPrompt")
+    head = CHAT[j:j + 1200]
+    принято = head.index("if (принят) принят()")
+    assert head.index('messages.push({ role: "user"') < принято, "поле освобождается раньше, чем сообщение принято"
+    k = CHAT.index("async function openThread")
+    assert CHAT[k:k + 1800].count("if (cur !== открытый) return;") == 2, "поздний ответ истории может подменить разговор"
 
 
 def test_мёртвой_ветки_не_осталось():

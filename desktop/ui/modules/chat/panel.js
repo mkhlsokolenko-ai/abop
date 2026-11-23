@@ -309,10 +309,18 @@ export async function mount(root, ctx) {
     boardMode = false;
     if (!t) return;
     cur = { ...t, skills: t.skills || [] }; remember(LS_OPEN, String(t.id)); renderThreads(); renderTools();
+    // Открытый чат — тот, что открыт СЕЙЧАС. Пока грузится история, человек мог уйти в другой чат
+    // или уже написать в этот: поздний ответ подменял разговор, и отправленное исчезало с экрана.
+    const открытый = cur, было = messages.length;
     // догоняем прогоны, чей опрос оборвался: их карточки дописываются в историю до чтения сообщений
     let caught = null;
     try { caught = await api(M + "/threads/" + t.id + "/catchup"); } catch { /* сервер недоступен — покажем что есть */ }
-    try { messages = await api(M + "/threads/" + t.id + "/messages"); } catch (e) { messages = []; toast(humanError(e), "danger"); }
+    if (cur !== открытый) return;          // открыт другой чат — эта история уже никому не нужна
+    let история = null;
+    try { история = await api(M + "/threads/" + t.id + "/messages"); } catch (e) { история = []; toast(humanError(e), "danger"); }
+    if (cur !== открытый) return;
+    // Написанное во время загрузки остаётся в разговоре: история встаёт ПЕРЕД ним.
+    messages = [...(Array.isArray(история) ? история : []), ...messages.slice(было)];
     if (caught && caught.added) {
       toast(`Дописан результат прогона: ${caught.added}`, "ok");
       // Прогон закончился, пока приложение было закрыто: тост увидят только если смотрят в экран,
@@ -1376,7 +1384,9 @@ export async function mount(root, ctx) {
     if (busy) { toast(curAbort ? "Ответ ещё печатается — дождитесь или остановите (Esc)" : "Дождитесь завершения запуска", "warn"); return; }
     const v = ($("inp") ? $("inp").value : "").trim(); if (!v) return;
     if (boardMode) closeBoard();   // работа идёт в разговоре, доска — только память
-    $("inp").value = ""; remember(LS_DRAFT, null); renderAgentSuggest("");
+    // Поле чистится только тем путём, где текст уже принят (команда ушла, переписка взяла сообщение);
+    // если человек успел подправить набранное — его правка не трогается.
+    const очистить = () => { if ($("inp") && $("inp").value.trim() === v) { $("inp").value = ""; remember(LS_DRAFT, null); renderAgentSuggest(""); } };
     // Вставленный по хоткею текст или длинный кусок — это работа в чате, НЕ команда агенту.
     const isPasted = /^Проанализируй этот фрагмент/i.test(v);
     // Раньше подбор отключался на формулировках длиннее 240 знаков — то есть ровно там, где человек
@@ -1388,15 +1398,24 @@ export async function mount(root, ctx) {
     // оставаться перепиской.
     // «Отдай отчёт» — это действие, а не вопрос модели: берём последний прогон этого разговора и
     // отдаём его отчёт. Прежде такая просьба уходила в переписку, и модель выдумывала путь к файлу.
-    if (/^\/[ \t]*(report|отчёт|отчет)\b/i.test(v)) { await reportLastRun(); return; }
-    const work = v.match(/^\/[ \t]*(work|задача|агент)\b\s*/i);
-    if (work) {
-      const task = v.slice(work[0].length).trim();
-      if (!task) { await note("После /work напишите задачу — например: `/work сверь дорожную карту с отчётами подрядчиков`.", { notice: { icon: "🛠" } }); render(); return; }
-      await decideAndOffer(task);
-      return;
+    try {
+      if (/^\/[ \t]*(report|отчёт|отчет)\b/i.test(v)) { очистить(); await reportLastRun(); return; }
+      const work = v.match(/^\/[ \t]*(work|задача|агент)\b\s*/i);
+      if (work) {
+        const task = v.slice(work[0].length).trim();
+        if (!task) { await note("После /work напишите задачу — например: `/work сверь дорожную карту с отчётами подрядчиков`.", { notice: { icon: "🛠" } }); render(); return; }
+        очистить();
+        await decideAndOffer(task);
+        return;
+      }
+      await sendPrompt(v, очистить);     // поле освобождается, когда переписка приняла сообщение
+    } catch (e) {
+      // Не ушло — набранное остаётся у человека, а на экране называется причина. Раньше поле
+      // очищалось до запроса, и при сбое текст пропадал молча.
+      if ($("inp") && !$("inp").value.trim()) { $("inp").value = v; remember(LS_DRAFT, v); }
+      toast("Не отправлено: " + humanError(e), "danger");
+      $("inp").focus();
     }
-    sendPrompt(v);
   }
   // Отчёт последнего прогона этого разговора: ищем номер прогона в карточках истории.
   async function reportLastRun() {
@@ -1867,12 +1886,18 @@ export async function mount(root, ctx) {
     render(); scrollDown(true); loadThreads(); loadQuota(); loadHitlQueue();
   }
 
-  async function sendPrompt(text) {
+  async function sendPrompt(text, принят) {
     text = (text || "").trim(); if (!text) return;
     if (busy) { toast("Дождитесь завершения текущего ответа", "warn"); return; }
-    await ensureThread(text.slice(0, 50));
+    // Поле не очищается «авансом»: пока переписка не приняла сообщение, набранное остаётся на месте.
+    // Прежде оно чистилось до запроса, и сбой создания чата терял текст без единого слова на экране.
+    setBusy(true);                       // второй Enter, пока создаётся чат, не уходит дублем
+    try { await ensureThread(text.slice(0, 50)); }
+    catch (e) { setBusy(false); throw e; }    // набранное всё ещё в поле; ошибку покажет отправитель
+    setBusy(false);
     const wasNew = messages.length === 0;
     messages.push({ role: "user", content: text, meta: {} });
+    if (принят) принят();                // принято — только теперь поле можно освобождать
     const asst = { role: "assistant", content: "", meta: {} }; messages.push(asst); render(); scrollDown(true);
     // Стрим ищет цель ПЕРЕ-ЗАПРОСОМ на каждом дельта-токе: DOM мог перестроиться между
     // токенами (модульный кэш, poll-обновления). Старый захват .bub один раз и навсегда
