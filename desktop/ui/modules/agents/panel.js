@@ -705,7 +705,7 @@ export async function mount(root, ctx) {
     const превыш = лим != null && сто != null && сто > лим;
     const бюджетСтр = бюджет == null ? "" : `<div class="origin" style="padding:4px 2px 14px">
         ${сто != null ? `стоимость прогонов за сутки: ${esc(String(сто))} ₽` : ""}${лим != null ? ` · лимит отдела: ${esc(String(лим))} ₽ ` : " · лимит не задан "}
-        <button type="button" class="tagbtn" id="budgetSet" title="Суточный лимит расходов отдела — manager+">задать</button>
+        <button type="button" class="tagbtn" id="budgetSet" title="Суточный лимит расходов отдела — manager+">${лим != null ? "изменить" : "задать"}</button>
         ${превыш ? `<div class="bad-note">лимит превышен</div>` : ""}
         ${наружу != null ? (наружу ? `<div class="bad-note">наружу ушло: ${наружу} документов в 1С за сутки</div>` : `<div class="delta delta-ok">граница цела: наружу не ушло ничего</div>`) : ""}
       </div>`;
@@ -838,15 +838,15 @@ export async function mount(root, ctx) {
 
   async function задатьЛимит() {
     const тек = бюджет && бюджет["лимит_руб"] != null ? String(бюджет["лимит_руб"]) : "";
-    let значение = тек;
     await new Promise((готово) => {
       const ov = ctx.modal("Суточный лимит расходов отдела",
         `<div style="display:flex;flex-direction:column;gap:8px">
           <div style="font-size:12.5px;color:var(--ink-2);line-height:1.5">Лимит не блокирует прогоны — пульт красит превышение. Число в рублях за сутки.</div>
           <input id="limVal" value="${esc(тек)}" placeholder="500.00" class="input-lg"/>
+          ${тек ? `<button type="button" class="btn btn-ghost btn-sm" id="limReset" style="align-self:flex-start">Сбросить лимит</button>` : ""}
         </div>`,
         async () => {
-          значение = (ov.querySelector("#limVal") || {}).value || "";
+          const значение = (ov.querySelector("#limVal") || {}).value || "";
           try {
             const р = await api(A + "/departments/" + encodeURIComponent(deptSel) + "/budget",
               { method: "PUT", body: JSON.stringify({ лимит_руб: Number(значение) }) });
@@ -856,6 +856,22 @@ export async function mount(root, ctx) {
           render(); готово();
           return true;
         }, "Задать", { okKind: "primary", width: "480px" });
+      // Сброс — отдельной кнопкой и только когда лимит задан: до 24.11 убрать его было нельзя
+      // вовсе, только менять число (а 0 ₽ — «превышен всегда», не отсутствие лимита).
+      const сбр = ov.querySelector("#limReset");
+      if (сбр) сбр.onclick = async () => {
+        ov.close(false);
+        try {
+          await api(A + "/departments/" + encodeURIComponent(deptSel) + "/budget",
+            { method: "PUT", body: JSON.stringify({ лимит_руб: null }) });
+          if (бюджет) бюджет["лимит_руб"] = null;
+          toast("Лимит сброшен — не задан", "ok");
+        } catch (e) {
+          // 404/400 — в установленном приложении сайдкар старше 1.0.50: сброса там нет.
+          toast(e && e.status === 404 ? "В вашей версии приложения сброса ещё нет — установите 1.0.50" : humanError(e), "danger");
+        }
+        render(); готово();
+      };
     });
   }
 

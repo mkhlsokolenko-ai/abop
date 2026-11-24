@@ -486,8 +486,13 @@ def dept_budget(fid: str):
 @router.put("/departments/{fid}/budget")
 def dept_budget_set(fid: str, body: dict):
     """Суточный лимит расходов отдела — manager+; решение уходит в журнал аудита на сервере."""
+    тело = body or {}
+    if "лимит_руб" not in тело:
+        return _err(abop.AbopError(400, "лимит_руб — число рублей или null (сброс)"))
     try:
-        return abop.department_budget_set(fid, float(body.get("лимит_руб")))
+        if тело.get("лимит_руб") is None:
+            return abop.department_budget_reset(fid)
+        return abop.department_budget_set(fid, float(тело.get("лимит_руб")))
     except abop.AbopError as e:
         return _err(e)
 

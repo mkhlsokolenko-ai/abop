@@ -932,3 +932,9 @@ def methodology_apply(fid: str, расхождение: dict) -> dict:
     Правило_активно машиной не включается: отказ называет ручной шаг (ADR-084)."""
     return _req("POST", "/api/methodology/" + urllib.request.quote(str(fid)) + "/apply",
                 body={"расхождение": расхождение or {}}, timeout=120) or {}
+
+
+def department_budget_reset(fid: str) -> dict:
+    """Сбросить суточный лимит отдела: строка уходит на сервере, пульт снова пишет «не задан»."""
+    return _req("PUT", "/api/departments/" + urllib.request.quote(str(fid)) + "/budget",
+                body={"лимит_руб": None}, timeout=30) or {}

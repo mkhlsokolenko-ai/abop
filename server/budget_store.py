@@ -57,3 +57,17 @@ async def задать_лимит(fid: str, руб: float, editor: str = "dev") 
             "editor=EXCLUDED.editor, updated_at=now()",
             (fid, float(руб), editor))
     return float(руб)
+
+
+async def сбросить_лимит(fid: str) -> None:
+    """Убрать лимит отдела: строка удаляется, чтение снова отвечает «не задан».
+
+    До 24.11 сброса не было вовсе: заданный лимит можно было только заменить числом,
+    а 0 ₽ — это «превышен при любом расходе», а не отсутствие лимита.
+    """
+    if not _has_pg():
+        _MEM.pop(fid, None)
+        return
+    from .db import _conn
+    async with _conn() as conn:
+        await conn.execute("DELETE FROM dept_budget WHERE fid=%s", (fid,))

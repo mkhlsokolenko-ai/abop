@@ -305,15 +305,24 @@ async def budget_status(fid: str, u: dict = Depends(user)) -> dict:
 
 @router.put("/api/departments/{fid}/budget")
 async def budget_set(fid: str, body: dict, u: dict = Depends(user)) -> dict:
-    """Задать суточный лимит расходов отдела — manager+. Число не блокирует прогоны (v1):
-    пульт показывает «лимит превышен» цветом, блокировка — отдельное решение владельца."""
+    """Задать суточный лимит расходов отдела — manager+. `лимит_руб: null` — сбросить:
+    строка уходит, пульт снова пишет «лимит не задан» (до 24.11 сброса не было — заданный
+    лимит можно было только менять числом). Число не блокирует прогоны (v1): пульт
+    показывает «лимит превышен» цветом, блокировка — отдельное решение владельца."""
     require_level(u, "manager")
     if not can_see_family(u, fid):
         raise HTTPException(403, "семья другого отдела")
+    if "лимит_руб" not in (body or {}):
+        raise HTTPException(400, "лимит_руб — число рублей или null (сброс)")
+    actor = u.get("name") or u.get("sub") or "dev"
+    if (body or {}).get("лимит_руб") is None:
+        await budget_store.сбросить_лимит(fid)
+        await audit_store.record(actor, "dept.budget.reset", fid, {"лимит_руб": None})
+        return {"ok": True, "отдел": fid, "лимит_руб": None}
     try:
         руб = round(float((body or {}).get("лимит_руб")), 2)
     except (TypeError, ValueError):
-        raise HTTPException(400, "лимит_руб — число рублей")
+        raise HTTPException(400, "лимит_руб — число рублей или null (сброс)")
     if руб < 0:
         raise HTTPException(400, "лимит — неотрицательное число рублей")
     actor = u.get("name") or u.get("sub") or "dev"
