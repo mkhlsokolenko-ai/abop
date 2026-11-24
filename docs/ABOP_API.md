@@ -240,7 +240,7 @@ SSE-события (по мере исполнения):
 |---|---|---|
 | `GET /api/data/recipes` | список рецептов | `data_recipes` |
 | `POST /api/data/recipe/preview` `{recipe}` | dry-прогон на выборке → canonical + счётчики | `data_run` (нужен dry-режим) |
-| `POST /api/data/recipe` `{recipe}` | сохранить рецепт | файл рецепта |
+| `POST /api/data/recipes` `{recipe}` | сохранить рецепт | **реализовано** (`dataplane_store.save_recipe`) |
 | `POST /api/data/connectors` `{kind,config}` | подключить источник | `register_adapter` (серверные адаптеры) |
 | `POST /api/flow/draft` `{description}` | LLM-черновик потока (канва) | планировщик |
 | `POST /api/flow/save` / `GET /api/agents` | сохранить/список агентов | store |
