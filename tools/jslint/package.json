@@ -1,0 +1,9 @@
+{
+  "name": "abop-jslint",
+  "private": true,
+  "description": "Линтер JS десктопа (ESLint, правило no-undef). Держит сторож tests/test_js_undef_guard.py. Установка: npm ci --prefix tools/jslint. Отдельно от desktop/package.json: там зависимости Electron-приложения, и линтеру в установщике делать нечего.",
+  "devDependencies": {
+    "eslint": "^9.39.5",
+    "globals": "^17.14.0"
+  }
+}

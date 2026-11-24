@@ -22,7 +22,7 @@ const ЗНАК = { "новый адресат": "◆", "нерабочее вр�
                "решил не адресат": "◇" };
 
 export async function mount(root, ctx) {
-  const { api, esc, toast, humanError, card, origin, confirm } = ctx;
+  const { api, esc, toast, humanError, card, confirm } = ctx;
   let данные = null, err = "", loading = true, дней = 7, busy = "";
   // Разбор бэклога грузим отдельным запросом: он ходит в трекер и может быть медленнее ленты.
   // Нет трекера — блока просто нет, лента от этого не страдает.

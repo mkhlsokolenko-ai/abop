@@ -5,7 +5,7 @@
 // UX-аудит 25.09: D-H6 — «▶ Запустить» открывает чат и запускает агента там (одна поверхность
 // результата, HITL и «сделать регулярной» в карточке чата); D-C1 — 401 показывается как «войдите»,
 // а не как «у вас нет агентов»; D-H9 — удаление через модалку подтверждения; D-H14 — токены цветов.
-import { CARD, head, card, kpis, origin } from "../../core/cards.js";
+import { CARD, head } from "../../core/cards.js";
 import { icon } from "../../core/icons.js";
 // Стили — из ядра: шесть разных карточек и пять разных подписей в панелях были
 // расхождением, а не выбором (DIZAJN, раздел 2).
@@ -51,17 +51,6 @@ export async function mount(root, ctx) {
   // проверки — вычитка + сверка + воспроизводимость конкретной находки. Сайдкар 1.0.44+.
   let принятые = [], busyП = "";
   const МОЙ_ОТДЕЛ = String(((ctx.user || {}).department) || "");
-  // Иконки отделов (разбор v5, #5): сканирование рейла без чтения. Иконка — из спрайта ядра,
-  // не символ шрифта; незнакомая семья получает нейтральный значок, а не случайный.
-  const ИКОНКИ_ОТДЕЛОВ = { finance: "doc", audit: "search", management: "board", production: "chain" };
-  const иконкаОтдела = (f) => icon(ИКОНКИ_ОТДЕЛОВ[f.id] || "agents");
-  // Светофор ИКА — те же границы, что у динамической автономии (ADR-085): ≥ 90 зелёный,
-  // 70–90 жёлтый, ниже красный. Не покрытый индекс — «—», а не ноль: ноль значил бы «отдел плох».
-  const светофорКласс = (и) => (и == null ? "" : и >= 90 ? " ok" : и >= 70 ? " mid" : " sev");
-  const серьёзностьКлассН = (с) => {
-    const т = String(с || "").toLowerCase();
-    return т.startsWith("выс") ? "sev" : т.startsWith("сред") ? "mid" : "";
-  };
 
   async function reconfig(id) {
     if (!families.length) await loadFamilies();
@@ -572,49 +561,6 @@ export async function mount(root, ctx) {
     </section>`;
   }
 
-  // Карточка находки — тот же примитив card() и те же поля, что в «Решениях»: способ, порядок
-  // действий, норма. Кнопка называет способ словами — он же попадает в журнал.
-  function карточкаНаходки(н, горячая) {
-    const ждёт = busyН === н.id;
-    const исход = String(н["исход_способа"] || "");
-    const способ = String(н["способ"] || "");
-    const что_сделать = исход === "выбран" && способ
-      ? `<div style="display:flex;flex-direction:column;gap:4px">
-           <span class="lbl">что сделать</span>
-           <div style="font-size:13px;font-weight:600;color:var(--ink)">${esc(способ)}</div>
-           ${н["как_устранить"] ? `<div style="font-size:12.5px;line-height:1.5;color:var(--ink-2)">${esc(String(н["как_устранить"]))}</div>` : ""}
-           ${н["основание_способа"] ? `<div style="font-size:11.5px;color:var(--ink-3)">основание: ${esc(String(н["основание_способа"]))}</div>` : ""}
-         </div>`
-      : исход
-        ? `<div style="display:flex;flex-direction:column;gap:4px">
-             <span class="lbl">способ устранения — ${esc(исход)}</span>
-             <div style="font-size:12.5px;line-height:1.5;color:var(--ink-2)">${esc(String(н["почему_способ"] || "") || "методолог способ не объявил")}</div>
-           </div>`
-        : "";
-    return card({
-      "тон": горячая ? "важное" : "",
-      "что": н["код"] || "находка",
-      "класс": н["серьёзность"] || "",
-      "класс_тон": серьёзностьКлассН(н["серьёзность"]),
-      "состояние": н["величина"] || "",
-      "справа": [н["организация"], н["процесс"]].filter(Boolean).join(" · "),
-      "суть": [н["название"], н["предмет"] ? "предмет: " + н["предмет"] : ""].filter(Boolean).join(" — "),
-      "почему_лид": горячая ? "Почему это первым:" : "Почему это здесь:",
-      "почему": (н["почему_наверху"] || []).join(" · "),
-      "доказательство": н["доказательство"] || "",
-      "происхождение": [н["основание"] ? "основание: " + н["основание"] : "",
-                        (н["чего_не_хватило"] || []).join(" · ")].filter(Boolean).join(" · "),
-      "что_сделать": что_сделать,
-      "действия": [
-        исход === "выбран" && способ
-          ? `<button data-fy="${esc(н.id)}" data-fsp="${esc(способ)}" class="btn ok sm" ${ждёт ? "disabled" : ""}>${icon("check")}Принять: ${esc(способ)}</button>`
-          : `<button data-fy="${esc(н.id)}" class="btn ok sm" ${ждёт ? "disabled" : ""}>${icon("check")}Это проблема</button>`,
-        `<button data-fn="${esc(н.id)}" class="btn ghost sm" ${ждёт ? "disabled" : ""}>Так и должно быть</button>`,
-        `<button data-fp="${esc(н.id)}" class="btn ghost sm" ${ждёт ? "disabled" : ""}>${icon("clock")}Отложить</button>`,
-      ],
-    });
-  }
-
   // Прогрессивная очередь (мокап v5): один взгляд — одна находка. Горячая раскрыта целиком,
   // остальные — компактные строки; клик раскрывает. Строка — div, а не button: внутри раскрытой
   // карточки свои кнопки, а кнопка в кнопке — невалидная разметка.
@@ -687,7 +633,7 @@ export async function mount(root, ctx) {
             <button type="button" class="btn btn-ghost" data-gy="${esc(String(г["код"]))}" ${busyН === "группа" ? "disabled" : ""} title="Признать все находки группы по правилам — способ попадёт в журнал каждой">Признать группу ×${esc(String(г["находок"] || 0))}</button>
             <span class="actions-note">проведение — необратимо: подтвердите перечнем документов</span>
           </div>
-          ${(свои[0] && свои[0]["доказательство"]) ? `<div class="quote">${esc(String(свои[0]["доказательство"])).slice(0, 400)}<span class="q-src">${esc(String(г["код"]))} · воспроизводится прогоном · база ${esc(org || "—")}</span></div>` : ""}
+          ${(свои[0] && свои[0]["доказательство"]) ? `<div class="quote">${esc(String(свои[0]["доказательство"])).slice(0, 400)}<span class="q-src">${esc(String(г["код"]))} · воспроизводится прогоном · база ${esc(орг || "—")}</span></div>` : ""}
           ${видно.map((н) => `<div class="row doc-row row-static">
               <span class="num-sm dim" style="width:34px;flex:none">${esc(String(г["код"]).split("-")[0])}</span>
               <span class="doc-name muted">${esc(н["название"] || "")}${н["предмет"] ? " · " + esc(String(н["предмет"]).slice(0, 24)) : ""}</span>
@@ -806,25 +752,36 @@ export async function mount(root, ctx) {
     const шапка = `снимок ${esc(String(р["дата"] || "—"))} · ` +
       Object.entries(счёт).map(([к, n]) => `${к}: ${n}`).join(" · ");
     const ov = ctx.modal("Заявки методолога — автоматический патруль",
-      `<div style="font-size:11px;color:var(--ink-3);margin-bottom:8px">${esc(шапка)}</div>
+      `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+         <div style="flex:1;min-width:0;font-size:11px;color:var(--ink-3)">${esc(шапка)}</div>
+         <button type="button" class="btn sm" id="patrolRecalc">Пересчитать патруль</button>
+       </div>
        <div style="max-height:52vh;overflow-y:auto">${строки || "Открытых заявок нет — патруль молчит, пока факты чистые."}</div>
        <div style="font-size:11px;color:var(--ink-3);margin-top:8px">Заявки собирает код по расписанию; применимое машиной — только роли отдела (ADR-084), остальное — на пересмотр.</div>`,
       null, "Закрыть", { kicker: "методолог · патруль", width: "680px" });
+    // Пересчёт — кнопкой в окне. Двойным кликом по чипу он недостижим: первый клик открывает это
+    // окно, второй попадает в его фон. Кнопка работает с сайдкара 1.0.50, на старом честно просит обновиться.
+    const rb = ov.querySelector("#patrolRecalc");
+    if (rb) rb.onclick = () => { ov.close(false); пересчитатьМетодолога(); };
     ov.querySelectorAll(".zapply").forEach((b) => (b.onclick = async () => {
       b.disabled = true;
       try {
-        await api("/api/methodology/" + encodeURIComponent(b.dataset.otdel) + "/apply",
+        await api("/api/modules/agents/methodology/" + encodeURIComponent(b.dataset.otdel) + "/apply",
           { method: "POST", body: JSON.stringify({ расхождение: JSON.parse(b.dataset.r || "{}") }) });
         toast("Применено: роль отдела обновлена", "ok");
         b.textContent = "применено";
-      } catch (e) { b.disabled = false; toast(humanError(e), "danger"); }
+      } catch (e) {
+        // 404 — в установленном приложении сайдкар старше 1.0.50: этих маршрутов там нет.
+        b.disabled = false;
+        toast(e && e.status === 404 ? "В вашей версии приложения этого действия ещё нет — установите 1.0.50" : humanError(e), "danger");
+      }
     }));
   }
 
   async function пересчитатьМетодолога() {
     busyЗ = "patrol"; render();
     try {
-      const р = await api("/api/methodology/patrol");
+      const р = await api("/api/modules/agents/methodology/patrol");
       методолог = { "дата": р["дата"], "заявки": JSON.stringify(р["заявки"]),
                     "счёт": JSON.stringify(р["счёт"]) };
       toast("Патруль: заявок — " + (р["всего"] || 0), "ok");
@@ -1166,28 +1123,6 @@ export async function mount(root, ctx) {
     </div>`;
   }
 
-  // Польза отдела — те же честные числа, что в «Решениях» (доля признания, доля исправления),
-  // но в разрезе отдела: сводка приходит той же ручкой findings с фильтром отдел/фирма.
-  function пользаБлок() {
-    const в = сводкаОч || {};
-    if (!в["всего"]) return "";
-    const ф = фирма ? ` · фирма ${esc(фирма)}` : "";
-    const части = [
-      `найдено ${в["всего"]}`,
-      в["подтверждено"] ? `признано ${в["подтверждено"]}` : "",
-      в["отклонено"] ? `норма ${в["отклонено"]}` : "",
-      в["исправлено"] ? `исправлено ${в["исправлено"]}` : "",
-      в["не_воспроизводится"] ? `перестало воспроизводиться ${в["не_воспроизводится"]}` : "",
-      в["возвращались"] ? `возвращались ${в["возвращались"]}` : "",
-      в["доля_подтверждения"] !== "" && в["доля_подтверждения"] != null
-        ? `доля признания ${в["доля_подтверждения"]} %` : "",
-      в["доля_исправления"] !== "" && в["доля_исправления"] != null
-        ? `доля исправления ${в["доля_исправления"]} %` : "",
-    ].filter(Boolean);
-    return origin("Отдел за всё время" + ф + ": " + части.join(" · ") +
-      ". Исчезнувшая находка без признания — «перестало воспроизводиться», а не «исправлено».");
-  }
-
     function renderОтделы() {
     if (!families.length) return `<div class="empty" style="padding:20px">Ростер семей не загрузился — обновите список.</div>`;
     const f = families.find((x) => x.id === deptSel) || families[0];
@@ -1381,6 +1316,10 @@ export async function mount(root, ctx) {
           ${errorBlock()}
           ${renderОтделы()}
         </div></div>`;
+      // Привязки — здесь, до выхода из render(). С 21.11 (мокап-dark) эта ветка возвращалась раньше,
+      // чем выполнялась привязатьОтделы() ниже по коду: пульт — первый экран приложения — рисовался
+      // без единого обработчика. «Запустить», фирмы, группы находок, задачи, карточка отдела — молчали.
+      привязатьОтделы();
       return;
     }
     root.innerHTML = `<div class="mod-scroll">
@@ -1421,7 +1360,6 @@ export async function mount(root, ctx) {
       if (tab === "dept" && !deptГотово) { initDept(); return; }   // отрисует и перевяжет после загрузки
       render();
     }));
-    if (tab === "dept") привязатьОтделы();
     root.querySelector("#refresh").onclick = async () => {
       await loadAgents();
       if (tab === "dept") await Promise.all([загрузитьИКАвсех(), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов(), загрузитьЗадачи(), загрузитьПринятые(), загрузитьПоля(), загрузитьМетодолога()]);

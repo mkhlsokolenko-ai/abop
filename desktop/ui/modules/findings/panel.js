@@ -22,7 +22,7 @@ const ИСТОЧНИК = {
 };
 
 export async function mount(root, ctx) {
-  const { api, toast, humanError } = ctx;
+  const { api, humanError } = ctx;
   let data = null, err = "", loading = true;
   let cls = "", severity = "", cross = false, q = "", openId = "";
 

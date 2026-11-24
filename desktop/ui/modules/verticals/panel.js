@@ -18,7 +18,7 @@
 //
 // Нулевой прогон остаётся точкой отсчёта, а широкий режим — выбором, а не состоянием «не
 // настроено»: обе мысли переехали сюда без изменений.
-import { CARD, LBL, TAG, BTN, BTN_GHOST, BTN_OK, head } from "../../core/cards.js";
+import { CARD, LBL, BTN, BTN_GHOST, BTN_OK, head } from "../../core/cards.js";
 import { icon } from "../../core/icons.js";
 
 const M = "/api/modules/verticals";
@@ -29,6 +29,8 @@ export async function mount(root, ctx) {
   // Раньше раздел звал ручку сайдкара сам — пакет становился активным, а на экране не менялось
   // ничего до перезапуска, и выглядело это как «кнопка не работает».
   const включить = ctx["включитьПредставление"];
+  // «занят» — идёт установка/переключение/показ базы: кнопки действий выключены, чтобы второй клик
+  // не отправил то же действие повторно. Прежде флаг писали и не читали — защита молчала.
   let данные = null, ошибка = "", занят = "", отчёт = null, база = null, loading = true;
   let вкладка = "состав";
 
@@ -116,8 +118,8 @@ export async function mount(root, ctx) {
         <span class="vstat ${с.класс}">● ${esc(с.текст)}</span>
         <span class="acts" style="margin-left:auto">
           ${в["установлена"] && !активна(в.id)
-            ? `<button class="btn ok sm" data-act="${esc(в.id)}">${icon("play")}Включить представление</button>` : ""}
-          ${активна(в.id) ? `<button class="btn ghost sm" data-act="-">Вернуться в широкий режим</button>` : ""}
+            ? `<button class="btn ok sm" data-act="${esc(в.id)}"${занят ? " disabled" : ""}>${icon("play")}Включить представление</button>` : ""}
+          ${активна(в.id) ? `<button class="btn ghost sm" data-act="-"${занят ? " disabled" : ""}>Вернуться в широкий режим</button>` : ""}
           <button class="btn sm${в["годен"] && !в["установлена"] ? " primary" : ""}" data-open="${esc(в.id)}">${
             в["установлена"] ? "Что в поставке" : "Посмотреть"}</button>
         </span>
@@ -264,7 +266,7 @@ export async function mount(root, ctx) {
         esc(String(о["агент"]))}</span> — посадить его на участок карты процессов нужно отдельно.</div>` : ""}
       ${отчёт.что === "Установка" && !активна(отчёт.вертикаль) ? `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding-top:6px;border-top:1px solid var(--line)">
         <span style="font-size:12.5px;color:var(--ink-2)">Пакет установлен. Чтобы увидеть его разделы и слова, включите представление — это обратимо.</span>
-        <button data-act="${esc(отчёт.вертикаль)}" style="${BTN_OK};margin-left:auto">${icon("play")}Включить представление</button>
+        <button data-act="${esc(отчёт.вертикаль)}"${занят ? " disabled" : ""} style="${BTN_OK};margin-left:auto">${icon("play")}Включить представление</button>
       </div>` : ""}
     </div>`;
   }
@@ -317,7 +319,7 @@ export async function mount(root, ctx) {
         <div class="why">${разделыСтрока(активная)}${
           активная["начальный_экран"]
             ? ` · начальный экран: ${esc(String(активная["начальный_экран"]))}` : ""}</div>
-        <div class="acts"><button class="btn sm" data-act="-">Вернуться в широкий режим</button></div>
+        <div class="acts"><button class="btn sm" data-act="-"${занят ? " disabled" : ""}>Вернуться в широкий режим</button></div>
         ${origin("Широкий режим — это выбор, а не состояние «не настроено»: в нём доступны все разделы и агенты всех семей.")}
       </div>` : `<div class="card calm">
         <div class="card-head"><span class="lbl">активное представление</span>
@@ -334,7 +336,7 @@ export async function mount(root, ctx) {
       </div>` : ""}
     </div></div>`;
     root.querySelectorAll("[data-open]").forEach((b) => b.onclick = () => окноПакета(b.dataset.open));
-    root.querySelectorAll("[data-act]").forEach((b) => b.onclick = () =>
+    root.querySelectorAll("[data-act]").forEach((b) => b.onclick = () => занят ? null :
       действие(b.dataset.act, "activate", b.dataset.act === "-" ? "Широкий режим" : "Переключение"));
   }
 

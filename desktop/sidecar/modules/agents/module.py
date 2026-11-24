@@ -501,3 +501,25 @@ def dept_run_text(fid: str, body: dict):
         return _err(e)
     except ValueError as e:
         return {"error": str(e), "status": 422}
+
+
+@router.get("/methodology/patrol")
+def methodology_patrol():
+    """Заявки методолога — патруль по всей установке (пересчёт по двойному клику на чипе пульта).
+    До 1.0.50 пульт звал /api/methodology/* прямо в сайдкар — таких маршрутов тут не было, и пересчёт
+    отвечал 404 с момента появления окна (аудит 23.11, п. 2.1)."""
+    try:
+        return abop.methodology_patrol()
+    except abop.AbopError as e:
+        return _err(e)
+
+
+@router.post("/methodology/{fid}/apply")
+def methodology_apply(fid: str, body: dict):
+    """«Применить» в окне заявок: расхождение сверки → роль отдела из ростера кода. Право и
+    допустимость решает сервер; сюда возвращается его ответ с причиной, если не применилось."""
+    расх = (body or {}).get("расхождение") or {}
+    try:
+        return abop.methodology_apply(fid, расх if isinstance(расх, dict) else {})
+    except abop.AbopError as e:
+        return _err(e)

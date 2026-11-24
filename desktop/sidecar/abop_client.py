@@ -918,3 +918,17 @@ def run_text(fid: str, текст: str, agent_id: str = "") -> dict:
         raise ValueError("в отделе нет запущенных агентов — соберите и запустите агента в разделе «Пульт отдела»")
     агенты.sort(key=lambda a: (a.get("version") or 0), reverse=True)
     return run_async(агенты[0]["id"], текст)
+
+
+def methodology_patrol() -> dict:
+    """Заявки методолога по всей установке: детерминированный патруль (сверка отделов, дыры
+    способов, NCR, аудит назначения). Пересчёт по двойному клику на чипе пульта. Право решает
+    сервер (manager+); патруль обходит все отделы — даём ему время."""
+    return _req("GET", "/api/methodology/patrol", timeout=180) or {}
+
+
+def methodology_apply(fid: str, расхождение: dict) -> dict:
+    """Применить применимое расхождение сверки — только «роль_в_отделе» из ростера кода.
+    Правило_активно машиной не включается: отказ называет ручной шаг (ADR-084)."""
+    return _req("POST", "/api/methodology/" + urllib.request.quote(str(fid)) + "/apply",
+                body={"расхождение": расхождение or {}}, timeout=120) or {}

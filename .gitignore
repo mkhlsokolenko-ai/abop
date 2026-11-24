@@ -53,3 +53,6 @@ _*
 # Артефакты сторонних инструментов
 .opencode/
 .session_digests/
+
+# зависимости линтера JS (tools/jslint) — ставятся в CI и локально: npm ci --prefix tools/jslint
+node_modules/

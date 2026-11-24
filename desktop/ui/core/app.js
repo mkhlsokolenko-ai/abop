@@ -688,11 +688,7 @@ function renderNav() {
 }
 
 // ── Отделы в рейле (оболочка v5): отделы — навигация первого класса, не вкладка внутри агентов ──
-// Светофор ИКА — те же границы, что у автономии (ADR-085). Ручка ИКА приезжала с релизом 1.0.41:
-// на старом сайдкаре бейджи честно «—», навигация не ломается.
-const ИКОНКА_ОТДЕЛА = { finance: "doc", audit: "search", management: "board", production: "chain" };
 let ОТДЕЛЫ = [];          // [{id, title, mission, ика}]
-let активный_отдел = "";
 const мой_отдел_рейл = () => String(((ctx.user || {}) && (ctx.user.department || "")) || "");  // подсветка рейла: кем открыт отдел (интент из оболочки)
 async function loadОтделы() {
   try {
@@ -737,7 +733,6 @@ function статусОбновить() {
   const м = мой_отдел_рейл();
   const о = (м && м !== "*" && ОТДЕЛЫ.find((x) => x.id === м)) || null;
   const версия = (($("verChip") || {}).textContent || "").replace(/^v/, "") || "";
-  const ика = о && о.ика != null ? `ИКА ${о.ика}` : "";
   const д = new Date(Date.now() + 3 * 3600000);
   const время = `МСК ${String(д.getUTCHours()).padStart(2, "0")}:${String(д.getUTCMinutes()).padStart(2, "0")}`;
   const уровень = о && о.ика != null ? (о.ика >= 90 ? "повышенная" : о.ика >= 70 ? "стандартная" : "суженная") : "";
@@ -751,7 +746,6 @@ function статусОбновить() {
 setInterval(статусОбновить, 60000);
 
 function открытьОтдел(id) {
-  активный_отдел = id;
   try { localStorage.setItem("ape_dept_sel", id); } catch { /* приватное окно */ }
   loadModule("agents", { dept: id });
 }
@@ -1000,7 +994,6 @@ function openPalette() {
       <div id="cmdList" class="pal-list" role="listbox"></div>
       <div class="modal-foot" style="justify-content:flex-end"><span class="origin">↑↓ — выбор · Enter — выполнить · Esc — закрыть</span></div></div>`,
   });
-  const pal = ov.querySelector("#cmdPalette");
   let items = all, sel = 0;
   const list = ov.querySelector("#cmdList");
   const runSel = () => { const c = items[sel]; ov.close(); if (c) c.run(); };
@@ -1249,7 +1242,6 @@ async function boot() {
     if (мой && мой !== "*") цель = мой;
     else { try { цель = localStorage.getItem("ape_dept_sel") || ""; } catch { /* приватное окно */ } }
     if (!цель || !ОТДЕЛЫ.some((о) => о.id === цель)) цель = ОТДЕЛЫ[0].id;
-    активный_отдел = цель;
     loadModule("agents", { dept: цель });
     открыт = true;
   }

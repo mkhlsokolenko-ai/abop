@@ -16,7 +16,7 @@ function row(icon, title, note, right) {
 }
 
 export async function mount(root, ctx) {
-  const { api, toast, humanError } = ctx;
+  const { api, humanError } = ctx;
   let cat = {}; try { cat = await api(K + "/list"); } catch (e) { cat = { abop_error: humanError(e) }; }
   // Здоровье связей: вопрос «откуда это число» имеет право на короткий ответ. Свежесть берётся
   // из происхождения записей, а не из журнала прогонов: журнал говорит, что рецепт запускали, а
