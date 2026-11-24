@@ -47,7 +47,7 @@ outputs/
 !verticals/*/data/**
 
 # Временные рабочие файлы (Python-патчеры бандла, дампы, деплой-архивы)
-_*
+/_*
 .aider*
 
 # Артефакты сторонних инструментов
@@ -56,3 +56,4 @@ _*
 
 # зависимости линтера JS (tools/jslint) — ставятся в CI и локально: npm ci --prefix tools/jslint
 node_modules/
+tests/_tmp_desktop_scope/
