@@ -1378,7 +1378,7 @@ export async function mount(root, ctx) {
     }));
     root.querySelector("#refresh").onclick = async () => {
       await loadAgents();
-      if (tab === "dept") await Promise.all([загрузитьИКАвсех(), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов(), загрузитьЗадачи(), загрузитьПринятые(), загрузитьПоля(), загрузитьМетодолога()]);
+      if (tab === "dept") await Promise.all([загрузитьИКАвсех(), загрузитьИКА7(deptSel), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов(), загрузитьЗадачи(), загрузитьПринятые(), загрузитьПоля(), загрузитьМетодолога(), загрузитьАвтономию(), загрузитьБюджет()]);
       render();
     };
     const bb = root.querySelector("#build"); if (bb) bb.onclick = async () => { if (!families.length) await loadFamilies(); bFamily = ""; bSkills = new Set(); bName = ""; editingId = null; bOutput = ""; mode = "builder"; render(); };
@@ -1535,7 +1535,10 @@ export async function mount(root, ctx) {
     if (!инт || !инт.dept) return;
     tab = "dept"; deptSel = инт.dept; deptГотово = true;
     render();
-    await Promise.all([загрузитьИКАвсех(), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов(), загрузитьЗадачи(), загрузитьПринятые(), загрузитьПоля(), загрузитьМетодолога()]);
+    // Набор загрузок отдела неделим (см. тест test_desktop_pult_wiring): здесь его копия жила
+    // без бюджета и автономии — строка бюджета не появлялась на пульте при первом входе вовсе,
+    // initDept с полным списком достижим был только вкладкой, которой на пульте нет (24.11).
+    await Promise.all([загрузитьИКАвсех(), загрузитьИКА7(deptSel), загрузитьОчередь(), загрузитьNCR(), загрузитьКлиентов(), загрузитьЗадачи(), загрузитьПринятые(), загрузитьПоля(), загрузитьМетодолога(), загрузитьАвтономию(), загрузитьБюджет()]);
     render();
   };
   const инт0 = (typeof ctx.takeIntent === "function" ? ctx.takeIntent() : null) || (root.intent || null);
